@@ -149,7 +149,7 @@ fun SettingsScreen(navController: NavController) {
                         Column(Modifier.weight(1f)) {
                             Text("底部导航栏", style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
-                            Text("开启后底部显示首页、我的文章、数据三个入口",
+                            Text("关闭后，在首页左下角通过入口按钮进入各页面",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -560,7 +560,7 @@ fun SettingsScreen(navController: NavController) {
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("求求了，如果可以的话，请扫码支持一下我 T_T",
+                    Text("求求了，如果可以的话，请扫码支持一下我 🥹",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center)
