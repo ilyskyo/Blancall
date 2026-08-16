@@ -48,7 +48,7 @@ object AppPrefs {
     /** 首页左上角表情图标显示开关 */
     val showHomeEmojiFlow: StateFlow<Boolean> = _showHomeEmojiFlow.asStateFlow()
 
-    private val _lightBeigeBackgroundFlow = MutableStateFlow(true)
+    private val _lightBeigeBackgroundFlow = MutableStateFlow(false)
     /** 浅色模式米黄底色开关：开启使用暖米黄底色，关闭使用纯白底色（深色模式不受影响） */
     val lightBeigeBackgroundFlow: StateFlow<Boolean> = _lightBeigeBackgroundFlow.asStateFlow()
 
@@ -85,7 +85,7 @@ object AppPrefs {
     /** 练习评级方式：true=默写相似度→四档（FSRS-6 默认）；false=旧正确率→四档（回退） */
     val useSimilarityRatingFlow: StateFlow<Boolean> = _useSimilarityRatingFlow.asStateFlow()
 
-    private val _bottomNavEnabledFlow = MutableStateFlow(false)
+    private val _bottomNavEnabledFlow = MutableStateFlow(true)
     /** 底部导航栏开关：开启后底部显示 首页/我的文章/数据 三个入口，首页左下角入口按钮隐藏 */
     val bottomNavEnabledFlow: StateFlow<Boolean> = _bottomNavEnabledFlow.asStateFlow()
 
@@ -97,7 +97,7 @@ object AppPrefs {
         _homeIconKeyFlow.value = prefs.getString("emoji_icon", "logo")?.takeIf { it in KNOWN_ICON_KEYS } ?: "logo"
         _subtitleFlow.value = prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge."
         _showHomeEmojiFlow.value = prefs.getBoolean("show_home_emoji", false)
-        _lightBeigeBackgroundFlow.value = prefs.getBoolean("light_beige_background", true)
+        _lightBeigeBackgroundFlow.value = prefs.getBoolean("light_beige_background", false)
         _reviewTemplateFlow.value = prefs.getString("review_template", "standard") ?: "standard"
         _hiddenArticleIdsFlow.value = prefs.getStringSet("hidden_articles", emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
@@ -107,7 +107,7 @@ object AppPrefs {
         _aiHistoryEnabledFlow.value = prefs.getBoolean("ai_history_enabled", false)
         _aiSearchEnabledFlow.value = prefs.getBoolean("ai_search_enabled", false)
         _useSimilarityRatingFlow.value = prefs.getBoolean("use_similarity_rating", true)
-        _bottomNavEnabledFlow.value = prefs.getBoolean("bottom_nav_enabled", false)
+        _bottomNavEnabledFlow.value = prefs.getBoolean("bottom_nav_enabled", true)
     }
 
     var predictiveBackEnabled: Boolean
@@ -161,7 +161,7 @@ object AppPrefs {
 
     /** 浅色模式米黄底色开关（深色模式始终纯黑） */
     var lightBeigeBackgroundEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("light_beige_background", true) else true
+        get() = if (::prefs.isInitialized) prefs.getBoolean("light_beige_background", false) else false
         set(value) {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("light_beige_background", value) }
@@ -257,7 +257,7 @@ object AppPrefs {
 
     /** 底部导航栏开关（开启后底部出现 首页/我的文章/数据 导航） */
     var bottomNavEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("bottom_nav_enabled", false) else false
+        get() = if (::prefs.isInitialized) prefs.getBoolean("bottom_nav_enabled", true) else true
         set(value) {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("bottom_nav_enabled", value) }
