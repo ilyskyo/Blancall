@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ✧ 四芒星 — 每条边向内凹 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,14 Q36.4,23.6 46,30 Q36.4,36.4 30,46 Q23.6,36.4 14,30 Q23.6,23.6 30,14 Z" />
+
+</vector>

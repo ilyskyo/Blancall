@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    数据提取规则（API 31+ 使用 dataExtractionRules）。
+    cloud-backup 与 device-transfer 均排除 file 域根目录，覆盖
+    articles.json / records.json / practice_state_*.json 等所有用户学习数据，
+    避免云备份/设备迁移导致学习进度被旧数据覆盖。
+    sharedprefs 默认仍参与备份（主题、提醒设置等可安全同步）。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- 排除 filesDir 下所有文件（用户学习数据，设备本地保留） -->
+        <exclude domain="file" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <!-- 排除 filesDir 下所有文件（用户学习数据，不在设备间迁移） -->
+        <exclude domain="file" path="." />
+    </device-transfer>
+</data-extraction-rules>

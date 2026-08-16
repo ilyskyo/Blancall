@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 缓存目录 -->
+    <cache-path name="cache" path="." />
+    <!-- 应用私有文件目录（articles.json / records.json / practice_state_*.json 写入 filesDir） -->
+    <files-path name="files" path="." />
+</paths>

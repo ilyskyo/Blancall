@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用底色（浅色模式）：与 Compose background 保持一致 -->
+    <color name="background_light">#FFFAF7F2</color>
+    <!-- 应用底色（深色模式）：与 Compose background 保持一致，纯黑 -->
+    <color name="background_dark">#FF000000</color>
+    <!-- Splash 屏底色，使用浅色底以保证启动瞬间与主页一致 -->
+    <color name="splash_background">@color/background_light</color>
+</resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    通知小图标：必须是白色轮廓（系统着色）。
+    简化书本轮廓，与「背诵」主题契合。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <!-- 打开的书本轮廓 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,4 C10.5,3 8.5,2.5 6,2.5 C5.2,2.5 4.6,2.6 4,2.8 L4,19.5 C4.6,19.3 5.2,19.2 6,19.2 C8.5,19.2 10.5,19.7 12,20.7 C13.5,19.7 15.5,19.2 18,19.2 C18.8,19.2 19.4,19.3 20,19.5 L20,2.8 C19.4,2.6 18.8,2.5 18,2.5 C15.5,2.5 13.5,3 12,4 Z" />
+    <!-- 书脊中线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M11.3,5.2 L12,4.5 L12.7,5.2 L12.7,19.8 L12,20.5 L11.3,19.8 Z" />
+</vector>

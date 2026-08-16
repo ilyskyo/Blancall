@@ -1,0 +1,35 @@
+# IDE / 编辑器
+/.idea/
+*.iml
+
+# 构建产物（递归忽略所有模块的 build 目录，不只是根目录）
+**/build/
+/build
+/captures
+.externalNativeBuild
+.cxx
+
+# Gradle
+.gradle
+
+# 本地配置（含签名信息，切勿提交）
+/local.properties
+local.properties
+
+# 系统 / 临时
+.DS_Store
+
+# 导出的 APK / 中间产物
+apk-output/
+*.apk
+*.aar
+*.ap_
+
+# Kotlin IDE 缓存/日志
+.kotlin
+
+# 个人开发工具与笔记（不入库）
+.workbuddy
+docs
+
+build_compile.log

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    全量备份规则（API < 31 使用 fullBackupContent）。
+    full-backup-content 的 <exclude path> 不支持通配符，只能匹配精确路径或目录，
+    因此直接排除整个 file 域根目录，覆盖 articles.json / records.json /
+    practice_state_*.json 等所有用户学习数据文件，避免自动云备份导致跨设备
+    数据不一致（学习进度被旧备份覆盖）。
+    sharedprefs 域默认仍会备份（主题、提醒设置等可安全跨设备同步）。
+-->
+<full-backup-content>
+    <!-- 排除 filesDir 下所有文件（用户学习数据，设备本地保留） -->
+    <exclude domain="file" path="." />
+</full-backup-content>

@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software in your work, please cite it using the following metadata."
+title: "Blancall"
+abstract: "Article-based cloze memory practice Android app with FSRS spaced repetition scheduling. Turn any article into fill-in-the-blank exercises; all data stays on-device."
+authors:
+  - family-names: "ilyskyo"
+    given-names: ""
+    website: "https://github.com/ilyskyo"
+keywords:
+  - spaced repetition
+  - FSRS
+  - cloze
+  - memory
+  - Android
+license: "MIT"
+version: "3.2"
+date-released: "2026-08-12"
+url: "https://github.com/ilyskyo/Blancall"
