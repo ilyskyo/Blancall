@@ -31,3 +31,7 @@
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
+
+# ── 7. pdfbox 可选 JPX(JP2) 解码依赖缺类，避免 R8 报错 ──
+-dontwarn com.gemalto.jp2.**
+-dontwarn com.tom_roush.pdfbox.filter.JPXFilter
