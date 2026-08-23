@@ -134,31 +134,48 @@ fun SettingsScreen(navController: NavController) {
                         )
                     }
 
-                    // 底部导航栏固定启用，不再提供设置开关。素材库开关下移一格即承接上面区块分隔。
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                    val builtInLibraryEnabled by AppPrefs.builtInLibraryEnabledFlow.collectAsState()
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("内置素材库", style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface)
-                            Text("开启后底部出现「素材库」，可离线查看内置的西方思想内容",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = builtInLibraryEnabled,
-                            onCheckedChange = { AppPrefs.builtInLibraryEnabled = it }
-                        )
-                    }
+                    // 内置素材库已移至下方「拓展功能」分组
                 }
             }
 
             Spacer(Modifier.height(8.dp))
+
+            // ── 拓展功能 ──
+            Text("拓展功能", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary)
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                // ── 内置素材库：多库各自可启用，当前仅「西方思想」，未来可继续追加 ──
+                Text("内置素材库", style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                val enabledSet by AppPrefs.builtInLibraryKeysFlow.collectAsState()
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("西方思想", style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Text("开启后底部「素材库」可离线查看西方思想内容",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = "western" in enabledSet,
+                        onCheckedChange = { AppPrefs.setLibraryEnabled("western", it) }
+                    )
+                }
+                // 预留更多库：在此 Row 之后追加即可（如化学句子大全）
+            }
 
             // ── 主题色 ──
             Text("主题色", style = MaterialTheme.typography.titleSmall,

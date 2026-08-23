@@ -54,8 +54,8 @@ import com.ilyskyo.blancall.ui.viewmodel.SectionMode
 fun AppNavigation() {
     val navController = rememberNavController()
     val predictiveBack by AppPrefs.predictiveBackFlow.collectAsState()
-    // 内置素材库开关（开启后底部导航栏追加「素材库」入口）
-    val builtInLibraryEnabled by AppPrefs.builtInLibraryEnabledFlow.collectAsState()
+    // 内置素材库：启用任一库后底部导航栏追加「素材库」入口（支持多库扩展）
+    val enabledLibraries by AppPrefs.builtInLibraryKeysFlow.collectAsState()
     // 当前路由（用于底部导航栏高亮）
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
@@ -72,7 +72,7 @@ fun AppNavigation() {
 
     // 底部导航栏根页面：home/list/overview 固定，开启内置素材库时追加 philo
     val rootRoutes = listOf("home", "list", "overview") +
-        if (builtInLibraryEnabled) listOf("philo") else emptyList()
+        if (enabledLibraries.isNotEmpty()) listOf("philo") else emptyList()
     // 按「根 tab 归属」匹配，覆盖各根页面的直接子路由（如 statistics/xxx、philo_content/xxx），
     // 保证进入子页面时底部导航栏仍可见且高亮正确，用户可随时点其它 tab 跳出。
     val currentTab = when {
@@ -446,7 +446,7 @@ fun AppNavigation() {
             BottomNavBar(
                 currentTab = currentTab,
                 onSelect = { selectTab(it) },
-                showLibraryTab = builtInLibraryEnabled
+                showLibraryTab = enabledLibraries.isNotEmpty()
             )
         }
     } // close Column

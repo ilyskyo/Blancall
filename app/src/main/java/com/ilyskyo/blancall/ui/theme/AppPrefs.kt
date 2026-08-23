@@ -85,9 +85,9 @@ object AppPrefs {
     /** 练习评级方式：true=默写相似度→四档（FSRS-6 默认）；false=旧正确率→四档（回退） */
     val useSimilarityRatingFlow: StateFlow<Boolean> = _useSimilarityRatingFlow.asStateFlow()
 
-    private val _builtInLibraryEnabledFlow = MutableStateFlow(false)
-    /** 内置素材库开关：开启后底部导航栏新增「素材库」入口，可在应用内离线查看内置的西方思想素材 */
-    val builtInLibraryEnabledFlow: StateFlow<Boolean> = _builtInLibraryEnabledFlow.asStateFlow()
+    private val _builtInLibraryKeysFlow = MutableStateFlow<Set<String>>(emptySet())
+    /** 已启用的内置素材库 key 集合（如 "western"=西方思想）。非空时底部导航栏显示「素材库」入口；可扩展多个库 */
+    val builtInLibraryKeysFlow: StateFlow<Set<String>> = _builtInLibraryKeysFlow.asStateFlow()
 
     private val _onboardingSeenFlow = MutableStateFlow(false)
     /** 首次使用引导页是否已看过（首启展示一次，之后可在设置里重看） */
@@ -111,7 +111,7 @@ object AppPrefs {
         _aiHistoryEnabledFlow.value = prefs.getBoolean("ai_history_enabled", false)
         _aiSearchEnabledFlow.value = prefs.getBoolean("ai_search_enabled", false)
         _useSimilarityRatingFlow.value = prefs.getBoolean("use_similarity_rating", true)
-        _builtInLibraryEnabledFlow.value = prefs.getBoolean("built_in_library_enabled", false)
+        _builtInLibraryKeysFlow.value = prefs.getStringSet("built_in_library_keys", emptySet())?.toSet() ?: emptySet()
         _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
     }
 
@@ -260,15 +260,18 @@ object AppPrefs {
             }
         }
 
-    /** 内置素材库开关（开启后底部导航栏出现「素材库」入口，可离线查看内置西方思想内容） */
-    var builtInLibraryEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("built_in_library_enabled", false) else false
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putBoolean("built_in_library_enabled", value) }
-                _builtInLibraryEnabledFlow.value = value
-            }
-        }
+    /** 判断某个内置素材库是否已启用（如 "western"=西方思想） */
+    fun isLibraryEnabled(key: String): Boolean =
+        if (::prefs.isInitialized) prefs.getStringSet("built_in_library_keys", emptySet())?.contains(key) == true else false
+
+    /** 启用/禁用某个内置素材库；空集合表示未启用任何库，底部「素材库」入口随之隐藏 */
+    fun setLibraryEnabled(key: String, enabled: Boolean) {
+        if (!::prefs.isInitialized) return
+        val set = (prefs.getStringSet("built_in_library_keys", emptySet()) ?: emptySet()).toMutableSet()
+        if (enabled) set.add(key) else set.remove(key)
+        prefs.edit { putStringSet("built_in_library_keys", set) }
+        _builtInLibraryKeysFlow.value = set.toSet()
+    }
 
     /** 首次使用引导页是否已看过；首启展示一次后置为 true，之后可从设置里重看 */
     var onboardingSeen: Boolean
