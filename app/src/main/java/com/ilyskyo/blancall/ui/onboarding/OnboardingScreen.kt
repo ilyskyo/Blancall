@@ -63,8 +63,8 @@ private val ONBOARDING_PAGES = listOf(
         subtitle = "一屏掌握你的背诵进度",
         features = listOf(
             "顶部搜索：秒查标题、正文与添加日期",
-            "下拉露出品牌栏，快速导入与设置",
-            "磨砂卡片：待复习 / 继续练习 / 最近文章"
+            "「添加」「设置」就在搜索栏旁，随时可导入、可设置，无需下拉",
+            "下拉露出品牌栏（logo · 设置），更多空间留给内容"
         )
     ),
     OnboardingPage(
@@ -149,17 +149,31 @@ fun OnboardingScreen(
         AmbientBackground()
 
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-            // ── 顶部：左上角基本用法提示 + 右上角跳过 ──
+            // ── 顶部：左上「欢迎使用 Blancall」品牌标题(与帮助欢迎页同位) + 右上跳过 ──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "先花几分钟，了解基本用法",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.weight(1f)
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "欢迎使用",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        "B L A N C A L L",
+                        style = MaterialTheme.typography.headlineSmall,
+                        letterSpacing = 6.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "先花几分钟，了解基本用法",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
                 Surface(
                     onClick = finish,
                     shape = RoundedCornerShape(16.dp),
@@ -186,18 +200,6 @@ fun OnboardingScreen(
                     pageCount = pages.size,
                     accent = accent,
                     modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 8.dp)
-                )
-            }
-
-            // ── 欢迎使用过渡（仅最后一张显示，与后续「帮助-欢迎使用」连贯）──
-            if (pagerState.currentPage == pages.size - 1) {
-                Text(
-                    "欢迎使用",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp)
                 )
             }
 
