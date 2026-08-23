@@ -115,9 +115,10 @@ fun HomeScreen(
     // ── 首页顶部品牌头部：默认收起（仅搜索框），下拉(滚到顶再拉)时展开 ──
     val homeScrollState = rememberScrollState()
     // 展开比例 0..1（0=收起，仅显示搜索框；1=全开，显示 logo+导入+设置）
-    val brandProgress = remember { Animatable(0f) }
+    val brandProgress = remember { Animatable(if (AppPrefs.homeBrandExpanded) 1f else 0f) }
     // 品牌栏下拉固定状态：true=展开固定，false=收起；每次下拉松手即切换，不依赖松手位置
-    var brandExpanded by remember { mutableStateOf(false) }
+    // 状态持久化到 AppPrefs：一旦展开，跨页面(如前往设置再返回)保持展开，直到用户再次下拉/上滑手动收起
+    var brandExpanded by remember { mutableStateOf(AppPrefs.homeBrandExpanded) }
     // 品牌栏(logo+设置)全展开高度；搜索栏常驻不折叠，故无需计入头部展开预算
     val brandHeight = 72.dp
     val headerScope = rememberCoroutineScope()
@@ -146,21 +147,26 @@ fun HomeScreen(
                 return Offset.Zero
             }
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                // 滚动内容时若非「下拉固定」状态且头部开着则平滑收起（无回弹）
-                if (homeScrollState.value > 0f && brandProgress.value > 0f && !brandExpanded) {
-                    headerScope.launch { brandProgress.animateTo(0f, tween(durationMillis = 240)) }
-                }
+                // 品牌栏展开/收起完全由「再次下拉」toggle 控制，滚动内容不自动收起
                 return Offset.Zero
             }
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (homeScrollState.value <= 0f && brandProgress.value > 0f) {
                     headerScope.launch {
-                        // 拉到底＝切换：展开带回弹，收起用平滑动画（不再弹出 logo）
-                        brandExpanded = !brandExpanded
-                        if (brandExpanded) {
-                            brandProgress.animateTo(1f, bounceSpring)
+                        // 已完全展开时，再由「再次下拉」toggle 收起；尚未拉满(或刚松手)的同一次下拉
+                        // 直接送满并固定——避免松手后自动再收起来，保证只有再次下拉或上滑才会收回。
+                        if (brandProgress.value >= 0.99f) {
+                            brandExpanded = !brandExpanded
+                            AppPrefs.homeBrandExpanded = brandExpanded
+                            if (brandExpanded) {
+                                brandProgress.animateTo(1f, bounceSpring)
+                            } else {
+                                brandProgress.animateTo(0f, tween(durationMillis = 280))
+                            }
                         } else {
-                            brandProgress.animateTo(0f, tween(durationMillis = 280))
+                            brandExpanded = true
+                            AppPrefs.homeBrandExpanded = true
+                            brandProgress.animateTo(1f, bounceSpring)
                         }
                     }
                     return available

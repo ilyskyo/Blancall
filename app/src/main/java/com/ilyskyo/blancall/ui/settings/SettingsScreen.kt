@@ -140,68 +140,6 @@ fun SettingsScreen(navController: NavController) {
 
             Spacer(Modifier.height(8.dp))
 
-            // ── 拓展功能 ──
-            Text("拓展功能", style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary)
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                // ── 内置素材库：多库各自可启用，当前仅「西方思想」，未来可继续追加 ──
-                Text("内置素材库", style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
-                val enabledSet by AppPrefs.builtInLibraryKeysFlow.collectAsState()
-                val libNames = mapOf("western" to "西方思想", "gaokao" to "高考必背篇目")
-                Text(
-                    if (enabledSet.isEmpty()) "尚未启用任何素材库"
-                    else "已选择：" + enabledSet.sorted().mapNotNull { libNames[it] }.joinToString("、"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 2.dp)
-                )
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("西方思想", style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface)
-                        Text("开启后底部「素材库」可离线查看西方思想内容",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = "western" in enabledSet,
-                        onCheckedChange = { AppPrefs.setLibraryEnabled("western", it) }
-                    )
-                }
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("高考必背篇目", style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface)
-                        Text("文言文 20 篇 + 诗词曲 40 首（2017 课标）",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = "gaokao" in enabledSet,
-                        onCheckedChange = { AppPrefs.setLibraryEnabled("gaokao", it) }
-                    )
-                }
-                // 预留更多库：在此 Row 之后追加即可（如化学句子大全）
-            }
-
             // ── 主题色 ──
             Text("主题色", style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
@@ -573,6 +511,56 @@ fun SettingsScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ── 拓展功能 ──
+            Text("拓展功能", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary)
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                // ── 内置素材库：多库各自可启用，未来可继续追加 ──
+                Text("内置素材库", style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                val enabledSet by AppPrefs.builtInLibraryKeysFlow.collectAsState()
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("西方思想", style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Switch(
+                        checked = "western" in enabledSet,
+                        onCheckedChange = { AppPrefs.setLibraryEnabled("western", it) }
+                    )
+                }
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("高考必背篇目", style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Switch(
+                        checked = "gaokao" in enabledSet,
+                        onCheckedChange = { AppPrefs.setLibraryEnabled("gaokao", it) }
+                    )
+                }
+                // 预留更多库：在此 Row 之后追加即可（如化学句子大全）
             }
 
             Spacer(Modifier.height(8.dp))

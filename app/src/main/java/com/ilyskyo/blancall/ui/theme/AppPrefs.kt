@@ -32,6 +32,10 @@ object AppPrefs {
     /** 响应式状态流，Compose 中通过 collectAsState() 订阅 */
     val predictiveBackFlow: StateFlow<Boolean> = _predictiveBackFlow.asStateFlow()
 
+    private val _homeBrandExpandedFlow = MutableStateFlow(false)
+    /** 首页品牌栏(Blancall 栏)展开状态：拉下后跨页面(如前往设置再返回)保持，直到用户再次下拉/上滑手动收起 */
+    val homeBrandExpandedFlow: StateFlow<Boolean> = _homeBrandExpandedFlow.asStateFlow()
+
     private val _accentColorFlow = MutableStateFlow(0)
     /** 主题色索引（0=靛蓝 1=海蓝 2=翠绿 3=暖橙 4=玫红 5=石墨） */
     val accentColorFlow: StateFlow<Int> = _accentColorFlow.asStateFlow()
@@ -101,6 +105,7 @@ object AppPrefs {
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         _predictiveBackFlow.value = prefs.getBoolean("predictive_back", true)
+        _homeBrandExpandedFlow.value = prefs.getBoolean("home_brand_expanded", false)
         _accentColorFlow.value = prefs.getInt("accent_color", 0)
         _homeIconKeyFlow.value = prefs.getString("emoji_icon", "logo")?.takeIf { it in KNOWN_ICON_KEYS } ?: "logo"
         _subtitleFlow.value = prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge."
@@ -126,6 +131,16 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("predictive_back", value) }
                 _predictiveBackFlow.value = value
+            }
+        }
+
+    /** 首页品牌栏(Blancall 栏)展开状态：展开后跨页面/跨启动保持，直到用户手动收起 */
+    var homeBrandExpanded: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("home_brand_expanded", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("home_brand_expanded", value) }
+                _homeBrandExpandedFlow.value = value
             }
         }
 

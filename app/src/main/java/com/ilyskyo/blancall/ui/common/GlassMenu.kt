@@ -71,9 +71,9 @@ fun GlassDropdownMenu(
         shadowElevation = 0.dp,
         border = null
     ) {
-        // 宽度随屏幕自适应：手机上占约 82% 宽（更舒展、不再窄条），最大 360dp、最小 260dp
+        // 宽度随屏幕自适应：宽屏仅略收窄，手机取约 55% 宽（更贴内容、不再过宽），最大 256dp、最小 200dp
         val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
-        val menuWidth = minOf(360.dp, maxOf(260.dp, screenW * 0.82f))
+        val menuWidth = minOf(256.dp, maxOf(200.dp, screenW * 0.55f))
         GlassMenuCard(width = menuWidth, content = content)
     }
 }

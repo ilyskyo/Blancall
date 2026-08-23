@@ -9,7 +9,7 @@ import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.LocalIndication
@@ -44,13 +44,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,14 +71,17 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.data.repository.ArticleRepository
+import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,6 +97,8 @@ import java.io.File
  */
 @Composable
 fun WesternThoughtScreen(navController: NavController) {
+    // 仅展示已启用的内置素材库（设置 → 拓展功能 中勾选）
+    val enabledLibraries by AppPrefs.builtInLibraryKeysFlow.collectAsState()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -118,7 +123,7 @@ fun WesternThoughtScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(BUILT_IN_LIBRARIES) { lib ->
+            items(BUILT_IN_LIBRARIES.filter { it.id in enabledLibraries }) { lib ->
                 LibraryCard(lib = lib) {
                     navController.navigate("philo_content/${lib.id}")
                 }
@@ -282,7 +287,7 @@ fun LibraryContentPage(
     var showDisclaimer by remember { mutableStateOf(lib.id == "gaokao" && !AppPrefs.isDisclaimerSeen("gaokao")) }
 
     if (showDisclaimer) {
-        AlertDialog(
+        BlancallAlertDialog(
             onDismissRequest = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false },
             title = { Text("提示") },
             text = { Text("该内容非 Blancall 官方制作，它提供的一切联系信息都与 Blancall 无关。") },
@@ -300,6 +305,11 @@ fun LibraryContentPage(
     var currentPerson by remember { mutableStateOf("") }
     // 当前正在浏览的小节 id（如 sec-2），由 JS 滚动监听上报；空串=整篇
     var currentSection by remember { mutableStateOf("") }
+    // 顶栏「练习」按钮：先弹出练习模式选择选项卡，选定后再导入并进入，不默认任何模式
+    var showPracticePicker by remember { mutableStateOf(false) }
+    var pendingPracticePerson by remember { mutableStateOf("") }
+    var pendingPracticeText by remember { mutableStateOf("") }
+    var pendingPracticeLabel by remember { mutableStateOf("") }
 
     val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     val scope = rememberCoroutineScope()
@@ -309,7 +319,17 @@ fun LibraryContentPage(
         val wv = webView
         if (wv != null && wv.canGoBack()) wv.goBack() else navController.popBackStack()
     }
-    BackHandler(onBack = onBack)
+    // 预测性返回手势：只用 PredictiveBackHandler（Android<13 自动退化为普通返回回调），
+    // 不加普通 BackHandler——否则会压制系统侧滑返回的跟手动画。
+    // 有站内历史则 WebView 站内返回，否则退出到素材库卡片页；手势取消则回弹不离开。
+    PredictiveBackHandler { progressFlow ->
+        try {
+            progressFlow.collect { }
+            onBack()
+        } catch (_: CancellationException) {
+            // 手势取消 → 保持当前页
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -321,17 +341,18 @@ fun LibraryContentPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BackButton(onClick = onBack)
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = lib.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
 
             // 练习正文按钮（仅在进入具体人物页后显示，index / concept-map 页不显示）
@@ -342,7 +363,8 @@ fun LibraryContentPage(
                     modifier = Modifier
                         .padding(end = 8.dp)
                         .clickable {
-                            // 练习「当前正在看的那一页」——有章节则只取该节，否则取整篇
+                            // 练习「当前正在看的那一页」——有章节则只取该节，否则取整篇；
+                            // 先弹出模式选择选项卡，用户选定后再导入并进入对应练习（不默认模式）。
                             val target = resolvePracticeTarget(context, currentPerson, currentSection)
                             val text = extractContentBodyFromAssets(
                                 context,
@@ -350,17 +372,10 @@ fun LibraryContentPage(
                                 if (target.isSection) currentSection else ""
                             )
                             if (text.isNotBlank()) {
-                                scope.launch {
-                                    val articleId = importPhiloToBlancall(
-                                        context,
-                                        currentPerson,
-                                        text,
-                                        target.scopeLabel
-                                    )
-                                    if (articleId > 0) {
-                                        navController.navigate("practice/${articleId}?mode=SENTENCE")
-                                    }
-                                }
+                                pendingPracticePerson = currentPerson
+                                pendingPracticeText = text
+                                pendingPracticeLabel = target.scopeLabel
+                                showPracticePicker = true
                             }
                         },
                     shape = RoundedCornerShape(8.dp),
@@ -459,7 +474,8 @@ fun LibraryContentPage(
                         GlassMenuDivider()
                         // （练习当前页的功能已并入顶栏「练习 · 第X节」按钮，菜单不再重复放，避免同一功能多入口）
                     } else {
-                        // index / concept-map 页提示
+                        // index / concept-map 页提示：按库类型给对应的引导文案
+                        val guideText = if (lib.id == "gaokao") "请进入某一篇文章" else "请进入某位思想家素材页"
                         GlassMenuItem(
                             leadingIcon = {
                                 AppIcon(
@@ -470,7 +486,7 @@ fun LibraryContentPage(
                             },
                             label = {
                                 Text(
-                                    "请进入某位思想家素材页",
+                                    guideText,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
@@ -530,9 +546,13 @@ fun LibraryContentPage(
                                     return true
                                 }
 
-                                // PDF 文件：直接打开
+                                // PDF 文件：改为在 app 内预览（PdfPreviewScreen 渲染每一页，不再跳外部查看器）
                                 if (url.endsWith(".pdf", ignoreCase = true)) {
-                                    openAssetPdf(ctx, url)
+                                    val assetPath = url.removePrefix("file:///android_asset/")
+                                    navController.navigate(
+                                        "pdf_preview?asset=${Uri.encode(assetPath)}" +
+                                            "&title=${Uri.encode(currentPerson)}"
+                                    )
                                     return true
                                 }
                                 return false
@@ -674,6 +694,30 @@ fun LibraryContentPage(
             }
         }
     }
+
+    // 顶栏「练习」：先弹出练习模式选择选项卡，选定后再导入并进入对应练习
+    AdaptiveModePicker(
+        visible = showPracticePicker,
+        anchorRect = null,
+        onDismiss = { showPracticePicker = false },
+        onModeSelected = { mode ->
+            showPracticePicker = false
+            if (pendingPracticeText.isNotBlank()) {
+                scope.launch {
+                    val articleId = importPhiloToBlancall(
+                        context,
+                        pendingPracticePerson,
+                        pendingPracticeText,
+                        pendingPracticeLabel
+                    )
+                    if (articleId > 0) {
+                        navController.navigate("practice/${articleId}?mode=${mode.name}")
+                    }
+                }
+            }
+            pendingPracticeText = ""
+        }
+    )
 }
 
 /**
@@ -955,7 +999,7 @@ private val BUILT_IN_LIBRARIES = listOf(
     BuiltInLibrary(
         id = "gaokao",
         title = "高考必背篇目",
-        subtitle = "2024 高考语文必背 60 篇（2017 课标版修正）",
+        subtitle = "高考语文必背 60 篇",
         assetPath = "gaokao/index.html",
         accentColor = 0xFF7A3B2E,
         metaLine = "60 篇 · 文言文 20 · 诗词曲 40",

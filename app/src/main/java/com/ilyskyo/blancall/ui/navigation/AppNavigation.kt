@@ -42,6 +42,7 @@ import com.ilyskyo.blancall.ui.settings.SettingsScreen
 import com.ilyskyo.blancall.ui.settings.HelpScreen
 import com.ilyskyo.blancall.ui.western.WesternThoughtScreen
 import com.ilyskyo.blancall.ui.western.LibraryContentPage
+import com.ilyskyo.blancall.ui.western.PdfPreviewScreen
 import com.ilyskyo.blancall.ui.statistics.OverviewScreen
 import com.ilyskyo.blancall.ui.statistics.StatisticsScreen
 import com.ilyskyo.blancall.ui.onboarding.OnboardingScreen
@@ -346,6 +347,23 @@ fun AppNavigation() {
         ) { backStackEntry ->
             val libraryId = backStackEntry.arguments?.getString("libraryId") ?: "western"
             LibraryContentPage(navController, libraryId)
+        }
+
+        // 内置 PDF 预览页（点开素材库单篇 PDF 在 app 内预览）
+        composable(
+            route = "pdf_preview?asset={asset}&title={title}",
+            arguments = listOf(
+                navArgument("asset") { type = NavType.StringType; defaultValue = "" },
+                navArgument("title") { type = NavType.StringType; defaultValue = "" }
+            ),
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) { backStackEntry ->
+            val asset = backStackEntry.arguments?.getString("asset") ?: ""
+            val title = backStackEntry.arguments?.getString("title") ?: ""
+            PdfPreviewScreen(navController, asset, title.takeIf { it.isNotBlank() })
         }
 
         composable(
