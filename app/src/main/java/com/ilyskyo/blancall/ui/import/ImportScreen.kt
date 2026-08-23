@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.import
 
 import android.net.Uri
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -70,6 +71,9 @@ fun ImportScreen(navController: NavController) {
     var content by remember { mutableStateOf("") }
     var fileLoaded by remember { mutableStateOf(false) }
     var useFileImport by remember { mutableStateOf(false) }
+    // PDF 导入预览：记录用户在该页导入的 PDF，用于「预览 PDF」
+    var lastPdfUri by remember { mutableStateOf<Uri?>(null) }
+    var hasPdf by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showFullscreenInput by remember { mutableStateOf(false) }
     var showLargeFileWarning by remember { mutableStateOf(false) }
@@ -126,6 +130,14 @@ fun ImportScreen(navController: NavController) {
                         if (fileName != null) {
                             title = fileName.substringBeforeLast(".")
                         }
+                    }
+                    // 记录是否为 PDF —— 导入 PDF 时提供「预览 PDF」
+                    val pickedName = withContext(Dispatchers.IO) { FileTextExtractor.getFileName(context, it) }
+                    if (pickedName?.lowercase()?.endsWith(".pdf") == true) {
+                        lastPdfUri = it
+                        hasPdf = true
+                    } else {
+                        hasPdf = false
                     }
                     errorMessage = null
                 } catch (e: Exception) {
@@ -199,6 +211,31 @@ fun ImportScreen(navController: NavController) {
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
+        }
+
+        // 导入 PDF 时提供「预览 PDF」：在 app 内打开该 PDF 原页
+        if (hasPdf && lastPdfUri != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = {
+                    val uri = lastPdfUri ?: return@TextButton
+                    scope.launch {
+                        val f = withContext(Dispatchers.IO) {
+                            copyPdfUriToCache(context, uri)
+                        }
+                        if (f != null) {
+                            navController.navigate(
+                                "pdf_preview?asset=${Uri.encode(f.absolutePath)}" +
+                                    "&title=${Uri.encode(title.ifBlank { "PDF 预览" })}"
+                            )
+                        }
+                    }
+                }) {
+                    Text("预览 PDF", style = MaterialTheme.typography.labelLarge)
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -535,4 +572,20 @@ fun ImportScreen(navController: NavController) {
             }
         }
     }
+}
+
+/** 把用户选择的 PDF（content URI）复制到缓存目录，供 PdfPreviewScreen 在 app 内预览 */
+private fun copyPdfUriToCache(context: android.content.Context, uri: Uri): File? {
+    return try {
+        val name = runCatching { FileTextExtractor.getFileName(context, uri) }.getOrNull()
+            ?.substringBeforeLast(".")
+            ?.replace(Regex("[^\\w\\u4e00-\\u9fa5\\-]"), "_")
+            ?: "pdf"
+        val out = File(context.cacheDir, "pdfview/$name.pdf")
+        out.parentFile?.mkdirs()
+        context.contentResolver.openInputStream(uri)?.use { ins ->
+            out.outputStream().use { os -> ins.copyTo(os) }
+        }
+        out
+    } catch (_: Exception) { null }
 }

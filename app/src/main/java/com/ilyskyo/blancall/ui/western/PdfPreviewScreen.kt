@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,7 +40,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -78,8 +83,11 @@ fun PdfPreviewScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 复制 asset PDF 到缓存，便于 PdfRenderer 读取
-    val pdfFile = remember(asset) { copyAssetToCache(context, asset) }
+    // 解析为可读文件：已存在的绝对路径直接用，否则视为 assets 内资源并复制到缓存
+    val pdfFile = remember(asset) {
+        val direct = File(asset)
+        if (direct.exists()) direct else copyAssetToCache(context, asset)
+    }
 
     // 配套文字版（如有）：Pair(标题, 正文)
     val textLoaded = remember(asset) {
@@ -102,6 +110,8 @@ fun PdfPreviewScreen(
     var pendingTitle by remember { mutableStateOf("") }
     var pendingText by remember { mutableStateOf("") }
     var showPicker by remember { mutableStateOf(false) }
+    // 缩放状态：放大时禁用列表滚动，双指缩放 / 单指拖动
+    var isZoomed by remember { mutableStateOf(false) }
 
     BackHandler(onBack = { navController.popBackStack() })
 
@@ -172,9 +182,12 @@ fun PdfPreviewScreen(
                 modifier = Modifier.padding(40.dp)
             )
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !isZoomed
+            ) {
                 items(renderer.pageCount) { index ->
-                    PdfPage(renderer, index)
+                    ZoomablePdfPage(renderer, index, isZoomed, onZoomChanged = { isZoomed = it })
                 }
             }
         }
@@ -200,9 +213,14 @@ fun PdfPreviewScreen(
     )
 }
 
-/** 单页渲染：按页面物理尺寸以 2x 渲染到 Bitmap，铺满屏宽展示 */
+/** 单页渲染 + 双指缩放/单指拖动 */
 @Composable
-private fun PdfPage(renderer: PdfRenderer, index: Int) {
+private fun ZoomablePdfPage(
+    renderer: PdfRenderer,
+    index: Int,
+    isZoomed: Boolean,
+    onZoomChanged: (Boolean) -> Unit
+) {
     val pageCount = renderer.pageCount
     val bitmap = remember(renderer, index) {
         var bmp: Bitmap? = null
@@ -220,9 +238,65 @@ private fun PdfPage(renderer: PdfRenderer, index: Int) {
         } catch (_: Exception) { }
         bmp
     }
-    bitmap?.let { bmp ->
+    bitmap?.let { bmp -> ZoomablePdfImage(bmp, isZoomed, onZoomChanged) }
+}
+
+/** 可缩放图片：双指捏合缩放(1~6 倍)，放大后单指拖动平移；未放大时不拦截，列表可滚动 */
+@Composable
+private fun ZoomablePdfImage(
+    bitmap: Bitmap,
+    isZoomed: Boolean,
+    onZoomChanged: (Boolean) -> Unit
+) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) break
+                        if (pressed.size >= 2) {
+                            // 双指缩放 + 平移（以双指中心为基准）
+                            val c0 = pressed[0]
+                            val c1 = pressed[1]
+                            val prevDist = (c0.previousPosition - c1.previousPosition).getDistance()
+                            val curDist = (c0.position - c1.position).getDistance()
+                            val zoom = if (prevDist > 0f) curDist / prevDist else 1f
+                            val midPrev = (c0.previousPosition + c1.previousPosition) / 2f
+                            val midCur = (c0.position + c1.position) / 2f
+                            val newScale = (scale * zoom).coerceIn(1f, 6f)
+                            scale = newScale
+                            if (newScale > 1f) {
+                                offset += (midCur - midPrev)
+                            } else {
+                                scale = 1f
+                                offset = Offset.Zero
+                            }
+                            onZoomChanged(scale > 1f)
+                            pressed.forEach { if (it.positionChanged()) it.consume() }
+                        } else if (scale > 1f) {
+                            // 放大后单指拖动平移
+                            val c = pressed[0]
+                            offset += (c.position - c.previousPosition)
+                            if (c.positionChanged()) c.consume()
+                        }
+                        // 未放大时单指不消费，交给列表滚动
+                    }
+                }
+            }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offset.x
+                translationY = offset.y
+            }
+    ) {
         Image(
-            bitmap = bmp.asImageBitmap(),
+            bitmap = bitmap.asImageBitmap(),
             contentDescription = null,
             contentScale = ContentScale.Fit,
             modifier = Modifier
