@@ -20,6 +20,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -145,18 +146,22 @@ fun HomeScreen(
                 return Offset.Zero
             }
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                // 滚动内容时若非「下拉固定」状态且头部开着则收起（固定状态下保持不动，直到再下拉收起）
+                // 滚动内容时若非「下拉固定」状态且头部开着则平滑收起（无回弹）
                 if (homeScrollState.value > 0f && brandProgress.value > 0f && !brandExpanded) {
-                    headerScope.launch { brandProgress.animateTo(0f, bounceSpring) }
+                    headerScope.launch { brandProgress.animateTo(0f, tween(durationMillis = 240)) }
                 }
                 return Offset.Zero
             }
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (homeScrollState.value <= 0f && brandProgress.value > 0f) {
                     headerScope.launch {
-                        // 拉到底＝切换：无论松手位置，当前收则展开并固定，展开则收起（不再依赖松手位置误判）
+                        // 拉到底＝切换：展开带回弹，收起用平滑动画（不再弹出 logo）
                         brandExpanded = !brandExpanded
-                        brandProgress.animateTo(if (brandExpanded) 1f else 0f, bounceSpring)
+                        if (brandExpanded) {
+                            brandProgress.animateTo(1f, bounceSpring)
+                        } else {
+                            brandProgress.animateTo(0f, tween(durationMillis = 280))
+                        }
                     }
                     return available
                 }
