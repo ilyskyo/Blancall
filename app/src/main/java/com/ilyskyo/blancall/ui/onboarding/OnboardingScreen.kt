@@ -63,8 +63,8 @@ private val ONBOARDING_PAGES = listOf(
         subtitle = "一屏掌握你的背诵进度",
         features = listOf(
             "顶部搜索：秒查标题、正文与添加日期",
-            "「添加」「设置」就在搜索栏旁，随时可导入、可设置，无需下拉",
-            "下拉露出品牌栏（logo · 设置），更多空间留给内容"
+            "「添加」按钮就在搜索栏旁，可随时导入文章",
+            "下拉露出品牌栏：logo 与「设置」，设置需下拉可见"
         )
     ),
     OnboardingPage(
@@ -149,29 +149,22 @@ fun OnboardingScreen(
         AmbientBackground()
 
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-            // ── 顶部：左上「欢迎使用 Blancall」品牌标题(与帮助欢迎页同位) + 右上跳过 ──
+            // ── 顶部：与「帮助-欢迎使用」页同位同字号的品牌标题 + 右上跳过 ──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "欢迎使用",
-                        style = MaterialTheme.typography.headlineSmall,
+                        "欢迎使用 Blancall",
+                        style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "B L A N C A L L",
-                        style = MaterialTheme.typography.headlineSmall,
-                        letterSpacing = 6.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "先花几分钟，了解基本用法",
+                        "先花几分钟了解基本用法，即可开始背诵",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Surface(
