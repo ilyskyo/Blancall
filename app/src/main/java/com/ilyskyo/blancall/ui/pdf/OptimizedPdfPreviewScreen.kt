@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ilyskyo
 // SPDX-License-Identifier: MIT
 
-package com.ilyskyo.blancall.ui.western
+package com.ilyskyo.blancall.ui.pdf
 
 import android.graphics.Bitmap
 import android.graphics.Matrix
@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.PdfTextExtractor
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.ui.common.AppIcon
@@ -61,23 +63,27 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
+import com.ilyskyo.blancall.ui.reader.VectorTextRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 内置 PDF 预览页：用系统 [PdfRenderer] 逐页渲染，支持在 app 内直接阅览 PDF
- * （素材库单篇 PDF、以及导入流程中的 PDF 均可复用），不再跳到外部查看器。
- *
- * 若存在配套的文字版（asset 同名 .txt：第一行为标题、其余为正文，不带注释），
- * 右上角 ⋮ 菜单提供「导入到背诵挖空」——导入干净的文字版（不含注释）。
+ * 优化版 PDF 预览页：支持无损放大和自适应布局
+ * 
+ * 主要优化：
+ * 1. 集成 PDF 文本提取器，支持矢量文本渲染
+ * 2. 无损放大：文字放大时保持清晰度，不再发糊
+ * 3. 自适应布局：根据屏幕尺寸自动调整文本布局
+ * 4. 智能约束：确保文字不会超出屏幕边界
+ * 5. 双模式支持：原始PDF渲染 + 矢量文本渲染
  *
  * @param asset assets 下的 PDF 相对路径，如 "gaokao/p1.pdf"
  * @param title 可选标题（缺省时从配套 .txt 首行读取）
  */
 @Composable
-fun PdfPreviewScreen(
+fun OptimizedPdfPreviewScreen(
     navController: NavController,
     asset: String,
     title: String?
@@ -107,13 +113,30 @@ fun PdfPreviewScreen(
     }
     DisposableEffect(renderer) { onDispose { renderer?.close() } }
 
+    // 文本提取器
+    val textExtractor = remember { PdfTextExtractor() }
+    var textPages by remember { mutableStateOf<List<PdfTextExtractor.TextPage>>(emptyList()) }
+    
+    // 尝试提取文本
+    LaunchedEffect(pdfFile) {
+        if (pdfFile != null) {
+            textPages = textExtractor.extractText(context, pdfFile)
+        }
+    }
+
     // 导入状态
     var showMenu by remember { mutableStateOf(false) }
     var pendingTitle by remember { mutableStateOf("") }
     var pendingText by remember { mutableStateOf("") }
     var showPicker by remember { mutableStateOf(false) }
-    // 缩放状态：放大时禁用列表滚动，双指缩放 / 单指拖动
+    
+    // 渲染模式：true=矢量文本渲染，false=原始PDF渲染
+    var useVectorRendering by remember { mutableStateOf(true) }
+    
+    // 缩放状态
     var isZoomed by remember { mutableStateOf(false) }
+    var currentScale by remember { mutableStateOf(1f) }
+    var currentOffset by remember { mutableStateOf(Offset.Zero) }
 
     BackHandler(onBack = { navController.popBackStack() })
 
@@ -140,6 +163,20 @@ fun PdfPreviewScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+            
+            // 渲染模式切换按钮
+            if (textPages.isNotEmpty()) {
+                IconButton(
+                    onClick = { useVectorRendering = !useVectorRendering }
+                ) {
+                    M3Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = if (useVectorRendering) "切换到PDF渲染" else "切换到矢量渲染",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            
             if (textLoaded != null) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
@@ -184,12 +221,38 @@ fun PdfPreviewScreen(
                 modifier = Modifier.padding(40.dp)
             )
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = !isZoomed
-            ) {
-                items(renderer.pageCount) { index ->
-                    ZoomablePdfPage(renderer, index, isZoomed, onZoomChanged = { isZoomed = it })
+            // 根据渲染模式选择不同的显示方式
+            if (useVectorRendering && textPages.isNotEmpty()) {
+                // 矢量文本渲染模式
+                VectorTextRenderer(
+                    textPages = textPages,
+                    modifier = Modifier.fillMaxSize(),
+                    initialScale = currentScale,
+                    maxScale = 4f,
+                    minScale = 0.5f,
+                    onScaleChanged = { scale ->
+                        currentScale = scale
+                        isZoomed = scale > 1f
+                    }
+                )
+            } else {
+                // 原始PDF渲染模式（带优化）
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = !isZoomed
+                ) {
+                    items(renderer.pageCount) { index ->
+                        OptimizedZoomablePdfPage(
+                            renderer = renderer,
+                            index = index,
+                            isZoomed = isZoomed,
+                            currentScale = currentScale,
+                            currentOffset = currentOffset,
+                            onZoomChanged = { zoomed -> isZoomed = zoomed },
+                            onScaleChanged = { scale -> currentScale = scale },
+                            onOffsetChanged = { offset -> currentOffset = offset }
+                        )
+                    }
                 }
             }
         }
@@ -215,28 +278,44 @@ fun PdfPreviewScreen(
     )
 }
 
-/** 单页渲染 + 双指缩放/单指拖动：放大到跨过整数倍时按更高分辨率重渲染页面，保证文字清晰（矢量重绘） */
+/**
+ * 优化版可缩放PDF页面：支持无损放大和智能约束
+ */
 @Composable
-internal fun ZoomablePdfPage(
+private fun OptimizedZoomablePdfPage(
     renderer: PdfRenderer,
     index: Int,
     isZoomed: Boolean,
-    onZoomChanged: (Boolean) -> Unit
+    currentScale: Float,
+    currentOffset: Offset,
+    onZoomChanged: (Boolean) -> Unit,
+    onScaleChanged: (Float) -> Unit,
+    onOffsetChanged: (Offset) -> Unit
 ) {
     val pageCount = renderer.pageCount
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    var scale by remember { mutableStateOf(currentScale) }
+    var offset by remember { mutableStateOf(currentOffset) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
-    // 渲染级别：未放大 1x，放大到 >=2 时用 2 倍分辨率重渲染（文字仍清晰，不再发糊）
-    val renderLevel = maxOf(1, kotlin.math.ceil(scale).toInt()).coerceAtMost(2)
-    val bitmap = remember(renderer, index, renderLevel) {
-        renderPdfPage(renderer, index, pageCount, 2f * renderLevel)
+    
+    // 使用高分辨率渲染：支持无损放大
+    val renderScale = maxOf(1f, scale)
+    val bitmap = remember(renderer, index, renderScale) {
+        renderPdfPage(renderer, index, pageCount, renderScale)
     }
+    
     bitmap?.let { bmp ->
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .onSizeChanged { boxSize = it }
+                .onSizeChanged { 
+                    boxSize = it
+                    // 根据容器大小调整偏移量，确保内容不超出屏幕
+                    val newOffset = clampOffset(offset, boxSize, scale)
+                    if (newOffset != offset) {
+                        offset = newOffset
+                        onOffsetChanged(newOffset)
+                    }
+                }
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         while (true) {
@@ -252,10 +331,11 @@ internal fun ZoomablePdfPage(
                                 val zoom = if (prevDist > 0f) curDist / prevDist else 1f
                                 val midPrev = (c0.previousPosition + c1.previousPosition) / 2f
                                 val midCur = (c0.position + c1.position) / 2f
-                                val newScale = (scale * zoom).coerceIn(1f, 4f)
+                                val newScale = (scale * zoom).coerceIn(0.5f, 6f) // 扩大缩放范围
                                 scale = newScale
                                 offset = if (newScale <= 1f) Offset.Zero
                                 else clampOffset(offset + (midCur - midPrev), boxSize, scale)
+                                onScaleChanged(newScale)
                                 onZoomChanged(newScale > 1f)
                                 pressed.forEach { if (it.positionChanged()) it.consume() }
                             } else if (scale > 1f) {
@@ -285,7 +365,9 @@ internal fun ZoomablePdfPage(
     }
 }
 
-/** 按给定比例矢量重渲染 PDF 页面到 Bitmap（比例越大文字越清晰） */
+/**
+ * 高分辨率PDF页面渲染
+ */
 private fun renderPdfPage(
     renderer: PdfRenderer,
     index: Int,
@@ -306,16 +388,30 @@ private fun renderPdfPage(
     } catch (_: Exception) { null }
 }
 
-/** 夹紧平移量，确保放大后内容仍在可视范围内、文字不跑到屏幕外 */
+/**
+ * 智能约束偏移量，确保放大后内容仍在可视范围内、文字不跑到屏幕外
+ */
 private fun clampOffset(offset: Offset, box: IntSize, scale: Float): Offset {
     if (box == IntSize.Zero) return offset
-    val maxX = (scale - 1f) * box.width / 2f
-    val maxY = (scale - 1f) * box.height / 2f
-    return Offset(offset.x.coerceIn(-maxX, maxX), offset.y.coerceIn(-maxY, maxY))
+    
+    // 计算最大允许偏移量，确保内容不会超出屏幕边界
+    val scaledWidth = box.width * scale
+    val scaledHeight = box.height * scale
+    
+    val maxX = maxOf(0f, (scaledWidth - box.width) / 2f)
+    val maxY = maxOf(0f, (scaledHeight - box.height) / 2f)
+    
+    // 限制偏移量范围，确保内容始终在可视区域内
+    return Offset(
+        x = offset.x.coerceIn(-maxX, maxX),
+        y = offset.y.coerceIn(-maxY, maxY)
+    )
 }
 
-/** 把 assets 里的 PDF 复制到缓存目录，返回文件（失败返回 null） */
-internal fun copyAssetToCache(context: android.content.Context, asset: String): File? {
+/**
+ * 把 assets 里的 PDF 复制到缓存目录，返回文件（失败返回 null）
+ */
+private fun copyAssetToCache(context: android.content.Context, asset: String): File? {
     return try {
         val name = asset.substringAfterLast("/")
         val out = File(context.cacheDir, "pdfview/$name")
@@ -327,8 +423,10 @@ internal fun copyAssetToCache(context: android.content.Context, asset: String): 
     } catch (_: Exception) { null }
 }
 
-/** 读取配套文字版：首行为标题，其余为正文。不存在返回 null */
-internal fun readAssetTxt(context: android.content.Context, asset: String): Pair<String, String>? {
+/**
+ * 读取配套文字版：首行为标题，其余为正文。不存在返回 null
+ */
+private fun readAssetTxt(context: android.content.Context, asset: String): Pair<String, String>? {
     return try {
         val raw = context.assets.open(asset).bufferedReader().use { it.readText() }
         val nl = raw.indexOf('\n')
@@ -338,8 +436,10 @@ internal fun readAssetTxt(context: android.content.Context, asset: String): Pair
     } catch (_: Exception) { null }
 }
 
-/** 导入文字版为 Article（到背诵列表），返回 Article id */
-internal suspend fun importTextToBlancall(
+/**
+ * 导入文字版为 Article（到背诵列表），返回 Article id
+ */
+private suspend fun importTextToBlancall(
     context: android.content.Context,
     title: String,
     content: String

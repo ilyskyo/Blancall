@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.PdfTextExtractor
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.ui.common.AppIcon
@@ -61,23 +63,27 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
+import com.ilyskyo.blancall.ui.reader.VectorTextRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 内置 PDF 预览页：用系统 [PdfRenderer] 逐页渲染，支持在 app 内直接阅览 PDF
- * （素材库单篇 PDF、以及导入流程中的 PDF 均可复用），不再跳到外部查看器。
- *
- * 若存在配套的文字版（asset 同名 .txt：第一行为标题、其余为正文，不带注释），
- * 右上角 ⋮ 菜单提供「导入到背诵挖空」——导入干净的文字版（不含注释）。
- *
+ * 优化的 PDF 预览页：支持矢量文本渲染和无损放大
+ * 
+ * 主要改进：
+ * 1. 文本提取：从 PDF 中提取文本层，支持无损放大
+ * 2. 矢量渲染：放大时保持文字清晰度，不出现像素化
+ * 3. 自适应布局：根据屏幕尺寸自动调整文本布局
+ * 4. 智能缩放：支持手势缩放和自动适配
+ * 5. 双模式切换：可在 PDF 渲染和文本渲染间切换
+ * 
  * @param asset assets 下的 PDF 相对路径，如 "gaokao/p1.pdf"
  * @param title 可选标题（缺省时从配套 .txt 首行读取）
  */
 @Composable
-fun PdfPreviewScreen(
+fun PdfPreviewScreenOptimized(
     navController: NavController,
     asset: String,
     title: String?
@@ -91,7 +97,7 @@ fun PdfPreviewScreen(
         if (direct.exists()) direct else copyAssetToCache(context, asset)
     }
 
-    // 配套文字版（如有）：Pair(标题, 正文)
+    // 配套文字版（如有）：Pair(标题, 正文）
     val textLoaded = remember(asset) {
         readAssetTxt(context, asset.removeSuffix(".pdf") + ".txt")
     }
@@ -107,6 +113,20 @@ fun PdfPreviewScreen(
     }
     DisposableEffect(renderer) { onDispose { renderer?.close() } }
 
+    // 文本提取器
+    val textExtractor = remember { PdfTextExtractor() }
+    var textPages by remember { mutableStateOf<List<PdfTextExtractor.TextPage>>(emptyList()) }
+    
+    // 提取文本（异步）
+    LaunchedEffect(pdfFile) {
+        if (pdfFile != null) {
+            val extracted = withContext(Dispatchers.IO) {
+                textExtractor.extractText(context, pdfFile)
+            }
+            textPages = extracted
+        }
+    }
+
     // 导入状态
     var showMenu by remember { mutableStateOf(false) }
     var pendingTitle by remember { mutableStateOf("") }
@@ -114,6 +134,8 @@ fun PdfPreviewScreen(
     var showPicker by remember { mutableStateOf(false) }
     // 缩放状态：放大时禁用列表滚动，双指缩放 / 单指拖动
     var isZoomed by remember { mutableStateOf(false) }
+    // 渲染模式：true = 矢量文本渲染，false = 原始 PDF 渲染
+    var useVectorRendering by remember { mutableStateOf(false) }
 
     BackHandler(onBack = { navController.popBackStack() })
 
@@ -140,6 +162,18 @@ fun PdfPreviewScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+            
+            // 渲染模式切换按钮（仅在文本提取成功时显示）
+            if (textPages.isNotEmpty()) {
+                IconButton(onClick = { useVectorRendering = !useVectorRendering }) {
+                    M3Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = if (useVectorRendering) "切换到 PDF 渲染" else "切换到文本渲染",
+                        tint = if (useVectorRendering) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
             if (textLoaded != null) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
@@ -183,7 +217,20 @@ fun PdfPreviewScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(40.dp)
             )
+        } else if (useVectorRendering && textPages.isNotEmpty()) {
+            // 使用矢量文本渲染（无损放大）
+            VectorTextRenderer(
+                textPages = textPages,
+                modifier = Modifier.fillMaxSize(),
+                initialScale = 1f,
+                maxScale = 3f,
+                minScale = 0.5f,
+                onScaleChanged = { scale ->
+                    isZoomed = scale > 1f
+                }
+            )
         } else {
+            // 使用原始 PDF 渲染（兼容性保证）
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 userScrollEnabled = !isZoomed
@@ -213,141 +260,4 @@ fun PdfPreviewScreen(
             pendingText = ""
         }
     )
-}
-
-/** 单页渲染 + 双指缩放/单指拖动：放大到跨过整数倍时按更高分辨率重渲染页面，保证文字清晰（矢量重绘） */
-@Composable
-internal fun ZoomablePdfPage(
-    renderer: PdfRenderer,
-    index: Int,
-    isZoomed: Boolean,
-    onZoomChanged: (Boolean) -> Unit
-) {
-    val pageCount = renderer.pageCount
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    var boxSize by remember { mutableStateOf(IntSize.Zero) }
-    // 渲染级别：未放大 1x，放大到 >=2 时用 2 倍分辨率重渲染（文字仍清晰，不再发糊）
-    val renderLevel = maxOf(1, kotlin.math.ceil(scale).toInt()).coerceAtMost(2)
-    val bitmap = remember(renderer, index, renderLevel) {
-        renderPdfPage(renderer, index, pageCount, 2f * renderLevel)
-    }
-    bitmap?.let { bmp ->
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .onSizeChanged { boxSize = it }
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val pressed = event.changes.filter { it.pressed }
-                            if (pressed.isEmpty()) break
-                            if (pressed.size >= 2) {
-                                // 双指缩放 + 平移（以双指中心为基准）
-                                val c0 = pressed[0]
-                                val c1 = pressed[1]
-                                val prevDist = (c0.previousPosition - c1.previousPosition).getDistance()
-                                val curDist = (c0.position - c1.position).getDistance()
-                                val zoom = if (prevDist > 0f) curDist / prevDist else 1f
-                                val midPrev = (c0.previousPosition + c1.previousPosition) / 2f
-                                val midCur = (c0.position + c1.position) / 2f
-                                val newScale = (scale * zoom).coerceIn(1f, 4f)
-                                scale = newScale
-                                offset = if (newScale <= 1f) Offset.Zero
-                                else clampOffset(offset + (midCur - midPrev), boxSize, scale)
-                                onZoomChanged(newScale > 1f)
-                                pressed.forEach { if (it.positionChanged()) it.consume() }
-                            } else if (scale > 1f) {
-                                // 放大后单指拖动平移
-                                val c = pressed[0]
-                                offset = clampOffset(offset + (c.position - c.previousPosition), boxSize, scale)
-                                if (c.positionChanged()) c.consume()
-                            }
-                            // 未放大时单指不消费，交给列表滚动
-                        }
-                    }
-                }
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                }
-        ) {
-            Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-/** 按给定比例矢量重渲染 PDF 页面到 Bitmap（比例越大文字越清晰） */
-private fun renderPdfPage(
-    renderer: PdfRenderer,
-    index: Int,
-    pageCount: Int,
-    scale: Float
-): Bitmap? {
-    return try {
-        if (index < pageCount) {
-            val page = renderer.openPage(index)
-            val w = page.width.toFloat() * scale
-            val h = page.height.toFloat() * scale
-            val bmp = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
-            val m = Matrix().apply { postScale(scale, scale) }
-            page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            page.close()
-            bmp
-        } else null
-    } catch (_: Exception) { null }
-}
-
-/** 夹紧平移量，确保放大后内容仍在可视范围内、文字不跑到屏幕外 */
-private fun clampOffset(offset: Offset, box: IntSize, scale: Float): Offset {
-    if (box == IntSize.Zero) return offset
-    val maxX = (scale - 1f) * box.width / 2f
-    val maxY = (scale - 1f) * box.height / 2f
-    return Offset(offset.x.coerceIn(-maxX, maxX), offset.y.coerceIn(-maxY, maxY))
-}
-
-/** 把 assets 里的 PDF 复制到缓存目录，返回文件（失败返回 null） */
-internal fun copyAssetToCache(context: android.content.Context, asset: String): File? {
-    return try {
-        val name = asset.substringAfterLast("/")
-        val out = File(context.cacheDir, "pdfview/$name")
-        out.parentFile?.mkdirs()
-        context.assets.open(asset).use { input ->
-            out.outputStream().use { output -> input.copyTo(output) }
-        }
-        out
-    } catch (_: Exception) { null }
-}
-
-/** 读取配套文字版：首行为标题，其余为正文。不存在返回 null */
-internal fun readAssetTxt(context: android.content.Context, asset: String): Pair<String, String>? {
-    return try {
-        val raw = context.assets.open(asset).bufferedReader().use { it.readText() }
-        val nl = raw.indexOf('\n')
-        val title = if (nl >= 0) raw.substring(0, nl).trim() else raw.trim()
-        val body = if (nl >= 0) raw.substring(nl + 1).trim() else ""
-        if (body.isBlank()) null else title to body
-    } catch (_: Exception) { null }
-}
-
-/** 导入文字版为 Article（到背诵列表），返回 Article id */
-internal suspend fun importTextToBlancall(
-    context: android.content.Context,
-    title: String,
-    content: String
-): Long = withContext(Dispatchers.IO) {
-    try {
-        val repo = ArticleRepository.getInstance(
-            context.filesDir.resolve("articles.json").absolutePath
-        )
-        repo.insert(Article(title = title.ifBlank { "未命名" }, content = content))
-    } catch (_: Exception) { -1L }
 }
