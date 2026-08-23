@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
@@ -36,7 +35,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,7 +49,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.semantics.contentDescription
@@ -79,13 +76,6 @@ import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.common.listItemEnter
 import com.ilyskyo.blancall.ui.common.rememberHaptic
-import com.ilyskyo.blancall.ui.common.RevealPhase
-import com.ilyskyo.blancall.ui.common.TouchRevealHost
-import com.ilyskyo.blancall.ui.common.rememberTouchRevealState
-import com.ilyskyo.blancall.ui.common.toTouchAnchor
-import com.ilyskyo.blancall.ui.ai.AiHistoryScreen
-import com.ilyskyo.blancall.ui.list.ListScreen
-import com.ilyskyo.blancall.ui.statistics.OverviewScreen
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
@@ -110,12 +100,8 @@ data class ResumableItem(
 @Composable
 fun HomeScreen(
     navController: NavController,
-    // 底部导航模式：隐藏左下角三个入口按钮（入口已迁移到底部导航栏）
-    hideEntryButtons: Boolean = false
 ) {
     val articleViewModel: ArticleViewModel = viewModel()
-    // AI 功能开关（左下角 AI 历史入口联动）
-    val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
     val articles by articleViewModel.articles.collectAsState()
     val context = LocalContext.current
     val recordRepo = remember { RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath) }
@@ -238,34 +224,6 @@ fun HomeScreen(
     var showModePicker by remember { mutableStateOf(false) }
     var pendingPracticeArticleId by remember { mutableStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
-    var aiFabRect by remember { mutableStateOf(Rect.Zero) }
-    // 触点展开转场：左下角圆形按钮 → 目标页面（触点为源的反向展开动画）
-    val revealState = rememberTouchRevealState()
-    // 展开状态跨导航保存：进入练习/阅读页返回后仍保持目标页展开（回全局统计/我的文章）
-    var revealTarget by rememberSaveable { mutableStateOf<String?>(null) }
-    var savedRevealPhase by rememberSaveable { mutableStateOf("Idle") }
-    var savedRevealAx by rememberSaveable { mutableStateOf(0f) }
-    var savedRevealAy by rememberSaveable { mutableStateOf(0f) }
-
-    // 返回恢复 + 同步展开状态（合并为单一 effect，恢复先于同步执行，
-    // 避免 savedRevealPhase 被当前 Idle 状态覆盖导致恢复失效；
-    // restore 修改 phase 会重新触发本 effect，二次执行时 phase 已非 Idle，不会重复恢复）
-    // 底部导航模式：不恢复触点展开状态（入口按钮已隐藏，无触点可用，恢复会导致首页被目标页覆盖“卡没”）
-    LaunchedEffect(revealState.phase, revealState.anchor) {
-        if (!hideEntryButtons &&
-            revealState.phase == RevealPhase.Idle &&
-            savedRevealPhase == RevealPhase.Expanded.name && revealTarget != null
-        ) {
-            revealState.restore(RevealPhase.Expanded, savedRevealAx, savedRevealAy)
-        }
-        savedRevealPhase = revealState.phase.name
-        revealState.anchor?.let {
-            savedRevealAx = it.centerX
-            savedRevealAy = it.centerY
-        }
-    }
-    var listFabRect by remember { mutableStateOf(Rect.Zero) }
-    var statsFabRect by remember { mutableStateOf(Rect.Zero) }
     // 长按文章卡片 → "从首页删除"选项卡
     var hideFromHomeTarget by remember { mutableStateOf<Article?>(null) }
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
@@ -484,7 +442,7 @@ fun HomeScreen(
     ) {
         // 毛玻璃氛围背景（背景色之上、内容之下）
         AmbientBackground()
-        // 内层：首页内容（带安全区 padding），TouchRevealHost 在外层全屏以避免与目标页 statusBarsPadding 双重叠加
+        // 内层：首页内容（带安全区 padding），外层全屏 Box 承载 AmbientBackground 氛围背景
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -937,69 +895,7 @@ fun HomeScreen(
         }
     }
 
-        // 左下角：入口按钮组（AI 历史 + 我的文章 + 全局统计），均使用触点展开转场。
-        // 位置固定：屏幕左下方，比屏幕底部稍上移一点（不与底部贴死）
-        // 底部导航模式（hideEntryButtons）：隐藏入口按钮，入口已迁移到底部导航栏
-        if (!hideEntryButtons) {
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // AI 历史对话入口（启用 AI 且开启「保存与 AI 的对话」时才显示）
-            val aiHistoryEnabled by AppPrefs.aiHistoryEnabledFlow.collectAsState()
-            if (aiEnabled && aiHistoryEnabled) {
-                GlassEntryButton(
-                    label = "AI",
-                    onClick = {
-                        // 与文章/数据一致：触点为源的反向展开动画
-                        revealTarget = "ai_history"
-                        revealState.expand(aiFabRect.toTouchAnchor())
-                    },
-                    modifier = Modifier
-                        .onGloballyPositioned { aiFabRect = it.boundsInWindow() }
-                        .semantics { contentDescription = "AI 历史对话" }
-                )
-            }
-            // 玻璃入口按钮：与右上角 GlassButton 同款磨砂质感，文字 + 主色短横线
-            GlassEntryButton(
-                label = "文章",
-                onClick = {
-                    // 触点为源的反向展开：点击位置 = 展开起点
-                    revealTarget = "list"
-                    revealState.expand(listFabRect.toTouchAnchor())
-                },
-                modifier = Modifier
-                    .onGloballyPositioned { listFabRect = it.boundsInWindow() }
-                    .semantics { contentDescription = "查看全部文章" }
-            )
-            GlassEntryButton(
-                label = "数据",
-                onClick = {
-                    revealTarget = "overview"
-                    revealState.expand(statsFabRect.toTouchAnchor())
-                },
-                modifier = Modifier
-                    .onGloballyPositioned { statsFabRect = it.boundsInWindow() }
-                    .semantics { contentDescription = "全局学习统计" }
-            )
-        }
-        } // hideEntryButtons 条件闭合
         } // 内层首页内容 Box 闭合
-
-        // 触点展开转场宿主：全屏渲染目标页面（目标页自己处理 statusBarsPadding，避免双重叠加）
-        TouchRevealHost(
-            state = revealState,
-            target = {
-                when (revealTarget) {
-                    // 触点展开方式进入：返回键/系统返回手势均通过 collapse 收起（popBackStack 在栈底无效）
-                    "list" -> ListScreen(navController, onBack = { revealState.collapse() })
-                    "overview" -> OverviewScreen(navController, onBack = { revealState.collapse() })
-                    "ai_history" -> AiHistoryScreen(navController, onBack = { revealState.collapse() })
-                }
-            }
-        )
     }
 
     // 长按"从首页删除"选项卡
@@ -1188,72 +1084,6 @@ private fun HomeArticleCard(
                     Text("开始练习", style = MaterialTheme.typography.labelSmall)
                 }
             }
-        }
-    }
-}
-
-/**
- * 玻璃入口按钮（左下角「文章 / 数据」）：与右上角 GlassButton 同款磨砂质感，
- * 半透明底 + 顶部高光 + 细描边 + 大圆角，文字 + 底部主色短横线，克制的品牌感入口。
- */
-@Composable
-private fun GlassEntryButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val isDark = isSystemInDarkTheme()
-    val highlightColor = if (isDark) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-    } else {
-        Color.White.copy(alpha = 0.18f)
-    }
-    val bgColor = if (isDark) {
-        MaterialTheme.colorScheme.surface.copy(alpha = GLASS_ALPHA_DARK)
-    } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = GLASS_ALPHA_LIGHT)
-    }
-    val shape = RoundedCornerShape(14.dp)
-
-    Box(
-        modifier = modifier
-            .size(44.dp)
-            .clip(shape)
-            .background(bgColor)
-            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(),
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        // 顶部高光：玻璃上缘反光（matchParentSize 不参与测量，不会撑大按钮）
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0f to highlightColor,
-                            0.5f to Color.Transparent
-                        )
-                    )
-                )
-        )
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(3.dp))
-            Box(
-                modifier = Modifier
-                    .size(width = 10.dp, height = 2.dp)
-                    .clip(RoundedCornerShape(1.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-            )
         }
     }
 }

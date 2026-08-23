@@ -307,13 +307,8 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 底部导航模式：三页面并列，无需返回键（返回首页按底部导航即可）
-                val bottomNavEnabled by AppPrefs.bottomNavEnabledFlow.collectAsState()
-                if (!bottomNavEnabled) {
-                    // 触点展开方式进入时由 onBack 收起（popBackStack 在栈底无效）
-                    BackButton(onClick = { onBack?.invoke() ?: navController.popBackStack() })
-                    Spacer(Modifier.width(12.dp))
-                }
+                // 底部导航固定启用：OverviewScreen 作为底部导航 tab，无返回键（切 home 即返回）
+
                 Text(
                     "全局统计",
                     style = MaterialTheme.typography.headlineMedium,

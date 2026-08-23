@@ -85,10 +85,6 @@ object AppPrefs {
     /** 练习评级方式：true=默写相似度→四档（FSRS-6 默认）；false=旧正确率→四档（回退） */
     val useSimilarityRatingFlow: StateFlow<Boolean> = _useSimilarityRatingFlow.asStateFlow()
 
-    private val _bottomNavEnabledFlow = MutableStateFlow(true)
-    /** 底部导航栏开关：开启后底部显示 首页/我的文章/数据 三个入口，首页左下角入口按钮隐藏 */
-    val bottomNavEnabledFlow: StateFlow<Boolean> = _bottomNavEnabledFlow.asStateFlow()
-
     private val _builtInLibraryEnabledFlow = MutableStateFlow(false)
     /** 内置素材库开关：开启后底部导航栏新增「素材库」入口，可在应用内离线查看内置的西方思想素材 */
     val builtInLibraryEnabledFlow: StateFlow<Boolean> = _builtInLibraryEnabledFlow.asStateFlow()
@@ -115,7 +111,6 @@ object AppPrefs {
         _aiHistoryEnabledFlow.value = prefs.getBoolean("ai_history_enabled", false)
         _aiSearchEnabledFlow.value = prefs.getBoolean("ai_search_enabled", false)
         _useSimilarityRatingFlow.value = prefs.getBoolean("use_similarity_rating", true)
-        _bottomNavEnabledFlow.value = prefs.getBoolean("bottom_nav_enabled", true)
         _builtInLibraryEnabledFlow.value = prefs.getBoolean("built_in_library_enabled", false)
         _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
     }
@@ -262,16 +257,6 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("use_similarity_rating", value) }
                 _useSimilarityRatingFlow.value = value
-            }
-        }
-
-    /** 底部导航栏开关（开启后底部出现 首页/我的文章/数据 导航） */
-    var bottomNavEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("bottom_nav_enabled", true) else true
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putBoolean("bottom_nav_enabled", value) }
-                _bottomNavEnabledFlow.value = value
             }
         }
 

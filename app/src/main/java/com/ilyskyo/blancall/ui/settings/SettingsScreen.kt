@@ -134,32 +134,7 @@ fun SettingsScreen(navController: NavController) {
                         )
                     }
 
-                    HorizontalDivider(
-                        Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                    )
-
-                    // 底部导航栏开关：开启后底部显示 首页/我的文章/数据，首页左下角入口按钮隐藏
-                    val bottomNavEnabled by AppPrefs.bottomNavEnabledFlow.collectAsState()
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("底部导航栏", style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface)
-                            Text("关闭后，在首页左下角通过入口按钮进入各页面",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = bottomNavEnabled,
-                            onCheckedChange = { AppPrefs.bottomNavEnabled = it }
-                        )
-                    }
-
-                    // 内置素材库开关：开启后底部导航栏新增「素材库」入口，可离线查看内置的西方思想素材
+                    // 底部导航栏固定启用，不再提供设置开关。素材库开关下移一格即承接上面区块分隔。
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     val builtInLibraryEnabled by AppPrefs.builtInLibraryEnabledFlow.collectAsState()

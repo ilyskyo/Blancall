@@ -127,17 +127,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 底部导航模式：三页面并列，无需返回键（返回首页按底部导航即可）
-            val bottomNavEnabled by AppPrefs.bottomNavEnabledFlow.collectAsState()
-            if (!bottomNavEnabled) {
-                // 多选模式下返回按钮退出多选；否则返回上一页
-                // （触点展开方式进入时由 onBack 收起，导航方式进入时 popBackStack）
-                BackButton(onClick = {
-                    if (crossSelectMode) exitCrossSelect()
-                    else onBack?.invoke() ?: navController.popBackStack()
-                })
-                Spacer(Modifier.width(12.dp))
-            }
+            // 底部导航固定启用：ListScreen 作为底部导航 tab，无返回键（切 home 即返回）
+
             Text(
                 text = if (crossSelectMode) "已选 ${selectedIds.size} 篇" else "我的文章",
                 style = MaterialTheme.typography.headlineMedium,

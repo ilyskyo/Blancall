@@ -54,8 +54,6 @@ import com.ilyskyo.blancall.ui.viewmodel.SectionMode
 fun AppNavigation() {
     val navController = rememberNavController()
     val predictiveBack by AppPrefs.predictiveBackFlow.collectAsState()
-    // 底部导航栏开关（设置中可开：底部显示 首页/我的文章/数据）
-    val bottomNavEnabled by AppPrefs.bottomNavEnabledFlow.collectAsState()
     // 内置素材库开关（开启后底部导航栏追加「素材库」入口）
     val builtInLibraryEnabled by AppPrefs.builtInLibraryEnabledFlow.collectAsState()
     // 当前路由（用于底部导航栏高亮）
@@ -84,9 +82,7 @@ fun AppNavigation() {
         currentRoute == "philo" || currentRoute?.startsWith("philo_content/") == true -> 3
         else -> -1
     }
-    // 首页在底部导航模式下不再显示左下角入口按钮（入口已迁移到导航栏）。
-    // 注意：仅依赖开关状态，不依赖当前路由——否则进入设置等子页面时首页重组会导致入口按钮闪现
-    val hideHomeEntry = bottomNavEnabled
+    // 首页不再显示左下角入口按钮（入口已迁移到底部导航栏，导航栏固定启用）
 
     // tab 切换：回到根页面栈，避免子页面残留
     fun selectTab(index: Int) {
@@ -171,12 +167,12 @@ fun AppNavigation() {
     ) {
         composable(
             "home",
-            enterTransition = if (bottomNavEnabled) noneTransition else enterSlide,
-            exitTransition = if (bottomNavEnabled) noneExitTransition else exitSlide,
-            popExitTransition = if (bottomNavEnabled) noneExitTransition else popExitSlide,
-            popEnterTransition = if (bottomNavEnabled) noneTransition else popEnterSlide
+            enterTransition = noneTransition,
+            exitTransition = noneExitTransition,
+            popExitTransition = noneExitTransition,
+            popEnterTransition = noneTransition
         ) {
-            HomeScreen(navController, hideEntryButtons = hideHomeEntry)
+            HomeScreen(navController)
         }
 
         composable(
@@ -191,10 +187,10 @@ fun AppNavigation() {
 
         composable(
             "list",
-            enterTransition = if (bottomNavEnabled) noneTransition else enterSlide,
-            exitTransition = if (bottomNavEnabled) noneExitTransition else exitSlide,
-            popExitTransition = if (bottomNavEnabled) noneExitTransition else popExitSlide,
-            popEnterTransition = if (bottomNavEnabled) noneTransition else popEnterSlide
+            enterTransition = noneTransition,
+            exitTransition = noneExitTransition,
+            popExitTransition = noneExitTransition,
+            popEnterTransition = noneTransition
         ) {
             ListScreen(navController)
         }
@@ -274,10 +270,10 @@ fun AppNavigation() {
 
         composable(
             "overview",
-            enterTransition = if (bottomNavEnabled) noneTransition else enterSlide,
-            exitTransition = if (bottomNavEnabled) noneExitTransition else exitSlide,
-            popExitTransition = if (bottomNavEnabled) noneExitTransition else popExitSlide,
-            popEnterTransition = if (bottomNavEnabled) noneTransition else popEnterSlide
+            enterTransition = noneTransition,
+            exitTransition = noneExitTransition,
+            popExitTransition = noneExitTransition,
+            popEnterTransition = noneTransition
         ) {
             OverviewScreen(navController)
         }
@@ -328,10 +324,10 @@ fun AppNavigation() {
         // 与 home/list/overview 一样：底部导航模式下 tab 切换无动画，直接出现
         composable(
             "philo",
-            enterTransition = if (bottomNavEnabled) noneTransition else enterSlide,
-            exitTransition = if (bottomNavEnabled) noneExitTransition else exitSlide,
-            popExitTransition = if (bottomNavEnabled) noneExitTransition else popExitSlide,
-            popEnterTransition = if (bottomNavEnabled) noneTransition else popEnterSlide
+            enterTransition = noneTransition,
+            exitTransition = noneExitTransition,
+            popExitTransition = noneExitTransition,
+            popEnterTransition = noneTransition
         ) {
             WesternThoughtScreen(navController)
         }
@@ -445,7 +441,7 @@ fun AppNavigation() {
         } // close weight Box
 
         // ── 底部导航栏（设置中开启后显示，仅在三个根页面） ──
-        if (bottomNavEnabled && currentTab >= 0) {
+        if (currentTab >= 0) {
             BottomNavBar(
                 currentTab = currentTab,
                 onSelect = { selectTab(it) },
