@@ -149,11 +149,17 @@ fun OnboardingScreen(
         AmbientBackground()
 
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-            // ── 顶部：跳过 ──
+            // ── 顶部：左上角基本用法提示 + 右上角跳过 ──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.End
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(
+                    "先花几分钟，了解基本用法",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.weight(1f)
+                )
                 Surface(
                     onClick = finish,
                     shape = RoundedCornerShape(16.dp),
@@ -180,6 +186,18 @@ fun OnboardingScreen(
                     pageCount = pages.size,
                     accent = accent,
                     modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+            }
+
+            // ── 欢迎使用过渡（仅最后一张显示，与后续「帮助-欢迎使用」连贯）──
+            if (pagerState.currentPage == pages.size - 1) {
+                Text(
+                    "欢迎使用",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp)
                 )
             }
 
@@ -223,7 +241,9 @@ fun OnboardingScreen(
                     color = MaterialTheme.colorScheme.primary
                 ) {
                     Text(
-                        if (pagerState.currentPage < pages.size - 1) "下一步" else "开始使用",
+                        if (pagerState.currentPage < pages.size - 1) "下一步"
+                        else if (onFinish != null) "下一步"  // 欢迎流程内：后面还有「帮助-欢迎使用」页
+                        else "开始使用",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp)

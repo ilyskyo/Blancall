@@ -115,6 +115,8 @@ fun HomeScreen(
     val homeScrollState = rememberScrollState()
     // 展开比例 0..1（0=收起，仅显示搜索框；1=全开，显示 logo+导入+设置）
     val brandProgress = remember { Animatable(0f) }
+    // 品牌栏下拉固定状态：true=展开固定，false=收起；每次下拉松手即切换，不依赖松手位置
+    var brandExpanded by remember { mutableStateOf(false) }
     // 品牌栏(logo+设置)全展开高度；搜索栏常驻不折叠，故无需计入头部展开预算
     val brandHeight = 72.dp
     val headerScope = rememberCoroutineScope()
@@ -133,22 +135,18 @@ fun HomeScreen(
                 //  - 未展开：over-scroll 实时转为头部展开（带递进阻尼的跟手）
                 //  - 已拉满：再次下拉 → 回弹收起（toggle）
                 if (dy > 0f && homeScrollState.value <= 0f) {
-                    if (brandProgress.value >= 0.98f) {
-                        headerScope.launch { brandProgress.animateTo(0f, bounceSpring) }
-                    } else {
-                        headerScope.launch {
-                            // 每帧随进度递增阻力：越接近拉满越费劲，形成自然的橡皮筋手感
-                            val damped = dy / brandPullPx * (1f - brandProgress.value * 0.35f)
-                            brandProgress.snapTo((brandProgress.value + damped).coerceIn(0f, 1f))
-                        }
+                    // 拖拽跟手：随进度递增阻力，越接近拉满越费劲（收/展状态由松手 toggle 决定）
+                    headerScope.launch {
+                        val damped = dy / brandPullPx * (1f - brandProgress.value * 0.35f)
+                        brandProgress.snapTo((brandProgress.value + damped).coerceIn(0f, 1f))
                     }
                     return Offset(0f, dy)
                 }
                 return Offset.Zero
             }
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                // 向下滚动内容时若头部开着则回弹收起
-                if (homeScrollState.value > 0f && brandProgress.value > 0f) {
+                // 滚动内容时若非「下拉固定」状态且头部开着则收起（固定状态下保持不动，直到再下拉收起）
+                if (homeScrollState.value > 0f && brandProgress.value > 0f && !brandExpanded) {
                     headerScope.launch { brandProgress.animateTo(0f, bounceSpring) }
                 }
                 return Offset.Zero
@@ -156,12 +154,9 @@ fun HomeScreen(
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (homeScrollState.value <= 0f && brandProgress.value > 0f) {
                     headerScope.launch {
-                        // 下拉式 toggle：当前展开则收起（上去），否则展开并固定（再下拉才收起）
-                        if (brandProgress.value >= 0.5f) {
-                            brandProgress.animateTo(0f, bounceSpring)
-                        } else {
-                            brandProgress.animateTo(1f, bounceSpring)
-                        }
+                        // 拉到底＝切换：无论松手位置，当前收则展开并固定，展开则收起（不再依赖松手位置误判）
+                        brandExpanded = !brandExpanded
+                        brandProgress.animateTo(if (brandExpanded) 1f else 0f, bounceSpring)
                     }
                     return available
                 }
