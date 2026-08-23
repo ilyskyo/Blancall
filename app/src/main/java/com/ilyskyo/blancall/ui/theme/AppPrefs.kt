@@ -93,6 +93,10 @@ object AppPrefs {
     /** 首次使用引导页是否已看过（首启展示一次，之后可在设置里重看） */
     val onboardingSeenFlow: StateFlow<Boolean> = _onboardingSeenFlow.asStateFlow()
 
+    private val _libraryDisclaimerSeenFlow = MutableStateFlow<Set<String>>(emptySet())
+    /** 已看过「非官方内容免责提示」的素材库 id 集合（如 "gaokao"），每个库首次打开提示一次 */
+    val libraryDisclaimerSeenFlow: StateFlow<Set<String>> = _libraryDisclaimerSeenFlow.asStateFlow()
+
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -113,6 +117,7 @@ object AppPrefs {
         _useSimilarityRatingFlow.value = prefs.getBoolean("use_similarity_rating", true)
         _builtInLibraryKeysFlow.value = prefs.getStringSet("built_in_library_keys", emptySet())?.toSet() ?: emptySet()
         _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
+        _libraryDisclaimerSeenFlow.value = prefs.getStringSet("library_disclaimer_seen", emptySet())?.toSet() ?: emptySet()
     }
 
     var predictiveBackEnabled: Boolean
@@ -282,6 +287,19 @@ object AppPrefs {
                 _onboardingSeenFlow.value = value
             }
         }
+
+    /** 某个素材库是否已看过「非官方内容免责提示」（如 "gaokao"） */
+    fun isDisclaimerSeen(libId: String): Boolean =
+        if (::prefs.isInitialized) prefs.getStringSet("library_disclaimer_seen", emptySet())?.contains(libId) == true else false
+
+    /** 标记某个素材库已看过免责提示（之后不再弹） */
+    fun markDisclaimerSeen(libId: String) {
+        if (!::prefs.isInitialized) return
+        val set = (prefs.getStringSet("library_disclaimer_seen", emptySet()) ?: emptySet()).toMutableSet()
+        set.add(libId)
+        prefs.edit { putStringSet("library_disclaimer_seen", set) }
+        _libraryDisclaimerSeenFlow.value = set.toSet()
+    }
 
     /**
      * 搜索服务 API Key（Tavily）：与 AI Key 相同，经 Keystore AES/GCM 加密存储，

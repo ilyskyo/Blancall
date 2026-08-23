@@ -157,7 +157,7 @@ fun SettingsScreen(navController: NavController) {
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                 val enabledSet by AppPrefs.builtInLibraryKeysFlow.collectAsState()
-                val libNames = mapOf("western" to "西方思想")
+                val libNames = mapOf("western" to "西方思想", "gaokao" to "高考必背篇目")
                 Text(
                     if (enabledSet.isEmpty()) "尚未启用任何素材库"
                     else "已选择：" + enabledSet.sorted().mapNotNull { libNames[it] }.joinToString("、"),
@@ -180,6 +180,23 @@ fun SettingsScreen(navController: NavController) {
                     Switch(
                         checked = "western" in enabledSet,
                         onCheckedChange = { AppPrefs.setLibraryEnabled("western", it) }
+                    )
+                }
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("高考必背篇目", style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Text("文言文 20 篇 + 诗词曲 40 首（2017 课标）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = "gaokao" in enabledSet,
+                        onCheckedChange = { AppPrefs.setLibraryEnabled("gaokao", it) }
                     )
                 }
                 // 预留更多库：在此 Row 之后追加即可（如化学句子大全）

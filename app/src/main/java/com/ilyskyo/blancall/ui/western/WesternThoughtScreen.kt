@@ -44,10 +44,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +69,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
@@ -274,6 +277,20 @@ fun LibraryContentPage(
     val lib = BUILT_IN_LIBRARIES.firstOrNull { it.id == libraryId } ?: BUILT_IN_LIBRARIES.first()
     val context = LocalContext.current
     var webView by remember { mutableStateOf<WebView?>(null) }
+
+    // 非官方第三方素材免责提示（如 gaokao 高考库）：仅首次进入弹一次
+    var showDisclaimer by remember { mutableStateOf(lib.id == "gaokao" && !AppPrefs.isDisclaimerSeen("gaokao")) }
+
+    if (showDisclaimer) {
+        AlertDialog(
+            onDismissRequest = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false },
+            title = { Text("提示") },
+            text = { Text("该内容非 Blancall 官方制作，它提供的一切联系信息都与 Blancall 无关。") },
+            confirmButton = {
+                TextButton(onClick = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false }) { Text("知道了") }
+            }
+        )
+    }
 
     // 一级菜单：⋮ 三点点
     var showMenu by remember { mutableStateOf(false) }
@@ -933,6 +950,15 @@ private val BUILT_IN_LIBRARIES = listOf(
         assetPath = "philo/index.html",
         accentColor = 0xFF1F3A5F,
         metaLine = "20 位思想家 · 60+ 核心概念 · 11.6 万字",
+        metaTag = "高考素材"
+    ),
+    BuiltInLibrary(
+        id = "gaokao",
+        title = "高考必背篇目",
+        subtitle = "2024 高考语文必背 60 篇（2017 课标版修正）",
+        assetPath = "gaokao/index.html",
+        accentColor = 0xFF7A3B2E,
+        metaLine = "60 篇 · 文言文 20 · 诗词曲 40",
         metaTag = "高考素材"
     )
 )
