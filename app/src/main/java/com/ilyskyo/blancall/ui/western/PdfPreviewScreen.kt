@@ -46,9 +46,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.data.model.Article
@@ -213,7 +215,7 @@ fun PdfPreviewScreen(
     )
 }
 
-/** 单页渲染 + 双指缩放/单指拖动 */
+/** 单页渲染 + 双指缩放/单指拖动：放大到跨过整数倍时按更高分辨率重渲染页面，保证文字清晰（矢量重绘） */
 @Composable
 private fun ZoomablePdfPage(
     renderer: PdfRenderer,
@@ -222,88 +224,94 @@ private fun ZoomablePdfPage(
     onZoomChanged: (Boolean) -> Unit
 ) {
     val pageCount = renderer.pageCount
-    val bitmap = remember(renderer, index) {
-        var bmp: Bitmap? = null
-        try {
-            if (index < pageCount) {
-                val page = renderer.openPage(index)
-                val scale = 2f
-                val w = page.width.toFloat() * scale
-                val h = page.height.toFloat() * scale
-                bmp = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
-                val m = Matrix().apply { postScale(scale, scale) }
-                page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                page.close()
-            }
-        } catch (_: Exception) { }
-        bmp
-    }
-    bitmap?.let { bmp -> ZoomablePdfImage(bmp, isZoomed, onZoomChanged) }
-}
-
-/** 可缩放图片：双指捏合缩放(1~6 倍)，放大后单指拖动平移；未放大时不拦截，列表可滚动 */
-@Composable
-private fun ZoomablePdfImage(
-    bitmap: Bitmap,
-    isZoomed: Boolean,
-    onZoomChanged: (Boolean) -> Unit
-) {
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pressed = event.changes.filter { it.pressed }
-                        if (pressed.isEmpty()) break
-                        if (pressed.size >= 2) {
-                            // 双指缩放 + 平移（以双指中心为基准）
-                            val c0 = pressed[0]
-                            val c1 = pressed[1]
-                            val prevDist = (c0.previousPosition - c1.previousPosition).getDistance()
-                            val curDist = (c0.position - c1.position).getDistance()
-                            val zoom = if (prevDist > 0f) curDist / prevDist else 1f
-                            val midPrev = (c0.previousPosition + c1.previousPosition) / 2f
-                            val midCur = (c0.position + c1.position) / 2f
-                            val newScale = (scale * zoom).coerceIn(1f, 6f)
-                            scale = newScale
-                            if (newScale > 1f) {
-                                offset += (midCur - midPrev)
-                            } else {
-                                scale = 1f
-                                offset = Offset.Zero
-                            }
-                            onZoomChanged(scale > 1f)
-                            pressed.forEach { if (it.positionChanged()) it.consume() }
-                        } else if (scale > 1f) {
-                            // 放大后单指拖动平移
-                            val c = pressed[0]
-                            offset += (c.position - c.previousPosition)
-                            if (c.positionChanged()) c.consume()
-                        }
-                        // 未放大时单指不消费，交给列表滚动
-                    }
-                }
-            }
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                translationX = offset.x
-                translationY = offset.y
-            }
-    ) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
+    var boxSize by remember { mutableStateOf(IntSize.Zero) }
+    // 渲染级别：未放大 1x，放大到 >=2 时用 2 倍分辨率重渲染（文字仍清晰，不再发糊）
+    val renderLevel = maxOf(1, kotlin.math.ceil(scale).toInt()).coerceAtMost(2)
+    val bitmap = remember(renderer, index, renderLevel) {
+        renderPdfPage(renderer, index, pageCount, 2f * renderLevel)
+    }
+    bitmap?.let { bmp ->
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 2.dp)
-        )
+                .onSizeChanged { boxSize = it }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
+                            if (pressed.size >= 2) {
+                                // 双指缩放 + 平移（以双指中心为基准）
+                                val c0 = pressed[0]
+                                val c1 = pressed[1]
+                                val prevDist = (c0.previousPosition - c1.previousPosition).getDistance()
+                                val curDist = (c0.position - c1.position).getDistance()
+                                val zoom = if (prevDist > 0f) curDist / prevDist else 1f
+                                val midPrev = (c0.previousPosition + c1.previousPosition) / 2f
+                                val midCur = (c0.position + c1.position) / 2f
+                                val newScale = (scale * zoom).coerceIn(1f, 4f)
+                                scale = newScale
+                                offset = if (newScale <= 1f) Offset.Zero
+                                else clampOffset(offset + (midCur - midPrev), boxSize, scale)
+                                onZoomChanged(newScale > 1f)
+                                pressed.forEach { if (it.positionChanged()) it.consume() }
+                            } else if (scale > 1f) {
+                                // 放大后单指拖动平移
+                                val c = pressed[0]
+                                offset = clampOffset(offset + (c.position - c.previousPosition), boxSize, scale)
+                                if (c.positionChanged()) c.consume()
+                            }
+                            // 未放大时单指不消费，交给列表滚动
+                        }
+                    }
+                }
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                }
+        ) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
+}
+
+/** 按给定比例矢量重渲染 PDF 页面到 Bitmap（比例越大文字越清晰） */
+private fun renderPdfPage(
+    renderer: PdfRenderer,
+    index: Int,
+    pageCount: Int,
+    scale: Float
+): Bitmap? {
+    return try {
+        if (index < pageCount) {
+            val page = renderer.openPage(index)
+            val w = page.width.toFloat() * scale
+            val h = page.height.toFloat() * scale
+            val bmp = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
+            val m = Matrix().apply { postScale(scale, scale) }
+            page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            page.close()
+            bmp
+        } else null
+    } catch (_: Exception) { null }
+}
+
+/** 夹紧平移量，确保放大后内容仍在可视范围内、文字不跑到屏幕外 */
+private fun clampOffset(offset: Offset, box: IntSize, scale: Float): Offset {
+    if (box == IntSize.Zero) return offset
+    val maxX = (scale - 1f) * box.width / 2f
+    val maxY = (scale - 1f) * box.height / 2f
+    return Offset(offset.x.coerceIn(-maxX, maxX), offset.y.coerceIn(-maxY, maxY))
 }
 
 /** 把 assets 里的 PDF 复制到缓存目录，返回文件（失败返回 null） */
