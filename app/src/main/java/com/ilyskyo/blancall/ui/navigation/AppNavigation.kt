@@ -163,7 +163,8 @@ fun AppNavigation() {
         Box(modifier = Modifier.weight(1f)) {
     NavHost(
         navController = navController,
-        startDestination = "home"
+        // 首次启动：以引导页为启动首屏（启动页 → 引导 → 主页），非首启直接进主页
+        startDestination = if (onboardingSeen) "home" else "onboarding"
     ) {
         composable(
             "home",

@@ -129,7 +129,16 @@ fun OnboardingScreen(
 
     val finish: () -> Unit = {
         AppPrefs.onboardingSeen = true
-        if (onFinish != null) onFinish() else navController.popBackStack()
+        if (onFinish != null) {
+            onFinish()
+        } else if (navController.previousBackStackEntry != null) {
+            navController.popBackStack()
+        } else {
+            // 首次启动时引导页为 startDestination（无返回栈），完成即进入首页
+            navController.navigate("home") {
+                popUpTo("home") { inclusive = true }
+            }
+        }
     }
 
     Box(
