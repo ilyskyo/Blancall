@@ -14,6 +14,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.text.PDFTextStripper
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -61,6 +62,10 @@ class PdfTextExtractor {
      * 提取 PDF 文本内容
      */
     suspend fun extractText(context: Context, pdfFile: File): List<TextPage> = withContext(Dispatchers.IO) {
+        // 防御性初始化：确保 pdfbox 能从 assets 加载 glyphlist 等字体映射资源
+        try {
+            PDFBoxResourceLoader.init(context)
+        } catch (_: Exception) { }
         try {
             PDDocument.load(FileInputStream(pdfFile)).use { document ->
                 val pages = mutableListOf<TextPage>()

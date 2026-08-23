@@ -10,6 +10,7 @@ import com.ilyskyo.blancall.notification.NotificationHelper
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.theme.ThemeManager
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
 /**
  * 自定义 Application：统一在进程启动时初始化全局单例偏好。
@@ -43,6 +44,12 @@ class BlancallApp : Application() {
 
         // 主题偏好（StateFlow 初始值需要从磁盘读取）
         ThemeManager.init(this)
+
+        // pdfbox-android 资源加载器：glyphlist 等字体映射资源打包在 assets 中，
+        // 必须先注册 AssetManager，否则首次文本提取会因 GlyphList not found 崩溃
+        try {
+            PDFBoxResourceLoader.init(this)
+        } catch (_: Exception) { }
         // 应用偏好（predictiveBack / accentColor / emoji 等）
         AppPrefs.init(this)
         // FSRS 智能调度：按「复习频率」设置加载目标留存率（默认 90% 标准记忆）
