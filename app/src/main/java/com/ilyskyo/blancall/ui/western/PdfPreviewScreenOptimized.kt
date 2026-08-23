@@ -135,7 +135,7 @@ fun PdfPreviewScreenOptimized(
     // 缩放状态：放大时禁用列表滚动，双指缩放 / 单指拖动
     var isZoomed by remember { mutableStateOf(false) }
     // 渲染模式：true = 矢量文本渲染，false = 原始 PDF 渲染
-    var useVectorRendering by remember { mutableStateOf(false) }
+    var useVectorRendering by remember { mutableStateOf(true) }
 
     BackHandler(onBack = { navController.popBackStack() })
 
@@ -174,7 +174,7 @@ fun PdfPreviewScreenOptimized(
                 }
             }
             
-            if (textLoaded != null) {
+            if (textLoaded != null || textPages.isNotEmpty()) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         M3Icon(
@@ -195,8 +195,9 @@ fun PdfPreviewScreenOptimized(
                             label = { Text("导入到背诵挖空", fontWeight = FontWeight.Medium) },
                             onClick = {
                                 showMenu = false
-                                pendingTitle = textLoaded.first
-                                pendingText = textLoaded.second
+                                // 优先使用配套文字版；没有则用 PDF 提取的文本
+                                pendingTitle = textLoaded?.first ?: displayTitle
+                                pendingText = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
                                 showPicker = true
                             }
                         )

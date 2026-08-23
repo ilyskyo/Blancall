@@ -177,7 +177,7 @@ fun OptimizedPdfPreviewScreen(
                 }
             }
             
-            if (textLoaded != null) {
+            if (textLoaded != null || textPages.isNotEmpty()) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         M3Icon(
@@ -198,8 +198,9 @@ fun OptimizedPdfPreviewScreen(
                             label = { Text("导入到背诵挖空", fontWeight = FontWeight.Medium) },
                             onClick = {
                                 showMenu = false
-                                pendingTitle = textLoaded.first
-                                pendingText = textLoaded.second
+                                // 优先使用配套文字版；没有则用 PDF 提取的文本
+                                pendingTitle = textLoaded?.first ?: displayTitle
+                                pendingText = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
                                 showPicker = true
                             }
                         )

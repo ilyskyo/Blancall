@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -80,11 +81,47 @@ fun VectorTextRenderer(
             .onSizeChanged { containerSize = it }
             .clipToBounds()
             .background(MaterialTheme.colorScheme.surface)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) break
+                        when (pressed.size) {
+                            2 -> {
+                                // 双指缩放：以双指中心为基准无损放大，并同步平移
+                                val c0 = pressed[0]
+                                val c1 = pressed[1]
+                                val prevDist = (c0.previousPosition - c1.previousPosition).getDistance()
+                                val curDist = (c0.position - c1.position).getDistance()
+                                val zoom = if (prevDist > 0f) curDist / prevDist else 1f
+                                currentScale = (currentScale * zoom).coerceIn(minScale, maxScale)
+                                val midPrev = (c0.previousPosition + c1.previousPosition) / 2f
+                                val midCur = (c0.position + c1.position) / 2f
+                                offset = clampOffset(offset + (midCur - midPrev), containerSize, currentScale)
+                                pressed.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                            1 -> {
+                                // 单指拖动（放大状态下平移内容，未放大时交给列表滚动）
+                                if (currentScale > 1f) {
+                                    val c = pressed[0]
+                                    offset = clampOffset(
+                                        offset + (c.position - c.previousPosition),
+                                        containerSize,
+                                        currentScale
+                                    )
+                                    if (c.positionChanged()) c.consume()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState(), enabled = currentScale <= 1f)
                 .graphicsLayer {
                     scaleX = currentScale
                     scaleY = currentScale
@@ -98,7 +135,7 @@ fun VectorTextRenderer(
                     adaptiveLayout = adaptiveLayout,
                     onTextLayout = { textLayoutResult ->
                         // 根据文本布局结果调整偏移量，确保内容不超出屏幕
-                        adjustOffsetIfNeeded(textLayoutResult, containerSize, currentScale, offset)
+                        offset = adjustOffsetIfNeeded(textLayoutResult, containerSize, currentScale, offset)
                     }
                 )
             }
@@ -189,49 +226,19 @@ private fun adjustOffsetIfNeeded(
 }
 
 /**
- * 手势缩放处理器
+ * 智能约束偏移量，确保放大后内容仍在可视区域内
  */
-@Composable
-fun rememberGestureScaleHandler(
-    onScaleChange: (Float) -> Unit,
-    onOffsetChange: (Offset) -> Unit,
-    maxScale: Float = 3f,
-    minScale: Float = 0.5f
-): GestureScaleHandler {
-    return remember {
-        GestureScaleHandler(onScaleChange, onOffsetChange, maxScale, minScale)
-    }
-}
-
-/**
- * 手势缩放处理器类
- */
-class GestureScaleHandler(
-    private val onScaleChange: (Float) -> Unit,
-    private val onOffsetChange: (Offset) -> Unit,
-    private val maxScale: Float,
-    private val minScale: Float
-) {
-    private var currentScale = 1f
-    private var currentOffset = Offset.Zero
+private fun clampOffset(currentOffset: Offset, containerSize: IntSize, scale: Float): Offset {
+    if (containerSize == IntSize.Zero) return currentOffset
     
-    fun onGestureZoom(scaleDelta: Float, center: Offset) {
-        val newScale = (currentScale * scaleDelta).coerceIn(minScale, maxScale)
-        if (newScale != currentScale) {
-            currentScale = newScale
-            onScaleChange(currentScale)
-        }
-    }
+    // 计算缩放后内容尺寸与容器的差，限制平移范围
+    val scaledWidth = containerSize.width * scale
+    val scaledHeight = containerSize.height * scale
+    val maxX = maxOf(0f, (scaledWidth - containerSize.width) / 2f)
+    val maxY = maxOf(0f, (scaledHeight - containerSize.height) / 2f)
     
-    fun onGestureDrag(delta: Offset) {
-        currentOffset += delta
-        onOffsetChange(currentOffset)
-    }
-    
-    fun reset() {
-        currentScale = 1f
-        currentOffset = Offset.Zero
-        onScaleChange(1f)
-        onOffsetChange(Offset.Zero)
-    }
+    return Offset(
+        x = currentOffset.x.coerceIn(-maxX, maxX),
+        y = currentOffset.y.coerceIn(-maxY, maxY)
+    )
 }
