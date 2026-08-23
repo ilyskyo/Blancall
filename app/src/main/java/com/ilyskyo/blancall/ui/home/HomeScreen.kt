@@ -758,7 +758,7 @@ fun HomeScreen(
             if (recentArticles.isEmpty()) {
                 // 空状态：居中引导（首页主体为滚动容器，weight 不生效，用固定高度模拟居中，与文章列表页空态同风格）
                 Box(
-                    modifier = Modifier.fillMaxWidth().height(340.dp),
+                    modifier = Modifier.fillMaxWidth().height(390.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
