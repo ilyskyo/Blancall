@@ -125,8 +125,6 @@ fun HomeScreen(
         dampingRatio = Spring.DampingRatioMediumBouncy,
         stiffness = Spring.StiffnessMediumLow
     )
-    // 松手吸附阈值：拉过约一半即展开，否则收起
-    val snapThreshold = 0.45f
     val topBarConnection = remember(homeScrollState, brandProgress, headerScope, bounceSpring, brandPullPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -158,11 +156,11 @@ fun HomeScreen(
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (homeScrollState.value <= 0f && brandProgress.value > 0f) {
                     headerScope.launch {
-                        // 拉过约一半则回弹到完全展开（便于点设置），否则回弹收起（仅搜索框）
-                        if (brandProgress.value >= snapThreshold) {
-                            brandProgress.animateTo(1f, bounceSpring)
-                        } else {
+                        // 下拉式 toggle：当前展开则收起（上去），否则展开并固定（再下拉才收起）
+                        if (brandProgress.value >= 0.5f) {
                             brandProgress.animateTo(0f, bounceSpring)
+                        } else {
+                            brandProgress.animateTo(1f, bounceSpring)
                         }
                     }
                     return available
