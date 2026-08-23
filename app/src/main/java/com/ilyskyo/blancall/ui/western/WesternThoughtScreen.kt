@@ -100,8 +100,7 @@ fun WesternThoughtScreen(navController: NavController) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 20.dp, vertical = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -187,6 +186,7 @@ private fun LibraryCard(
                     .width(4.dp)
                     .background(accent)
             )
+            Spacer(Modifier.width(16.dp))  // 图标与左侧色条拉开
 
             // ② 圆形图标块
             Box(
