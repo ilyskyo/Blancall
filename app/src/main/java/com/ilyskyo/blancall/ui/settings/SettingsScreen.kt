@@ -157,6 +157,14 @@ fun SettingsScreen(navController: NavController) {
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                 val enabledSet by AppPrefs.builtInLibraryKeysFlow.collectAsState()
+                val libNames = mapOf("western" to "西方思想")
+                Text(
+                    if (enabledSet.isEmpty()) "尚未启用任何素材库"
+                    else "已选择：" + enabledSet.sorted().mapNotNull { libNames[it] }.joinToString("、"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 2.dp)
+                )
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
