@@ -74,9 +74,15 @@ class PdfTextExtractor {
                     val page = document.getPage(pageIndex)
                     val textStripper = object : PDFTextStripper() {
                         override fun writeString(text: String, outputStream: List<com.tom_roush.pdfbox.text.TextPosition>?) {
-                            // 提取纯文本，过滤控制字符
-                            val cleanText = text.replace(Regex("[\u0000-\u001F\u007F-\u009F]"), "")
-                            super.writeString(cleanText, outputStream)
+                            // 过滤控制字符
+                            var t = text.replace(Regex("[\u0000-\u001F\u007F-\u009F]"), "")
+                            // 整行为上标注释标记（a/b/c/o/p 等单字母）→ 跳过
+                            if (t.trim().matches(Regex("[a-zA-Z]"))) return
+                            // 删除行内孤立的上标注释标记字母（如“不聪 o 也”→“不聪也”）
+                            t = t.replace(Regex("(?<![a-zA-Z\\u4e00-\\u9fa5])[a-zA-Z](?![a-zA-Z\\u4e00-\\u9fa5])"), "")
+                            // 清理全角空格
+                            t = t.replace(Regex("[\\u3000\\u2002\\u2003]"), "")
+                            super.writeString(t, outputStream)
                         }
                     }
                     

@@ -63,7 +63,7 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
-import com.ilyskyo.blancall.ui.reader.VectorTextRenderer
+import com.ilyskyo.blancall.ui.reader.TextContentReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -218,17 +218,13 @@ fun PdfPreviewScreenOptimized(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(40.dp)
             )
-        } else if (useVectorRendering && textPages.isNotEmpty()) {
-            // 使用矢量文本渲染（无损放大）
-            VectorTextRenderer(
-                textPages = textPages,
-                modifier = Modifier.fillMaxSize(),
-                initialScale = 1f,
-                maxScale = 3f,
-                minScale = 0.5f,
-                onScaleChanged = { scale ->
-                    isZoomed = scale > 1f
-                }
+        } else if (useVectorRendering && (textLoaded != null || textPages.isNotEmpty())) {
+            // 矢量模式：优先用配套纯文字版（排版最干净），否则用 PDF 提取文本
+            val content = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
+            TextContentReader(
+                title = displayTitle,
+                content = content,
+                modifier = Modifier.fillMaxSize()
             )
         } else {
             // 使用原始 PDF 渲染（兼容性保证）

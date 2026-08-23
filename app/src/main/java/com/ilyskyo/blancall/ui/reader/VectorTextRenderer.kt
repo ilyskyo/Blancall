@@ -22,12 +22,77 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.PdfTextExtractor
 import kotlin.math.max
+
+/**
+ * 纯文本阅读器：以古诗文常规排版展示篇目（标题居中 → 作者居中 → 正文），
+ * 用于 PDF 预览的矢量模式，替代复杂的自适应缩放渲染，保证阅读体验正常。
+ *
+ * @param title 篇目标题
+ * @param content 正文（首行若为作者则自动居中展示，如“魏征”）
+ */
+@Composable
+fun TextContentReader(
+    title: String,
+    content: String,
+    modifier: Modifier = Modifier
+) {
+    val trimmed = content.trim()
+    val firstLine = trimmed.substringBefore("\n")
+    val (author, body) = if (
+        firstLine.length <= 12 &&
+        !firstLine.contains(Regex("[，。！？；：、]")) &&
+        trimmed.contains("\n")
+    ) {
+        firstLine to trimmed.removePrefix(firstLine).trimStart('\n').trim()
+    } else {
+        null to trimmed
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        // 标题：居中、加粗、醒目
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (author != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = author,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        // 正文：正常字号与行距，保留换行
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = 18.sp,
+                lineHeight = 30.sp
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(24.dp))
+    }
+}
 
 /**
  * 矢量文本渲染器，支持无损放大和自适应布局
