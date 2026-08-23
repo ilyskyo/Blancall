@@ -118,24 +118,30 @@ fun HomeScreen(
     // 品牌栏(logo+设置)全展开高度；搜索栏常驻不折叠，故无需计入头部展开预算
     val brandHeight = 72.dp
     val headerScope = rememberCoroutineScope()
+    // 品牌栏拉满所需的「下拉行程」（约 2.2 倍品牌栏高度），行程比把手宽裕、不会一下瞬满
+    val brandPullPx = with(LocalDensity.current) { (brandHeight * 2.2f).toPx() }
     // 品牌栏开合用带回弹的弹簧动画（略 overshoot，收尾更有弹性）
     val bounceSpring = spring<Float>(
         dampingRatio = Spring.DampingRatioMediumBouncy,
         stiffness = Spring.StiffnessMediumLow
     )
-    val topBarConnection = remember(homeScrollState, brandProgress, headerScope, bounceSpring) {
+    // 松手吸附阈值：拉过约一半即展开，否则收起
+    val snapThreshold = 0.45f
+    val topBarConnection = remember(homeScrollState, brandProgress, headerScope, bounceSpring, brandPullPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val dy = available.y
                 // 滚到顶再继续下拉：
-                //  - 未展开：over-scroll 实时转为头部展开（手指拖动跟随）
+                //  - 未展开：over-scroll 实时转为头部展开（带递进阻尼的跟手）
                 //  - 已拉满：再次下拉 → 回弹收起（toggle）
                 if (dy > 0f && homeScrollState.value <= 0f) {
                     if (brandProgress.value >= 0.98f) {
                         headerScope.launch { brandProgress.animateTo(0f, bounceSpring) }
                     } else {
                         headerScope.launch {
-                            brandProgress.snapTo((brandProgress.value + dy / 300f).coerceIn(0f, 1f))
+                            // 每帧随进度递增阻力：越接近拉满越费劲，形成自然的橡皮筋手感
+                            val damped = dy / brandPullPx * (1f - brandProgress.value * 0.35f)
+                            brandProgress.snapTo((brandProgress.value + damped).coerceIn(0f, 1f))
                         }
                     }
                     return Offset(0f, dy)
@@ -152,8 +158,8 @@ fun HomeScreen(
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (homeScrollState.value <= 0f && brandProgress.value > 0f) {
                     headerScope.launch {
-                        // 拉满则回弹到完全展开（便于点设置），否则松手回弹收起
-                        if (brandProgress.value >= 0.98f) {
+                        // 拉过约一半则回弹到完全展开（便于点设置），否则回弹收起（仅搜索框）
+                        if (brandProgress.value >= snapThreshold) {
                             brandProgress.animateTo(1f, bounceSpring)
                         } else {
                             brandProgress.animateTo(0f, bounceSpring)
