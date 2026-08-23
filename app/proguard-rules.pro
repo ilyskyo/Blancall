@@ -35,3 +35,8 @@
 # ── 7. pdfbox 可选 JPX(JP2) 解码依赖缺类，避免 R8 报错 ──
 -dontwarn com.gemalto.jp2.**
 -dontwarn com.tom_roush.pdfbox.filter.JPXFilter
+
+# ── 8. Room / WorkManager：保留 Room 生成数据库类（避免 R8 裁剪致启动崩溃）──
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep class * extends androidx.work.impl.WorkDatabase { *; }
+-keep class androidx.work.** { *; }
