@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-fs="1">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="克尔凯郭尔（1813—1855）高考写作素材：生平、著作、核心思想（存在主义的思想源头、三阶段、主观真理、恐惧与战栗、信仰之跃、个体性、焦虑）与写作应用提示。">
+<title>克尔凯郭尔 · 哲思化写作素材</title>
+<style>
+/* =====================================================================
+   克尔凯郭尔 · 写作素材（可交互单页站点）
+   纯静态：HTML + CSS + 原生 JS，无外部依赖，可离线运行
+   ===================================================================== */
+
+/* ---------- 变量：主题 ---------- */
+:root{
+  --topbar-h: 58px;
+  --toc-w: 272px;
+  --content-max: 46rem;
+  --fs-root: 17px;
+  --radius: 10px;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+html[data-theme="light"]{
+  --bg:#f3f3f0;
+  --paper:#ffffff;
+  --ink:#1b1b1b;
+  --ink-soft:#333333;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --line:#e4e4e0;
+  --line-mid:#cfcfc9;
+  --line-strong:#1b1b1b;
+  --accent:#1f3a5f;
+  --accent-soft:rgba(31,58,95,.10);
+  --accent-ink:#ffffff;
+  --num-bg:#1b1b1b;
+  --num-ink:#ffffff;
+  --quote-bg:#f7f7f5;
+  --box-bg:#ffffff;
+  --col-bg:#fafaf8;
+  --mark-bg:#ffe680;
+  --mark-ink:#1b1b1b;
+  --mark-cur:#ff9f2e;
+  --topbar-bg:rgba(255,255,255,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.06);
+  --shadow-2:0 8px 26px rgba(0,0,0,.16);
+  --btn-bg:#ffffff;
+  --btn-bg-hover:#f0f0ec;
+  --field-bg:#f6f6f3;
+}
+html[data-theme="dark"]{
+  --bg:#12141a;
+  --paper:#1a1d23;
+  --ink:#e7e5df;
+  --ink-soft:#d3d0c9;
+  --muted:#9b988f;
+  --faint:#7e7b74;
+  --line:#2a2e36;
+  --line-mid:#3a3f49;
+  --line-strong:#6e747f;
+  --accent:#83b2ff;
+  --accent-soft:rgba(131,178,255,.14);
+  --accent-ink:#0d1016;
+  --num-bg:#83b2ff;
+  --num-ink:#0d1016;
+  --quote-bg:#1f232a;
+  --box-bg:#1d2027;
+  --col-bg:#1f232a;
+  --mark-bg:#7d6200;
+  --mark-ink:#fff6d8;
+  --mark-cur:#c9761a;
+  --topbar-bg:rgba(18,20,26,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  --shadow-2:0 8px 26px rgba(0,0,0,.5);
+  --btn-bg:#22262e;
+  --btn-bg-hover:#2b3038;
+  --field-bg:#22262e;
+}
+/* ---------- 字号三档 ---------- */
+html[data-fs="0"]{ --fs-root:15px; }
+html[data-fs="1"]{ --fs-root:17px; }
+html[data-fs="2"]{ --fs-root:19.5px; }
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:auto; }
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:var(--fs-root);
+  line-height:1.85;
+  -webkit-text-size-adjust:100%;
+  transition:background-color .25s var(--ease), color .25s var(--ease);
+}
+
+/* ---------- 无障碍：跳到正文 ---------- */
+.skip-link{
+  position:absolute; left:-9999px; top:0; z-index:2000;
+  background:var(--accent); color:var(--accent-ink);
+  padding:8px 14px; border-radius:0 0 var(--radius) 0; font-family:var(--sans); font-size:.85rem;
+}
+.skip-link:focus{ left:0; }
+
+/* =====================  顶栏  ===================== */
+.topbar{
+  position:sticky; top:0; z-index:900;
+  display:flex; align-items:center; gap:10px;
+  height:var(--topbar-h);
+  padding:0 14px;
+  background:var(--topbar-bg);
+  backdrop-filter:saturate(150%) blur(10px);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+.tb-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.tb-right{ display:flex; align-items:center; gap:6px; }
+
+.site-title{
+  font-family:var(--sans);
+  font-size:.94rem;
+  font-weight:800;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--ink);
+}
+.site-title .dot{ color:var(--accent); margin:0 .15em; }
+.site-title .st-sub{ font-weight:500; color:var(--muted); }
+
+
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-width:34px; height:34px; padding:0 9px;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1;
+  color:var(--ink); background:var(--btn-bg);
+  border:1px solid var(--line-mid); border-radius:8px;
+  cursor:pointer; user-select:none;
+  transition:background-color .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease);
+}
+.icon-btn:hover{ background:var(--btn-bg-hover); }
+.icon-btn:active{ transform:translateY(1px); }
+.icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.menu-btn{ display:none; }
+
+/* 搜索框 */
+.search-wrap{
+  position:relative;
+  display:flex; align-items:center;
+  width:100%; max-width:430px;
+  height:36px;
+  background:var(--field-bg);
+  border:1px solid var(--line-mid);
+  border-radius:999px;
+  padding:0 8px 0 12px;
+  transition:border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.search-wrap:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.search-icon{ font-size:.8rem; opacity:.65; margin-right:6px; }
+#searchInput{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  font-family:var(--sans); font-size:.86rem; color:var(--ink);
+}
+#searchInput::placeholder{ color:var(--faint); }
+#searchInput::-webkit-search-cancel-button{ display:none; }
+.search-count{
+  font-family:var(--sans); font-size:.74rem; color:var(--muted);
+  white-space:nowrap; margin:0 4px; font-variant-numeric:tabular-nums;
+}
+.search-nav{
+  display:flex; gap:2px;
+}
+.mini-btn{
+  width:22px; height:22px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:.7rem; line-height:1;
+  color:var(--muted); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.mini-btn:hover{ background:var(--btn-bg-hover); color:var(--ink); }
+.mini-btn[hidden]{ display:none; }
+
+/* 阅读进度条 */
+.progress{
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:3px; background:transparent; overflow:hidden;
+}
+.progress-bar{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, var(--accent), var(--num-bg));
+  transition:width .08s linear;
+}
+
+/* =====================  布局  ===================== */
+.layout{
+  display:flex;
+  align-items:flex-start;
+  gap:26px;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 18px;
+}
+
+/* ---------- 侧边目录 ---------- */
+.toc{
+  position:sticky;
+  top:var(--topbar-h);
+  flex:0 0 var(--toc-w);
+  width:var(--toc-w);
+  max-height:calc(100vh - var(--topbar-h));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:20px 8px 28px 0;
+  font-family:var(--sans);
+}
+.toc-head{
+  font-size:.72rem; font-weight:800; letter-spacing:.24em;
+  color:var(--muted); text-transform:uppercase;
+  padding:0 10px 10px; border-bottom:1px solid var(--line); margin-bottom:8px;
+}
+.toc-nav{ display:flex; flex-direction:column; }
+.toc-item{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:6px 10px;
+  color:var(--ink-soft); text-decoration:none;
+  border-left:2px solid transparent;
+  border-radius:0 6px 6px 0;
+  line-height:1.45;
+  transition:background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.toc-item:hover{ background:var(--accent-soft); color:var(--ink); }
+.toc-item.lvl2{ font-size:.85rem; font-weight:700; margin-top:6px; }
+.toc-item.lvl3{ font-size:.79rem; font-weight:400; padding-left:30px; color:var(--muted); }
+.toc-item .toc-num{
+  flex:0 0 auto;
+  font-size:.68rem; font-weight:800;
+  min-width:1.35em; text-align:center;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:4px;
+  padding:0 2px; line-height:1.5;
+  margin-top:.15em;
+}
+.toc-item.active{
+  color:var(--accent); background:var(--accent-soft);
+  border-left-color:var(--accent); font-weight:800;
+}
+.toc-item.active .toc-num{ color:var(--accent); border-color:var(--accent); }
+.toc-item.active-parent{ color:var(--ink); border-left-color:var(--line-strong); }
+.toc-item .toc-hits{
+  margin-left:auto; flex:0 0 auto;
+  font-size:.68rem; font-weight:700;
+  color:var(--accent-ink); background:var(--accent);
+  border-radius:999px; padding:0 6px; line-height:1.6;
+}
+.toc-foot{
+  margin-top:14px; padding:10px 10px 0;
+  border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--faint);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+}
+.link-btn{
+  background:none; border:0; padding:0;
+  font-family:var(--sans); font-size:.72rem; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.link-btn:hover{ opacity:.75; }
+.scrim{
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,.45);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s var(--ease);
+}
+
+/* ---------- 正文容器 ---------- */
+.content{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:var(--content-max);
+  margin:0 auto;
+  padding:22px 0 90px;
+}
+
+/* ---------- 章节卡片 ---------- */
+.section{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-1);
+  padding:26px 30px 24px;
+  margin:0 0 20px;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+  transition:background-color .25s var(--ease), border-color .25s var(--ease);
+}
+.section:target{ border-color:var(--accent); }
+
+/* 可折叠标题 */
+h2.sec-head{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--sans);
+  font-size:1.42em; font-weight:800; letter-spacing:.03em;
+  margin:0 0 12px; padding:0 0 8px;
+  border-bottom:2px solid var(--line-strong);
+  cursor:pointer; user-select:none;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h2.sec-head:hover .h2-text{ color:var(--accent); }
+h2.sec-head:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+h2.sec-head .chapter-num{
+  flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55em; height:1.55em;
+  font-size:.72em; font-weight:800;
+  background:var(--num-bg); color:var(--num-ink);
+  border-radius:4px;
+}
+h2.sec-head .h2-text{ flex:1 1 auto; transition:color .15s var(--ease); }
+h2.sec-head .sec-caret{
+  flex:0 0 auto;
+  font-size:.62em; color:var(--muted);
+  transition:transform .22s var(--ease);
+}
+.section.collapsed h2.sec-head{ border-bottom-color:var(--line-mid); margin-bottom:0; }
+.section.collapsed h2.sec-head .sec-caret{ transform:rotate(-90deg); }
+.section.collapsed .sec-body{ display:none; }
+.sec-body{ animation:fadeIn .22s var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:none;} }
+
+/* ---------- 正文排版 ---------- */
+h3{
+  font-family:var(--sans);
+  font-size:1.06em; font-weight:700;
+  margin:1.5em 0 .55em; color:var(--ink);
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h3::before{ content:"▪"; margin-right:.5em; color:var(--accent); }
+h4{
+  font-family:var(--sans);
+  font-size:.95em; font-weight:700;
+  margin:1.1em 0 .4em; color:var(--ink-soft);
+}
+p{ margin:0 0 .72em; text-align:justify; text-indent:2em; }
+p.no-indent{ text-indent:0; }
+ul, ol{ margin:.5em 0 .9em; padding-left:1.6em; }
+li{ margin-bottom:.35em; text-align:justify; }
+strong{ font-weight:700; color:var(--ink); }
+em{ font-style:normal; }
+
+blockquote{
+  margin:1em 0; padding:.7em 1em;
+  border-left:3px solid var(--accent);
+  background:var(--quote-bg);
+  font-size:.96em; line-height:1.78;
+  border-radius:0 6px 6px 0;
+}
+blockquote p{ text-indent:0; margin:0 0 .4em; }
+blockquote p:last-child{ margin-bottom:0; }
+blockquote cite{
+  display:block; text-align:right;
+  font-size:.86em; color:var(--muted); font-style:normal; margin-top:.5em;
+}
+
+.box{
+  margin:1em 0; padding:.85em 1em;
+  border:1px solid var(--line-mid);
+  background:var(--box-bg);
+  border-radius:8px;
+}
+.box-title{
+  font-family:var(--sans);
+  font-size:.78em; font-weight:800; letter-spacing:.16em;
+  color:var(--accent);
+  margin-bottom:.6em; padding-bottom:.35em;
+  border-bottom:1px solid var(--line);
+}
+.box p{ text-indent:0; margin-bottom:.45em; }
+.box p:last-child{ margin-bottom:0; }
+.box dl{ margin:0; }
+.box dt{
+  font-family:var(--sans); font-weight:700; font-size:.84em;
+  margin-top:.6em; color:var(--muted); letter-spacing:.05em;
+}
+.box dd{ margin:.15em 0 .55em; font-size:.96em; text-align:justify; }
+
+.term{
+  font-family:var(--sans); font-weight:700;
+  border-bottom:1px solid var(--line-strong);
+  padding-bottom:1px;
+}
+
+.summary{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin:1em 0;
+}
+.summary .col{
+  padding:.8em .9em;
+  background:var(--col-bg);
+  border-top:2px solid var(--line-strong);
+  border-radius:0 0 6px 6px;
+}
+.summary .col-title{
+  font-family:var(--sans); font-weight:800; font-size:.82em;
+  margin-bottom:.5em; letter-spacing:.08em;
+}
+.summary .col p{ text-indent:0; font-size:.92em; margin:0 0 .45em; }
+.summary .col p:last-child{ margin-bottom:0; }
+
+.src-note{
+  font-size:.78em; color:var(--faint);
+  margin:1.1em 0 0; padding-top:.5em;
+  border-top:1px dotted var(--line-mid);
+  text-align:left; text-indent:0;
+}
+.footer-note{
+  margin-top:1.4em; padding-top:.7em;
+  border-top:1px solid var(--line);
+  font-size:.8em; color:var(--muted); text-align:center; text-indent:0;
+}
+.center{ text-align:center; }
+.small{ font-size:.9em; }
+
+/* ---------- 封面 ---------- */
+.section-cover{ padding:0; overflow:hidden; }
+.cover{
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center;
+  padding:58px 26px 34px;
+}
+.cover-tag{
+  font-family:var(--sans);
+  font-size:.72rem; letter-spacing:.4em;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:3px;
+  padding:5px 12px 5px 16px; margin-bottom:34px;
+}
+.cover h1{
+  font-family:var(--sans);
+  font-size:2.6em; font-weight:900; line-height:1.2;
+  margin:0 0 14px; letter-spacing:.08em;
+}
+.cover-subtitle{
+  font-size:1.02em; color:var(--ink-soft);
+  margin-bottom:26px; letter-spacing:.14em;
+}
+.cover-line{ width:150px; height:2px; background:var(--line-strong); margin:0 auto 22px; }
+.cover-source{ font-size:.96em; color:var(--muted); line-height:2; }
+.cover-foot{
+  margin-top:34px; padding-top:14px;
+  border-top:1px solid var(--line);
+  width:100%; max-width:520px;
+  font-size:.78em; color:var(--faint); letter-spacing:.08em;
+}
+
+/* ---------- 原印刷目录（正文内） ---------- */
+.toc-list{ list-style:none; padding:0; margin:.4em 0 0; }
+.toc-list li{ border-bottom:1px dotted var(--line-mid); }
+.toc-list li:last-child{ border-bottom:none; }
+.toc-list-link{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:.5em .3em; color:var(--ink); text-decoration:none;
+  border-radius:6px;
+  transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.toc-list-link:hover{ background:var(--accent-soft); color:var(--accent); }
+.toc-list .num{
+  font-family:var(--sans); font-weight:800;
+  margin-right:.6em; color:var(--muted);
+}
+.toc-list .title{ font-size:.98em; }
+.toc-list .author{
+  font-family:var(--sans);
+  font-size:.76em; color:var(--faint); white-space:nowrap;
+}
+
+/* ---------- 搜索高亮 ---------- */
+mark.hit{
+  background:var(--mark-bg); color:var(--mark-ink);
+  border-radius:2px; padding:0 1px;
+  scroll-margin-top:calc(var(--topbar-h) + 90px);
+}
+mark.hit.current{
+  background:var(--mark-cur); color:#fff;
+  box-shadow:0 0 0 2px var(--mark-cur);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.fab-group{
+  position:fixed; right:18px; bottom:18px; z-index:880;
+  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px;
+}
+.fab{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:10px 16px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink);
+  font-family:var(--sans); font-size:.84rem; font-weight:700;
+  text-decoration:none; border:0; cursor:pointer;
+  box-shadow:var(--shadow-2);
+  transition:transform .15s var(--ease), opacity .2s var(--ease);
+}
+.fab:hover{ transform:translateY(-2px); }
+.fab.fab-mini{
+  width:40px; height:40px; padding:0; justify-content:center;
+  font-size:1rem;
+  background:var(--btn-bg); color:var(--ink);
+  border:1px solid var(--line-mid);
+}
+.fab.hidden{ opacity:0; pointer-events:none; transform:translateY(8px); }
+
+/* ---------- 移动端 ---------- */
+@media (max-width:900px){
+  .layout{ gap:16px; padding:0 12px; }
+  :root{ --toc-w:240px; }
+}
+@media (max-width:768px){
+  :root{ --topbar-h:54px; }
+  .menu-btn{ display:inline-flex; }
+  .site-title .st-sub{ display:none; }
+  .tb-center{ order:3; flex:0 0 100%; }
+  .topbar{ flex-wrap:wrap; height:auto; padding:8px 10px 10px; gap:8px; row-gap:8px; }
+  .tb-left{ flex:1 1 auto; }
+  .search-wrap{ max-width:none; height:34px; }
+  .layout{ display:block; padding:0 10px; }
+  .content{ max-width:none; padding:14px 0 96px; }
+  .section{ padding:20px 16px 18px; border-radius:8px; }
+  .summary{ grid-template-columns:1fr; }
+  .cover{ padding:40px 18px 26px; }
+  .cover h1{ font-size:2.1em; }
+  .cover-tag{ margin-bottom:24px; }
+
+  /* TOC 抽屉 */
+  .toc{
+    position:fixed; top:0; left:0; bottom:0; z-index:860;
+    width:80vw; max-width:320px;
+    max-height:none; height:100%;
+    padding:18px 10px 24px 14px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    box-shadow:var(--shadow-2);
+    transform:translateX(-102%);
+    transition:transform .26s var(--ease);
+  }
+  body.toc-open .toc{ transform:translateX(0); }
+  body.toc-open .scrim{ opacity:1; pointer-events:auto; }
+  body.toc-open{ overflow:hidden; }
+  .fab-group{ right:12px; bottom:12px; }
+  .fab{ padding:9px 14px; font-size:.8rem; }
+  p{ text-indent:2em; }
+}
+@media (max-width:420px){
+  .icon-btn .btn-txt{ display:none; }
+  .toc-list-link{ flex-wrap:wrap; }
+}
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+
+/* =====================================================================
+   打印样式：隐藏所有交互界面，恢复干净的 A4 印刷排版
+   ===================================================================== */
+@page{
+  size:A4;
+  margin:20mm 18mm 20mm 18mm;
+}
+@media print{
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    font-family:var(--serif);
+    font-size:11pt !important;
+    line-height:1.85;
+  }
+  html{
+    --paper:#fff; --ink:#000; --ink-soft:#222; --muted:#666; --faint:#999;
+    --line:#ddd; --line-mid:#ccc; --line-strong:#000;
+    --accent:#000; --accent-soft:transparent; --accent-ink:#fff;
+    --num-bg:#000; --num-ink:#fff;
+    --quote-bg:#f7f7f7; --box-bg:#fff; --col-bg:#fafafa;
+  }
+  .topbar, .toc, .scrim, .fab-group, .progress, .skip-link, .sec-caret, .search-wrap{
+    display:none !important;
+  }
+  .layout{ display:block; max-width:none; padding:0; margin:0; }
+  .content{ max-width:none; margin:0; padding:0; }
+  .section{
+    background:#fff !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    page-break-before:always;
+    page-break-inside:auto;
+  }
+  .section:first-of-type{ page-break-before:auto; }
+  .section.collapsed .sec-body{ display:block !important; }
+  .sec-body{ animation:none !important; }
+  h2.sec-head{
+    display:block; cursor:auto;
+    font-size:18pt !important; font-weight:800;
+    margin:0 0 10pt !important; padding-bottom:6pt;
+    border-bottom:2pt solid #000 !important;
+    page-break-after:avoid;
+  }
+  h2.sec-head .chapter-num{
+    display:inline-block; width:28pt; height:28pt; line-height:28pt;
+    text-align:center; font-size:14pt; border-radius:0;
+    background:#000 !important; color:#fff !important;
+    margin-right:10pt; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h2.sec-head .h2-text{ display:inline; }
+  h3{ font-size:13pt !important; page-break-after:avoid; }
+  h3::before{ color:#666 !important; }
+  h4{ font-size:11pt !important; page-break-after:avoid; }
+  p{ orphans:2; widows:2; }
+  blockquote, .box, .summary, .cover-source{ page-break-inside:avoid; }
+  blockquote{
+    background:#f7f7f7 !important; border-left:3pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .box{ border:1pt solid #333 !important; border-radius:0; }
+  .box-title{ color:#000 !important; text-transform:uppercase; }
+  .summary .col{
+    background:#fafafa !important; border-top:2pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .section-cover{ padding:0 !important; }
+  .cover{ min-height:245mm; padding:0 !important; justify-content:center; }
+  .cover h1{ font-size:32pt !important; }
+  .cover-subtitle{ font-size:14pt !important; }
+  .cover-line{ width:60mm; background:#000 !important; }
+  .cover-foot{ border-top:0; margin-top:60mm; }
+  .toc-list-link{ color:#000 !important; text-decoration:none; padding:8pt 0; }
+  .toc-list li{ border-bottom:.5pt dotted #bbb; }
+  mark.hit, mark.hit.current{
+    background:transparent !important; color:inherit !important;
+    box-shadow:none !important; padding:0;
+  }
+  a{ color:inherit !important; text-decoration:none !important; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar" id="topbar">
+  <div class="tb-left">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开或关闭目录" aria-expanded="false" aria-controls="toc">☰<span class="btn-txt">菜单</span></button>
+    <span class="site-title">克尔凯郭尔<span class="dot">·</span><span class="st-sub">写作素材</span></span>
+  </div>
+
+  <div class="tb-center">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="searchInput" type="search" placeholder="全文搜索：信仰之跃 / 三阶段 / 主观真理 …" autocomplete="off" spellcheck="false" aria-label="全文搜索">
+      <span class="search-count" id="searchCount" aria-live="polite"></span>
+      <span class="search-nav">
+        <button class="mini-btn" id="prevHit" type="button" hidden aria-label="上一处匹配">▲</button>
+        <button class="mini-btn" id="nextHit" type="button" hidden aria-label="下一处匹配">▼</button>
+        <button class="mini-btn" id="clearSearch" type="button" hidden aria-label="清空搜索">✕</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tb-right">
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色/浅色主题" title="切换深色 / 浅色阅读模式">🌙</button>
+    <button class="icon-btn" id="fsDown" type="button" aria-label="缩小字号" title="缩小正文字号">A−</button>
+    <button class="icon-btn" id="fsUp" type="button" aria-label="放大字号" title="放大正文字号">A＋</button>
+  </div>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== 主体布局 ===================== -->
+<div class="layout">
+
+  <!-- 侧边目录 -->
+  <aside class="toc" id="toc" aria-label="章节目录">
+    <div class="toc-head">目录导航</div>
+    <nav class="toc-nav" id="tocNav"></nav>
+    <div class="toc-foot">
+      <span>共 <span id="secCount">0</span> 节</span>
+      <button class="link-btn" id="expandAll" type="button">全部展开</button>
+      <button class="link-btn" id="collapseAll" type="button">全部折叠</button>
+    </div>
+  </aside>
+
+  <!-- 正文 -->
+  <main class="content" id="main">
+
+    <!-- ========== 封面 ========== -->
+    <section class="section section-cover" id="sec-cover" data-toc="封面 · 人物名片">
+      <div class="cover">
+        <div class="cover-tag">高考写作素材</div>
+        <h1>克尔凯郭尔</h1>
+        <div class="cover-subtitle">存在主义的思想源头 · 孤独个体的宗教哲学家</div>
+        <div class="cover-line"></div>
+        <div class="cover-source">
+          1813 — 1855<br>
+          丹麦哲学家 · 神学家 · 作家<br>
+          “存在主义之父”
+        </div>
+        <div class="cover-foot">本册为单人物深度版 · 含生平、著作、核心思想与写作应用</div>
+      </div>
+    </section>
+
+    <!-- ========== 目录 ========== -->
+    <section class="section" id="sec-contents">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="h2-text">目 录</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <ul class="toc-list">
+          <li><a class="toc-list-link" href="#sec-1"><span><span class="num">01</span><span class="title">人物定位与速览</span></span><span class="author">一句话读懂</span></a></li>
+          <li><a class="toc-list-link" href="#sec-2"><span><span class="num">02</span><span class="title">生平经历：罪感、婚约与“孤独个体”</span></span><span class="author">1813–1855</span></a></li>
+          <li><a class="toc-list-link" href="#sec-3"><span><span class="num">03</span><span class="title">主要著作与笔名写作</span></span><span class="author">间接沟通</span></a></li>
+          <li><a class="toc-list-link" href="#sec-4"><span><span class="num">04</span><span class="title">核心思想（一）：终极关怀——死亡与贪欲</span></span><span class="author">生命意义</span></a></li>
+          <li><a class="toc-list-link" href="#sec-5"><span><span class="num">05</span><span class="title">核心思想（二）：存在三阶段——审美、伦理与宗教</span></span><span class="author">生存境界</span></a></li>
+          <li><a class="toc-list-link" href="#sec-6"><span><span class="num">06</span><span class="title">核心思想（三）：主观真理与个体性</span></span><span class="author">真理与自我</span></a></li>
+          <li><a class="toc-list-link" href="#sec-7"><span><span class="num">07</span><span class="title">核心思想（四）：恐惧与战栗、信仰之跃与焦虑</span></span><span class="author">纵身一跃</span></a></li>
+          <li><a class="toc-list-link" href="#sec-8"><span><span class="num">08</span><span class="title">我们该如何理解克尔凯郭尔</span></span><span class="author">理解视角</span></a></li>
+          <li><a class="toc-list-link" href="#sec-9"><span><span class="num">09</span><span class="title">写作应用提示</span></span><span class="author">上考场用</span></a></li>
+        </ul>
+        <div class="footer-note">本册每节末以灰色小字标注网络文献来源；思想用于论证，生平用于点缀。</div>
+      </div>
+    </section>
+
+    <!-- ========== 第一章 ========== -->
+    <section class="section" id="sec-1">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">1</span><span class="h2-text">人物定位与速览</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位：</strong>丹麦哲学家，西方存在主义思想的源头。索伦·奥比·克尔凯郭尔（Søren Aabye Kierkegaard, 1813—1855）是 19 世纪丹麦哲学家、神学家与作家，被普遍视为“存在主义之父”。他与叔本华、尼采一道，被看作非理性主义／生存哲学的重要奠基者；他终生反对黑格尔式的宏大体系哲学，主张哲学必须回到“作为个体的人”身上。</p>
+        <p>对高考生而言，克尔凯郭尔提供的是关于<strong>“个体如何真诚地生活”</strong>的一组钥匙：当理性走到尽头时我们该信什么？面对死亡与欲望，人如何安顿生命的意义？“纵身一跃”究竟是盲动还是勇敢？这些，正是高考作文里“信仰与理性”“勇气的价值”“生命意义的确立”“超越死亡与卑微”等母题的思想资源。</p>
+
+        <blockquote>
+          <p>我真正缺少的东西就是要在我内心里弄清楚：我到底要做什么事情？问题在于，要找到一个对我来说确实的真理，找到一个我能够为此而生、为此而死的信念。</p>
+          <cite>—— 克尔凯郭尔《日记》1835 年 8 月 1 日</cite>
+        </blockquote>
+
+        <div class="box no-break">
+          <div class="box-title">速览卡</div>
+          <dl>
+            <dt>生卒</dt><dd>1813 年 5 月 5 日（哥本哈根）— 1855 年 11 月 11 日（哥本哈根），享年 42 岁。</dd>
+            <dt>国籍 / 身份</dt><dd>丹麦；哥本哈根大学神学硕士、哲学硕士（《论苏格拉底的讽刺概念》，1841）；终生未任教职，靠父亲遗产独立写作。</dd>
+            <dt>哲学位置</dt><dd>存在主义思想源头 · 生存哲学／宗教哲学 · 对黑格尔体系哲学与丹麦国教的双重批判。</dd>
+            <dt>核心命题</dt><dd>存在三阶段（审美／伦理／宗教）、主观真理、个体性、“对伦理的目的论悬置”、信仰之跃、焦虑（自由的眩晕）。</dd>
+            <dt>代表著作</dt><dd>《非此即彼》《恐惧与战栗》《哲学片段》《非科学的最后附言》《致死的疾病》。</dd>
+            <dt>一句名言</dt><dd>“冒险会造成焦虑，但不冒险却会失去自我。”（通行英译：To dare is to lose one’s footing momentarily; not to dare is to lose oneself.）</dd>
+          </dl>
+        </div>
+
+        <p class="src-note">来源：维基百科 / 快懂百科「克尔凯郭尔」、360 百科、Stanford Encyclopedia of Philosophy “Søren Kierkegaard”、PhilosophyProfessor.com。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第二章 ========== -->
+    <section class="section" id="sec-2">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">2</span><span class="h2-text">生平经历：罪感、婚约与“孤独个体”</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">克尔凯郭尔的一生外表平淡：一生几乎都在哥本哈根度过，未娶妻、未任职。但他的内心却经历了一场又一场“地震”。理解他的生平，才明白他为何把“孤独”“罪感”“抉择”放在哲学的中心。</p>
+
+        <h3>家世与童年：父亲的忧郁与“罪感”</h3>
+        <p>1813 年 5 月 5 日，克尔凯郭尔生于哥本哈根一个富裕而虔诚的家庭，是七个孩子中最年幼的一个。父亲迈克尔·克尔凯郭尔出身日德兰半岛的贫苦农民家庭，后来在哥本哈根经商致富，跻身上流社会。他虔信路德宗，但性格深沉忧郁，深信自己因早年不虔敬的行为而遭受神罚，家中子女接连早逝更让这种“被诅咒”的感觉挥之不去。父亲把严苛的宗教教育与忧郁的情绪同时传给幼子，成为克尔凯郭尔一生“罪感”与“恐惧与战栗”的思想底色。1838 年父亲去世。克尔凯郭尔后来把约 25 岁时察觉父亲早年“罪感”的顿悟称为一场“大地震”（见日记 II A 805），这成为他“罪感”思想的起点（“大地震”指这一顿悟时刻，非指父亲去世本身）。（“赎罪之死”一说查无学术依据，不取。）</p>
+
+        <h3>求学与订婚：哥本哈根大学与蕾吉娜</h3>
+        <p>1830 年，克尔凯郭尔入哥本哈根大学，学习神学与哲学，接受了当时占支配地位的黑格尔哲学的训练。1840 年通过神学考试，同年向蕾吉娜·奥尔森求婚并订婚——蕾吉娜当时只有 18 岁。但他内心极度挣扎：他自认性格阴郁、体弱多病，无法给一个女孩幸福。1841 年 8 月，他归还订婚戒指，解除婚约，这一事件成为他此后几乎所有著作的回响。他曾写道，他身上“有某种幽灵般的东西”，任何与他朝夕相处的人都难以承受。蕾吉娜后来嫁给施莱格尔，而克尔凯郭尔终其一生在《诱惑者日记》《重复》《恐惧与战栗》中反复书写这段关系。</p>
+
+        <h3>1841 年：柏林之行与硕士论文</h3>
+        <p>解除婚约的同年，克尔凯郭尔通过硕士论文《论苏格拉底的讽刺概念》答辩，随后于 1841 年 10 月赴柏林，听谢林反对黑格尔的课程。他对谢林也感到失望，认为其思想混乱。1842 年 3 月返回哥本哈根后，他依靠父亲留下的遗产生活，从此进入独立写作时期。婚约破裂与柏林之行，是他从“准备人生”转向“作为作家存在”的分水岭。</p>
+
+        <h3>隐居写作：笔名与“思想实验”（1843—1846）</h3>
+        <p>1843 年到 1846 年是克尔凯郭尔创作最密集的时期。他以多个笔名陆续出版《非此即彼》《恐惧与战栗》《重复》（1843）、《哲学片段》《畏的概念》（1844）、《人生道路诸阶段》（1845）、《非科学的最后附言》（1846）。这些作品不是传统哲学论文，而是由假名人物各自发声的“思想实验”：他不直接告诉读者真理，而是让读者在读到不同人生观的冲突后，自己作出决断。这在哲学史上被称为“间接沟通”。</p>
+
+        <h3>宗教转向与“向基督教界开战”（1847—1855）</h3>
+        <p>1847 年后，克尔凯郭尔署名发表了《爱的作为》（1847）、《致死的疾病》（1849，笔名 Anti-Climacus）、《基督教的训练》（1850）等宗教著作，思想重心转向“如何成为一个基督徒”。他激烈批评丹麦国教：国教把基督教变成了舒适的文化装饰，人们生在丹麦便自动“是基督徒”，却从未真正作出信仰的决断。1854 年 12 月 18 日，他在《祖国报》发文抨击明斯特主教，标志论战起点；1855 年 5—9 月创办期刊《瞬间》共 9 期，发动对基督教界的猛烈抨击，直至生命终点。</p>
+
+        <h3>逝世：1855 年</h3>
+        <p>1855 年 11 月，克尔凯郭尔在哥本哈根街头昏倒，数周后（11 月 11 日）在一家医院逝世，享年 42 岁。死因学界有不同分析，近世病历研究（如 Søgaard）倾向进行性脊髓瘫痪或急性上行性多发性神经根炎（吉兰-巴雷谱系）；“脊髓结核”之说缺乏学术支持，不取。临终时他拒绝接受丹麦教会圣餐，也不愿由教会主持丧礼。他的葬礼曾引发抗议——这位一生攻击教会的人，是否该由教会安葬，成为当时哥本哈根的一桩事件。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>克尔凯郭尔的生平可用于“罪感与救赎”“孤独与自省”“主动的放弃（断舍离）”“在人群中保持自我”“使命高于安逸”等主题。注意：解除婚约不是薄情，而是他自认为“必须献身于写作”的存在性抉择——悲剧感恰恰来自选择的分量。</p>
+        </div>
+
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy “Søren Kierkegaard”、维基百科 / 快懂百科 / 360 百科「克尔凯郭尔」、求闻百科、南方都市报《一位爱用笔名的丹麦哲学家》（书评）。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第三章 ========== -->
+    <section class="section" id="sec-3">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">3</span><span class="h2-text">主要著作与笔名写作</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位（学术）：</strong>19 世纪丹麦哲学家、神学家与作家，存在主义思想的源头，20 世纪哲学、神学与文学的共同先驱（海德格尔、萨特、雅斯贝尔斯、卡尔·巴特、维特根斯坦均受其深刻影响）。</p>
+
+        <h3>笔名写作：间接沟通与“思想实验”</h3>
+        <p>克尔凯郭尔大约一半的著作是以笔名发表的。重要的笔名包括：《非此即彼》的编者维克多·埃雷米塔、作者“A”与法官威廉；《恐惧与战栗》的作者约翰内斯·德·塞伦蒂奥（意为“沉默者”）；《哲学片段》与《非科学的最后附言》的作者约翰内斯·克利马库斯；《致死的疾病》与《基督教的训练》的作者安提-克利马库斯。他在《非科学的最后附言》(1846) 末尾《最先与最后的解释》中写道：“在这些笔名作品中，没有一个字是我的。”他这样做的原因在于：<strong>存在性的真理不能被直接“灌输”</strong>——若由作者直接宣布，读者就会把真理当作现成信息接受，而不去亲自内化、抉择；只有让不同人生观的“声音”互相碰撞，读者才被迫自己作出存在性的决断。这一方法学自苏格拉底的“产婆术”。</p>
+
+        <h3>代表作一览</h3>
+        <div class="summary no-break">
+          <div class="col">
+            <div class="col-title">早期美学／伦理著作（笔名）</div>
+            <p><strong>《非此即彼》（1843）：</strong>以“审美生活”与“伦理生活”的对立迫使读者选择，是成名作。</p>
+            <p><strong>《恐惧与战栗》（1843）：</strong>分析亚伯拉罕献祭以撒，提出“对伦理的目的论悬置”与信仰的骑士，影响最大之作。</p>
+            <p><strong>《重复》（1843）、《人生道路诸阶段》（1845）：</strong>分别以“重复”与“诸阶段”重写存在主题。</p>
+          </div>
+          <div class="col">
+            <div class="col-title">理论著作与宗教著作</div>
+            <p><strong>《哲学片段》（1844）、《非科学的最后附言》（1846）：</strong>笔名克利马库斯；系统阐发“主观真理”“主体性即真理”。</p>
+            <p><strong>《畏的概念》（1844）：</strong>提出“焦虑是自由的眩晕”，是存在主义心理学的奠基文本。</p>
+            <p><strong>《致死的疾病》（1849）：</strong>笔名安提-克利马库斯；分析绝望的结构，指认“致死的疾病是绝望”。</p>
+            <p><strong>《爱的作为》（1847，真名）：</strong>基督教伦理著作；另有《基督教的训练》（1850）与《瞬间》（1855）。</p>
+          </div>
+        </div>
+
+        <blockquote>
+          <p>在这些笔名作品中，没有一个字是我的。我对自己这些作品没有任何意见，除非作为第三者；我对其意义一无所知，除非作为读者。</p>
+          <cite>—— 克尔凯郭尔《非科学的最后附言·最先与最后的解释》(1846)</cite>
+        </blockquote>
+        <p>克尔凯郭尔一生还写有逾 7000 页《日记》。这些日记既是自白，也是其思想最直白的表述——许多广为流传的名言都出自其中（如 1835 年 8 月 1 日的"找到一个我能够为此而生、为此而死的信念"）。1877 年丹麦文学批评家勃兰代斯（Georg Brandes）在哥本哈根大学开讲并出版首部研究专著，其著作自此逐渐进入欧洲视野；德译本自 1870 年代零星出现，1909 年起由施雷姆普夫（Christoph Schrempf）系统译出；其思想影响力真正爆发于 20 世纪 20—30 年代（辩证神学与存在主义兴起），并绵延影响整个 20 世纪。</p>
+
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy、PhilosophyProfessor.com、Infoplease／哥伦比亚百科全书、求闻百科、Citizendium “Søren Kierkegaard”。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第四章 ========== -->
+    <section class="section" id="sec-4">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">4</span><span class="h2-text">核心思想（一）：终极关怀——死亡与贪欲</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是克尔凯郭尔进入高考作文最直接的入口：人的精神生活总要面对两大根本难题——死亡与贪欲，而信仰为生命提供超越的依托。</p>
+
+        <h3>终极关怀</h3>
+        <p>终极关怀关切生命的根本意义，以“人生信仰”或“人生理想”为依据。我们需要信仰来支撑生活的根本意义，因为人在精神层面上总要面对两个根本性的人生难题：死亡和贪欲。</p>
+
+        <h3>死亡</h3>
+        <p>孔子说：“未知生，焉知死。”古希腊哲学家伊壁鸠鲁有过一个消解死亡的说法：只要你还能思考死亡问题，就说明你还活着，那你就不必为死亡而操心；而一旦你死去了，也就不会感到死亡是个问题了。</p>
+        <p>无论如何，死亡不会是人的现实经验：我们具有关于死亡的意识，我们知道人终有一死，但人的意识中又存在“永恒”这个概念，这会让人对于死亡感到深刻的悲凉，感到一种无可弥补的遗憾。所以我们会哀悼逝者，也会为自己最终的死亡而忧虑或恐惧。</p>
+
+        <h3>贪欲</h3>
+        <p>人在身体意义上是一个生物体的存在，具有类似动物的欲望；但同时人又是一种精神性的存在，有所谓良知和道德感。我们在道德意识中有“崇高”这个概念，但我们时而会被动物性的欲望左右，难以自拔。在道德的视角下，人对自己的欲望会产生羞耻感，鄙视自己，感到自己生命的卑微。</p>
+
+        <h3>如何应对终极关怀的两大难题</h3>
+        <p>依靠信仰，最典型的是宗教信仰（基督教，灵魂拯救）。信仰的意义在于实现生命的超越：超越死亡达到永生，克服对死亡的恐惧；超越卑微达到崇高，战胜欲望的羞耻。</p>
+        <p>如雷锋所言：“我要把有限的生命投入到无限的为人民服务之中去。”这也超越了死亡和卑微。如果我们能够建立一种坚定的人生信念，就能明确地回答终极关怀的困扰，心灵就有了安身立命的根基。</p>
+
+        <blockquote>
+          <p>（按：“信仰是心灵的故乡”一句在克尔凯郭尔原著与权威学术来源中均查不到出处，疑为后人编者创作，考场上不宜作为克氏原话引用。）</p>
+        </blockquote>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“终极关怀”可用于“人生的意义”“精神家园”“超越性”“奉献与崇高”等主题。写法上先立“死亡—贪欲”两难，再亮出“信仰／理想超越”的解法，最后落到个体的安身立命，层层递进。</p>
+        </div>
+
+        <p class="src-note">来源：原文档《高考哲思化写作素材》第二章（保留文本）；死亡与贪欲之辨系原文档既有表述，通用说法参见《牛津通识读本：克尔凯郭尔》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第五章 ========== -->
+    <section class="section" id="sec-5">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">5</span><span class="h2-text">核心思想（二）：存在三阶段——审美、伦理与宗教</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是克尔凯郭尔最有画面感的思想：人的生存有审美、伦理、宗教三种境界（阶段／sphere），它不是按部就班的人生履历，而是三种竞争着的人生观，人必须自己选择并承担。</p>
+
+        <h3>审美阶段：感官与“有趣”的追逐</h3>
+        <p>审美阶段的人追求直接享受、新奇与“有趣”，以旁观者而非参与者的态度对待生活。《非此即彼》第一卷中的“诱惑者”就是典型：他品尝一切、厌倦一切，永远处于情绪与欲望的支配之下。这种生活看似自由快乐，实则缺乏承诺与自我认同——当短暂的享乐消逝，空虚、厌烦与绝望便接踵而至。审美的生存不是恶，而是“不选择”，它最终通向绝望。</p>
+
+        <h3>伦理阶段：承诺、责任与道德</h3>
+        <p>伦理阶段以《非此即彼》第二卷中的法官威廉为代表：人认识到唯有承诺（婚姻、职业、社会角色）才能成就一个统一的自我，于是遵循普遍的道德规范、承担责任、趋善避恶。但伦理生活也有局限：抽象的普遍道德无法解释每一个具体处境，当“人必须服从上帝”与“人必须服从伦理”发生冲突时，伦理便暴露出它的边界，个体由此陷入罪感与痛苦，被推向更高的境界。</p>
+
+        <h3>宗教阶段：信仰、悖论与个体对上帝的关系</h3>
+        <p>宗教阶段是克尔凯郭尔所说的最高境界：个体与上帝建立绝对的、单独的关系，甘冒理性无法辩护的风险去信靠。这一阶段的核心是“悖论”——基督信仰本身就是无法被理性彻底把握的绝对悖论；面对它，人要么被冒犯，要么相信。三阶段不是简单的时间顺序，而是“非此即彼”的存在抉择：<strong>每一步进阶都不是水到渠成的成长，而是必须“跃过”的断裂。</strong></p>
+
+        <blockquote>
+          <p>结婚，你会后悔；不结婚，你也会后悔。嘲笑这个世界，你会后悔；为它哭泣，你也会后悔……无论你怎样选择，你都会后悔——这就是一切思辨哲学的要义。</p>
+          <cite>—— 克尔凯郭尔《非此即彼》（通行中译大意）</cite>
+        </blockquote>
+
+        <div class="box no-break">
+          <div class="box-title">方法论提示</div>
+          <p>三阶段常被误读为“人生按顺序升级”，克尔凯郭尔本人并不主张这种线性简化。更准确的读法是：三阶段是三种竞争的人生价值观，人可能在其中反复摇摆。考场用“三阶段”时，重点应落在“每一阶段都是选择，选择即自我塑造”，而非机械排队。</p>
+        </div>
+
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy、Encyclopedia.com、eNotes、快懂百科 / 求闻百科（三阶段：审美／伦理／宗教）。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第六章 ========== -->
+    <section class="section" id="sec-6">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">6</span><span class="h2-text">核心思想（三）：主观真理与个体性</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是克尔凯郭尔最具原创性的贡献：关于伦理与宗教这类关乎“怎么活”的真理，客观知识永远不够，你必须用自己的存在去占有它——“主体性即真理”。</p>
+
+        <h3>客观真理 vs 主观真理</h3>
+        <p><span class="term">客观真理</span>关乎“对象是什么”，如数学与科学的命题，可以旁观、验证、悬置个人感情；<span class="term">主观真理</span>关乎“我该如何存在”，它不能被抽象地传达，而必须被个人以激情与整个生命“内化”（appropriation）之后才成其为真理。克尔凯郭尔说，客观地提问真理，人们只关心“我所说的内容是否正确”；而主观地提问真理，人们关心“我是如何与它相处的”。对伦理与宗教这类“本质真理”，<strong>“怎么信”比“信什么”更根本</strong>——一个冷漠地背诵教义的人，与一个为信念舍生的人，占据的是完全不同的真理。</p>
+
+        <blockquote>
+          <p>客观的重音落在“说了什么”，主观的重音落在“如何说”。</p>
+          <cite>—— 克尔凯郭尔《非科学的最后附言》（笔名：约翰内斯·克利马库斯）</cite>
+        </blockquote>
+        <p>由此他提出著名的命题：<strong>“主体性即真理”（truth is subjectivity）</strong>。需要强调的是，他并不否定客观真理（如科学），而是说在科学无法回答的领域——伦理与宗教——必须由充满激情的个人承诺来填补。黑格尔建造了一座无所不包的“绝对真理”宫殿，自己却像住在宫殿旁的小棚屋里一样，并不在其中生活——这是克尔凯郭尔对体系哲学最辛辣的讽刺。</p>
+
+        <h3>个体性：反对“人群”</h3>
+        <p>克尔凯郭尔反复以“那个孤独个体”（the single individual）自许。他警惕“人群”（crowd / public）：在人群中，个体最易把责任推给“大家都这样”，从而逃避自己必须作出的抉择。他写道：“一个人若能真正独自立于这个世界，只听从自己良心的忠告，那么他就是一位英雄。”个体不是孤僻，而是拒绝被平均数吞噬的清醒——这为他后来影响 20 世纪存在主义（海德格尔“常人”、萨特“自欺”）埋下伏笔。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“主观真理”可用于“坚守自我”“信念的力量”“拒绝随波逐流”“知识分子的良心”；“个体性”可用于“独立思考”“群与己”“内卷与自我迷失”。引用时要强调：主观真理不是“怎样都对”的相对主义，而是“认准之后愿以生命担当”的真诚。</p>
+        </div>
+
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy（“truth is subjectivity”）、Infoplease／哥伦比亚百科全书、Grokipedia、sorenkierkegaard.nl 论《非科学的最后附言》、爱思想相关译文。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第七章 ========== -->
+    <section class="section" id="sec-7">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">7</span><span class="h2-text">核心思想（四）：恐惧与战栗、信仰之跃与焦虑</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是克尔凯郭尔被引用最多的部分，也最容易被误读：信仰之跃不是“闭眼乱跳”，而是在理性尽头、看清风险之后，仍以全部激情作出的存在性决断。</p>
+
+        <h3>亚伯拉罕的悖论：对伦理的目的论悬置</h3>
+        <p>《恐惧与战栗》（1843，笔名“沉默者”）反复分析《创世记》第 22 章：上帝命亚伯拉罕献祭独子以撒，亚伯拉罕带着以撒走向摩利亚山，举刀之际天使出面阻止。克尔凯郭尔问：如果亚伯拉罕不爱儿子、毫无挣扎，或者只把献祭当作一条冷冰冰的教规，他的行为就毫无意义；恰恰因为他同时深爱以撒、又绝对信靠上帝，这个悖论才显出信仰的重量。当“服从上帝”与“服从普遍伦理”冲突时，信仰暂时悬置了伦理——这就是著名的<strong>“对伦理的目的论悬置”（teleological suspension of the ethical）</strong>。与能以公开理由解释牺牲子女的“悲剧英雄”（如阿伽门农）不同，亚伯拉罕没有任何可以向人群解释的理由，他只能沉默地信靠。他因此成为“信仰的骑士”。</p>
+
+        <h3>“纵身一跃”</h3>
+        <p>在信仰与真理之间存在一个逻辑断裂，即你是无法依靠逻辑和推理来求证信仰为真、来确证它的可靠性。因此，你不得不勇敢地“纵身一跃”，才有可能越过这道鸿沟。</p>
+        <p>这完全是一种冒险。因为我们并不能知道这纵身一跃的结果是抵达拯救的彼岸还是跌入虚空的深渊。我们甚至无法计算这个风险的概率。信仰需要极大的勇气。</p>
+        <p>“信仰之跃”（leap of faith）一语并非克尔凯郭尔原词（丹麦原文无此短语，英语习语来源为《恐惧与战栗》中“舞者之跃”的英译），但其思想正源于《恐惧与战栗》：信仰不是建立在证据充足的推论上，而必须从“不确定”中跃过。敢于跃出的前提是充分掂量了风险——正是这种“在不确定中仍愿承担”的勇气，使信仰区别于迷信。</p>
+
+        <h3>焦虑：自由的眩晕</h3>
+        <p>在《畏的概念》（1844）中，克尔凯郭尔区分了“害怕”与“焦虑／畏”：害怕有具体的对象（野兽、悬崖），而焦虑没有对象——它面对的是自由本身。自由意味着“我随时可能选择另一种活法”，这种无限可能性令人眩晕。他写道：<strong>“焦虑是自由的眩晕。”</strong>站在悬崖边，人最恐惧的不是跌落，而是发现自己随时可以纵身一跃。焦虑不是软弱，而是精神觉醒的标志：“谁学会了正确地焦虑，谁就学会了终极之事。”正因为人是自由的存在，人必须借由抉择来成为自己。</p>
+
+        <blockquote>
+          <p>焦虑是自由的眩晕——当精神想要设定综合，自由向自己的可能性深处张望，伸手抓住有限性以支撑自己时，它就出现了。</p>
+          <cite>—— 克尔凯郭尔《畏的概念》（笔名：维基留斯·豪夫尼恩西斯）</cite>
+        </blockquote>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>克尔凯郭尔适合用于“信仰与理性”“勇气的价值”“生命意义的确立”“超越死亡与卑微”等主题。引用“纵身一跃”时，可强调其并非盲目，而是在理性尽头作出的存在性决断。“焦虑是自由的眩晕”可用于“选择与责任”“成长的代价”“内卷时代的勇气”。</p>
+        </div>
+
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy（对伦理的目的论悬置、焦虑定义）、Zondervan Academic “What is a leap of faith?”、爱思想《克尔凯郭尔：年轻、自由和焦虑》、快懂百科 / 求闻百科。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第八章 ========== -->
+    <section class="section" id="sec-8">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">8</span><span class="h2-text">我们该如何理解克尔凯郭尔</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">克尔凯郭尔常被误读为“鼓吹非理性、反对理性”的非理性主义者，或被读成一个“阴郁的失败者”。这两种读法都错失了他的本意：他反对的是把理性抬成唯一裁判的“体系”，而非理性本身；他终生未娶、42 岁早逝，看似惨淡，却以全部生命践行了“找到一个我能够为此而生、为此而死的信念”。</p>
+
+        <div class="box no-break">
+          <div class="box-title">理解总纲：从“人群”回到“这个个体”</div>
+          <p><strong>一、他不是反理性，而是反“理性的僭越”。</strong>他承认科学客观真理的价值，只是指出在关乎生命意义的领域，理性给不出最终答案——那里需要个人以激情作出的决断。信仰之跃的前提，是理性已被充分运用、走到尽头。</p>
+          <p><strong>二、他不是悲观厌世，而是“深度的真诚”。</strong>他写绝望、写焦虑、写恐惧与战栗，是为了让人直面它们，而不是逃避进人群的麻醉里。直面之后的抉择，才是自由的人。</p>
+          <p><strong>三、“间接沟通”不是故弄玄虚。</strong>因为存在真理无法被灌输，他只能用假名、反讽与悖论，把读者逼到“必须自己选择”的墙角——这正是对读者自由的最大尊重。</p>
+          <p><strong>四、与刘擎《西方现代思想讲义》的接续：</strong>存在主义之后的重要命题——人是“被抛”的自由存在、意义需要自己建构——都可以在克尔凯郭尔这里找到源头。他的一生可以概括为一句话：<strong>把“如何成为一个真诚的个体”当作哲学的头等问题。</strong></p>
+        </div>
+
+        <blockquote>
+          <p>生活只能向后理解，但必须向前生活。</p>
+          <cite>—— 克尔凯郭尔《日记》1843 年（通行中译）</cite>
+        </blockquote>
+
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy、Oxford Very Short Introduction（《牛津通识读本：克尔凯郭尔》）、刘擎《西方现代思想讲义》（存在主义脉络）、哲思素材原文档第二章。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第九章 ========== -->
+    <section class="section" id="sec-9">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">9</span><span class="h2-text">写作应用提示</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">把克尔凯郭尔用在考场上，记住：<strong>思想用于论证，生平用于点缀，引文要“可上考场”。</strong></p>
+
+        <h3>一、适用主题速查</h3>
+        <ul>
+          <li><strong>信仰与理性：</strong>纵身一跃、信仰之跃、“在理性尽头仍愿承担”。</li>
+          <li><strong>勇气的价值：</strong>“冒险会造成焦虑，但不冒险却会失去自我”、焦虑是自由的眩晕。</li>
+          <li><strong>生命意义的确立：</strong>终极关怀、主观真理、“找到一个能为此生死的信念”。</li>
+          <li><strong>超越死亡与卑微：</strong>信仰超越死亡与贪欲、雷锋“有限与无限”的例证。</li>
+          <li><strong>自我与坚持 / 拒绝随波逐流：</strong>孤独个体、反对人群、三阶段的选择。</li>
+          <li><strong>选择与责任：</strong>“非此即彼”的抉择、每一种选择都必须自己承担。</li>
+          <li><strong>理想与现实的张力：</strong>与蕾吉娜的婚约、亚伯拉罕的沉默、骑士与税吏并无二致。</li>
+        </ul>
+
+        <h3>二、可嵌入的经典引文</h3>
+        <ul>
+          <li>“我真正缺少的东西……要找到一个我能够为此而生、为此而死的信念。”（《日记》1835；立“人生信念”主题）</li>
+          <li>“冒险会造成焦虑，但不冒险却会失去自我。”（日记，通行英译 To dare is to lose one’s footing momentarily; not to dare is to lose oneself.；出处存疑，考场上慎用细节考据）</li>
+          <li>“焦虑是自由的眩晕。”（《畏的概念》1844；写选择、成长与勇气）</li>
+          <li>“主体性即真理。”（《非科学的最后附言》1846；写坚守自我的信念）</li>
+          <li>“生活只能向后理解，但必须向前生活。”（《日记》1843；写青春的迷茫与前行）</li>
+          <li>“只有能造就你的真理，才是属于你的真理。”（《非此即彼》第二卷结尾；写内化而非背诵的真理）</li>
+        </ul>
+
+        <h3>三、易错提醒</h3>
+        <ul>
+          <li><strong>信仰之跃 ≠ 盲从与迷信：</strong>克尔凯郭尔的“跃”发生在理性穷尽之后，是对风险充分自知的选择；别写成“不用思考，跳就完了”。</li>
+          <li><strong>主观真理 ≠ 相对主义：</strong>他不否定客观真理，只说伦理宗教领域须以激情内化；“怎样都对”不是他的意思，是反讽式误读。</li>
+          <li><strong>三阶段 ≠ 人生年龄表：</strong>它们是三种竞争的人生观，不是“童年—中年—老年”的路线图。</li>
+          <li><strong>他反对体系 ≠ 反对理性本身：</strong>他本人是受过严格神学哲学训练的学者，批判的是理性“僭越”为生命意义的唯一裁判。</li>
+          <li><strong>对国教的攻击 ≠ 反宗教：</strong>他恰恰是最严肃的基督徒，骂的是把信仰变成舒适习俗的“基督教界”。</li>
+          <li><strong>引文出处谨慎：</strong>“冒险造成焦虑”一句的中译与出处版本较多（有说法出自《致死的疾病》相关英译，亦有出处标注存疑），考场上宜以大意化用，不作考据式引用。</li>
+        </ul>
+
+        <div class="footer-note">完 · 本册素材综合自公开网络文献与权威词条（Stanford Encyclopedia of Philosophy 等），引文以通行中译为准，考场引用请依教材与权威译本。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== 悬浮按钮 ===================== -->
+<div class="fab-group">
+  <button class="fab fab-mini hidden" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">⤒</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 常量与元素引用 ================= */
+  var STORE_THEME = 'kierkegaard.theme';
+  var STORE_FS    = 'kierkegaard.fontSize';
+  var FS_LEVELS   = ['0', '1', '2'];
+
+  var html        = document.documentElement;
+  var body        = document.body;
+  var topbar      = document.getElementById('topbar');
+  var progressBar = document.getElementById('progressBar');
+  var main        = document.getElementById('main');
+  var tocEl       = document.getElementById('toc');
+  var tocNav      = document.getElementById('tocNav');
+  var secCountEl  = document.getElementById('secCount');
+  var scrim       = document.getElementById('scrim');
+  var menuBtn     = document.getElementById('menuBtn');
+  var themeBtn    = document.getElementById('themeBtn');
+  var fsUpBtn     = document.getElementById('fsUp');
+  var fsDownBtn   = document.getElementById('fsDown');
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
+  var prevHitBtn  = document.getElementById('prevHit');
+  var nextHitBtn  = document.getElementById('nextHit');
+  var clearBtn    = document.getElementById('clearSearch');
+  var expandAllBtn   = document.getElementById('expandAll');
+  var collapseAllBtn = document.getElementById('collapseAll');
+  var toTopBtn    = document.getElementById('toTop');
+
+  var sections   = [].slice.call(main.querySelectorAll('.section'));
+  var navTargets = [];   /* 目录跳转目标 id（文档顺序，含 h2 与 h3） */
+  var tocItems   = {};   /* id -> 目录 <a> 元素 */
+  var hits       = [];   /* 当前搜索命中的 <mark> 列表 */
+  var hitIndex   = -1;
+  var searchTimer = null;
+  var rafPending  = false;
+  var activeId    = '';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+  /* ================= 通用工具 ================= */
+
+  /** 安全读取 localStorage（隐私模式下可能抛错）。 */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  /** 安全写入 localStorage。 */
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* 忽略 */ }
+  }
+  /** 顶栏当前高度（移动端换行后会变高）。 */
+  function topbarHeight() {
+    return topbar ? topbar.offsetHeight : 58;
+  }
+  /** 取标题纯文本（剔除章节序号与折叠箭头）。 */
+  function headingText(heading) {
+    var clone = heading.cloneNode(true);
+    var junk = clone.querySelectorAll('.chapter-num, .sec-caret');
+    for (var i = 0; i < junk.length; i++) { junk[i].parentNode.removeChild(junk[i]); }
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** 元素是否当前可见（折叠后的内容不可见）。 */
+  function isVisible(el) {
+    return !!(el && el.offsetParent !== null);
+  }
+
+  /* ================= 主题 ================= */
+
+  function applyTheme(theme) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? '☀' : '🌙';
+    themeBtn.setAttribute('title', next === 'dark' ? '切换到浅色阅读模式' : '切换到深色阅读模式');
+  }
+
+  function initTheme() {
+    var saved = lsGet(STORE_THEME);
+    if (saved !== 'dark' && saved !== 'light') {
+      var prefersDark = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false;
+      saved = prefersDark ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+
+  themeBtn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    lsSet(STORE_THEME, next);
+  });
+
+  /* ================= 字号（三档） ================= */
+
+  function applyFontSize(level) {
+    var idx = FS_LEVELS.indexOf(String(level));
+    if (idx === -1) { idx = 1; }
+    html.setAttribute('data-fs', FS_LEVELS[idx]);
+    fsDownBtn.disabled = (idx === 0);
+    fsUpBtn.disabled = (idx === FS_LEVELS.length - 1);
+    fsDownBtn.style.opacity = idx === 0 ? '.45' : '1';
+    fsUpBtn.style.opacity = idx === FS_LEVELS.length - 1 ? '.45' : '1';
+  }
+
+  function stepFontSize(delta) {
+    var idx = FS_LEVELS.indexOf(html.getAttribute('data-fs'));
+    if (idx === -1) { idx = 1; }
+    var next = Math.min(FS_LEVELS.length - 1, Math.max(0, idx + delta));
+    applyFontSize(FS_LEVELS[next]);
+    lsSet(STORE_FS, FS_LEVELS[next]);
+  }
+
+  function initFontSize() {
+    var saved = lsGet(STORE_FS);
+    applyFontSize(saved === null ? '1' : saved);
+  }
+
+  fsUpBtn.addEventListener('click', function () { stepFontSize(1); });
+  fsDownBtn.addEventListener('click', function () { stepFontSize(-1); });
+
+  /* ================= 章节折叠 / 展开 ================= */
+
+  function setCollapsed(section, collapsed) {
+    var head = section.querySelector('h2.sec-head');
+    if (!head) { return; }
+    if (collapsed) {
+      section.classList.add('collapsed');
+      head.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      head.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function toggleSection(section) {
+    setCollapsed(section, !section.classList.contains('collapsed'));
+    requestActiveUpdate();
+  }
+
+  function expandSection(section) {
+    if (section && section.classList.contains('collapsed')) {
+      setCollapsed(section, false);
+    }
+  }
+
+  sections.forEach(function (section) {
+    var head = section.querySelector('h2.sec-head');
+    var bodyEl = section.querySelector('.sec-body');
+    if (!head || !bodyEl) { return; }
+    if (!bodyEl.id) { bodyEl.id = section.id + '-body'; }
+    head.setAttribute('aria-controls', bodyEl.id);
+
+    head.addEventListener('click', function () { toggleSection(section); });
+    head.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggleSection(section);
+      }
+    });
+  });
+
+  expandAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, false); });
+    requestActiveUpdate();
+  });
+  collapseAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, true); });
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    requestActiveUpdate();
+  });
+
+  /* ================= 目录（TOC）自动生成 ================= */
+
+  function buildToc() {
+    var frag = document.createDocumentFragment();
+    var chapterCount = 0;
+
+    sections.forEach(function (section, sIdx) {
+      if (!section.id) { section.id = 'sec-auto-' + sIdx; }
+
+      var head = section.querySelector('h2.sec-head');
+      var label = head ? headingText(head) : (section.getAttribute('data-toc') || ('第 ' + (sIdx + 1) + ' 节'));
+      var numEl = head ? head.querySelector('.chapter-num') : null;
+      var numText = numEl ? numEl.textContent.trim() : '·';
+      if (head) { chapterCount += 1; }
+
+      frag.appendChild(makeTocItem(section.id, label, numText, 2));
+      navTargets.push(section.id);
+
+      /* 子节标题（h3）自动提取 */
+      var subs = [].slice.call(section.querySelectorAll('h3'));
+      subs.forEach(function (h3, hIdx) {
+        if (!h3.id) { h3.id = section.id + '-h3-' + (hIdx + 1); }
+        frag.appendChild(makeTocItem(h3.id, headingText(h3), '', 3));
+        navTargets.push(h3.id);
+      });
+    });
+
+    tocNav.appendChild(frag);
+    secCountEl.textContent = String(chapterCount);
+  }
+
+  function makeTocItem(targetId, label, numText, level) {
+    var a = document.createElement('a');
+    a.className = 'toc-item lvl' + level;
+    a.href = '#' + targetId;
+    a.setAttribute('data-target', targetId);
+
+    if (level === 2) {
+      var num = document.createElement('span');
+      num.className = 'toc-num';
+      num.textContent = numText || '·';
+      a.appendChild(num);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'toc-text';
+    txt.textContent = label;
+    a.appendChild(txt);
+
+    tocItems[targetId] = a;
+    return a;
+  }
+
+  /* ================= 平滑滚动与锚点 ================= */
+
+  function scrollToTarget(targetId, updateHash) {
+    var el = document.getElementById(targetId);
+    if (!el) { return; }
+
+    var section = el.closest ? el.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    /* 折叠展开后再量位置，避免坐标错位 */
+    window.requestAnimationFrame(function () {
+      var rect = el.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - 14;
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+      if (updateHash !== false && history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+      }
+      setActive(targetId);
+    });
+  }
+
+  /* 侧边目录点击 */
+  tocNav.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-item') : null;
+    if (!link) { return; }
+    event.preventDefault();
+    scrollToTarget(link.getAttribute('data-target'));
+    closeDrawer();
+  });
+
+  /* 正文内“目 录”清单点击 */
+  main.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-list-link') : null;
+    if (!link) { return; }
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') { return; }
+    event.preventDefault();
+    scrollToTarget(href.slice(1));
+  });
+
+  /* ================= 当前章节高亮（IntersectionObserver + 滚动兜底） ================= */
+
+  /* 上报当前可见小节给原生层（用于"练习当前正文"只取正在看的那一节）。
+     通过隐藏 iframe 触发 philomenu:// scheme，由原生 shouldOverrideUrlLoading 拦截。 */
+  function reportActiveSection(targetId) {
+    try {
+      var el = document.getElementById(targetId);
+      var sec = el && el.closest ? el.closest('.section') : null;
+      // 仅上报顶层小节（sec-N）；封面 / 目录不计入练习范围
+      if (sec && /^sec-\d+$/.test(sec.id)) {
+        var person = 'kierkegaard';
+        var url = 'philomenu://update_person?person=' + encodeURIComponent(person) +
+                  '&section=' + encodeURIComponent(sec.id);
+        var bridge = document.getElementById('__philomenu_bridge');
+        if (!bridge) {
+          bridge = document.createElement('iframe');
+          bridge.id = '__philomenu_bridge';
+          bridge.setAttribute('style', 'display:none;width:0;height:0;border:0;');
+          document.body.appendChild(bridge);
+        }
+        bridge.src = url;
+      }
+    } catch (_) { /* 静默失败，不影响阅读 */ }
+  }
+
+  function setActive(targetId) {
+    if (!targetId || targetId === activeId) { return; }
+    activeId = targetId;
+    reportActiveSection(targetId);
+
+
+
+    for (var key in tocItems) {
+      if (Object.prototype.hasOwnProperty.call(tocItems, key)) {
+        tocItems[key].classList.remove('active');
+        tocItems[key].classList.remove('active-parent');
+      }
+    }
+    var item = tocItems[targetId];
+    if (!item) { return; }
+    item.classList.add('active');
+
+    /* 若命中的是 h3，则同时标记所属大节 */
+    var el = document.getElementById(targetId);
+    var section = el && el.closest ? el.closest('.section') : null;
+    if (section && section.id !== targetId && tocItems[section.id]) {
+      tocItems[section.id].classList.add('active-parent');
+    }
+    keepTocItemVisible(item);
+  }
+
+  function keepTocItemVisible(item) {
+    if (body.classList.contains('toc-open')) { return; }
+    var cRect = tocEl.getBoundingClientRect();
+    var iRect = item.getBoundingClientRect();
+    if (iRect.top < cRect.top + 8) {
+      tocEl.scrollTop -= (cRect.top + 8 - iRect.top);
+    } else if (iRect.bottom > cRect.bottom - 8) {
+      tocEl.scrollTop += (iRect.bottom - (cRect.bottom - 8));
+    }
+  }
+
+  function computeActive() {
+    var boundary = topbarHeight() + 28;
+    var candidate = navTargets.length ? navTargets[0] : '';
+
+    for (var i = 0; i < navTargets.length; i++) {
+      var el = document.getElementById(navTargets[i]);
+      if (!el || !isVisible(el)) { continue; }
+      var top = el.getBoundingClientRect().top;
+      if (top - boundary <= 0) {
+        candidate = navTargets[i];
+      } else {
+        break;
+      }
+    }
+    /* 滚动到底部时强制高亮最后一节 */
+    var docH = document.documentElement.scrollHeight;
+    if (window.pageYOffset + window.innerHeight >= docH - 4 && navTargets.length) {
+      candidate = navTargets[navTargets.length - 1];
+    }
+    setActive(candidate);
+  }
+
+  function requestActiveUpdate() {
+    if (rafPending) { return; }
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      computeActive();
+      updateProgress();
+    });
+  }
+
+  function initObserver() {
+    if (!('IntersectionObserver' in window)) { return; }
+    var observer = new IntersectionObserver(function () {
+      requestActiveUpdate();
+    }, {
+      root: null,
+      rootMargin: '-' + (topbarHeight() + 10) + 'px 0px -55% 0px',
+      threshold: [0, 0.05, 0.3, 0.6, 1]
+    });
+    sections.forEach(function (section) { observer.observe(section); });
+    var subs = main.querySelectorAll('h3');
+    for (var i = 0; i < subs.length; i++) { observer.observe(subs[i]); }
+  }
+
+  /* ================= 阅读进度条 ================= */
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.pageYOffset / max) * 100 : 0;
+    if (pct < 0) { pct = 0; }
+    if (pct > 100) { pct = 100; }
+    progressBar.style.width = pct.toFixed(2) + '%';
+
+    if (window.pageYOffset > 420) {
+      toTopBtn.classList.remove('hidden');
+    } else {
+      toTopBtn.classList.add('hidden');
+    }
+  }
+
+  toTopBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 全文搜索 ================= */
+
+  /** 清除所有高亮，并把文本节点合并回原状。 */
+  function clearMarks() {
+    var marks = main.querySelectorAll('mark.hit');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+    hits = [];
+    hitIndex = -1;
+  }
+
+  /** 用 <mark class="hit"> 包裹所有 substring 匹配。 */
+  function applyMarks(term) {
+    var query = term.toLowerCase();
+    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var value = node.nodeValue;
+        if (!value || !value.trim()) { return NodeFilter.FILTER_REJECT; }
+        var parent = node.parentNode;
+        if (!parent) { return NodeFilter.FILTER_REJECT; }
+        var tag = parent.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') { return NodeFilter.FILTER_REJECT; }
+        if (value.toLowerCase().indexOf(query) === -1) { return NodeFilter.FILTER_REJECT; }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
+    var targets = [];
+    while (walker.nextNode()) { targets.push(walker.currentNode); }
+
+    for (var i = 0; i < targets.length; i++) {
+      var node = targets[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      var idx = lower.indexOf(query, cursor);
+
+      while (idx !== -1) {
+        if (idx > cursor) {
+          frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        cursor = idx + query.length;
+        idx = lower.indexOf(query, cursor);
+      }
+      if (cursor < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      if (node.parentNode) { node.parentNode.replaceChild(frag, node); }
+    }
+
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+  }
+
+  /** 在目录上标注每节命中数量。 */
+  function updateTocHits() {
+    for (var key in tocItems) {
+      if (!Object.prototype.hasOwnProperty.call(tocItems, key)) { continue; }
+      var badge = tocItems[key].querySelector('.toc-hits');
+      if (badge) { badge.parentNode.removeChild(badge); }
+    }
+    if (!hits.length) { return; }
+    sections.forEach(function (section) {
+      var count = section.querySelectorAll('mark.hit').length;
+      var item = tocItems[section.id];
+      if (!count || !item) { return; }
+      var badge = document.createElement('span');
+      badge.className = 'toc-hits';
+      badge.textContent = String(count);
+      item.appendChild(badge);
+    });
+  }
+
+  function gotoHit(index) {
+    if (!hits.length) { return; }
+    var total = hits.length;
+    hitIndex = ((index % total) + total) % total;
+
+    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove('current'); }
+    var target = hits[hitIndex];
+    target.classList.add('current');
+
+    var section = target.closest ? target.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    window.requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - Math.max(window.innerHeight * 0.28, 90);
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+    renderCount();
+  }
+
+  function renderCount() {
+    var term = searchInput.value.trim();
+    if (!term) {
+      searchCount.textContent = '';
+      return;
+    }
+    if (!hits.length) {
+      searchCount.textContent = '无匹配';
+      return;
+    }
+    searchCount.textContent = (hitIndex >= 0 ? (hitIndex + 1) + '/' : '') + hits.length + ' 处';
+  }
+
+  function toggleSearchButtons(show) {
+    prevHitBtn.hidden = !show;
+    nextHitBtn.hidden = !show;
+    clearBtn.hidden = !show;
+  }
+
+  function runSearch() {
+    var term = searchInput.value.trim();
+    clearMarks();
+
+    if (!term) {
+      updateTocHits();
+      toggleSearchButtons(false);
+      renderCount();
+      return;
+    }
+
+    applyMarks(term);
+    updateTocHits();
+    toggleSearchButtons(true);
+
+    /* 展开所有含命中的章节，避免匹配被折叠隐藏 */
+    sections.forEach(function (section) {
+      if (section.querySelector('mark.hit')) { expandSection(section); }
+    });
+    /* 折叠状态可能变化，重新收集顺序 */
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+
+    if (hits.length) {
+      gotoHit(0);
+    } else {
+      renderCount();
+    }
+  }
+
+  searchInput.addEventListener('input', function () {
+    if (searchTimer) { window.clearTimeout(searchTimer); }
+    searchTimer = window.setTimeout(runSearch, 180);
+  });
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = null; }
+      if (!hits.length) {
+        runSearch();
+      } else {
+        gotoHit(hitIndex + (event.shiftKey ? -1 : 1));
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      resetSearch();
+    }
+  });
+
+  function resetSearch() {
+    searchInput.value = '';
+    clearMarks();
+    updateTocHits();
+    toggleSearchButtons(false);
+    renderCount();
+    searchInput.blur();
+  }
+
+  clearBtn.addEventListener('click', resetSearch);
+  nextHitBtn.addEventListener('click', function () { gotoHit(hitIndex + 1); });
+  prevHitBtn.addEventListener('click', function () { gotoHit(hitIndex - 1); });
+
+  /* ================= 移动端抽屉 ================= */
+
+  function openDrawer() {
+    body.classList.add('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!body.classList.contains('toc-open')) { return; }
+    body.classList.remove('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (body.classList.contains('toc-open')) { closeDrawer(); } else { openDrawer(); }
+  });
+  scrim.addEventListener('click', closeDrawer);
+
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 768) { closeDrawer(); }
+    requestActiveUpdate();
+  });
+
+  /* ================= 全局键盘快捷键 ================= */
+
+  document.addEventListener('keydown', function (event) {
+    if (typeof event.key !== 'string') { return; }
+    var tag = (event.target && event.target.nodeName) || '';
+    var typing = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT');
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      searchInput.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  /* ================= 滚动监听 ================= */
+
+  window.addEventListener('scroll', requestActiveUpdate, { passive: true });
+
+  /* ================= 初始化 ================= */
+
+  initTheme();
+  initFontSize();
+  buildToc();
+  initObserver();
+  updateProgress();
+  computeActive();
+
+  /* 带 hash 进入时定位到对应章节 */
+  if (window.location.hash.length > 1) {
+    var initialId = decodeURIComponent(window.location.hash.slice(1));
+    if (document.getElementById(initialId)) {
+      window.setTimeout(function () { scrollToTarget(initialId, false); }, 60);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-fs="1">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="诺齐克（1938 — 2002）高考写作素材：生平、著作、核心思想与写作应用提示。">
+<title>诺齐克 · 哲思化写作素材</title>
+<style>
+/* =====================================================================
+   萨特 · 写作素材（可交互单页站点）
+   纯静态：HTML + CSS + 原生 JS，无外部依赖，可离线运行
+   ===================================================================== */
+
+/* ---------- 变量：主题 ---------- */
+:root{
+  --topbar-h: 58px;
+  --toc-w: 272px;
+  --content-max: 46rem;
+  --fs-root: 17px;
+  --radius: 10px;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+html[data-theme="light"]{
+  --bg:#f3f1ec;
+  --paper:#ffffff;
+  --ink:#1b1b1b;
+  --ink-soft:#333333;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --line:#e6e2da;
+  --line-mid:#cfc9bf;
+  --line-strong:#1b1b1b;
+  --accent:#b0742a;
+  --accent-soft:rgba(176,116,42,.10);
+  --accent-ink:#ffffff;
+  --num-bg:#1b1b1b;
+  --num-ink:#ffffff;
+  --quote-bg:#f7f4ee;
+  --box-bg:#ffffff;
+  --col-bg:#faf8f3;
+  --mark-bg:#ffe680;
+  --mark-ink:#1b1b1b;
+  --mark-cur:#ff9f2e;
+  --topbar-bg:rgba(255,255,255,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.06);
+  --shadow-2:0 8px 26px rgba(0,0,0,.16);
+  --btn-bg:#ffffff;
+  --btn-bg-hover:#f0ece4;
+  --field-bg:#f6f3ed;
+}
+html[data-theme="dark"]{
+  --bg:#12140f;
+  --paper:#1a1c16;
+  --ink:#e9e4d8;
+  --ink-soft:#d4cebf;
+  --muted:#9c968a;
+  --faint:#7e786d;
+  --line:#2a2c24;
+  --line-mid:#3a3c32;
+  --line-strong:#6e7464;
+  --accent:#e6b06a;
+  --accent-soft:rgba(230,176,106,.16);
+  --accent-ink:#16120a;
+  --num-bg:#e6b06a;
+  --num-ink:#16120a;
+  --quote-bg:#20221b;
+  --box-bg:#1d1f18;
+  --col-bg:#20221b;
+  --mark-bg:#7d6200;
+  --mark-ink:#fff6d8;
+  --mark-cur:#c9761a;
+  --topbar-bg:rgba(18,20,15,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  --shadow-2:0 8px 26px rgba(0,0,0,.5);
+  --btn-bg:#22251d;
+  --btn-bg-hover:#2b2e24;
+  --field-bg:#22251d;
+}
+/* ---------- 字号三档 ---------- */
+html[data-fs="0"]{ --fs-root:15px; }
+html[data-fs="1"]{ --fs-root:17px; }
+html[data-fs="2"]{ --fs-root:19.5px; }
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:auto; }
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:var(--fs-root);
+  line-height:1.85;
+  -webkit-text-size-adjust:100%;
+  transition:background-color .25s var(--ease), color .25s var(--ease);
+}
+
+/* ---------- 无障碍：跳到正文 ---------- */
+.skip-link{
+  position:absolute; left:-9999px; top:0; z-index:2000;
+  background:var(--accent); color:var(--accent-ink);
+  padding:8px 14px; border-radius:0 0 var(--radius) 0; font-family:var(--sans); font-size:.85rem;
+}
+.skip-link:focus{ left:0; }
+
+/* =====================  顶栏  ===================== */
+.topbar{
+  position:sticky; top:0; z-index:900;
+  display:flex; align-items:center; gap:10px;
+  height:var(--topbar-h);
+  padding:0 14px;
+  background:var(--topbar-bg);
+  backdrop-filter:saturate(150%) blur(10px);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+.tb-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.tb-right{ display:flex; align-items:center; gap:6px; }
+
+.site-title{
+  font-family:var(--sans);
+  font-size:.94rem;
+  font-weight:800;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--ink);
+}
+.site-title .dot{ color:var(--accent); margin:0 .15em; }
+.site-title .st-sub{ font-weight:500; color:var(--muted); }
+
+
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-width:34px; height:34px; padding:0 9px;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1;
+  color:var(--ink); background:var(--btn-bg);
+  border:1px solid var(--line-mid); border-radius:8px;
+  cursor:pointer; user-select:none;
+  transition:background-color .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease);
+}
+.icon-btn:hover{ background:var(--btn-bg-hover); }
+.icon-btn:active{ transform:translateY(1px); }
+.icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.menu-btn{ display:none; }
+
+/* 搜索框 */
+.search-wrap{
+  position:relative;
+  display:flex; align-items:center;
+  width:100%; max-width:430px;
+  height:36px;
+  background:var(--field-bg);
+  border:1px solid var(--line-mid);
+  border-radius:999px;
+  padding:0 8px 0 12px;
+  transition:border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.search-wrap:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.search-icon{ font-size:.8rem; opacity:.65; margin-right:6px; }
+#searchInput{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  font-family:var(--sans); font-size:.86rem; color:var(--ink);
+}
+#searchInput::placeholder{ color:var(--faint); }
+#searchInput::-webkit-search-cancel-button{ display:none; }
+.search-count{
+  font-family:var(--sans); font-size:.74rem; color:var(--muted);
+  white-space:nowrap; margin:0 4px; font-variant-numeric:tabular-nums;
+}
+.search-nav{
+  display:flex; gap:2px;
+}
+.mini-btn{
+  width:22px; height:22px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:.7rem; line-height:1;
+  color:var(--muted); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.mini-btn:hover{ background:var(--btn-bg-hover); color:var(--ink); }
+.mini-btn[hidden]{ display:none; }
+
+/* 阅读进度条 */
+.progress{
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:3px; background:transparent; overflow:hidden;
+}
+.progress-bar{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, var(--accent), var(--num-bg));
+  transition:width .08s linear;
+}
+
+/* =====================  布局  ===================== */
+.layout{
+  display:flex;
+  align-items:flex-start;
+  gap:26px;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 18px;
+}
+
+/* ---------- 侧边目录 ---------- */
+.toc{
+  position:sticky;
+  top:var(--topbar-h);
+  flex:0 0 var(--toc-w);
+  width:var(--toc-w);
+  max-height:calc(100vh - var(--topbar-h));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:20px 8px 28px 0;
+  font-family:var(--sans);
+}
+.toc-head{
+  font-size:.72rem; font-weight:800; letter-spacing:.24em;
+  color:var(--muted); text-transform:uppercase;
+  padding:0 10px 10px; border-bottom:1px solid var(--line); margin-bottom:8px;
+}
+.toc-nav{ display:flex; flex-direction:column; }
+.toc-item{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:6px 10px;
+  color:var(--ink-soft); text-decoration:none;
+  border-left:2px solid transparent;
+  border-radius:0 6px 6px 0;
+  line-height:1.45;
+  transition:background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.toc-item:hover{ background:var(--accent-soft); color:var(--ink); }
+.toc-item.lvl2{ font-size:.85rem; font-weight:700; margin-top:6px; }
+.toc-item.lvl3{ font-size:.79rem; font-weight:400; padding-left:30px; color:var(--muted); }
+.toc-item .toc-num{
+  flex:0 0 auto;
+  font-size:.68rem; font-weight:800;
+  min-width:1.35em; text-align:center;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:4px;
+  padding:0 2px; line-height:1.5;
+  margin-top:.15em;
+}
+.toc-item.active{
+  color:var(--accent); background:var(--accent-soft);
+  border-left-color:var(--accent); font-weight:800;
+}
+.toc-item.active .toc-num{ color:var(--accent); border-color:var(--accent); }
+.toc-item.active-parent{ color:var(--ink); border-left-color:var(--line-strong); }
+.toc-item .toc-hits{
+  margin-left:auto; flex:0 0 auto;
+  font-size:.68rem; font-weight:700;
+  color:var(--accent-ink); background:var(--accent);
+  border-radius:999px; padding:0 6px; line-height:1.6;
+}
+.toc-foot{
+  margin-top:14px; padding:10px 10px 0;
+  border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--faint);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+}
+.link-btn{
+  background:none; border:0; padding:0;
+  font-family:var(--sans); font-size:.72rem; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.link-btn:hover{ opacity:.75; }
+.scrim{
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,.45);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s var(--ease);
+}
+
+/* ---------- 正文容器 ---------- */
+.content{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:var(--content-max);
+  margin:0 auto;
+  padding:22px 0 90px;
+}
+
+/* ---------- 章节卡片 ---------- */
+.section{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-1);
+  padding:26px 30px 24px;
+  margin:0 0 20px;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+  transition:background-color .25s var(--ease), border-color .25s var(--ease);
+}
+.section:target{ border-color:var(--accent); }
+
+/* 可折叠标题 */
+h2.sec-head{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--sans);
+  font-size:1.42em; font-weight:800; letter-spacing:.03em;
+  margin:0 0 12px; padding:0 0 8px;
+  border-bottom:2px solid var(--line-strong);
+  cursor:pointer; user-select:none;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h2.sec-head:hover .h2-text{ color:var(--accent); }
+h2.sec-head:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+h2.sec-head .chapter-num{
+  flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55em; height:1.55em;
+  font-size:.72em; font-weight:800;
+  background:var(--num-bg); color:var(--num-ink);
+  border-radius:4px;
+}
+h2.sec-head .h2-text{ flex:1 1 auto; transition:color .15s var(--ease); }
+h2.sec-head .sec-caret{
+  flex:0 0 auto;
+  font-size:.62em; color:var(--muted);
+  transition:transform .22s var(--ease);
+}
+.section.collapsed h2.sec-head{ border-bottom-color:var(--line-mid); margin-bottom:0; }
+.section.collapsed h2.sec-head .sec-caret{ transform:rotate(-90deg); }
+.section.collapsed .sec-body{ display:none; }
+.sec-body{ animation:fadeIn .22s var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:none;} }
+
+/* ---------- 正文排版 ---------- */
+h3{
+  font-family:var(--sans);
+  font-size:1.06em; font-weight:700;
+  margin:1.5em 0 .55em; color:var(--ink);
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h3::before{ content:"▪"; margin-right:.5em; color:var(--accent); }
+h4{
+  font-family:var(--sans);
+  font-size:.95em; font-weight:700;
+  margin:1.1em 0 .4em; color:var(--ink-soft);
+}
+p{ margin:0 0 .72em; text-align:justify; text-indent:2em; }
+p.no-indent{ text-indent:0; }
+ul, ol{ margin:.5em 0 .9em; padding-left:1.6em; }
+li{ margin-bottom:.35em; text-align:justify; }
+strong{ font-weight:700; color:var(--ink); }
+em{ font-style:normal; }
+
+blockquote{
+  margin:1em 0; padding:.7em 1em;
+  border-left:3px solid var(--accent);
+  background:var(--quote-bg);
+  font-size:.96em; line-height:1.78;
+  border-radius:0 6px 6px 0;
+}
+blockquote p{ text-indent:0; margin:0 0 .4em; }
+blockquote p:last-child{ margin-bottom:0; }
+blockquote cite{
+  display:block; text-align:right;
+  font-size:.86em; color:var(--muted); font-style:normal; margin-top:.5em;
+}
+
+.box{
+  margin:1em 0; padding:.85em 1em;
+  border:1px solid var(--line-mid);
+  background:var(--box-bg);
+  border-radius:8px;
+}
+.box-title{
+  font-family:var(--sans);
+  font-size:.78em; font-weight:800; letter-spacing:.16em;
+  color:var(--accent);
+  margin-bottom:.6em; padding-bottom:.35em;
+  border-bottom:1px solid var(--line);
+}
+.box p{ text-indent:0; margin-bottom:.45em; }
+.box p:last-child{ margin-bottom:0; }
+.box dl{ margin:0; }
+.box dt{
+  font-family:var(--sans); font-weight:700; font-size:.84em;
+  margin-top:.6em; color:var(--muted); letter-spacing:.05em;
+}
+.box dd{ margin:.15em 0 .55em; font-size:.96em; text-align:justify; }
+
+.term{
+  font-family:var(--sans); font-weight:700;
+  border-bottom:1px solid var(--line-strong);
+  padding-bottom:1px;
+}
+
+.summary{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin:1em 0;
+}
+.summary .col{
+  padding:.8em .9em;
+  background:var(--col-bg);
+  border-top:2px solid var(--line-strong);
+  border-radius:0 0 6px 6px;
+}
+.summary .col-title{
+  font-family:var(--sans); font-weight:800; font-size:.82em;
+  margin-bottom:.5em; letter-spacing:.08em;
+}
+.summary .col p{ text-indent:0; font-size:.92em; margin:0 0 .45em; }
+.summary .col p:last-child{ margin-bottom:0; }
+
+.src-note{
+  font-size:.78em; color:var(--faint);
+  margin:1.1em 0 0; padding-top:.5em;
+  border-top:1px dotted var(--line-mid);
+  text-align:left; text-indent:0;
+}
+.footer-note{
+  margin-top:1.4em; padding-top:.7em;
+  border-top:1px solid var(--line);
+  font-size:.8em; color:var(--muted); text-align:center; text-indent:0;
+}
+.center{ text-align:center; }
+.small{ font-size:.9em; }
+
+/* ---------- 封面 ---------- */
+.section-cover{ padding:0; overflow:hidden; }
+.cover{
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center;
+  padding:58px 26px 34px;
+}
+.cover-tag{
+  font-family:var(--sans);
+  font-size:.72rem; letter-spacing:.4em;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:3px;
+  padding:5px 12px 5px 16px; margin-bottom:34px;
+}
+.cover h1{
+  font-family:var(--sans);
+  font-size:2.6em; font-weight:900; line-height:1.2;
+  margin:0 0 14px; letter-spacing:.08em;
+}
+.cover-subtitle{
+  font-size:1.02em; color:var(--ink-soft);
+  margin-bottom:26px; letter-spacing:.14em;
+}
+.cover-line{ width:150px; height:2px; background:var(--line-strong); margin:0 auto 22px; }
+.cover-source{ font-size:.96em; color:var(--muted); line-height:2; }
+.cover-foot{
+  margin-top:34px; padding-top:14px;
+  border-top:1px solid var(--line);
+  width:100%; max-width:520px;
+  font-size:.78em; color:var(--faint); letter-spacing:.08em;
+}
+
+/* ---------- 原印刷目录（正文内） ---------- */
+.toc-list{ list-style:none; padding:0; margin:.4em 0 0; }
+.toc-list li{ border-bottom:1px dotted var(--line-mid); }
+.toc-list li:last-child{ border-bottom:none; }
+.toc-list-link{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:.5em .3em; color:var(--ink); text-decoration:none;
+  border-radius:6px;
+  transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.toc-list-link:hover{ background:var(--accent-soft); color:var(--accent); }
+.toc-list .num{
+  font-family:var(--sans); font-weight:800;
+  margin-right:.6em; color:var(--muted);
+}
+.toc-list .title{ font-size:.98em; }
+.toc-list .author{
+  font-family:var(--sans);
+  font-size:.76em; color:var(--faint); white-space:nowrap;
+}
+
+/* ---------- 搜索高亮 ---------- */
+mark.hit{
+  background:var(--mark-bg); color:var(--mark-ink);
+  border-radius:2px; padding:0 1px;
+  scroll-margin-top:calc(var(--topbar-h) + 90px);
+}
+mark.hit.current{
+  background:var(--mark-cur); color:#fff;
+  box-shadow:0 0 0 2px var(--mark-cur);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.fab-group{
+  position:fixed; right:18px; bottom:18px; z-index:880;
+  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px;
+}
+.fab{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:10px 16px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink);
+  font-family:var(--sans); font-size:.84rem; font-weight:700;
+  text-decoration:none; border:0; cursor:pointer;
+  box-shadow:var(--shadow-2);
+  transition:transform .15s var(--ease), opacity .2s var(--ease);
+}
+.fab:hover{ transform:translateY(-2px); }
+.fab.fab-mini{
+  width:40px; height:40px; padding:0; justify-content:center;
+  font-size:1rem;
+  background:var(--btn-bg); color:var(--ink);
+  border:1px solid var(--line-mid);
+}
+.fab.hidden{ opacity:0; pointer-events:none; transform:translateY(8px); }
+
+/* ---------- 移动端 ---------- */
+@media (max-width:900px){
+  .layout{ gap:16px; padding:0 12px; }
+  :root{ --toc-w:240px; }
+}
+@media (max-width:768px){
+  :root{ --topbar-h:54px; }
+  .menu-btn{ display:inline-flex; }
+  .site-title .st-sub{ display:none; }
+  .tb-center{ order:3; flex:0 0 100%; }
+  .topbar{ flex-wrap:wrap; height:auto; padding:8px 10px 10px; gap:8px; row-gap:8px; }
+  .tb-left{ flex:1 1 auto; }
+  .search-wrap{ max-width:none; height:34px; }
+  .layout{ display:block; padding:0 10px; }
+  .content{ max-width:none; padding:14px 0 96px; }
+  .section{ padding:20px 16px 18px; border-radius:8px; }
+  .summary{ grid-template-columns:1fr; }
+  .cover{ padding:40px 18px 26px; }
+  .cover h1{ font-size:2.1em; }
+  .cover-tag{ margin-bottom:24px; }
+
+  /* TOC 抽屉 */
+  .toc{
+    position:fixed; top:0; left:0; bottom:0; z-index:860;
+    width:80vw; max-width:320px;
+    max-height:none; height:100%;
+    padding:18px 10px 24px 14px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    box-shadow:var(--shadow-2);
+    transform:translateX(-102%);
+    transition:transform .26s var(--ease);
+  }
+  body.toc-open .toc{ transform:translateX(0); }
+  body.toc-open .scrim{ opacity:1; pointer-events:auto; }
+  body.toc-open{ overflow:hidden; }
+  .fab-group{ right:12px; bottom:12px; }
+  .fab{ padding:9px 14px; font-size:.8rem; }
+  p{ text-indent:2em; }
+}
+@media (max-width:420px){
+  .icon-btn .btn-txt{ display:none; }
+  .toc-list-link{ flex-wrap:wrap; }
+}
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+
+/* =====================================================================
+   打印样式：隐藏所有交互界面，恢复干净的 A4 印刷排版
+   ===================================================================== */
+@page{
+  size:A4;
+  margin:20mm 18mm 20mm 18mm;
+}
+@media print{
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    font-family:var(--serif);
+    font-size:11pt !important;
+    line-height:1.85;
+  }
+  html{
+    --paper:#fff; --ink:#000; --ink-soft:#222; --muted:#666; --faint:#999;
+    --line:#ddd; --line-mid:#ccc; --line-strong:#000;
+    --accent:#000; --accent-soft:transparent; --accent-ink:#fff;
+    --num-bg:#000; --num-ink:#fff;
+    --quote-bg:#f7f7f7; --box-bg:#fff; --col-bg:#fafafa;
+  }
+  .topbar, .toc, .scrim, .fab-group, .progress, .skip-link, .sec-caret, .search-wrap{
+    display:none !important;
+  }
+  .layout{ display:block; max-width:none; padding:0; margin:0; }
+  .content{ max-width:none; margin:0; padding:0; }
+  .section{
+    background:#fff !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    page-break-before:always;
+    page-break-inside:auto;
+  }
+  .section:first-of-type{ page-break-before:auto; }
+  .section.collapsed .sec-body{ display:block !important; }
+  .sec-body{ animation:none !important; }
+  h2.sec-head{
+    display:block; cursor:auto;
+    font-size:18pt !important; font-weight:800;
+    margin:0 0 10pt !important; padding-bottom:6pt;
+    border-bottom:2pt solid #000 !important;
+    page-break-after:avoid;
+  }
+  h2.sec-head .chapter-num{
+    display:inline-block; width:28pt; height:28pt; line-height:28pt;
+    text-align:center; font-size:14pt; border-radius:0;
+    background:#000 !important; color:#fff !important;
+    margin-right:10pt; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h2.sec-head .h2-text{ display:inline; }
+  h3{ font-size:13pt !important; page-break-after:avoid; }
+  h3::before{ color:#666 !important; }
+  h4{ font-size:11pt !important; page-break-after:avoid; }
+  p{ orphans:2; widows:2; }
+  blockquote, .box, .summary, .cover-source{ page-break-inside:avoid; }
+  blockquote{
+    background:#f7f7f7 !important; border-left:3pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .box{ border:1pt solid #333 !important; border-radius:0; }
+  .box-title{ color:#000 !important; text-transform:uppercase; }
+  .summary .col{
+    background:#fafafa !important; border-top:2pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .section-cover{ padding:0 !important; }
+  .cover{ min-height:245mm; padding:0 !important; justify-content:center; }
+  .cover h1{ font-size:32pt !important; }
+  .cover-subtitle{ font-size:14pt !important; }
+  .cover-line{ width:60mm; background:#000 !important; }
+  .cover-foot{ border-top:0; margin-top:60mm; }
+  .toc-list-link{ color:#000 !important; text-decoration:none; padding:8pt 0; }
+  .toc-list li{ border-bottom:.5pt dotted #bbb; }
+  mark.hit, mark.hit.current{
+    background:transparent !important; color:inherit !important;
+    box-shadow:none !important; padding:0;
+  }
+  a{ color:inherit !important; text-decoration:none !important; }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar" id="topbar">
+  <div class="tb-left">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开或关闭目录" aria-expanded="false" aria-controls="toc">☰<span class="btn-txt">菜单</span></button>
+    <span class="site-title">诺齐克<span class="dot">·</span><span class="st-sub">写作素材</span></span>
+  </div>
+
+  <div class="tb-center">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="searchInput" type="search" placeholder="全文搜索：最小国家 / 权利理论 / 张伯伦论证 / 边际约束 / 体验机 …" autocomplete="off" spellcheck="false" aria-label="全文搜索">
+      <span class="search-count" id="searchCount" aria-live="polite"></span>
+      <span class="search-nav">
+        <button class="mini-btn" id="prevHit" type="button" hidden aria-label="上一处匹配">▲</button>
+        <button class="mini-btn" id="nextHit" type="button" hidden aria-label="下一处匹配">▼</button>
+        <button class="mini-btn" id="clearSearch" type="button" hidden aria-label="清空搜索">✕</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tb-right">
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色/浅色主题" title="切换深色 / 浅色阅读模式">🌙</button>
+    <button class="icon-btn" id="fsDown" type="button" aria-label="缩小字号" title="缩小正文字号">A−</button>
+    <button class="icon-btn" id="fsUp" type="button" aria-label="放大字号" title="放大正文字号">A＋</button>
+  </div>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== 主体布局 ===================== -->
+<div class="layout">
+
+  <aside class="toc" id="toc" aria-label="章节目录">
+    <div class="toc-head">目录导航</div>
+    <nav class="toc-nav" id="tocNav"></nav>
+    <div class="toc-foot">
+      <span>共 <span id="secCount">0</span> 节</span>
+      <button class="link-btn" id="expandAll" type="button">全部展开</button>
+      <button class="link-btn" id="collapseAll" type="button">全部折叠</button>
+    </div>
+  </aside>
+
+  <main class="content" id="main">
+
+    <section class="section section-cover" id="sec-cover" data-toc="封面 · 人物名片">
+      <div class="cover">
+        <div class="cover-tag">高考写作素材</div>
+        <h1>诺齐克</h1>
+        <div class="cover-subtitle">现代西方思想史 · 个人拥有权利</div>
+        <div class="cover-line"></div>
+        <div class="cover-source">1938 — 2002<br>
+美国政治哲学家 · 哈佛大学教授<br>
+“个人拥有权利” · “最小国家” · “自由打乱图案”</div>
+        <div class="cover-foot">本册为单人物深度版 · 含生平、著作、核心思想与写作应用</div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-contents">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="h2-text">目 录</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <ul class="toc-list">
+          <li><a class="toc-list-link" href="#sec-1"><span><span class="num">01</span><span class="title">人物定位与速览</span></span><span class="author">一句话读懂</span></a></li>
+          <li><a class="toc-list-link" href="#sec-2"><span><span class="num">02</span><span class="title">生平：一个被自己说服的青年左翼</span></span><span class="author">经历如何长成思想</span></a></li>
+          <li><a class="toc-list-link" href="#sec-3"><span><span class="num">03</span><span class="title">主要著作与学术成就</span></span><span class="author">一本书定义一场论战</span></a></li>
+          <li><a class="toc-list-link" href="#sec-4"><span><span class="num">04</span><span class="title">核心思想（一）权利作为边际约束与最小国家</span></span><span class="author">国家能做的极少</span></a></li>
+          <li><a class="toc-list-link" href="#sec-5"><span><span class="num">05</span><span class="title">核心思想（二）权利理论：正义在于来路，不在于形状</span></span><span class="author">获取 · 转让 · 矫正</span></a></li>
+          <li><a class="toc-list-link" href="#sec-6"><span><span class="num">06</span><span class="title">核心思想（三）张伯伦论证：自由打乱图案</span></span><span class="author">最锋利的一枚思想实验</span></a></li>
+          <li><a class="toc-list-link" href="#sec-7"><span><span class="num">07</span><span class="title">体验机与效用怪物</span></span><span class="author">对功利主义的两击</span></a></li>
+          <li><a class="toc-list-link" href="#sec-8"><span><span class="num">08</span><span class="title">我们该如何理解诺齐克</span></span><span class="author">对今天的意义</span></a></li>
+          <li><a class="toc-list-link" href="#sec-9"><span><span class="num">09</span><span class="title">写作应用提示</span></span><span class="author">如何用进考场</span></a></li>
+        </ul>
+        <div class="footer-note">本册每节末以灰色小字标注网络文献来源；思想用于论证，生平用于点缀。</div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-1">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">1</span><span class="h2-text">人物定位与速览</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">如果罗尔斯是问“怎样分配才算公道”，诺齐克则反过来问：“凭什么由你来分配？”1974年他出版《无政府、国家与乌托邦》，这是对罗尔斯《正义论》最有力的正面反驳，也是二十世纪自由至上主义（libertarianism）最严密的哲学表达。全书第一句话就把立场钉死了。</p>
+        <blockquote><p>个人拥有权利，有些事情是任何人、任何团体都不可以对他们做的（否则便侵犯了他们的权利）。</p><cite>—— 诺齐克《无政府、国家与乌托邦》（1974）前言，第ix页</cite></blockquote>
+        <p>从这一句出发，他推出两个彼此相邻却方向相反的结论：其一，反对无政府主义——一个“守夜人”式的最小国家可以在不侵犯任何人权利的情况下自发形成，因此它是正当的；其二，反对福利国家与社会主义——任何超出最小国家的权力都必然侵犯个人权利，因此不正当。他把国家的正当职能压缩到极小：防止暴力、盗窃、欺诈，执行契约。</p>
+        <p>他最著名的论证方式不是宣讲价值，而是设计思想实验。“张伯伦论证”说明自由必然打乱任何预设的分配图案；“体验机”说明我们真正在意的不只是快乐的感受；“效用怪物”说明功利主义的加总逻辑可以荒谬到什么程度。这些实验短小、锋利、几乎无法回避——这是诺齐克留给后人的真正遗产：他让自由至上主义从一种政治偏好变成了必须被认真反驳的哲学立场。</p>
+        <div class="box no-break"><div class="box-title">速览卡</div><dl><dt>生卒</dt><dd>1938年11月16日生于美国纽约布鲁克林；2002年1月23日卒于马萨诸塞州剑桥，因胃癌病逝，享年63岁</dd><dt>国籍/身份</dt><dd>美国；政治哲学家、认识论学者；哈佛大学佩莱格里诺讲席教授；曾任美国哲学学会（东部分会）主席</dd><dt>研究领域</dt><dd>政治哲学、伦理学、认识论、决策理论、形而上学；洛克式自然权利传统与自由至上主义</dd><dt>核心命题</dt><dd>个人权利是不可逾越的“边际约束”；唯有最小国家（守夜人国家）是正当的；正义在于持有物获得与转让的历程是否正当（权利理论），而不在于分配结果是否符合某种图案；对劳动所得课税以行再分配，形同强迫劳动</dd><dt>代表著作</dt><dd>《无政府、国家与乌托邦》（Anarchy, State, and Utopia，1974，1975年获美国国家图书奖）、《哲学解释》（Philosophical Explanations，1981）、《经过省察的人生》（The Examined Life，1989）、《理性的本性》（The Nature of Rationality，1993）、《不变性》（Invariances，2001）</dd><dt>一句名言</dt><dd>“个人拥有权利，有些事情是任何人、任何团体都不可以对他们做的。”（《无政府、国家与乌托邦》开篇）</dd></dl></div>
+        <p class="src">来源：Britannica, “Robert Nozick”（生卒地、学术履历、最小国家职能）；Routledge Encyclopedia of Philosophy, “Nozick, Robert (1938–2002)”（开篇引文页码 1974: ix）；Wikipedia, “Robert Nozick”；Stanford Encyclopedia of Philosophy, “Robert Nozick”。</p>
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy “Robert Nozick”；Britannica “Robert Nozick”；Routledge Encyclopedia of Philosophy “Nozick, Robert (1938–2002)”；Wikipedia “Robert Nozick”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-2">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">2</span><span class="h2-text">生平：一个被自己说服的青年左翼</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">诺齐克1938年生于布鲁克林一个俄裔犹太移民家庭，父亲经营小生意。他在布鲁克林读公立学校，1959年以最优等成绩从哥伦比亚大学哲学系毕业，1963年在普林斯顿获博士学位，导师是逻辑经验主义的代表人物亨佩尔（Carl Hempel），论文写的是决策理论；其后作为富布赖特学者赴牛津访学一年。</p>
+        <p>他的思想转向是这本书最富教育意义的背景。中学与大学时代，诺齐克是学生左翼的一员，是热忱的社会主义者，还在哥大参与创办了产业民主学生联盟的分会。研究生期间他读到哈耶克《自由宪章》与米塞斯的著作，发现自己竟然无法给出令人满意的反驳。他后来回忆说，自己是“很不情愿地被拽进了自由至上主义”。</p>
+        <p>这句自述值得反复咀嚼。它示范了一种罕见的诚实：当论证指向自己不喜欢的方向时，是修改论证，还是修改立场？诺齐克选择了后者。他不是被利益说服，也不是被情绪说服，而是被自己无法反驳的推理说服——这是知识分子最难做到的事。</p>
+        <p>1969年，31岁的他回到哈佛，成为该校历史上最年轻的正教授之一，与罗尔斯成为同事。1974年《无政府、国家与乌托邦》出版，次年获美国国家图书奖，立刻被保守派知识界奉为纲领性文献——尽管诺齐克本人对这种归类并不自在。此后他做了一个出人意料的决定：不再继续经营政治哲学。他说，他不想把余生用来写《无政府、国家与乌托邦续集》。于是他转向认识论、形而上学、决策理论，也写过关于爱、性、死亡与人生意义的随笔。2002年因胃癌病逝，安葬于剑桥的奥本山公墓。</p>
+        <div class="box no-break"><div class="box-title">生平可用素材点</div><p>被自己说服：从社会主义青年到自由至上主义者，因为“找不到令人满意的反驳”。写“诚实”“修正自我”“论证的力量”时极佳。</p><p>不写续集：功成名就后主动离开自己开创的战场，转攻新领域。写“突破自我”“不重复自己”“学术的好奇心”时可用。</p><p>与对手做同事：他与罗尔斯同在哈佛哲学系，最尖锐的反驳来自最近的同行。写“论辩的德性”“学术共同体”时可用。</p><p>把哲学写成实验：张伯伦、体验机、效用怪物——用具体故事逼出抽象立场。写“如何思考”“比喻的力量”时可用。</p></div>
+        <p class="src">来源：Britannica, “Robert Nozick”（家庭、学历、任教年表、1969年回哈佛、国家图书奖）；Wikipedia, “Robert Nozick”（青年左翼经历、受哈耶克影响、“被不情愿地拽进自由至上主义”自述、胃癌病逝与葬地）；EBSCO Research Starters, “Robert Nozick”（“不想写《无政府、国家与乌托邦续集》”一语）。</p>
+        <p class="src-note">来源：Britannica “Robert Nozick”；Wikipedia “Robert Nozick”；Routledge Encyclopedia of Philosophy</p>
+      </div>
+    </section>
+    <section class="section" id="sec-3">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">3</span><span class="h2-text">主要著作与学术成就</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <h3>《无政府、国家与乌托邦》（1974）</h3>
+        <p class="no-indent">全书分三部分，结构极为清晰：第一部分对无政府主义者说——最小国家可以正当地产生；第二部分对自由派与社会主义者说——任何超出最小国家的都不正当；第三部分回答“最小国家是否值得向往”，他说它不只是正确的，而且是“令人振奋的”，因为它为无数种不同的生活实验提供了共存的框架。</p>
+        <h3>此后的转向：从政治哲学到认识论与人生</h3>
+        <p class="no-indent">《哲学解释》（1981）提出了知识的反事实追踪理论，并挑战了认识论的封闭原则，获菲·贝塔·卡帕学会的爱默生奖；《经过省察的人生》（1989）是一部面向普通读者的随笔集，谈爱、性、死亡、大屠杀与人生意义；《理性的本性》（1993）回到他博士论文的主题；《不变性》（2001）提出一种演化宇宙论，主张客观性本身是在可能世界间演化出来的。</p>
+        <p>另有一点常被提及：在《经过省察的人生》中，他对自己早年的自由至上主义立场作了明显的松动，称那一立场“严重不足”。晚年他又在访谈中表示自己并未转向大政府的自由派。学界对他究竟退了多少步仍有争议，稳妥的说法是：他承认那本书对共同体、对人们彼此的联结考虑得太少。</p>
+        <div class="summary no-break"><div class="col"><div class="col-title">学术贡献</div><p>为自由至上主义提供了第一流的哲学论证，而非仅仅政治主张。</p><p>确立“权利作为边际约束”的框架：权利不是待最大化的目标，而是不可逾越的边界。</p><p>提出“历程正义”对“图案正义”的批判：正义要看来路，不看结果的形状。</p><p>以“体验机”“效用怪物”两个思想实验成为反功利主义的标准武器。</p><p>在认识论上提出知识的追踪理论，影响持续至今。</p></div><div class="col"><div class="col-title">思想史效应</div><p>与罗尔斯的对峙，定义了此后一代政治哲学的基本坐标：一边是“分配是否公道”，一边是“权利是否被越界”。</p><p>他迫使平等主义者补上一课：不只要论证平等为何是好的，还要论证国家凭什么可以用强制去实现它。</p><p>刘擎《西方现代思想讲义》所描述的现代困境——个人自由与共同生活如何相容——在诺齐克这里被推到最极端的一侧。</p></div></div>
+        <p class="src">来源：Routledge Encyclopedia of Philosophy, “Nozick, Robert”（三部分结构、“令人振奋且正确”）；Wikipedia, “Robert Nozick”（各书年份、爱默生奖、《不变性》主题、晚年对自由至上主义的反思）；EBSCO Research Starters, “Robert Nozick”。按：晚年立场松动的确切程度学界有争议，本册按“承认对共同体考虑不足”的稳妥表述处理。</p>
+        <p class="src-note">来源：Wikipedia “Anarchy, State, and Utopia”“Robert Nozick”；Stanford Encyclopedia of Philosophy “Robert Nozick”；Britannica</p>
+      </div>
+    </section>
+    <section class="section" id="sec-4">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">4</span><span class="h2-text">核心思想（一）权利作为边际约束与最小国家</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">诺齐克对权利的理解与功利主义截然不同。功利主义把好东西当作待最大化的目标，因此在原则上，为了更大的总量可以牺牲某些人。诺齐克说，权利不是目标，而是“边际约束”（side constraints）——它是行动的边界，不是行动的指标。你不能为了“总体上更少的侵权”而去侵犯某个人，就像你不能为了救五个人而摘走一个健康人的器官。</p>
+        <p>支撑这一立场的，是他所说的“人的分立性”（separateness of persons）。他借康德的第二条道德律令：人应当被当作目的自身，而不只是手段。于是他写下那句极具冲击力的判断：并不存在什么社会实体，只有一个个具体的人。所谓“社会为了整体利益作出的牺牲”，实际上永远是某些人被牺牲，去成全另一些人——而这个被牺牲者，是他自己独一无二的一生。</p>
+        <h3>为什么最小国家是正当的：一个“看不见的手”的论证</h3>
+        <p class="no-indent">既然权利如此强硬，为什么还需要国家？无政府主义者会说：任何国家都靠强制。诺齐克的回应极为巧妙——他要证明，一个最小国家可以在不侵犯任何人权利的前提下自发地产生出来。</p>
+        <ol><li>在洛克式自然状态中，每个人都有自卫权与惩罚侵权者的权利，但单独行使成本高昂、也容易出错。</li><li>理性的人会自愿结成“保护性社团”，彼此协防；进而出现有偿提供保护与裁判服务的商业机构。</li><li>由于保护服务的规模效应，竞争会趋向集中，最终在一片地域上形成一家“支配性保护机构”。</li><li>这家机构垄断了该地域内的正当强制，并向几乎所有人提供保护——它就已经具备了国家的两项特征，成为最小国家。</li><li>既然这一过程的每一步都未侵犯任何人的权利，那么至少最小国家是正当的。</li></ol>
+        <p>而论证到此就必须停止。最小国家的职能只限于防止暴力、盗窃、欺诈与执行契约。再往前一步——设最低工资、办公立教育、办公共医疗、以税收调节贫富——都要动用未经同意的强制，因而越界。诺齐克由此得出他最尖锐的一条推论：对劳动所得课税以供他人之用，与强迫劳动是同一性质的事情。</p>
+        <div class="box no-break"><div class="box-title">关键区分</div><dl><dt>权利作为目标</dt><dd>把“侵权总量最小化”当作追求的指标。这允许为了减少更多侵权而实施某次侵权。诺齐克认为这误解了权利。</dd><dt>权利作为边际约束</dt><dd>权利划出一条不可越过的线。即便越线能带来更好的总体结果，也不可越。这才是把人当作目的自身。</dd><dt>最小国家（守夜人国家）</dt><dd>职能仅限于防止暴力、盗窃、欺诈与执行契约；一切其他事务交由自愿的私人安排。</dd><dt>超最小国家为何不正当</dt><dd>它必须动用未经个人同意的强制去实现某种结果；在诺齐克看来，这就是把一部分人用作另一部分人的手段。</dd></dl></div>
+        <p class="src">来源：Robert Nozick, Anarchy, State, and Utopia, Basic Books, 1974, Part I（自然状态、保护性社团、支配性保护机构、边际约束、人的分立性）；Britannica, “Robert Nozick”（最小国家职能与“强迫劳动”一语）；Routledge Encyclopedia of Philosophy, “Nozick, Robert”（“课税与强迫劳动等价”“不存在社会实体，只有一个个人”）。</p>
+        <p class="src-note">来源：Robert Nozick, Anarchy, State, and Utopia, Basic Books, 1974, Part I；Britannica “Robert Nozick”；Routledge Encyclopedia of Philosophy</p>
+      </div>
+    </section>
+    <section class="section" id="sec-5">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">5</span><span class="h2-text">核心思想（二）权利理论：正义在于来路，不在于形状</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">诺齐克把关于分配正义的理论分成两类。一类是“图案理论”（patterned theories）：先规定一个理想的分配形状——人人相等、按需分配、按贡献分配、或罗尔斯式的最有利于最弱者——然后要求现实去符合这个形状。另一类是他自己的“历程理论”：不问结果长什么样，只问它是怎么来的。</p>
+        <div class="box no-break"><div class="box-title">权利理论（entitlement theory）的三条原则</div><dl><dt>获取的正义</dt><dd>无主之物如何正当地成为某人所有。诺齐克接受一条洛克式的限制条件（“洛克式限定”）：一个人的占取不得使任何第三方的境况变坏。他坦承自己并未把这一原则完整地表述出来——这也成为批评者攻击最猛的地方。</dd><dt>转让的正义</dt><dd>持有物如何正当地从一个人转到另一个人。答案极简：只要是自愿的，就是正当的。买卖、赠与、继承皆然；欺诈、抢夺、强制则不然。</dd><dt>矫正的正义</dt><dd>如果前两条原则曾被违反（征服、掠夺、奴役），则需要矫正——追溯并纠正历史上的不义获取与不义转让。</dd><dt>总原则</dt><dd>若一份持有是从正当的起点、经由每一步都正当的转让而来，那么这份持有就是正义的，无论它所构成的整体分配看起来多么不平等。</dd></dl></div>
+        <p>这个思路带来一个反直觉却难以驳倒的推论：正义不能靠看一张分配统计表来判断。同样一张“最富者占九成”的表格，可能出自正当的自愿交换，也可能出自数百年的掠夺——它们的道德性质完全不同，而表格本身对此一无所知。诺齐克说，历史比图案更重要。</p>
+        <p>而“矫正的正义”这条常被他的拥护者忽略，恰恰是全书最具颠覆性的部分。若认真执行，它意味着须追究殖民、奴隶制与土地掠夺的历史后果——批评者曾指出，按诺齐克自己的逻辑，美国的大片土地其实应当归还原住民。诺齐克本人承认这一原则在实践中极难落实，甚至暗示某种类似再分配的措施或可作为粗略的矫正手段。这是他体系中最诚实、也最不安定的一角。</p>
+        <p class="src">来源：Robert Nozick, Anarchy, State, and Utopia, Basic Books, 1974, ch.7（“分配正义”，三条原则与图案理论之别）；Routledge Encyclopedia of Philosophy, “Nozick, Robert”（洛克式限定、获取原则未完整表述）；EBSCO Research Starters, “Robert Nozick”（“按其逻辑美国大片土地应归原住民”这一常见批评）。</p>
+        <p class="src-note">来源：Robert Nozick, Anarchy, State, and Utopia, 1974, ch.7；Stanford Encyclopedia of Philosophy “Robert Nozick”；Routledge Encyclopedia of Philosophy</p>
+      </div>
+    </section>
+    <section class="section" id="sec-6">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">6</span><span class="h2-text">核心思想（三）张伯伦论证：自由打乱图案</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">这是全书最著名的一段论证，主角是当时美国最出色的篮球中锋威尔特·张伯伦（Wilt Chamberlain）。诺齐克的策略极为漂亮：他不与对手争论起点，反而先把对手想要的起点整个让给对手。</p>
+        <ol><li>假定我们已经实现了你所偏好的那种正义分配——比如彻底的平均，人人所得相同。把它叫做 D1。既然是你自己的标准，你必须承认 D1 是正义的。</li><li>现在张伯伦与球队约定：每场比赛，每位入场观众自愿另付两毛五分钱给他。他愿意打，观众愿意付。</li><li>一个赛季有一百万人次入场，张伯伦因此多得二十五万美元，远高于任何人。分配变成了 D2。</li><li>问：D2 是不是不正义的？</li><li>如果说不正义——可是从 D1 到 D2 的每一步，都是人们用自己正当持有的钱、自愿作出的选择。凭什么说自愿的交换制造出了不义？</li><li>如果说正义——那么你原先那套“正义就是某种分配图案”的主张就崩塌了：因为图案已经被自由破坏，而结果仍然正义。</li></ol>
+        <p>诺齐克由此得出那句总结：自由打乱图案。任何预设的分配形状，只要允许人们自由地交换与馈赠，就必然在极短时间内被打破。因此要维持一个图案，只有两条路：不断地干预与再分配，或者干脆禁止某些自愿行为。他把后一条路的荒谬说得毫不留情。</p>
+        <blockquote><p>社会主义社会将不得不禁止成年人之间自愿的资本主义行为。</p><cite>—— 诺齐克《无政府、国家与乌托邦》，第163页</cite></blockquote>
+        <p>这个论证的力量在于它把矛头指向了平等主义者最不愿面对的成本：要维持平等，就得持续地限制自愿。它当然不是无懈可击——批评者指出，张伯伦例子悄悄假定了球迷手中的钱与张伯伦的天赋都是无可置疑的私产，也把制度背景（谁修的球馆、谁维持的秩序、谁保障的合约）当成了透明的空气；而现实中的市场从不是一次性的自愿交换，而是层层叠叠的历史结构。但即便如此，任何主张再分配的人都必须先穿过这道关卡。</p>
+        <p class="src">来源：Robert Nozick, Anarchy, State, and Utopia, Basic Books, 1974, ch.7, “How Liberty Upsets Patterns”；EBSCO Research Starters, “Robert Nozick”（论证复述与“禁止私下的资本主义行为”）；Routledge Encyclopedia of Philosophy, “Nozick, Robert”（“社会主义社会将不得不禁止成年人之间自愿的资本主义行为”，1974: 163）。按：入场费两毛五、约一百万人次为通行复述中的数值，诺齐克原书举例的具体数额以原文为准。</p>
+        <p class="src-note">来源：Robert Nozick, Anarchy, State, and Utopia, 1974, ch.7 “How Liberty Upsets Patterns”；Britannica；EBSCO Research Starters</p>
+      </div>
+    </section>
+    <section class="section" id="sec-7">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">7</span><span class="h2-text">体验机与效用怪物</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">《无政府、国家与乌托邦》里还藏着两个与政治无关、却传播更广的思想实验。它们瞄准的是同一个靶子：把“快乐的总量”当作价值的唯一标准。</p>
+        <h3>体验机（the experience machine）</h3>
+        <p class="no-indent">假设神经科学家造出一台机器，能让你体验到任何你想要的经历：写出伟大的小说、赢得深厚的友谊、实现全部志向。所有感受都完美逼真，与真实毫无分别——只是这些事一件也没有真正发生。你愿意接上去吗？</p>
+        <p>诺齐克断定，绝大多数人不愿意。而这一“不愿意”透露了极重要的信息：我们要的不只是愉快的感受，我们还要真的去做事，要真的成为某一种人，要与真实保持接触。一生只有体验而没有作为，纵然愉快，也缺了某种本质的东西。这是对享乐主义功利论最直接的一记。</p>
+        <h3>效用怪物（the utility monster）</h3>
+        <p class="no-indent">假设有一个怪物，从任何资源中获得的快乐都远远超过常人——同一块面包给它带来的效用是给你的一万倍。那么按照“最大化总效用”的逻辑，一切资源都应当交给它，其余所有人都该被榨干以供养它。诺齐克并不是在预言这种怪物会出现，他是在指出：一个能推出如此结论的原则，本身就有问题。加总的逻辑吞掉了个体的不可替代性。</p>
+        <p>两个实验合起来，正是诺齐克政治立场的伦理学根基：人不是效用的容器，也不是社会账本上的一项。他之所以坚持权利是不可逾越的边界，是因为在他看来，一个人的一生不能被折算进任何总量。</p>
+        <p class="src">来源：Robert Nozick, Anarchy, State, and Utopia, Basic Books, 1974, ch.3（体验机与效用怪物均出自本书，非后来著作）；Stanford Encyclopedia of Philosophy, “Robert Nozick”；Wikipedia, “Experience machine”“Utility monster”。</p>
+        <p class="src-note">来源：Robert Nozick, Anarchy, State, and Utopia, 1974, ch.3；Stanford Encyclopedia of Philosophy “Robert Nozick”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-8">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">8</span><span class="h2-text">我们该如何理解诺齐克</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">把诺齐克读成“为富人说话的哲学家”，是最省事也最无益的读法。他真正的价值在于提出了一个所有关心公平的人都必须回答的问题：即使目的是好的，凭什么可以对不同意的人使用强制？</p>
+        <p>这个问题的分量在于它与善意无关。历史上最沉重的代价，往往不是恶意造成的，而是某种确信自己在做好事的力量造成的。诺齐克把“边际约束”立在那里，正是要说：目的的正当不能自动证成手段的正当；有些线，无论前方的风景多好，都不能越过。这个直觉与他反对功利主义的理由是同一个——不存在一个叫“社会”的实体在受益或受损，只有一个个人，每个人只有一生。</p>
+        <p>第二重意义在于他对“结果”与“历程”的区分。今天我们习惯用统计数据讨论公平：基尼系数、收入倍差、财富占比。诺齐克提醒我们，同一组数字可以对应完全不同的道德事实——它可能来自自愿的交换，也可能来自数代人的掠夺。只看结果，就会既冤枉了正当的差距，也放过了不正当的来路。他自己的“矫正原则”正是这一逻辑最锋利的刀口，而这把刀砍向的往往是既得利益。</p>
+        <p>第三重意义在于他为“多元”提供了另一种想象。诺齐克说最小国家不只是正确的，而且是令人振奋的：因为它不替任何人规定何为好生活，而是提供一个框架，让愿意共同生活的人各自去做自己的生活实验。这与罗尔斯的“重叠共识”方向不同却问题相同——现代人如何在互不认同的情况下共处。一个求公共规则的最低共识，一个求彼此不干涉的最大空间。</p>
+        <p>但也须诚实地看到他的软处。整座大厦压在“最初获取如何正当”这一根柱子上，而这根柱子他自己都承认没有立稳；他假定自由高于其他一切价值，却未充分论证为何如此；他把人当作从天而降的、自足的权利持有者，几乎不谈人如何被家庭、语言、共同体所塑造。他晚年承认这本书对人们彼此的联结考虑得太少——这句自我修正，或许比书中任何一段论证都更值得记住。</p>
+        <p class="src">来源：Stanford Encyclopedia of Philosophy, “Robert Nozick”“Libertarianism”（对诺齐克体系的标准批评：获取原则未立、自由优先未获论证）；Robert Nozick, The Examined Life, 1989（对早年立场的反思）；刘擎《西方现代思想讲义》（现代人如何在价值分歧中共同生活的问题框架）。</p>
+        <p class="src-note">来源：刘擎《西方现代思想讲义》；Stanford Encyclopedia of Philosophy “Robert Nozick”“Libertarianism”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-9">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">9</span><span class="h2-text">写作应用提示</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">诺齐克最适合用作“对照面”与“反面追问”。当题目引导你顺着“为了大局”“为了整体”“为了更好的结果”往下写时，诺齐克能让你的文章立刻多出一层深度：那么，代价由谁承担？他们同意了吗？</p>
+        <div class="box no-break"><div class="box-title">适配题型与切入角度</div><dl><dt>个人与集体</dt><dd>用“人的分立性”与“边际约束”：不存在一个叫“社会”的实体在受益，只有具体的人。为整体牺牲个人，实际是让某些人替另一些人承担。</dd><dt>目的与手段</dt><dd>用权利作为边际约束：目的的正当不能自动证成手段的正当。适合反驳“只要结果好，过程不重要”。</dd><dt>公平与自由</dt><dd>用“张伯伦论证”：自由必然打乱预设的图案。可与罗尔斯的差异原则并置，构成一组极漂亮的思辨对照。</dd><dt>看结果还是看来路</dt><dd>用“历程正义”对“图案正义”的批判：同一组数字可能对应完全不同的道德事实。</dd><dt>幸福与真实</dt><dd>用“体验机”：我们要的不只是愉快的感受，还要真的去做、真的成为。极适合写“真实”“沉浸与逃避”“何为好生活”。</dd><dt>数字与人</dt><dd>用“效用怪物”：能推出荒谬结论的原则本身有问题。适合反思一切“加总最大化”的思维。</dd><dt>修正自我</dt><dd>用他从社会主义青年到自由至上主义者的转变，以及晚年对自己的松动。写“诚实”“成长”“不固执于己见”。</dd></dl></div>
+        <div class="box no-break"><div class="box-title">可直接背诵引用</div><p>“个人拥有权利，有些事情是任何人、任何团体都不可以对他们做的。”——《无政府、国家与乌托邦》开篇</p><p>“社会主义社会将不得不禁止成年人之间自愿的资本主义行为。”——同书第163页</p><p>“自由打乱图案。”——张伯伦论证的结论（原书章节标题即为“自由如何打乱图案”）</p><p>对劳动所得课税以行再分配，与强迫劳动是同一性质的事。（可作转述使用）</p><p>并不存在什么社会实体，只有一个个具体的人。（可作转述使用）</p></div>
+        <div class="box no-break"><div class="box-title">常见误用与纠正</div><p>误：诺齐克是无政府主义者。正：他明确反对无政府主义，主张最小国家是正当的；他反对的是超出最小国家的权力。</p><p>误：诺齐克主张“弱肉强食”。正：他主张的是自愿原则与不可越界的权利；他同样禁止暴力、盗窃与欺诈，且其“矫正原则”要求追究历史上的掠夺。</p><p>误：把张伯伦论证当作对现实市场的辩护。正：它是一个逻辑反例，用来证明“正义等于某种分配图案”不成立；它并不证明现实中的一切不平等都正当，因为现实中的起点未必正当。</p><p>误：体验机出自他晚年的随笔。正：体验机与效用怪物都出自《无政府、国家与乌托邦》第三章。</p><p>误：把他与罗尔斯写成不共戴天。正：二人是哈佛同事，隔着一堵墙做着同一场论辩；这场论辩本身就是学术共同体最好的样子。</p></div>
+        <div class="box no-break"><div class="box-title">示例段（可仿写）</div><p>诺齐克讲过一个不客气的故事。他先把最彻底的平等交到你手上：假定人人所得相同，你承认这是正义的。然后他让张伯伦上场——每位观众自愿多付两毛五分钱看他打球。一个赛季过去，张伯伦的收入远超所有人。诺齐克问：这不义吗？每一分钱都是别人心甘情愿掏的，你凭什么说不义；可你若说它正义，那你原先所信奉的那种“正义就是某个整齐的形状”，也就在你眼前碎了。他由此写下四个字：自由打乱图案。这个论证的用处不在于替不平等开脱，而在于逼所有人把话说清楚——你要的究竟是结果的整齐，还是过程的正当？若二者不能两全，你愿意付出哪一份代价？</p></div>
+        <p class="src">来源：写作建议为编者整理；所引命题与文句依据 Robert Nozick, Anarchy, State, and Utopia, Basic Books, 1974 及 Britannica / Routledge Encyclopedia of Philosophy / Stanford Encyclopedia of Philosophy 相关条目。</p>
+        <p class="src-note">来源：本节为编者整理的写作用法，思想依据见前各节所引原著与SEP/Britannica/Routledge条目</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== 悬浮按钮 ===================== -->
+<div class="fab-group">
+  <button class="fab fab-mini hidden" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">⤒</button>
+</div>
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 常量与元素引用 ================= */
+  var STORE_THEME = 'sartre.theme';
+  var STORE_FS    = 'sartre.fontSize';
+  var FS_LEVELS   = ['0', '1', '2'];
+
+  var html        = document.documentElement;
+  var body        = document.body;
+  var topbar      = document.getElementById('topbar');
+  var progressBar = document.getElementById('progressBar');
+  var main        = document.getElementById('main');
+  var tocEl       = document.getElementById('toc');
+  var tocNav      = document.getElementById('tocNav');
+  var secCountEl  = document.getElementById('secCount');
+  var scrim       = document.getElementById('scrim');
+  var menuBtn     = document.getElementById('menuBtn');
+  var themeBtn    = document.getElementById('themeBtn');
+  var fsUpBtn     = document.getElementById('fsUp');
+  var fsDownBtn   = document.getElementById('fsDown');
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
+  var prevHitBtn  = document.getElementById('prevHit');
+  var nextHitBtn  = document.getElementById('nextHit');
+  var clearBtn    = document.getElementById('clearSearch');
+  var expandAllBtn   = document.getElementById('expandAll');
+  var collapseAllBtn = document.getElementById('collapseAll');
+  var toTopBtn    = document.getElementById('toTop');
+
+  var sections   = [].slice.call(main.querySelectorAll('.section'));
+  var navTargets = [];   /* 目录跳转目标 id（文档顺序，含 h2 与 h3） */
+  var tocItems   = {};   /* id -> 目录 <a> 元素 */
+  var hits       = [];   /* 当前搜索命中的 <mark> 列表 */
+  var hitIndex   = -1;
+  var searchTimer = null;
+  var rafPending  = false;
+  var activeId    = '';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+  /* ================= 通用工具 ================= */
+
+  /** 安全读取 localStorage（隐私模式下可能抛错）。 */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  /** 安全写入 localStorage。 */
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* 忽略 */ }
+  }
+  /** 顶栏当前高度（移动端换行后会变高）。 */
+  function topbarHeight() {
+    return topbar ? topbar.offsetHeight : 58;
+  }
+  /** 取标题纯文本（剔除章节序号与折叠箭头）。 */
+  function headingText(heading) {
+    var clone = heading.cloneNode(true);
+    var junk = clone.querySelectorAll('.chapter-num, .sec-caret');
+    for (var i = 0; i < junk.length; i++) { junk[i].parentNode.removeChild(junk[i]); }
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** 元素是否当前可见（折叠后的内容不可见）。 */
+  function isVisible(el) {
+    return !!(el && el.offsetParent !== null);
+  }
+
+  /* ================= 主题 ================= */
+
+  function applyTheme(theme) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? '☀' : '🌙';
+    themeBtn.setAttribute('title', next === 'dark' ? '切换到浅色阅读模式' : '切换到深色阅读模式');
+  }
+
+  function initTheme() {
+    var saved = lsGet(STORE_THEME);
+    if (saved !== 'dark' && saved !== 'light') {
+      var prefersDark = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false;
+      saved = prefersDark ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+
+  themeBtn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    lsSet(STORE_THEME, next);
+  });
+
+  /* ================= 字号（三档） ================= */
+
+  function applyFontSize(level) {
+    var idx = FS_LEVELS.indexOf(String(level));
+    if (idx === -1) { idx = 1; }
+    html.setAttribute('data-fs', FS_LEVELS[idx]);
+    fsDownBtn.disabled = (idx === 0);
+    fsUpBtn.disabled = (idx === FS_LEVELS.length - 1);
+    fsDownBtn.style.opacity = idx === 0 ? '.45' : '1';
+    fsUpBtn.style.opacity = idx === FS_LEVELS.length - 1 ? '.45' : '1';
+  }
+
+  function stepFontSize(delta) {
+    var idx = FS_LEVELS.indexOf(html.getAttribute('data-fs'));
+    if (idx === -1) { idx = 1; }
+    var next = Math.min(FS_LEVELS.length - 1, Math.max(0, idx + delta));
+    applyFontSize(FS_LEVELS[next]);
+    lsSet(STORE_FS, FS_LEVELS[next]);
+  }
+
+  function initFontSize() {
+    var saved = lsGet(STORE_FS);
+    applyFontSize(saved === null ? '1' : saved);
+  }
+
+  fsUpBtn.addEventListener('click', function () { stepFontSize(1); });
+  fsDownBtn.addEventListener('click', function () { stepFontSize(-1); });
+
+  /* ================= 章节折叠 / 展开 ================= */
+
+  function setCollapsed(section, collapsed) {
+    var head = section.querySelector('h2.sec-head');
+    if (!head) { return; }
+    if (collapsed) {
+      section.classList.add('collapsed');
+      head.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      head.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function toggleSection(section) {
+    setCollapsed(section, !section.classList.contains('collapsed'));
+    requestActiveUpdate();
+  }
+
+  function expandSection(section) {
+    if (section && section.classList.contains('collapsed')) {
+      setCollapsed(section, false);
+    }
+  }
+
+  sections.forEach(function (section) {
+    var head = section.querySelector('h2.sec-head');
+    var bodyEl = section.querySelector('.sec-body');
+    if (!head || !bodyEl) { return; }
+    if (!bodyEl.id) { bodyEl.id = section.id + '-body'; }
+    head.setAttribute('aria-controls', bodyEl.id);
+
+    head.addEventListener('click', function () { toggleSection(section); });
+    head.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggleSection(section);
+      }
+    });
+  });
+
+  expandAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, false); });
+    requestActiveUpdate();
+  });
+  collapseAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, true); });
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    requestActiveUpdate();
+  });
+
+  /* ================= 目录（TOC）自动生成 ================= */
+
+  function buildToc() {
+    var frag = document.createDocumentFragment();
+    var chapterCount = 0;
+
+    sections.forEach(function (section, sIdx) {
+      if (!section.id) { section.id = 'sec-auto-' + sIdx; }
+
+      var head = section.querySelector('h2.sec-head');
+      var label = head ? headingText(head) : (section.getAttribute('data-toc') || ('第 ' + (sIdx + 1) + ' 节'));
+      var numEl = head ? head.querySelector('.chapter-num') : null;
+      var numText = numEl ? numEl.textContent.trim() : '·';
+      if (head) { chapterCount += 1; }
+
+      frag.appendChild(makeTocItem(section.id, label, numText, 2));
+      navTargets.push(section.id);
+
+      /* 子节标题（h3）自动提取 */
+      var subs = [].slice.call(section.querySelectorAll('h3'));
+      subs.forEach(function (h3, hIdx) {
+        if (!h3.id) { h3.id = section.id + '-h3-' + (hIdx + 1); }
+        frag.appendChild(makeTocItem(h3.id, headingText(h3), '', 3));
+        navTargets.push(h3.id);
+      });
+    });
+
+    tocNav.appendChild(frag);
+    secCountEl.textContent = String(chapterCount);
+  }
+
+  function makeTocItem(targetId, label, numText, level) {
+    var a = document.createElement('a');
+    a.className = 'toc-item lvl' + level;
+    a.href = '#' + targetId;
+    a.setAttribute('data-target', targetId);
+
+    if (level === 2) {
+      var num = document.createElement('span');
+      num.className = 'toc-num';
+      num.textContent = numText || '·';
+      a.appendChild(num);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'toc-text';
+    txt.textContent = label;
+    a.appendChild(txt);
+
+    tocItems[targetId] = a;
+    return a;
+  }
+
+  /* ================= 平滑滚动与锚点 ================= */
+
+  function scrollToTarget(targetId, updateHash) {
+    var el = document.getElementById(targetId);
+    if (!el) { return; }
+
+    var section = el.closest ? el.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    /* 折叠展开后再量位置，避免坐标错位 */
+    window.requestAnimationFrame(function () {
+      var rect = el.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - 14;
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+      if (updateHash !== false && history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+      }
+      setActive(targetId);
+    });
+  }
+
+  /* 侧边目录点击 */
+  tocNav.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-item') : null;
+    if (!link) { return; }
+    event.preventDefault();
+    scrollToTarget(link.getAttribute('data-target'));
+    closeDrawer();
+  });
+
+  /* 正文内“目 录”清单点击 */
+  main.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-list-link') : null;
+    if (!link) { return; }
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') { return; }
+    event.preventDefault();
+    scrollToTarget(href.slice(1));
+  });
+
+  /* ================= 当前章节高亮（IntersectionObserver + 滚动兜底） ================= */
+
+  /* 上报当前可见小节给原生层（用于"练习当前正文"只取正在看的那一节）。
+     通过隐藏 iframe 触发 philomenu:// scheme，由原生 shouldOverrideUrlLoading 拦截。 */
+  function reportActiveSection(targetId) {
+    try {
+      var el = document.getElementById(targetId);
+      var sec = el && el.closest ? el.closest('.section') : null;
+      // 仅上报顶层小节（sec-N）；封面 / 目录不计入练习范围
+      if (sec && /^sec-\d+$/.test(sec.id)) {
+        var person = 'nozick';
+        var url = 'philomenu://update_person?person=' + encodeURIComponent(person) +
+                  '&section=' + encodeURIComponent(sec.id);
+        var bridge = document.getElementById('__philomenu_bridge');
+        if (!bridge) {
+          bridge = document.createElement('iframe');
+          bridge.id = '__philomenu_bridge';
+          bridge.setAttribute('style', 'display:none;width:0;height:0;border:0;');
+          document.body.appendChild(bridge);
+        }
+        bridge.src = url;
+      }
+    } catch (_) { /* 静默失败，不影响阅读 */ }
+  }
+
+  function setActive(targetId) {
+    if (!targetId || targetId === activeId) { return; }
+    activeId = targetId;
+    reportActiveSection(targetId);
+
+
+
+    for (var key in tocItems) {
+      if (Object.prototype.hasOwnProperty.call(tocItems, key)) {
+        tocItems[key].classList.remove('active');
+        tocItems[key].classList.remove('active-parent');
+      }
+    }
+    var item = tocItems[targetId];
+    if (!item) { return; }
+    item.classList.add('active');
+
+    /* 若命中的是 h3，则同时标记所属大节 */
+    var el = document.getElementById(targetId);
+    var section = el && el.closest ? el.closest('.section') : null;
+    if (section && section.id !== targetId && tocItems[section.id]) {
+      tocItems[section.id].classList.add('active-parent');
+    }
+    keepTocItemVisible(item);
+  }
+
+  function keepTocItemVisible(item) {
+    if (body.classList.contains('toc-open')) { return; }
+    var cRect = tocEl.getBoundingClientRect();
+    var iRect = item.getBoundingClientRect();
+    if (iRect.top < cRect.top + 8) {
+      tocEl.scrollTop -= (cRect.top + 8 - iRect.top);
+    } else if (iRect.bottom > cRect.bottom - 8) {
+      tocEl.scrollTop += (iRect.bottom - (cRect.bottom - 8));
+    }
+  }
+
+  function computeActive() {
+    var boundary = topbarHeight() + 28;
+    var candidate = navTargets.length ? navTargets[0] : '';
+
+    for (var i = 0; i < navTargets.length; i++) {
+      var el = document.getElementById(navTargets[i]);
+      if (!el || !isVisible(el)) { continue; }
+      var top = el.getBoundingClientRect().top;
+      if (top - boundary <= 0) {
+        candidate = navTargets[i];
+      } else {
+        break;
+      }
+    }
+    /* 滚动到底部时强制高亮最后一节 */
+    var docH = document.documentElement.scrollHeight;
+    if (window.pageYOffset + window.innerHeight >= docH - 4 && navTargets.length) {
+      candidate = navTargets[navTargets.length - 1];
+    }
+    setActive(candidate);
+  }
+
+  function requestActiveUpdate() {
+    if (rafPending) { return; }
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      computeActive();
+      updateProgress();
+    });
+  }
+
+  function initObserver() {
+    if (!('IntersectionObserver' in window)) { return; }
+    var observer = new IntersectionObserver(function () {
+      requestActiveUpdate();
+    }, {
+      root: null,
+      rootMargin: '-' + (topbarHeight() + 10) + 'px 0px -55% 0px',
+      threshold: [0, 0.05, 0.3, 0.6, 1]
+    });
+    sections.forEach(function (section) { observer.observe(section); });
+    var subs = main.querySelectorAll('h3');
+    for (var i = 0; i < subs.length; i++) { observer.observe(subs[i]); }
+  }
+
+  /* ================= 阅读进度条 ================= */
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.pageYOffset / max) * 100 : 0;
+    if (pct < 0) { pct = 0; }
+    if (pct > 100) { pct = 100; }
+    progressBar.style.width = pct.toFixed(2) + '%';
+
+    if (window.pageYOffset > 420) {
+      toTopBtn.classList.remove('hidden');
+    } else {
+      toTopBtn.classList.add('hidden');
+    }
+  }
+
+  toTopBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 全文搜索 ================= */
+
+  /** 清除所有高亮，并把文本节点合并回原状。 */
+  function clearMarks() {
+    var marks = main.querySelectorAll('mark.hit');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+    hits = [];
+    hitIndex = -1;
+  }
+
+  /** 用 <mark class="hit"> 包裹所有 substring 匹配。 */
+  function applyMarks(term) {
+    var query = term.toLowerCase();
+    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var value = node.nodeValue;
+        if (!value || !value.trim()) { return NodeFilter.FILTER_REJECT; }
+        var parent = node.parentNode;
+        if (!parent) { return NodeFilter.FILTER_REJECT; }
+        var tag = parent.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') { return NodeFilter.FILTER_REJECT; }
+        if (value.toLowerCase().indexOf(query) === -1) { return NodeFilter.FILTER_REJECT; }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
+    var targets = [];
+    while (walker.nextNode()) { targets.push(walker.currentNode); }
+
+    for (var i = 0; i < targets.length; i++) {
+      var node = targets[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      var idx = lower.indexOf(query, cursor);
+
+      while (idx !== -1) {
+        if (idx > cursor) {
+          frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        cursor = idx + query.length;
+        idx = lower.indexOf(query, cursor);
+      }
+      if (cursor < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      if (node.parentNode) { node.parentNode.replaceChild(frag, node); }
+    }
+
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+  }
+
+  /** 在目录上标注每节命中数量。 */
+  function updateTocHits() {
+    for (var key in tocItems) {
+      if (!Object.prototype.hasOwnProperty.call(tocItems, key)) { continue; }
+      var badge = tocItems[key].querySelector('.toc-hits');
+      if (badge) { badge.parentNode.removeChild(badge); }
+    }
+    if (!hits.length) { return; }
+    sections.forEach(function (section) {
+      var count = section.querySelectorAll('mark.hit').length;
+      var item = tocItems[section.id];
+      if (!count || !item) { return; }
+      var badge = document.createElement('span');
+      badge.className = 'toc-hits';
+      badge.textContent = String(count);
+      item.appendChild(badge);
+    });
+  }
+
+  function gotoHit(index) {
+    if (!hits.length) { return; }
+    var total = hits.length;
+    hitIndex = ((index % total) + total) % total;
+
+    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove('current'); }
+    var target = hits[hitIndex];
+    target.classList.add('current');
+
+    var section = target.closest ? target.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    window.requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - Math.max(window.innerHeight * 0.28, 90);
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+    renderCount();
+  }
+
+  function renderCount() {
+    var term = searchInput.value.trim();
+    if (!term) {
+      searchCount.textContent = '';
+      return;
+    }
+    if (!hits.length) {
+      searchCount.textContent = '无匹配';
+      return;
+    }
+    searchCount.textContent = (hitIndex >= 0 ? (hitIndex + 1) + '/' : '') + hits.length + ' 处';
+  }
+
+  function toggleSearchButtons(show) {
+    prevHitBtn.hidden = !show;
+    nextHitBtn.hidden = !show;
+    clearBtn.hidden = !show;
+  }
+
+  function runSearch() {
+    var term = searchInput.value.trim();
+    clearMarks();
+
+    if (!term) {
+      updateTocHits();
+      toggleSearchButtons(false);
+      renderCount();
+      return;
+    }
+
+    applyMarks(term);
+    updateTocHits();
+    toggleSearchButtons(true);
+
+    /* 展开所有含命中的章节，避免匹配被折叠隐藏 */
+    sections.forEach(function (section) {
+      if (section.querySelector('mark.hit')) { expandSection(section); }
+    });
+    /* 折叠状态可能变化，重新收集顺序 */
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+
+    if (hits.length) {
+      gotoHit(0);
+    } else {
+      renderCount();
+    }
+  }
+
+  searchInput.addEventListener('input', function () {
+    if (searchTimer) { window.clearTimeout(searchTimer); }
+    searchTimer = window.setTimeout(runSearch, 180);
+  });
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = null; }
+      if (!hits.length) {
+        runSearch();
+      } else {
+        gotoHit(hitIndex + (event.shiftKey ? -1 : 1));
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      resetSearch();
+    }
+  });
+
+  function resetSearch() {
+    searchInput.value = '';
+    clearMarks();
+    updateTocHits();
+    toggleSearchButtons(false);
+    renderCount();
+    searchInput.blur();
+  }
+
+  clearBtn.addEventListener('click', resetSearch);
+  nextHitBtn.addEventListener('click', function () { gotoHit(hitIndex + 1); });
+  prevHitBtn.addEventListener('click', function () { gotoHit(hitIndex - 1); });
+
+  /* ================= 移动端抽屉 ================= */
+
+  function openDrawer() {
+    body.classList.add('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!body.classList.contains('toc-open')) { return; }
+    body.classList.remove('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (body.classList.contains('toc-open')) { closeDrawer(); } else { openDrawer(); }
+  });
+  scrim.addEventListener('click', closeDrawer);
+
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 768) { closeDrawer(); }
+    requestActiveUpdate();
+  });
+
+  /* ================= 全局键盘快捷键 ================= */
+
+  document.addEventListener('keydown', function (event) {
+    if (typeof event.key !== 'string') { return; }
+    var tag = (event.target && event.target.nodeName) || '';
+    var typing = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT');
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      searchInput.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  /* ================= 滚动监听 ================= */
+
+  window.addEventListener('scroll', requestActiveUpdate, { passive: true });
+
+  /* ================= 初始化 ================= */
+
+  initTheme();
+  initFontSize();
+  buildToc();
+  initObserver();
+  updateProgress();
+  computeActive();
+
+  /* 带 hash 进入时定位到对应章节 */
+  if (window.location.hash.length > 1) {
+    var initialId = decodeURIComponent(window.location.hash.slice(1));
+    if (document.getElementById(initialId)) {
+      window.setTimeout(function () { scrollToTarget(initialId, false); }, 60);
+    }
+  }
+})();
+</script>
+</body>
+</html>

@@ -233,7 +233,7 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                 ) {
                     Column(Modifier.padding(18.dp)) {
-                        Text("统计总览${stats.trendIcon}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                        Text("统计总览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(14.dp))
 

@@ -34,13 +34,15 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun BottomNavBar(
     currentTab: Int,
-    onSelect: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    showLibraryTab: Boolean = false
 ) {
-    val tabs = listOf(
+    val baseTabs = listOf(
         "首页" to AppIconKind.Home,
         "我的文章" to AppIconKind.Articles,
         "数据" to AppIconKind.Insights,
     )
+    val tabs = if (showLibraryTab) baseTabs + ("素材库" to AppIconKind.Library) else baseTabs
     val isDark = isSystemInDarkTheme()
     val surfaceColor = MaterialTheme.colorScheme.surface
     // 半透明染色：深色下更实（毛玻璃感弱但对比足），浅色下更透，让氛围光斑微透

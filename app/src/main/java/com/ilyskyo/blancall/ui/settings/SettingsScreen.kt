@@ -158,6 +158,28 @@ fun SettingsScreen(navController: NavController) {
                             onCheckedChange = { AppPrefs.bottomNavEnabled = it }
                         )
                     }
+
+                    // 内置素材库开关：开启后底部导航栏新增「素材库」入口，可离线查看内置的西方思想素材
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    val builtInLibraryEnabled by AppPrefs.builtInLibraryEnabledFlow.collectAsState()
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("内置素材库", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("开启后底部出现「素材库」，可离线查看内置的西方思想内容",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = builtInLibraryEnabled,
+                            onCheckedChange = { AppPrefs.builtInLibraryEnabled = it }
+                        )
+                    }
                 }
             }
 
@@ -490,6 +512,30 @@ fun SettingsScreen(navController: NavController) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
+                Surface(
+                    onClick = { navController.navigate("onboarding") },
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🎓", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.width(10.dp))
+                            Text("使用引导", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Text("→", style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                HorizontalDivider(
+                    Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
                 Surface(
                     onClick = { navController.navigate("help") },
                     color = MaterialTheme.colorScheme.surface,

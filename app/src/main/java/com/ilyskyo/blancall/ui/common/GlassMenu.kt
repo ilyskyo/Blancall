@@ -71,7 +71,10 @@ fun GlassDropdownMenu(
         shadowElevation = 0.dp,
         border = null
     ) {
-        GlassMenuCard(width = 260.dp, content = content)
+        // 宽度随屏幕自适应：手机上占约 82% 宽（更舒展、不再窄条），最大 360dp、最小 260dp
+        val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+        val menuWidth = minOf(360.dp, maxOf(260.dp, screenW * 0.82f))
+        GlassMenuCard(width = menuWidth, content = content)
     }
 }
 
@@ -91,12 +94,14 @@ private fun GlassMenuCard(
     } else {
         MaterialTheme.colorScheme.surface
     }
-    val bgAlpha = if (isDark) 0.90f else GLASS_ALPHA_LIGHT
+    // 菜单比卡片更"实"：浅色 0.93（基本实心，背文不显） / 深色 0.95，
+    // 与 GlassBlur.GLASS_MENU_ALPHA_LIGHT 对齐。卡片仍保留 GLASS_ALPHA_LIGHT = 0.72 的玻璃感。
+    val bgAlpha = if (isDark) 0.95f else GLASS_MENU_ALPHA_LIGHT
     val stainColor = baseColor.copy(alpha = bgAlpha)
     val highlightColor = if (isDark) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
     } else {
-        Color.White.copy(alpha = 0.18f)
+        Color.White.copy(alpha = 0.20f)
     }
     val shape = RoundedCornerShape(18.dp)
 
@@ -167,7 +172,7 @@ fun GlassMenuItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = 44.dp)
             .clickable(
                 enabled = enabled,
                 interactionSource = interaction,
@@ -175,7 +180,7 @@ fun GlassMenuItem(
                 onClick = onClick
             )
             .background(bg)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (leadingIcon != null) {

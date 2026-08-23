@@ -1,0 +1,1726 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-fs="1">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="弗洛伊德（1856—1939）高考写作素材：生平、著作、核心思想（无意识与理性人的死亡、本我/自我/超我、俄狄浦斯情结、压抑与防御机制、梦是愿望的满足、文明与本能）与写作应用提示。">
+<title>弗洛伊德 · 哲思化写作素材</title>
+<style>
+/* =====================================================================
+   弗洛伊德 · 写作素材（可交互单页站点）
+   纯静态：HTML + CSS + 原生 JS，无外部依赖，可离线运行
+   ===================================================================== */
+
+/* ---------- 变量：主题 ---------- */
+:root{
+  --topbar-h: 58px;
+  --toc-w: 272px;
+  --content-max: 46rem;
+  --fs-root: 17px;
+  --radius: 10px;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+html[data-theme="light"]{
+  --bg:#f3f3f0;
+  --paper:#ffffff;
+  --ink:#1b1b1b;
+  --ink-soft:#333333;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --line:#e4e4e0;
+  --line-mid:#cfcfc9;
+  --line-strong:#1b1b1b;
+  --accent:#1f3a5f;
+  --accent-soft:rgba(31,58,95,.10);
+  --accent-ink:#ffffff;
+  --num-bg:#1b1b1b;
+  --num-ink:#ffffff;
+  --quote-bg:#f7f7f5;
+  --box-bg:#ffffff;
+  --col-bg:#fafaf8;
+  --mark-bg:#ffe680;
+  --mark-ink:#1b1b1b;
+  --mark-cur:#ff9f2e;
+  --topbar-bg:rgba(255,255,255,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.06);
+  --shadow-2:0 8px 26px rgba(0,0,0,.16);
+  --btn-bg:#ffffff;
+  --btn-bg-hover:#f0f0ec;
+  --field-bg:#f6f6f3;
+}
+html[data-theme="dark"]{
+  --bg:#12141a;
+  --paper:#1a1d23;
+  --ink:#e7e5df;
+  --ink-soft:#d3d0c9;
+  --muted:#9b988f;
+  --faint:#7e7b74;
+  --line:#2a2e36;
+  --line-mid:#3a3f49;
+  --line-strong:#6e747f;
+  --accent:#83b2ff;
+  --accent-soft:rgba(131,178,255,.14);
+  --accent-ink:#0d1016;
+  --num-bg:#83b2ff;
+  --num-ink:#0d1016;
+  --quote-bg:#1f232a;
+  --box-bg:#1d2027;
+  --col-bg:#1f232a;
+  --mark-bg:#7d6200;
+  --mark-ink:#fff6d8;
+  --mark-cur:#c9761a;
+  --topbar-bg:rgba(18,20,26,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  --shadow-2:0 8px 26px rgba(0,0,0,.5);
+  --btn-bg:#22262e;
+  --btn-bg-hover:#2b3038;
+  --field-bg:#22262e;
+}
+/* ---------- 字号三档 ---------- */
+html[data-fs="0"]{ --fs-root:15px; }
+html[data-fs="1"]{ --fs-root:17px; }
+html[data-fs="2"]{ --fs-root:19.5px; }
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:auto; }
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:var(--fs-root);
+  line-height:1.85;
+  -webkit-text-size-adjust:100%;
+  transition:background-color .25s var(--ease), color .25s var(--ease);
+}
+
+/* ---------- 无障碍：跳到正文 ---------- */
+.skip-link{
+  position:absolute; left:-9999px; top:0; z-index:2000;
+  background:var(--accent); color:var(--accent-ink);
+  padding:8px 14px; border-radius:0 0 var(--radius) 0; font-family:var(--sans); font-size:.85rem;
+}
+.skip-link:focus{ left:0; }
+
+/* =====================  顶栏  ===================== */
+.topbar{
+  position:sticky; top:0; z-index:900;
+  display:flex; align-items:center; gap:10px;
+  height:var(--topbar-h);
+  padding:0 14px;
+  background:var(--topbar-bg);
+  backdrop-filter:saturate(150%) blur(10px);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+.tb-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.tb-right{ display:flex; align-items:center; gap:6px; }
+
+.site-title{
+  font-family:var(--sans);
+  font-size:.94rem;
+  font-weight:800;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--ink);
+}
+.site-title .dot{ color:var(--accent); margin:0 .15em; }
+.site-title .st-sub{ font-weight:500; color:var(--muted); }
+
+
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-width:34px; height:34px; padding:0 9px;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1;
+  color:var(--ink); background:var(--btn-bg);
+  border:1px solid var(--line-mid); border-radius:8px;
+  cursor:pointer; user-select:none;
+  transition:background-color .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease);
+}
+.icon-btn:hover{ background:var(--btn-bg-hover); }
+.icon-btn:active{ transform:translateY(1px); }
+.icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.menu-btn{ display:none; }
+
+/* 搜索框 */
+.search-wrap{
+  position:relative;
+  display:flex; align-items:center;
+  width:100%; max-width:430px;
+  height:36px;
+  background:var(--field-bg);
+  border:1px solid var(--line-mid);
+  border-radius:999px;
+  padding:0 8px 0 12px;
+  transition:border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.search-wrap:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.search-icon{ font-size:.8rem; opacity:.65; margin-right:6px; }
+#searchInput{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  font-family:var(--sans); font-size:.86rem; color:var(--ink);
+}
+#searchInput::placeholder{ color:var(--faint); }
+#searchInput::-webkit-search-cancel-button{ display:none; }
+.search-count{
+  font-family:var(--sans); font-size:.74rem; color:var(--muted);
+  white-space:nowrap; margin:0 4px; font-variant-numeric:tabular-nums;
+}
+.search-nav{
+  display:flex; gap:2px;
+}
+.mini-btn{
+  width:22px; height:22px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:.7rem; line-height:1;
+  color:var(--muted); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.mini-btn:hover{ background:var(--btn-bg-hover); color:var(--ink); }
+.mini-btn[hidden]{ display:none; }
+
+/* 阅读进度条 */
+.progress{
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:3px; background:transparent; overflow:hidden;
+}
+.progress-bar{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, var(--accent), var(--num-bg));
+  transition:width .08s linear;
+}
+
+/* =====================  布局  ===================== */
+.layout{
+  display:flex;
+  align-items:flex-start;
+  gap:26px;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 18px;
+}
+
+/* ---------- 侧边目录 ---------- */
+.toc{
+  position:sticky;
+  top:var(--topbar-h);
+  flex:0 0 var(--toc-w);
+  width:var(--toc-w);
+  max-height:calc(100vh - var(--topbar-h));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:20px 8px 28px 0;
+  font-family:var(--sans);
+}
+.toc-head{
+  font-size:.72rem; font-weight:800; letter-spacing:.24em;
+  color:var(--muted); text-transform:uppercase;
+  padding:0 10px 10px; border-bottom:1px solid var(--line); margin-bottom:8px;
+}
+.toc-nav{ display:flex; flex-direction:column; }
+.toc-item{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:6px 10px;
+  color:var(--ink-soft); text-decoration:none;
+  border-left:2px solid transparent;
+  border-radius:0 6px 6px 0;
+  line-height:1.45;
+  transition:background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.toc-item:hover{ background:var(--accent-soft); color:var(--ink); }
+.toc-item.lvl2{ font-size:.85rem; font-weight:700; margin-top:6px; }
+.toc-item.lvl3{ font-size:.79rem; font-weight:400; padding-left:30px; color:var(--muted); }
+.toc-item .toc-num{
+  flex:0 0 auto;
+  font-size:.68rem; font-weight:800;
+  min-width:1.35em; text-align:center;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:4px;
+  padding:0 2px; line-height:1.5;
+  margin-top:.15em;
+}
+.toc-item.active{
+  color:var(--accent); background:var(--accent-soft);
+  border-left-color:var(--accent); font-weight:800;
+}
+.toc-item.active .toc-num{ color:var(--accent); border-color:var(--accent); }
+.toc-item.active-parent{ color:var(--ink); border-left-color:var(--line-strong); }
+.toc-item .toc-hits{
+  margin-left:auto; flex:0 0 auto;
+  font-size:.68rem; font-weight:700;
+  color:var(--accent-ink); background:var(--accent);
+  border-radius:999px; padding:0 6px; line-height:1.6;
+}
+.toc-foot{
+  margin-top:14px; padding:10px 10px 0;
+  border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--faint);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+}
+.link-btn{
+  background:none; border:0; padding:0;
+  font-family:var(--sans); font-size:.72rem; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.link-btn:hover{ opacity:.75; }
+.scrim{
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,.45);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s var(--ease);
+}
+
+/* ---------- 正文容器 ---------- */
+.content{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:var(--content-max);
+  margin:0 auto;
+  padding:22px 0 90px;
+}
+
+/* ---------- 章节卡片 ---------- */
+.section{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-1);
+  padding:26px 30px 24px;
+  margin:0 0 20px;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+  transition:background-color .25s var(--ease), border-color .25s var(--ease);
+}
+.section:target{ border-color:var(--accent); }
+
+/* 可折叠标题 */
+h2.sec-head{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--sans);
+  font-size:1.42em; font-weight:800; letter-spacing:.03em;
+  margin:0 0 12px; padding:0 0 8px;
+  border-bottom:2px solid var(--line-strong);
+  cursor:pointer; user-select:none;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h2.sec-head:hover .h2-text{ color:var(--accent); }
+h2.sec-head:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+h2.sec-head .chapter-num{
+  flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55em; height:1.55em;
+  font-size:.72em; font-weight:800;
+  background:var(--num-bg); color:var(--num-ink);
+  border-radius:4px;
+}
+h2.sec-head .h2-text{ flex:1 1 auto; transition:color .15s var(--ease); }
+h2.sec-head .sec-caret{
+  flex:0 0 auto;
+  font-size:.62em; color:var(--muted);
+  transition:transform .22s var(--ease);
+}
+.section.collapsed h2.sec-head{ border-bottom-color:var(--line-mid); margin-bottom:0; }
+.section.collapsed h2.sec-head .sec-caret{ transform:rotate(-90deg); }
+.section.collapsed .sec-body{ display:none; }
+.sec-body{ animation:fadeIn .22s var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:none;} }
+
+/* ---------- 正文排版 ---------- */
+h3{
+  font-family:var(--sans);
+  font-size:1.06em; font-weight:700;
+  margin:1.5em 0 .55em; color:var(--ink);
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h3::before{ content:"▪"; margin-right:.5em; color:var(--accent); }
+h4{
+  font-family:var(--sans);
+  font-size:.95em; font-weight:700;
+  margin:1.1em 0 .4em; color:var(--ink-soft);
+}
+p{ margin:0 0 .72em; text-align:justify; text-indent:2em; }
+p.no-indent{ text-indent:0; }
+ul, ol{ margin:.5em 0 .9em; padding-left:1.6em; }
+li{ margin-bottom:.35em; text-align:justify; }
+strong{ font-weight:700; color:var(--ink); }
+em{ font-style:normal; }
+
+blockquote{
+  margin:1em 0; padding:.7em 1em;
+  border-left:3px solid var(--accent);
+  background:var(--quote-bg);
+  font-size:.96em; line-height:1.78;
+  border-radius:0 6px 6px 0;
+}
+blockquote p{ text-indent:0; margin:0 0 .4em; }
+blockquote p:last-child{ margin-bottom:0; }
+blockquote cite{
+  display:block; text-align:right;
+  font-size:.86em; color:var(--muted); font-style:normal; margin-top:.5em;
+}
+
+.box{
+  margin:1em 0; padding:.85em 1em;
+  border:1px solid var(--line-mid);
+  background:var(--box-bg);
+  border-radius:8px;
+}
+.box-title{
+  font-family:var(--sans);
+  font-size:.78em; font-weight:800; letter-spacing:.16em;
+  color:var(--accent);
+  margin-bottom:.6em; padding-bottom:.35em;
+  border-bottom:1px solid var(--line);
+}
+.box p{ text-indent:0; margin-bottom:.45em; }
+.box p:last-child{ margin-bottom:0; }
+.box dl{ margin:0; }
+.box dt{
+  font-family:var(--sans); font-weight:700; font-size:.84em;
+  margin-top:.6em; color:var(--muted); letter-spacing:.05em;
+}
+.box dd{ margin:.15em 0 .55em; font-size:.96em; text-align:justify; }
+
+.term{
+  font-family:var(--sans); font-weight:700;
+  border-bottom:1px solid var(--line-strong);
+  padding-bottom:1px;
+}
+
+.summary{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin:1em 0;
+}
+.summary .col{
+  padding:.8em .9em;
+  background:var(--col-bg);
+  border-top:2px solid var(--line-strong);
+  border-radius:0 0 6px 6px;
+}
+.summary .col-title{
+  font-family:var(--sans); font-weight:800; font-size:.82em;
+  margin-bottom:.5em; letter-spacing:.08em;
+}
+.summary .col p{ text-indent:0; font-size:.92em; margin:0 0 .45em; }
+.summary .col p:last-child{ margin-bottom:0; }
+
+.src-note{
+  font-size:.78em; color:var(--faint);
+  margin:1.1em 0 0; padding-top:.5em;
+  border-top:1px dotted var(--line-mid);
+  text-align:left; text-indent:0;
+}
+.footer-note{
+  margin-top:1.4em; padding-top:.7em;
+  border-top:1px solid var(--line);
+  font-size:.8em; color:var(--muted); text-align:center; text-indent:0;
+}
+.center{ text-align:center; }
+.small{ font-size:.9em; }
+
+/* ---------- 封面 ---------- */
+.section-cover{ padding:0; overflow:hidden; }
+.cover{
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center;
+  padding:58px 26px 34px;
+}
+.cover-tag{
+  font-family:var(--sans);
+  font-size:.72rem; letter-spacing:.4em;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:3px;
+  padding:5px 12px 5px 16px; margin-bottom:34px;
+}
+.cover h1{
+  font-family:var(--sans);
+  font-size:2.6em; font-weight:900; line-height:1.2;
+  margin:0 0 14px; letter-spacing:.08em;
+}
+.cover-subtitle{
+  font-size:1.02em; color:var(--ink-soft);
+  margin-bottom:26px; letter-spacing:.14em;
+}
+.cover-line{ width:150px; height:2px; background:var(--line-strong); margin:0 auto 22px; }
+.cover-source{ font-size:.96em; color:var(--muted); line-height:2; }
+.cover-foot{
+  margin-top:34px; padding-top:14px;
+  border-top:1px solid var(--line);
+  width:100%; max-width:520px;
+  font-size:.78em; color:var(--faint); letter-spacing:.08em;
+}
+
+/* ---------- 原印刷目录（正文内） ---------- */
+.toc-list{ list-style:none; padding:0; margin:.4em 0 0; }
+.toc-list li{ border-bottom:1px dotted var(--line-mid); }
+.toc-list li:last-child{ border-bottom:none; }
+.toc-list-link{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:.5em .3em; color:var(--ink); text-decoration:none;
+  border-radius:6px;
+  transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.toc-list-link:hover{ background:var(--accent-soft); color:var(--accent); }
+.toc-list .num{
+  font-family:var(--sans); font-weight:800;
+  margin-right:.6em; color:var(--muted);
+}
+.toc-list .title{ font-size:.98em; }
+.toc-list .author{
+  font-family:var(--sans);
+  font-size:.76em; color:var(--faint); white-space:nowrap;
+}
+
+/* ---------- 搜索高亮 ---------- */
+mark.hit{
+  background:var(--mark-bg); color:var(--mark-ink);
+  border-radius:2px; padding:0 1px;
+  scroll-margin-top:calc(var(--topbar-h) + 90px);
+}
+mark.hit.current{
+  background:var(--mark-cur); color:#fff;
+  box-shadow:0 0 0 2px var(--mark-cur);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.fab-group{
+  position:fixed; right:18px; bottom:18px; z-index:880;
+  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px;
+}
+.fab{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:10px 16px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink);
+  font-family:var(--sans); font-size:.84rem; font-weight:700;
+  text-decoration:none; border:0; cursor:pointer;
+  box-shadow:var(--shadow-2);
+  transition:transform .15s var(--ease), opacity .2s var(--ease);
+}
+.fab:hover{ transform:translateY(-2px); }
+.fab.fab-mini{
+  width:40px; height:40px; padding:0; justify-content:center;
+  font-size:1rem;
+  background:var(--btn-bg); color:var(--ink);
+  border:1px solid var(--line-mid);
+}
+.fab.hidden{ opacity:0; pointer-events:none; transform:translateY(8px); }
+
+/* ---------- 移动端 ---------- */
+@media (max-width:900px){
+  .layout{ gap:16px; padding:0 12px; }
+  :root{ --toc-w:240px; }
+}
+@media (max-width:768px){
+  :root{ --topbar-h:54px; }
+  .menu-btn{ display:inline-flex; }
+  .site-title .st-sub{ display:none; }
+  .tb-center{ order:3; flex:0 0 100%; }
+  .topbar{ flex-wrap:wrap; height:auto; padding:8px 10px 10px; gap:8px; row-gap:8px; }
+  .tb-left{ flex:1 1 auto; }
+  .search-wrap{ max-width:none; height:34px; }
+  .layout{ display:block; padding:0 10px; }
+  .content{ max-width:none; padding:14px 0 96px; }
+  .section{ padding:20px 16px 18px; border-radius:8px; }
+  .summary{ grid-template-columns:1fr; }
+  .cover{ padding:40px 18px 26px; }
+  .cover h1{ font-size:2.1em; }
+  .cover-tag{ margin-bottom:24px; }
+
+  /* TOC 抽屉 */
+  .toc{
+    position:fixed; top:0; left:0; bottom:0; z-index:860;
+    width:80vw; max-width:320px;
+    max-height:none; height:100%;
+    padding:18px 10px 24px 14px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    box-shadow:var(--shadow-2);
+    transform:translateX(-102%);
+    transition:transform .26s var(--ease);
+  }
+  body.toc-open .toc{ transform:translateX(0); }
+  body.toc-open .scrim{ opacity:1; pointer-events:auto; }
+  body.toc-open{ overflow:hidden; }
+  .fab-group{ right:12px; bottom:12px; }
+  .fab{ padding:9px 14px; font-size:.8rem; }
+  p{ text-indent:2em; }
+}
+@media (max-width:420px){
+  .icon-btn .btn-txt{ display:none; }
+  .toc-list-link{ flex-wrap:wrap; }
+}
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+
+/* =====================================================================
+   打印样式：隐藏所有交互界面，恢复干净的 A4 印刷排版
+   ===================================================================== */
+@page{
+  size:A4;
+  margin:20mm 18mm 20mm 18mm;
+}
+@media print{
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    font-family:var(--serif);
+    font-size:11pt !important;
+    line-height:1.85;
+  }
+  html{
+    --paper:#fff; --ink:#000; --ink-soft:#222; --muted:#666; --faint:#999;
+    --line:#ddd; --line-mid:#ccc; --line-strong:#000;
+    --accent:#000; --accent-soft:transparent; --accent-ink:#fff;
+    --num-bg:#000; --num-ink:#fff;
+    --quote-bg:#f7f7f7; --box-bg:#fff; --col-bg:#fafafa;
+  }
+  .topbar, .toc, .scrim, .fab-group, .progress, .skip-link, .sec-caret, .search-wrap{
+    display:none !important;
+  }
+  .layout{ display:block; max-width:none; padding:0; margin:0; }
+  .content{ max-width:none; margin:0; padding:0; }
+  .section{
+    background:#fff !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    page-break-before:always;
+    page-break-inside:auto;
+  }
+  .section:first-of-type{ page-break-before:auto; }
+  .section.collapsed .sec-body{ display:block !important; }
+  .sec-body{ animation:none !important; }
+  h2.sec-head{
+    display:block; cursor:auto;
+    font-size:18pt !important; font-weight:800;
+    margin:0 0 10pt !important; padding-bottom:6pt;
+    border-bottom:2pt solid #000 !important;
+    page-break-after:avoid;
+  }
+  h2.sec-head .chapter-num{
+    display:inline-block; width:28pt; height:28pt; line-height:28pt;
+    text-align:center; font-size:14pt; border-radius:0;
+    background:#000 !important; color:#fff !important;
+    margin-right:10pt; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h2.sec-head .h2-text{ display:inline; }
+  h3{ font-size:13pt !important; page-break-after:avoid; }
+  h3::before{ color:#666 !important; }
+  h4{ font-size:11pt !important; page-break-after:avoid; }
+  p{ orphans:2; widows:2; }
+  blockquote, .box, .summary, .cover-source{ page-break-inside:avoid; }
+  blockquote{
+    background:#f7f7f7 !important; border-left:3pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .box{ border:1pt solid #333 !important; border-radius:0; }
+  .box-title{ color:#000 !important; text-transform:uppercase; }
+  .summary .col{
+    background:#fafafa !important; border-top:2pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .section-cover{ padding:0 !important; }
+  .cover{ min-height:245mm; padding:0 !important; justify-content:center; }
+  .cover h1{ font-size:32pt !important; }
+  .cover-subtitle{ font-size:14pt !important; }
+  .cover-line{ width:60mm; background:#000 !important; }
+  .cover-foot{ border-top:0; margin-top:60mm; }
+  .toc-list-link{ color:#000 !important; text-decoration:none; padding:8pt 0; }
+  .toc-list li{ border-bottom:.5pt dotted #bbb; }
+  mark.hit, mark.hit.current{
+    background:transparent !important; color:inherit !important;
+    box-shadow:none !important; padding:0;
+  }
+  a{ color:inherit !important; text-decoration:none !important; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar" id="topbar">
+  <div class="tb-left">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开或关闭目录" aria-expanded="false" aria-controls="toc">☰<span class="btn-txt">菜单</span></button>
+    <span class="site-title">弗洛伊德<span class="dot">·</span><span class="st-sub">写作素材</span></span>
+  </div>
+
+  <div class="tb-center">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="searchInput" type="search" placeholder="全文搜索：无意识 / 本我 / 压抑 / 升华 …" autocomplete="off" spellcheck="false" aria-label="全文搜索">
+      <span class="search-count" id="searchCount" aria-live="polite"></span>
+      <span class="search-nav">
+        <button class="mini-btn" id="prevHit" type="button" hidden aria-label="上一处匹配">▲</button>
+        <button class="mini-btn" id="nextHit" type="button" hidden aria-label="下一处匹配">▼</button>
+        <button class="mini-btn" id="clearSearch" type="button" hidden aria-label="清空搜索">✕</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tb-right">
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色/浅色主题" title="切换深色 / 浅色阅读模式">🌙</button>
+    <button class="icon-btn" id="fsDown" type="button" aria-label="缩小字号" title="缩小正文字号">A−</button>
+    <button class="icon-btn" id="fsUp" type="button" aria-label="放大字号" title="放大正文字号">A＋</button>
+  </div>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== 主体布局 ===================== -->
+<div class="layout">
+
+  <!-- 侧边目录 -->
+  <aside class="toc" id="toc" aria-label="章节目录">
+    <div class="toc-head">目录导航</div>
+    <nav class="toc-nav" id="tocNav"></nav>
+    <div class="toc-foot">
+      <span>共 <span id="secCount">0</span> 节</span>
+      <button class="link-btn" id="expandAll" type="button">全部展开</button>
+      <button class="link-btn" id="collapseAll" type="button">全部折叠</button>
+    </div>
+  </aside>
+
+  <!-- 正文 -->
+  <main class="content" id="main">
+
+    <!-- ========== 封面 ========== -->
+    <section class="section section-cover" id="sec-cover" data-toc="封面 · 人物名片">
+      <div class="cover">
+        <div class="cover-tag">高考写作素材</div>
+        <h1>弗洛伊德</h1>
+        <div class="cover-subtitle">现代西方思想史 · 无意识的发现与“理性人的死亡”</div>
+        <div class="cover-line"></div>
+        <div class="cover-source">
+          1856 — 1939<br>
+          奥地利心理学家 · 精神分析学创始人<br>
+          “理性人的死亡” · 精神分析的奠基人
+        </div>
+        <div class="cover-foot">本册为单人物深度版 · 含生平、著作、核心思想与写作应用</div>
+      </div>
+    </section>
+
+    <!-- ========== 目录 ========== -->
+    <section class="section" id="sec-contents">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="h2-text">目 录</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <ul class="toc-list">
+          <li><a class="toc-list-link" href="#sec-1"><span><span class="num">01</span><span class="title">人物定位与速览</span></span><span class="author">一句话读懂</span></a></li>
+          <li><a class="toc-list-link" href="#sec-2"><span><span class="num">02</span><span class="title">生平经历：从弗莱堡到伦敦</span></span><span class="author">1856–1939</span></a></li>
+          <li><a class="toc-list-link" href="#sec-3"><span><span class="num">03</span><span class="title">主要著作与学术成就</span></span><span class="author">精神分析奠基</span></a></li>
+          <li><a class="toc-list-link" href="#sec-4"><span><span class="num">04</span><span class="title">核心思想（一）：无意识——理性人的死亡</span></span><span class="author">思想底座</span></a></li>
+          <li><a class="toc-list-link" href="#sec-5"><span><span class="num">05</span><span class="title">核心思想（二）：本我、自我与超我</span></span><span class="author">人格结构</span></a></li>
+          <li><a class="toc-list-link" href="#sec-6"><span><span class="num">06</span><span class="title">核心思想（三）：俄狄浦斯情结与性心理发展</span></span><span class="author">争议与深度</span></a></li>
+          <li><a class="toc-list-link" href="#sec-7"><span><span class="num">07</span><span class="title">核心思想（四）：压抑、防御机制与梦</span></span><span class="author">症状与梦</span></a></li>
+          <li><a class="toc-list-link" href="#sec-8"><span><span class="num">08</span><span class="title">核心思想（五）：文明与本能——《文明及其不满》</span></span><span class="author">收官之作</span></a></li>
+          <li><a class="toc-list-link" href="#sec-9"><span><span class="num">09</span><span class="title">我们该如何理解弗洛伊德</span></span><span class="author">理解视角</span></a></li>
+          <li><a class="toc-list-link" href="#sec-10"><span><span class="num">10</span><span class="title">写作应用提示</span></span><span class="author">上考场用</span></a></li>
+        </ul>
+        <div class="footer-note">本册每节末以灰色小字标注网络文献来源；思想用于论证，生平用于点缀。</div>
+      </div>
+    </section>
+
+    <!-- ========== 第一章 ========== -->
+    <section class="section" id="sec-1">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">1</span><span class="h2-text">人物定位与速览</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位：</strong>奥地利心理学家，宣告“理性人的死亡”。</p>
+        <p>西格蒙德·弗洛伊德（Sigmund Freud，1856—1939），奥地利心理学家、神经病学家，精神分析学派的创始人，被誉为“精神分析之父”。他毕生致力于探勘人类心灵深处的“黑暗地带”——无意识。在西方思想史上，他与尼采并列为启蒙理性主义传统的两大“造反者”：如果说尼采宣告了“上帝死了”，那么弗洛伊德就宣告了“理性人的死亡”，成为现代思想史上的另一个里程碑。</p>
+        <p>对高考生而言，弗洛伊德提供的是一组理解“人”的钥匙：为什么我们常常“知行不一”？为什么理性计算之外还有欲望的暗流？为什么道德、内疚与文明的发展紧紧纠缠在一起？这些问题，正是高考作文里“理性与感性”“自律与自由”“认识自我”“个人与社会”“科技与人文”等母题的思想资源。运用弗洛伊德，可以把“人”的维度从单薄的“理性动物”推向立体而真实——这正是一个“哲思化”的加分角度。</p>
+
+        <div class="box no-break">
+          <div class="box-title">速览卡</div>
+          <dl>
+            <dt>生卒</dt><dd>1856 年 5 月 6 日生于奥地利帝国摩拉维亚弗莱堡（今捷克普日博尔）— 1939 年 9 月 23 日卒于英国伦敦，享年 83 岁。</dd>
+            <dt>国籍 / 身份</dt><dd>奥地利；精神病医生、心理学家，精神分析学派创始人，“精神分析之父”。</dd>
+            <dt>研究领域</dt><dd>神经病学 · 精神病理学 · 无意识心理 · 梦的解析 · 文明理论。</dd>
+            <dt>核心命题</dt><dd>无意识、“理性人的死亡”、本我/自我/超我、俄狄浦斯情结、压抑与防御机制、梦是愿望的满足、文明与本能。</dd>
+            <dt>代表著作</dt><dd>《梦的解析》《性学三论》《图腾与禁忌》《精神分析引论》《自我与本我》《文明及其不满》。</dd>
+            <dt>一句名言</dt><dd>“梦是愿望的满足。”——《梦的解析》</dd>
+          </dl>
+        </div>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Sigmund Freud」、中国大百科全书·中国百科网「弗洛伊德,S.」、MBA智库百科「西格蒙德·弗洛伊德」。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第二章 ========== -->
+    <section class="section" id="sec-2">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">2</span><span class="h2-text">生平经历：从弗莱堡到伦敦</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">弗洛伊德的思想不是书斋里的玄想，而是从一位维也纳医生的诊室里长出来的。他一生与偏见、孤立和疾病缠斗，却始终不改对人类心灵的追问——理解他的生平，才懂他的理论为何既“冒犯常识”，又如此深刻。</p>
+
+        <h3>家世与早年：犹太家庭与“神童”岁月</h3>
+        <p>1856 年 5 月 6 日，弗洛伊德生于奥地利帝国摩拉维亚的弗莱堡（Freiberg，今属捷克）的一个犹太人家庭。父亲雅各布是羊毛商人，母亲阿玛莉亚比他父亲小二十岁；全家后迁居维也纳。弗洛伊德自幼聪慧过人，中学时代几乎年年名列班级第一，1873 年进入维也纳大学学医。大学期间他先后在动物学与生理学实验室工作，1881 年获得医学博士学位。彼时正值欧洲反犹气氛浓厚的年代，而他的犹太出身——按他自己的说法——对他的思想发展“起着很大作用”。</p>
+
+        <h3>从神经学到精神病理学：1885 年的巴黎之行</h3>
+        <p>毕业后，弗洛伊德先从事神经解剖学研究，1882 年进入维也纳总医院做临床医生。1885 年，他获得奖学金前往巴黎，在萨尔珀里耶尔医院（Salpêtrière）师从神经病学家沙可（Jean-Martin Charcot）。沙可用催眠术治疗癔症（歇斯底里），让弗洛伊德意识到：心理障碍的根源可能在“心灵”而非“大脑”——这段经历被他视为自己从神经学转向精神病理学的关键转折。</p>
+        <p>1886 年，弗洛伊德回到维也纳，与玛莎·伯奈斯结婚（婚后育有六名子女，其中小女儿安娜后来成为著名的儿童精神分析师），并在私人诊所开业。他经由奥地利医生布洛伊尔（Josef Breuer）获知著名的“安娜·O”病例（该患者本名伯莎·帕彭海姆 Bertha Pappenheim，实为布洛伊尔的患者，弗洛伊德并未亲自治疗她）：布洛伊尔通过催眠与“谈话疗法”缓解其症状，由此发展出“宣泄”概念。1895 年，两人合著出版《癔症研究》，被公认为精神分析的奠基之作。1896 年父亲去世，同年他首次使用“精神分析”（psychoanalysis）一词命名自己的新方法。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>这段经历可用于“从边缘到中心”“偏见与坚持”“病人教会医生”“理论的临床根底”等主题。注意：弗洛伊德的理论源于对病人的临床观察，不是空想——这正是他与纯粹文学式心理描绘不同的地方。</p>
+        </div>
+
+        <h3>自我分析与《梦的解析》</h3>
+        <p>1897 年，弗洛伊德开始对自己进行艰苦的“自我分析”，并在分析中发现童年期对母亲的依恋与对父亲的嫉妒——这成为后来“俄狄浦斯情结”的雏形。1899 年底，他最重要的著作《梦的解析》（Die Traumdeutung）出版（书封面印 1900 年，通行说法记为 1900 年），首次系统提出“梦是愿望的满足”。这本书初版并不畅销，多年间仅售出数百册，却在此后深刻改变了一个世纪的人类对自身的想象。</p>
+
+        <h3>精神分析运动的兴起：从“周三心理学会”到克拉克大学</h3>
+        <p>1902 年，在威廉·施特克尔的建议下，弗洛伊德邀请几位志同道合的维也纳医生每周三到家中聚会讨论，这就是著名的“周三心理学会”（1908 年改组为“维也纳精神分析学会”）。此后精神分析运动迅速扩大：1909 年，弗洛伊德应美国克拉克大学校长斯坦利·霍尔之邀赴美，连续作了五次讲座，被授予名誉博士学位——这被普遍视为精神分析“走向世界”的标志，意味着他的学说终于赢得国际性承认。1910 年，国际精神分析协会在纽伦堡成立，荣格当选首任主席。</p>
+
+        <h3>学派的分裂：阿德勒与荣格</h3>
+        <p>盛名之下，分裂也接踵而至。1911 年，阿德勒（Alfred Adler）因不赞同弗洛伊德对性欲与无意识的强调，正式脱离团体，另立“个体心理学”。荣格与弗洛伊德的分歧则在 1912 年后公开化——荣格主张把力比多理解为更广义的心理能量，并提出“集体无意识”，最终与弗洛伊德决裂，1914 年辞去国际精神分析协会主席职务，创立“分析心理学”。这场分裂曾让弗洛伊德一度深陷孤立，但此后他反而写出《图腾与禁忌》《精神分析引论》等更具文化野心的著作。</p>
+
+        <h3>晚年：疾病、焚书与流亡伦敦</h3>
+        <p>1923 年，长期吸烟的弗洛伊德被确诊口腔癌，此后十余年间接受三十多次手术，备受煎熬却坚持写作与治疗。1930 年，他获颁歌德奖。1933 年纳粹在德国掌权，公开焚烧他的著作——弗洛伊德对此揶揄道：“我们取得了多大进步。中世纪他们会烧我本人，现在他们只烧我的书就满足了。”1938 年纳粹吞并奥地利，女儿安娜一度被盖世太保逮捕，弗洛伊德这才决定流亡；1938 年 6 月，他经巴黎抵达伦敦，在汉普斯特德安家（今弗洛伊德博物馆），继续写作《摩西与一神教》。1939 年 9 月 23 日，弗洛伊德在伦敦病逝，享年 83 岁。他的四位妹妹留在维也纳，后来全部在纳粹集中营中遇难。</p>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Sigmund Freud」、Britannica「Sigmund Freud」、MBA智库百科「西格蒙德·弗洛伊德」、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第三章 ========== -->
+    <section class="section" id="sec-3">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">3</span><span class="h2-text">主要著作与学术成就</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位（学术）：</strong>奥地利精神病医生、心理学家，精神分析学派创始人，被后世称为“精神分析之父”。他以一套关于无意识的理论与治疗技术，彻底改写了西方人对“自我”的理解。</p>
+
+        <h3>精神分析：一门学科的创立</h3>
+        <p>弗洛伊德的学术成就，首先是创立了精神分析（psychoanalysis）——既是评估与治疗心理疾病的临床方法（经由患者与分析师的对话进行），也是一套关于心灵结构与动力的人性理论。他放弃了早期对催眠的直接依赖，发展出“自由联想”技术，并确立了“移情”在分析过程中的核心作用。这些概念与方法，构成了此后一百余年心理治疗的重要根基。</p>
+
+        <h3>主要著作一览</h3>
+        <div class="summary no-break">
+          <div class="col">
+            <div class="col-title">思想原典</div>
+            <p><strong>《梦的解析》（1899/1900）：</strong>提出梦是“愿望的满足”，开辟无意识研究，被作者视为自己最重要的著作。</p>
+            <p><strong>《性学三论》（1905）：</strong>系统阐述婴儿期性欲与性心理发展阶段理论。</p>
+            <p><strong>《图腾与禁忌》（1913）：</strong>把精神分析用于原始社会与文明起源，被看作仅次于《梦的解析》的著作。</p>
+            <p><strong>《精神分析引论》（1916–17）：</strong>系统讲授精神分析基本原理的入门经典。</p>
+            <p><strong>《自我与本我》（1923）：</strong>正式提出本我、自我、超我的人格结构三元说。</p>
+            <p><strong>《文明及其不满》（1930）：</strong>晚年文明观，讨论文明与本能的内在冲突。</p>
+          </div>
+          <div class="col">
+            <div class="col-title">个案与论集</div>
+            <p><strong>《癔症研究》（1895，与布洛伊尔合著）：</strong>精神分析奠基之作，含“安娜·O”案例（安娜·O 为布洛伊尔的患者伯莎·帕彭海姆，非弗洛伊德亲自治疗）。</p>
+            <p><strong>《日常生活心理病理学》（1901）：</strong>研究口误、笔误、遗忘等“弗洛伊德式失误”。</p>
+            <p><strong>《诙谐及其与无意识的关系》（1905）：</strong>从笑谈中看无意识。</p>
+            <p><strong>《超越快乐原则》（1920）：</strong>提出生本能（Eros）与死本能（Thanatos）的二元本能论。</p>
+            <p><strong>著名个案：</strong>《少女杜拉》《小汉斯》《鼠人》《狼人》《史瑞伯》。</p>
+            <p><strong>《为什么战争？》（1933，与爱因斯坦的公开通信）：</strong>以死本能解释人类的攻击性。</p>
+          </div>
+        </div>
+
+        <h3>思想史地位：与马克思、尼采并列的“怀疑大师”</h3>
+        <p>西方思想史上常把弗洛伊德与马克思、尼采并称为“三位怀疑大师”：马克思怀疑“经济”，尼采怀疑“道德”，弗洛伊德怀疑“自我”——他们都动摇了“人是自明主体”的信念。二十世纪的文学、艺术、电影、教育学乃至社会批判理论，无不深受精神分析的影响。美国社会学家菲利普·里夫甚至说，正是弗洛伊德让“心理人”取代“政治人”“宗教人”“经济人”，成为二十世纪主导的自我形象。</p>
+
+        <p class="src-note">来源：维基百科「Sigmund Freud」著作目录、Britannica「Sigmund Freud」、中国大百科全书·中国百科网、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第四章 ========== -->
+    <section class="section" id="sec-4">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">4</span><span class="h2-text">核心思想（一）：无意识——理性人的死亡</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是弗洛伊德思想的底座：人首先不是“理性的动物”，而是被无意识驱动的存在。理解无意识，才能理解他为什么要宣告“理性人的死亡”。</p>
+
+        <h3>启蒙主义理性人假设的破产</h3>
+        <p>启蒙主义继承古希腊罗马的思想传统，认为人之所以是万物之灵，就是因为人是理性的动物，能够主宰自己的生命。直到弗洛伊德宣告“理性人的死亡”。</p>
+        <p>在精神意义上，没有人是绝对健康的，正常与不正常之间并不是泾渭分明的。而且，精神上的病人和正常人的心理结构其实是相同的。通过对精神疾病患者的分析、诊断和治疗，就能够发现人类普遍的心理结构，具有普遍性的意义。</p>
+
+        <h3>无意识：心灵中的“黑暗地带”</h3>
+        <p>人类心理结构中存在一个黑暗地带，叫做“无意识”。</p>
+        <ol>
+          <li><strong>巨大。</strong>人平常能够意识到的种种知觉和理性思考，其实只是精神生活的很小一部分。人的精神结构就像一座冰山，人能意识到的只是浮出水面的一小部分，在水下还有巨大的一部分：无意识。</li>
+          <li><strong>生猛有力。</strong>无意识中暗藏着巨大的能量，是人的欲望本能，主要是性欲本能和攻击本能。这是人内在最基本的冲动，是生命的驱动力。潜藏在无意识中的本能往往比表层意识中的理性思考更有力量。</li>
+          <li><strong>隐秘。</strong>我们自己也不知道我们的无意识中运转着什么。</li>
+        </ol>
+        <p>弗洛伊德所说的无意识（das Unbewusste / the unconscious），不只是“暂时没有意识到的东西”，更是被压抑在意识之下的欲望与冲动的巨大领域。它像一股深深的洋流，悄悄左右着我们的判断与行动，我们却浑然不觉——正因如此，“我”并不是自己心灵的绝对主人，“理性自恋”在这里受到了致命一击。</p>
+
+        <h3>无意识本能的思想史脉络</h3>
+        <ul>
+          <li>柏拉图把人的灵魂结构分成理性、激情和欲望；</li>
+          <li>休谟：“理性不过是激情的奴隶”；</li>
+          <li>叔本华把人的意志看作是一种难以察觉的“盲目的驱动力”；</li>
+          <li>尼采提出“权力意志”，宣言生命冲动的力量。</li>
+        </ul>
+        <p>弗洛伊德的原创性不在于第一次谈论非理性——前人早有论述——而在于“以科学的名义”把无意识变成一套系统、可操作的理论与疗法：他通过一个个病例，展示这套学说对症状的分析、治疗与真实效果。它是否严格“科学”尚可争论（见后文），但它的影响早已溢出诊室，成为现代人自我理解的基本词汇。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>弗洛伊德可用于论证“理性并非人的全部”“欲望与道德的冲突”“自我认知的复杂性”“现代性对人的重新理解”等主题。注意避免将理论庸俗化，可将其作为反思“理性至上”的一个思想资源。</p>
+        </div>
+
+        <div class="box no-break">
+          <div class="box-title">延伸视角</div>
+          <p>“无意识”最适合论证“认识自我是难的”“人为何‘口是心非’”。可用冰山比喻说明：所谓成长，不是假装水下没有冰山，而是学会与水面下的巨大力量相处。</p>
+        </div>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》（弗洛伊德章）、维基百科「Unconscious mind」、原文档《高考哲思化写作素材》第四章。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第五章 ========== -->
+    <section class="section" id="sec-5">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">5</span><span class="h2-text">核心思想（二）：本我、自我与超我</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是高考最高频的可用角度，尤其“自我”作为调停者的形象，可直接支撑“自律与自由”“理性与天性”“认识自我”等题。</p>
+
+        <h3>人格结构三元说</h3>
+        <p>为了动态地描述心灵内部的冲突，弗洛伊德在《自我与本我》（1923）中正式提出了“人格结构三元说”：</p>
+        <ol>
+          <li><strong>本我：</strong>“最根本的我”，人格的最底层，属于“无意识”。人本能的原始欲望，要寻求即刻的满足，不论是非对错，满足欲望获得快乐。</li>
+          <li><strong>自我：</strong>能够意识到的自己。在成长过程和适应社会的过程中形成，有理性，正视社会现实，重视常识和规则。能感受到本我的欲望，但会用理性来有选择地满足本我的要求。</li>
+          <li><strong>超我：</strong>理想化人格。在人与“道德”的接触和理解中形成，把来自家庭和社会的种种道德权威内在化成心灵的一部分，最终形成理想人格，通过内疚感和罪恶感影响我们的心理和行动。</li>
+        </ol>
+
+        <h3>快乐原则与现实原则</h3>
+        <p>本我遵循<span class="term">快乐原则</span>：只求即刻满足，不管是非对错、不顾现实后果；自我遵循<span class="term">现实原则</span>：在现实条件下有选择地满足本我的要求，既获得满足，又避免痛苦；超我则按“至善原则”（道德原则）活动，通过良心与自我理想对自我发号施令。三者长期协调，人格才健康；长期激烈冲突，则是心理异常的重要原因。</p>
+
+        <h3>骑手与马：自我如何驾驭本我</h3>
+        <p>弗洛伊德有一个著名的比喻：本我和自我的关系就像马与骑手。马（本我）提供强劲的动力，骑手（自我）负责驾驭方向。健康的人，是骑手能大体驾驭马匹的人；如果骑手被马拖着跑（自我被本我吞没），人便陷入冲动与混乱；如果骑手把缰绳勒得过死（超我过度严苛），人便会被内疚与焦虑压垮。所谓成长，从来不是消灭内心矛盾，而是让“自我”这个调停者在欲望与道德之间越练越强。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“骑手与马”可直接用于“自律与自由”：自律不是对欲望的彻底剿灭——那既不可能也无必要——而是清醒地看见自己的冲动，再以理性引导它走向建设性的方向；自由亦非欲望的无限放纵，恰是在克制与选择中，人从本能的奴隶升华为命运的主人。</p>
+        </div>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》、维基百科「Id, ego and superego」、《自我与本我》（1923）中译。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第六章 ========== -->
+    <section class="section" id="sec-6">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">6</span><span class="h2-text">核心思想（三）：俄狄浦斯情结与性心理发展</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是弗洛伊德最具争议、也最常被“标签化”的思想。考场使用要谨慎、准确，最好把它放回“儿童如何成长为道德主体”的语境中。</p>
+
+        <h3>俄狄浦斯情结（Oedipus Complex）</h3>
+        <p>弗洛伊德借古希腊悲剧《俄狄浦斯王》“杀父娶母”的故事，提出男孩在心理发展的性器期（约 3–6 岁）对母亲产生强烈的情感依恋与占有欲，同时对父亲产生敌意与竞争感——这就是“俄狄浦斯情结”，又译“恋母情结”；女孩相应的倾向，他称为“恋父情结”。这一概念在《梦的解析》（1899/1900）中已有雏形，1910 年正式命名。弗洛伊德认为，儿童只有在克服这种乱伦式冲动、转而认同同性父母之后，才完成人格的社会化；若情结未获妥善解决，便可能固着为神经症。</p>
+        <p>这一概念后来被荣格等人改造，也被后人批评为缺乏实证依据、不具文化普遍性。但它深刻地触及了一个问题：人如何学会“欲望的边界”，如何从生物性的冲动者长成为有道德的文明人。考场使用时应取其“社会化”之义，避免将其庸俗化。</p>
+
+        <h3>性心理发展阶段</h3>
+        <p>在《性学三论》（1905）中，弗洛伊德把儿童的性心理发展分为五个阶段：口欲期、肛欲期、性器期（俄狄浦斯情结在此期展开）、潜伏期与生殖期。他强调“幼儿也有性欲”，且儿童期的欲望对象、满足方式与创伤经验会影响成年后的人格。这一论断在当时引起极大震动与敌意，却也把“童年经验塑造人格”变成现代人的常识。</p>
+
+        <h3>从“诱惑理论”到“幻想理论”</h3>
+        <p>值得注意：弗洛伊德 1897 年前后放弃了早期“神经症源于童年真实性虐待”的“诱惑理论”，转而认为童年期的乱伦冲动与性幻想（无论真假）同样具有心理病因功能。这个转折使精神分析从“创伤的病理学”走向“欲望的病理学”，是理解俄狄浦斯情结的关键背景——也是后人批评他“为虐待开脱”的争议焦点。考场不必纠缠此争议，但应知道：俄狄浦斯情结是弗洛伊德用神话解读普遍人性的理论尝试，而非对现实罪行的辩解。</p>
+
+        <p class="src-note">来源：维基百科 / HandWiki「Oedipus complex」、科普中国·百度百科「恋母情结」、《性学三论》（1905）。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第七章 ========== -->
+    <section class="section" id="sec-7">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">7</span><span class="h2-text">核心思想（四）：压抑、防御机制与梦</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>紧接无意识：无意识里的欲望从何而来？为什么会被压在水面之下？答案就是“压抑”——而梦，正是被压抑愿望的“变相满足”。</p>
+
+        <h3>压抑：症状形成的基础机制</h3>
+        <p>压抑（repression）是弗洛伊德理论中最基础的概念：不被社会、道德、超我接受的欲望（主要是性本能与攻击本能）被排除到意识之外，压入无意识。压抑并不等于消灭——被压抑的能量依然在暗中活动，寻找宣泄的出口；当压抑失败或冲突剧烈，症状（恐惧、焦虑、强迫、瘫痪等）便出现了。弗洛伊德说，神经症症状是“愿望与防御之间的无意识妥协”。</p>
+
+        <h3>防御机制：自我保护自己的方式</h3>
+        <p>面对焦虑与冲突，自我会启动各种“防御机制”来扭曲现实、缓解痛苦。常见的有：</p>
+        <ul>
+          <li><strong>压抑（repression）：</strong>把不能接受的欲望排除出意识；</li>
+          <li><strong>投射（projection）：</strong>把自己的欲望与冲动安到别人身上（“不是我想，是别人想”）；</li>
+          <li><strong>升华（sublimation）：</strong>把本能能量导向社会可接受甚至崇高的活动（艺术、科学、劳动）；</li>
+          <li><strong>反向形成（reaction formation）：</strong>以相反姿态掩盖真实冲动；</li>
+          <li><strong>合理化（rationalization）：</strong>为行为寻找体面的借口；</li>
+          <li><strong>否认（denial）、退行（regression）</strong>等。</li>
+        </ul>
+        <p>其中“升华”最为重要——弗洛伊德认为，文明的种种成就，正是本能冲动的升华。这一思想沟通了他的心理学与文明理论。</p>
+
+        <h3>梦是愿望的满足</h3>
+        <p>《梦的解析》的著名命题是：梦是愿望的满足（Wunscherfüllung / wish-fulfillment）。弗洛伊德说，人在清醒时把不合道德的欲望压进无意识；入睡后，审查作用放松，这些欲望便以化装的形式（梦的显意）溜进意识。因此，梦是被压抑愿望的“伪装满足”——解梦，就是从显意剥出隐意，逆着“梦的工作”回溯无意识。</p>
+
+        <blockquote>
+          <p>当解释的工作完成之后，梦可以被看作一个愿望的满足。</p>
+          <cite>—— 西格蒙德·弗洛伊德《梦的解析》（1900）</cite>
+        </blockquote>
+
+        <p>弗洛伊德还说，梦的解析是“通向无意识知识的皇家大道”（via regia）。所谓“梦的工作”有四种基本机制：<span class="term">凝缩</span>（condensation）、<span class="term">移置</span>（displacement）、<span class="term">表象</span>（representation）与<span class="term">次级修正</span>（secondary revision）。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“梦是愿望的满足”可用于“欲望与伪装”“显意识与潜意识”“艺术中的象征”等主题。注意：弗洛伊德后来在《超越快乐原则》（1920）中承认创伤性噩梦等例外，故此命题更准确的说法是“梦是愿望的满足（在典型情形下）”。</p>
+        </div>
+
+        <p class="src-note">来源：维基百科「Wish fulfillment」「Defence mechanism」、Britannica「Sigmund Freud」、encyclopedia.com「Wish-Fulfillment」、《梦的解析》中译。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第八章 ========== -->
+    <section class="section" id="sec-8">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">8</span><span class="h2-text">核心思想（五）：文明与本能——《文明及其不满》</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是弗洛伊德思想的“收官之作”，也是高考“科技与人文”“个人与社会”“文明的代价”等母题最深刻的思想资源之一。</p>
+
+        <h3>文明建立在对本能的压抑之上</h3>
+        <p>1930 年，弗洛伊德在《文明及其不满》（Das Unbehagen in der Kultur）中提出：文明——一切使我们区别于动物祖先的成就与规则的总和——建立在对人类本能（性本能与攻击本能）的压抑与升华之上。人越是文明，就越是必须约束自己的原始欲望；这种约束带来秩序与创造，也带来永恒的不满与焦虑。文明的进步与人性的幸福，因此存在一种结构性的紧张。</p>
+
+        <h3>爱欲与死本能：两种力量的对峙</h3>
+        <p>在《超越快乐原则》（1920）中，弗洛伊德提出“生本能”（Eros，爱欲，趋向联结与创造）与“死本能”（Thanatos，趋向破坏与解体）的二元本能论。文明是“服务于爱欲的过程”——它把越来越多的人联结成更大的共同体；但攻击本能（死本能的对外表现）始终潜伏，随时威胁社会解体。文明因此必须把人的攻击性“向内转”，转化为超我对自我的严厉监管——这就是内疚感的来源。</p>
+
+        <h3>经典引文（一）：人对人是狼</h3>
+        <blockquote>
+          <p>人并不是温顺的、渴望被爱的生灵……相反，人是一种在其本能禀赋中就被赋予强大攻击性的生物。对他们来说，邻人不仅是潜在的帮手或性对象，更是诱发他们满足攻击欲的对象……“人对人是狼”（Homo homini lupus）。</p>
+          <cite>—— 弗洛伊德《文明及其不满》第五章</cite>
+        </blockquote>
+
+        <h3>经典引文（二）：“爱邻如己”何以不可能</h3>
+        <blockquote>
+          <p>“爱邻如己”这条戒律……没有什么比它更违背人的天性了。</p>
+          <cite>—— 弗洛伊德《文明及其不满》第五章（中译大意引述）</cite>
+        </blockquote>
+
+        <h3>文明的代价</h3>
+        <blockquote>
+          <p>我们为文明进步所付出的代价，是通过增强内疚感而丧失幸福感。</p>
+          <cite>—— 弗洛伊德《文明及其不满》第八章（末章）（通行英译：The price we pay for our advance in civilization is a loss of happiness through the heightening of the sense of guilt）</cite>
+        </blockquote>
+
+        <p>这段话并不是否定文明——弗洛伊德承认文明带来秩序、安全与创造；他要提醒的是：没有一种文明可以不付代价，个体在享受文明成果的同时，也背负着因压抑本能而产生的精神重担。现代人的焦虑与虚无，因此不是偶然的时代病，而是文明的必然代价。真正的问题不是“要不要文明”，而是如何让文明“更适合人性”。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“文明与本能”可用于“科技与人文”“文明的代价”“规则与自由”“个人与集体”等题。注意辩证：弗洛伊德不是主张“回到野蛮”，而是说“文明必须在理解人性本能的前提下自我改良”——成熟不是消灭本能，而是驾驭它。</p>
+        </div>
+
+        <p class="src-note">来源：Britannica / Wikiwand「Civilization and Its Discontents」、《文明及其不满》中译本（杨韶刚译）、philopedia 条目。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第九章 ========== -->
+    <section class="section" id="sec-9">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">9</span><span class="h2-text">我们该如何理解弗洛伊德</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">弗洛伊德常被误读成“泛性论者”或“反理性的悲观主义者”。恰恰相反，他是想告诉我们：看见人性的幽暗，才谈得上真正地认识自己、驾驭自己。</p>
+
+        <h3>首先，他不是在主张“放纵本能”</h3>
+        <p>弗洛伊德为欲望“正名”，但他同时强调自我与超我的约束。他的全部理论都指向“驾驭”：骑手要驾驭马，文明要驾驭攻击性，自我要在本我与超我之间寻求平衡。把弗洛伊德读成“性解放宣言”或“随便放纵”的借口，是最大的误读。</p>
+
+        <h3>欲望的正当性：一次观念革命</h3>
+        <p>在传统观念中，欲望常被看作原罪与污点，需要“超越”。弗洛伊德的贡献在于：欲望不是罪恶，而是真实的人性现实，是与生俱来的生命能量；欲望不再可耻，甚至值得正视与赞美。刘擎在《西方现代思想讲义》中指出，弗洛伊德的影响不是“解决了”超越欲望的问题，而是“取消了”这个问题——如果我们接受了欲望的正当性，欲望本身不再卑微可耻，也就用不着去“超越欲望”了。弗洛姆评价说："无论弗洛伊德是如何被人理解或者误解的，他永久地改变了我们理解人性的方式。"（按：此弗洛姆评语中文网络流传极广，但未能在权威学术源中定位到一手英文原句；此处保留并标注"出处待核"，考场引用宜谨慎）</p>
+
+        <h3>理论的科学性问题</h3>
+        <p>从严格的科学标准看，精神分析理论缺乏“可证伪性”——它似乎总能自圆其说，难以被经验证据推翻，因此今天的主流心理学已不再把它当作严格意义上的科学理论。但作为“思想文化”，它产生了广泛而深远的影响。考场使用时应避免把它当作“科学结论”，而应把它当作“理解人性的思想资源”。</p>
+
+        <h3>对现代人自我认知的意义</h3>
+        <p>如果把现代思想看作一场“去幻”的进程，那么：韦伯祛魅了“世界”，尼采宣布“上帝死了”，弗洛伊德则剖开了“自我”——理性的自我并不是心灵的主人，水面下的无意识同样是我。现代思想的真正成年，不仅是对世界祛魅，更是对自我祛魅：放弃“全然理性、绝对完美”的自我幻想，以自省看见无意识的盲区，以自律平衡天性的冲动，在认清人性真相后依然选择坚守、克制与成长。这是现代人最高级的精神成熟。</p>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》（弗洛伊德两讲）、弗洛姆评语、维基百科「Sigmund Freud」学术评价部分。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第十章 ========== -->
+    <section class="section" id="sec-10">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">10</span><span class="h2-text">写作应用提示</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">把弗洛伊德用在考场上，记住：<strong>思想用于论证，生平用于点缀，引文要“可上考场”。</strong></p>
+
+        <h3>一、适用主题速查</h3>
+        <ul>
+          <li><strong>理性与天性 / 认识自我：</strong>无意识、冰山比喻、“理性人的死亡”。</li>
+          <li><strong>自律与自由：</strong>骑手与马、现实原则、延迟满足。</li>
+          <li><strong>欲望与道德：</strong>本我/自我/超我、内疚与罪恶感、欲望的正当性。</li>
+          <li><strong>个人与社会 / 文明的代价：</strong>压抑、升华、《文明及其不满》。</li>
+          <li><strong>成长与成熟：</strong>自我作为调停者日益强大、接纳内心矛盾。</li>
+          <li><strong>科技与人文 / 人性：</strong>文明的成就与代价、攻击本能。</li>
+          <li><strong>坚守与清醒：</strong>弗洛伊德一生与偏见、疾病搏斗（生平点缀）。</li>
+        </ul>
+
+        <h3>二、可嵌入的经典引文</h3>
+        <ul>
+          <li>“梦是愿望的满足。”（《梦的解析》）</li>
+          <li>“梦的解析是通向无意识知识的皇家大道。”（《梦的解析》）</li>
+          <li>“人对人是狼。”（《文明及其不满》引拉丁谚语 Homo homini lupus）</li>
+          <li>“我们为文明进步所付出的代价，是通过增强内疚感而丧失幸福感。”（《文明及其不满》）</li>
+          <li>“我们取得了多大进步。中世纪他们会烧我本人，现在他们只烧我的书就满足了。”（1933 年纳粹焚书时的评论）</li>
+          <li>"无论弗洛伊德是如何被人理解或者误解的，他永久地改变了我们理解人性的方式。"（弗洛姆；中文流传甚广，一手英文出处待核）</li>
+        </ul>
+
+        <h3>三、易错提醒</h3>
+        <ul>
+          <li><strong>无意识 ≠ 玄学“第六感”：</strong>它是被压抑的欲望与冲动的领域，是心理学概念，不是神秘主义。</li>
+          <li><strong>弗洛伊德 ≠ 鼓吹放纵：</strong>他主张“驾驭”而非“放纵”，自我与超我的约束同样重要。</li>
+          <li><strong>“性欲”是广义的力比多：</strong>弗洛伊德的“性”指广义的生命驱动力与快感，不单指狭义的性行为；避免将其俗化为八卦。</li>
+          <li><strong>俄狄浦斯情结 ≠ 对现实乱伦的辩护：</strong>它是用神话解读儿童心理发展的理论尝试，应谨慎使用，避免低俗化。</li>
+          <li><strong>理论 ≠ 严格科学：</strong>精神分析缺乏可证伪性，考场应作为“思想资源”而非“科学结论”使用。</li>
+          <li><strong>别把弗洛伊德写成“悲观虚无”：</strong>他主张直面幽暗而后驾驭之，是清醒的理性主义，不是绝望。</li>
+        </ul>
+
+        <div class="footer-note">完 · 本册素材综合自公开网络文献与权威工具书，引文以通行中译为准，考场引用请依教材与权威译本。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== 悬浮按钮 ===================== -->
+<div class="fab-group">
+  <button class="fab fab-mini hidden" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">⤒</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 常量与元素引用 ================= */
+  var STORE_THEME = 'freud.theme';
+  var STORE_FS    = 'freud.fontSize';
+  var FS_LEVELS   = ['0', '1', '2'];
+
+  var html        = document.documentElement;
+  var body        = document.body;
+  var topbar      = document.getElementById('topbar');
+  var progressBar = document.getElementById('progressBar');
+  var main        = document.getElementById('main');
+  var tocEl       = document.getElementById('toc');
+  var tocNav      = document.getElementById('tocNav');
+  var secCountEl  = document.getElementById('secCount');
+  var scrim       = document.getElementById('scrim');
+  var menuBtn     = document.getElementById('menuBtn');
+  var themeBtn    = document.getElementById('themeBtn');
+  var fsUpBtn     = document.getElementById('fsUp');
+  var fsDownBtn   = document.getElementById('fsDown');
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
+  var prevHitBtn  = document.getElementById('prevHit');
+  var nextHitBtn  = document.getElementById('nextHit');
+  var clearBtn    = document.getElementById('clearSearch');
+  var expandAllBtn   = document.getElementById('expandAll');
+  var collapseAllBtn = document.getElementById('collapseAll');
+  var toTopBtn    = document.getElementById('toTop');
+
+  var sections   = [].slice.call(main.querySelectorAll('.section'));
+  var navTargets = [];   /* 目录跳转目标 id（文档顺序，含 h2 与 h3） */
+  var tocItems   = {};   /* id -> 目录 <a> 元素 */
+  var hits       = [];   /* 当前搜索命中的 <mark> 列表 */
+  var hitIndex   = -1;
+  var searchTimer = null;
+  var rafPending  = false;
+  var activeId    = '';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+  /* ================= 通用工具 ================= */
+
+  /** 安全读取 localStorage（隐私模式下可能抛错）。 */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  /** 安全写入 localStorage。 */
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* 忽略 */ }
+  }
+  /** 顶栏当前高度（移动端换行后会变高）。 */
+  function topbarHeight() {
+    return topbar ? topbar.offsetHeight : 58;
+  }
+  /** 取标题纯文本（剔除章节序号与折叠箭头）。 */
+  function headingText(heading) {
+    var clone = heading.cloneNode(true);
+    var junk = clone.querySelectorAll('.chapter-num, .sec-caret');
+    for (var i = 0; i < junk.length; i++) { junk[i].parentNode.removeChild(junk[i]); }
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** 元素是否当前可见（折叠后的内容不可见）。 */
+  function isVisible(el) {
+    return !!(el && el.offsetParent !== null);
+  }
+
+  /* ================= 主题 ================= */
+
+  function applyTheme(theme) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? '☀' : '🌙';
+    themeBtn.setAttribute('title', next === 'dark' ? '切换到浅色阅读模式' : '切换到深色阅读模式');
+  }
+
+  function initTheme() {
+    var saved = lsGet(STORE_THEME);
+    if (saved !== 'dark' && saved !== 'light') {
+      var prefersDark = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false;
+      saved = prefersDark ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+
+  themeBtn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    lsSet(STORE_THEME, next);
+  });
+
+  /* ================= 字号（三档） ================= */
+
+  function applyFontSize(level) {
+    var idx = FS_LEVELS.indexOf(String(level));
+    if (idx === -1) { idx = 1; }
+    html.setAttribute('data-fs', FS_LEVELS[idx]);
+    fsDownBtn.disabled = (idx === 0);
+    fsUpBtn.disabled = (idx === FS_LEVELS.length - 1);
+    fsDownBtn.style.opacity = idx === 0 ? '.45' : '1';
+    fsUpBtn.style.opacity = idx === FS_LEVELS.length - 1 ? '.45' : '1';
+  }
+
+  function stepFontSize(delta) {
+    var idx = FS_LEVELS.indexOf(html.getAttribute('data-fs'));
+    if (idx === -1) { idx = 1; }
+    var next = Math.min(FS_LEVELS.length - 1, Math.max(0, idx + delta));
+    applyFontSize(FS_LEVELS[next]);
+    lsSet(STORE_FS, FS_LEVELS[next]);
+  }
+
+  function initFontSize() {
+    var saved = lsGet(STORE_FS);
+    applyFontSize(saved === null ? '1' : saved);
+  }
+
+  fsUpBtn.addEventListener('click', function () { stepFontSize(1); });
+  fsDownBtn.addEventListener('click', function () { stepFontSize(-1); });
+
+  /* ================= 章节折叠 / 展开 ================= */
+
+  function setCollapsed(section, collapsed) {
+    var head = section.querySelector('h2.sec-head');
+    if (!head) { return; }
+    if (collapsed) {
+      section.classList.add('collapsed');
+      head.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      head.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function toggleSection(section) {
+    setCollapsed(section, !section.classList.contains('collapsed'));
+    requestActiveUpdate();
+  }
+
+  function expandSection(section) {
+    if (section && section.classList.contains('collapsed')) {
+      setCollapsed(section, false);
+    }
+  }
+
+  sections.forEach(function (section) {
+    var head = section.querySelector('h2.sec-head');
+    var bodyEl = section.querySelector('.sec-body');
+    if (!head || !bodyEl) { return; }
+    if (!bodyEl.id) { bodyEl.id = section.id + '-body'; }
+    head.setAttribute('aria-controls', bodyEl.id);
+
+    head.addEventListener('click', function () { toggleSection(section); });
+    head.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggleSection(section);
+      }
+    });
+  });
+
+  expandAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, false); });
+    requestActiveUpdate();
+  });
+  collapseAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, true); });
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    requestActiveUpdate();
+  });
+
+  /* ================= 目录（TOC）自动生成 ================= */
+
+  function buildToc() {
+    var frag = document.createDocumentFragment();
+    var chapterCount = 0;
+
+    sections.forEach(function (section, sIdx) {
+      if (!section.id) { section.id = 'sec-auto-' + sIdx; }
+
+      var head = section.querySelector('h2.sec-head');
+      var label = head ? headingText(head) : (section.getAttribute('data-toc') || ('第 ' + (sIdx + 1) + ' 节'));
+      var numEl = head ? head.querySelector('.chapter-num') : null;
+      var numText = numEl ? numEl.textContent.trim() : '·';
+      if (head) { chapterCount += 1; }
+
+      frag.appendChild(makeTocItem(section.id, label, numText, 2));
+      navTargets.push(section.id);
+
+      /* 子节标题（h3）自动提取 */
+      var subs = [].slice.call(section.querySelectorAll('h3'));
+      subs.forEach(function (h3, hIdx) {
+        if (!h3.id) { h3.id = section.id + '-h3-' + (hIdx + 1); }
+        frag.appendChild(makeTocItem(h3.id, headingText(h3), '', 3));
+        navTargets.push(h3.id);
+      });
+    });
+
+    tocNav.appendChild(frag);
+    secCountEl.textContent = String(chapterCount);
+  }
+
+  function makeTocItem(targetId, label, numText, level) {
+    var a = document.createElement('a');
+    a.className = 'toc-item lvl' + level;
+    a.href = '#' + targetId;
+    a.setAttribute('data-target', targetId);
+
+    if (level === 2) {
+      var num = document.createElement('span');
+      num.className = 'toc-num';
+      num.textContent = numText || '·';
+      a.appendChild(num);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'toc-text';
+    txt.textContent = label;
+    a.appendChild(txt);
+
+    tocItems[targetId] = a;
+    return a;
+  }
+
+  /* ================= 平滑滚动与锚点 ================= */
+
+  function scrollToTarget(targetId, updateHash) {
+    var el = document.getElementById(targetId);
+    if (!el) { return; }
+
+    var section = el.closest ? el.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    /* 折叠展开后再量位置，避免坐标错位 */
+    window.requestAnimationFrame(function () {
+      var rect = el.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - 14;
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+      if (updateHash !== false && history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+      }
+      setActive(targetId);
+    });
+  }
+
+  /* 侧边目录点击 */
+  tocNav.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-item') : null;
+    if (!link) { return; }
+    event.preventDefault();
+    scrollToTarget(link.getAttribute('data-target'));
+    closeDrawer();
+  });
+
+  /* 正文内“目 录”清单点击 */
+  main.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-list-link') : null;
+    if (!link) { return; }
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') { return; }
+    event.preventDefault();
+    scrollToTarget(href.slice(1));
+  });
+
+  /* ================= 当前章节高亮（IntersectionObserver + 滚动兜底） ================= */
+
+  /* 上报当前可见小节给原生层（用于"练习当前正文"只取正在看的那一节）。
+     通过隐藏 iframe 触发 philomenu:// scheme，由原生 shouldOverrideUrlLoading 拦截。 */
+  function reportActiveSection(targetId) {
+    try {
+      var el = document.getElementById(targetId);
+      var sec = el && el.closest ? el.closest('.section') : null;
+      // 仅上报顶层小节（sec-N）；封面 / 目录不计入练习范围
+      if (sec && /^sec-\d+$/.test(sec.id)) {
+        var person = 'freud';
+        var url = 'philomenu://update_person?person=' + encodeURIComponent(person) +
+                  '&section=' + encodeURIComponent(sec.id);
+        var bridge = document.getElementById('__philomenu_bridge');
+        if (!bridge) {
+          bridge = document.createElement('iframe');
+          bridge.id = '__philomenu_bridge';
+          bridge.setAttribute('style', 'display:none;width:0;height:0;border:0;');
+          document.body.appendChild(bridge);
+        }
+        bridge.src = url;
+      }
+    } catch (_) { /* 静默失败，不影响阅读 */ }
+  }
+
+  function setActive(targetId) {
+    if (!targetId || targetId === activeId) { return; }
+    activeId = targetId;
+    reportActiveSection(targetId);
+
+
+
+    for (var key in tocItems) {
+      if (Object.prototype.hasOwnProperty.call(tocItems, key)) {
+        tocItems[key].classList.remove('active');
+        tocItems[key].classList.remove('active-parent');
+      }
+    }
+    var item = tocItems[targetId];
+    if (!item) { return; }
+    item.classList.add('active');
+
+    /* 若命中的是 h3，则同时标记所属大节 */
+    var el = document.getElementById(targetId);
+    var section = el && el.closest ? el.closest('.section') : null;
+    if (section && section.id !== targetId && tocItems[section.id]) {
+      tocItems[section.id].classList.add('active-parent');
+    }
+    keepTocItemVisible(item);
+  }
+
+  function keepTocItemVisible(item) {
+    if (body.classList.contains('toc-open')) { return; }
+    var cRect = tocEl.getBoundingClientRect();
+    var iRect = item.getBoundingClientRect();
+    if (iRect.top < cRect.top + 8) {
+      tocEl.scrollTop -= (cRect.top + 8 - iRect.top);
+    } else if (iRect.bottom > cRect.bottom - 8) {
+      tocEl.scrollTop += (iRect.bottom - (cRect.bottom - 8));
+    }
+  }
+
+  function computeActive() {
+    var boundary = topbarHeight() + 28;
+    var candidate = navTargets.length ? navTargets[0] : '';
+
+    for (var i = 0; i < navTargets.length; i++) {
+      var el = document.getElementById(navTargets[i]);
+      if (!el || !isVisible(el)) { continue; }
+      var top = el.getBoundingClientRect().top;
+      if (top - boundary <= 0) {
+        candidate = navTargets[i];
+      } else {
+        break;
+      }
+    }
+    /* 滚动到底部时强制高亮最后一节 */
+    var docH = document.documentElement.scrollHeight;
+    if (window.pageYOffset + window.innerHeight >= docH - 4 && navTargets.length) {
+      candidate = navTargets[navTargets.length - 1];
+    }
+    setActive(candidate);
+  }
+
+  function requestActiveUpdate() {
+    if (rafPending) { return; }
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      computeActive();
+      updateProgress();
+    });
+  }
+
+  function initObserver() {
+    if (!('IntersectionObserver' in window)) { return; }
+    var observer = new IntersectionObserver(function () {
+      requestActiveUpdate();
+    }, {
+      root: null,
+      rootMargin: '-' + (topbarHeight() + 10) + 'px 0px -55% 0px',
+      threshold: [0, 0.05, 0.3, 0.6, 1]
+    });
+    sections.forEach(function (section) { observer.observe(section); });
+    var subs = main.querySelectorAll('h3');
+    for (var i = 0; i < subs.length; i++) { observer.observe(subs[i]); }
+  }
+
+  /* ================= 阅读进度条 ================= */
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.pageYOffset / max) * 100 : 0;
+    if (pct < 0) { pct = 0; }
+    if (pct > 100) { pct = 100; }
+    progressBar.style.width = pct.toFixed(2) + '%';
+
+    if (window.pageYOffset > 420) {
+      toTopBtn.classList.remove('hidden');
+    } else {
+      toTopBtn.classList.add('hidden');
+    }
+  }
+
+  toTopBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 全文搜索 ================= */
+
+  /** 清除所有高亮，并把文本节点合并回原状。 */
+  function clearMarks() {
+    var marks = main.querySelectorAll('mark.hit');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+    hits = [];
+    hitIndex = -1;
+  }
+
+  /** 用 <mark class="hit"> 包裹所有 substring 匹配。 */
+  function applyMarks(term) {
+    var query = term.toLowerCase();
+    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var value = node.nodeValue;
+        if (!value || !value.trim()) { return NodeFilter.FILTER_REJECT; }
+        var parent = node.parentNode;
+        if (!parent) { return NodeFilter.FILTER_REJECT; }
+        var tag = parent.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') { return NodeFilter.FILTER_REJECT; }
+        if (value.toLowerCase().indexOf(query) === -1) { return NodeFilter.FILTER_REJECT; }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
+    var targets = [];
+    while (walker.nextNode()) { targets.push(walker.currentNode); }
+
+    for (var i = 0; i < targets.length; i++) {
+      var node = targets[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      var idx = lower.indexOf(query, cursor);
+
+      while (idx !== -1) {
+        if (idx > cursor) {
+          frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        cursor = idx + query.length;
+        idx = lower.indexOf(query, cursor);
+      }
+      if (cursor < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      if (node.parentNode) { node.parentNode.replaceChild(frag, node); }
+    }
+
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+  }
+
+  /** 在目录上标注每节命中数量。 */
+  function updateTocHits() {
+    for (var key in tocItems) {
+      if (!Object.prototype.hasOwnProperty.call(tocItems, key)) { continue; }
+      var badge = tocItems[key].querySelector('.toc-hits');
+      if (badge) { badge.parentNode.removeChild(badge); }
+    }
+    if (!hits.length) { return; }
+    sections.forEach(function (section) {
+      var count = section.querySelectorAll('mark.hit').length;
+      var item = tocItems[section.id];
+      if (!count || !item) { return; }
+      var badge = document.createElement('span');
+      badge.className = 'toc-hits';
+      badge.textContent = String(count);
+      item.appendChild(badge);
+    });
+  }
+
+  function gotoHit(index) {
+    if (!hits.length) { return; }
+    var total = hits.length;
+    hitIndex = ((index % total) + total) % total;
+
+    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove('current'); }
+    var target = hits[hitIndex];
+    target.classList.add('current');
+
+    var section = target.closest ? target.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    window.requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - Math.max(window.innerHeight * 0.28, 90);
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+    renderCount();
+  }
+
+  function renderCount() {
+    var term = searchInput.value.trim();
+    if (!term) {
+      searchCount.textContent = '';
+      return;
+    }
+    if (!hits.length) {
+      searchCount.textContent = '无匹配';
+      return;
+    }
+    searchCount.textContent = (hitIndex >= 0 ? (hitIndex + 1) + '/' : '') + hits.length + ' 处';
+  }
+
+  function toggleSearchButtons(show) {
+    prevHitBtn.hidden = !show;
+    nextHitBtn.hidden = !show;
+    clearBtn.hidden = !show;
+  }
+
+  function runSearch() {
+    var term = searchInput.value.trim();
+    clearMarks();
+
+    if (!term) {
+      updateTocHits();
+      toggleSearchButtons(false);
+      renderCount();
+      return;
+    }
+
+    applyMarks(term);
+    updateTocHits();
+    toggleSearchButtons(true);
+
+    /* 展开所有含命中的章节，避免匹配被折叠隐藏 */
+    sections.forEach(function (section) {
+      if (section.querySelector('mark.hit')) { expandSection(section); }
+    });
+    /* 折叠状态可能变化，重新收集顺序 */
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+
+    if (hits.length) {
+      gotoHit(0);
+    } else {
+      renderCount();
+    }
+  }
+
+  searchInput.addEventListener('input', function () {
+    if (searchTimer) { window.clearTimeout(searchTimer); }
+    searchTimer = window.setTimeout(runSearch, 180);
+  });
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = null; }
+      if (!hits.length) {
+        runSearch();
+      } else {
+        gotoHit(hitIndex + (event.shiftKey ? -1 : 1));
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      resetSearch();
+    }
+  });
+
+  function resetSearch() {
+    searchInput.value = '';
+    clearMarks();
+    updateTocHits();
+    toggleSearchButtons(false);
+    renderCount();
+    searchInput.blur();
+  }
+
+  clearBtn.addEventListener('click', resetSearch);
+  nextHitBtn.addEventListener('click', function () { gotoHit(hitIndex + 1); });
+  prevHitBtn.addEventListener('click', function () { gotoHit(hitIndex - 1); });
+
+  /* ================= 移动端抽屉 ================= */
+
+  function openDrawer() {
+    body.classList.add('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!body.classList.contains('toc-open')) { return; }
+    body.classList.remove('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (body.classList.contains('toc-open')) { closeDrawer(); } else { openDrawer(); }
+  });
+  scrim.addEventListener('click', closeDrawer);
+
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 768) { closeDrawer(); }
+    requestActiveUpdate();
+  });
+
+  /* ================= 全局键盘快捷键 ================= */
+
+  document.addEventListener('keydown', function (event) {
+    if (typeof event.key !== 'string') { return; }
+    var tag = (event.target && event.target.nodeName) || '';
+    var typing = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT');
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      searchInput.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  /* ================= 滚动监听 ================= */
+
+  window.addEventListener('scroll', requestActiveUpdate, { passive: true });
+
+  /* ================= 初始化 ================= */
+
+  initTheme();
+  initFontSize();
+  buildToc();
+  initObserver();
+  updateProgress();
+  computeActive();
+
+  /* 带 hash 进入时定位到对应章节 */
+  if (window.location.hash.length > 1) {
+    var initialId = decodeURIComponent(window.location.hash.slice(1));
+    if (document.getElementById(initialId)) {
+      window.setTimeout(function () { scrollToTarget(initialId, false); }, 60);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>

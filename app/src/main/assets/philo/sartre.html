@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-fs="1">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="萨特（1905—1980）高考写作素材：生平、著作、核心思想（存在先于本质、自在/自为、自欺、他人即地狱、被判定为自由）与写作应用提示。">
+<title>萨特 · 哲思化写作素材</title>
+<style>
+/* =====================================================================
+   萨特 · 写作素材（可交互单页站点）
+   纯静态：HTML + CSS + 原生 JS，无外部依赖，可离线运行
+   ===================================================================== */
+
+/* ---------- 变量：主题 ---------- */
+:root{
+  --topbar-h: 58px;
+  --toc-w: 272px;
+  --content-max: 46rem;
+  --fs-root: 17px;
+  --radius: 10px;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+html[data-theme="light"]{
+  --bg:#f3f1ec;
+  --paper:#ffffff;
+  --ink:#1b1b1b;
+  --ink-soft:#333333;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --line:#e6e2da;
+  --line-mid:#cfc9bf;
+  --line-strong:#1b1b1b;
+  --accent:#b0742a;
+  --accent-soft:rgba(176,116,42,.10);
+  --accent-ink:#ffffff;
+  --num-bg:#1b1b1b;
+  --num-ink:#ffffff;
+  --quote-bg:#f7f4ee;
+  --box-bg:#ffffff;
+  --col-bg:#faf8f3;
+  --mark-bg:#ffe680;
+  --mark-ink:#1b1b1b;
+  --mark-cur:#ff9f2e;
+  --topbar-bg:rgba(255,255,255,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.06);
+  --shadow-2:0 8px 26px rgba(0,0,0,.16);
+  --btn-bg:#ffffff;
+  --btn-bg-hover:#f0ece4;
+  --field-bg:#f6f3ed;
+}
+html[data-theme="dark"]{
+  --bg:#12140f;
+  --paper:#1a1c16;
+  --ink:#e9e4d8;
+  --ink-soft:#d4cebf;
+  --muted:#9c968a;
+  --faint:#7e786d;
+  --line:#2a2c24;
+  --line-mid:#3a3c32;
+  --line-strong:#6e7464;
+  --accent:#e6b06a;
+  --accent-soft:rgba(230,176,106,.16);
+  --accent-ink:#16120a;
+  --num-bg:#e6b06a;
+  --num-ink:#16120a;
+  --quote-bg:#20221b;
+  --box-bg:#1d1f18;
+  --col-bg:#20221b;
+  --mark-bg:#7d6200;
+  --mark-ink:#fff6d8;
+  --mark-cur:#c9761a;
+  --topbar-bg:rgba(18,20,15,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  --shadow-2:0 8px 26px rgba(0,0,0,.5);
+  --btn-bg:#22251d;
+  --btn-bg-hover:#2b2e24;
+  --field-bg:#22251d;
+}
+/* ---------- 字号三档 ---------- */
+html[data-fs="0"]{ --fs-root:15px; }
+html[data-fs="1"]{ --fs-root:17px; }
+html[data-fs="2"]{ --fs-root:19.5px; }
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:auto; }
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:var(--fs-root);
+  line-height:1.85;
+  -webkit-text-size-adjust:100%;
+  transition:background-color .25s var(--ease), color .25s var(--ease);
+}
+
+/* ---------- 无障碍：跳到正文 ---------- */
+.skip-link{
+  position:absolute; left:-9999px; top:0; z-index:2000;
+  background:var(--accent); color:var(--accent-ink);
+  padding:8px 14px; border-radius:0 0 var(--radius) 0; font-family:var(--sans); font-size:.85rem;
+}
+.skip-link:focus{ left:0; }
+
+/* =====================  顶栏  ===================== */
+.topbar{
+  position:sticky; top:0; z-index:900;
+  display:flex; align-items:center; gap:10px;
+  height:var(--topbar-h);
+  padding:0 14px;
+  background:var(--topbar-bg);
+  backdrop-filter:saturate(150%) blur(10px);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+.tb-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.tb-right{ display:flex; align-items:center; gap:6px; }
+
+.site-title{
+  font-family:var(--sans);
+  font-size:.94rem;
+  font-weight:800;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--ink);
+}
+.site-title .dot{ color:var(--accent); margin:0 .15em; }
+.site-title .st-sub{ font-weight:500; color:var(--muted); }
+
+
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-width:34px; height:34px; padding:0 9px;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1;
+  color:var(--ink); background:var(--btn-bg);
+  border:1px solid var(--line-mid); border-radius:8px;
+  cursor:pointer; user-select:none;
+  transition:background-color .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease);
+}
+.icon-btn:hover{ background:var(--btn-bg-hover); }
+.icon-btn:active{ transform:translateY(1px); }
+.icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.menu-btn{ display:none; }
+
+/* 搜索框 */
+.search-wrap{
+  position:relative;
+  display:flex; align-items:center;
+  width:100%; max-width:430px;
+  height:36px;
+  background:var(--field-bg);
+  border:1px solid var(--line-mid);
+  border-radius:999px;
+  padding:0 8px 0 12px;
+  transition:border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.search-wrap:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.search-icon{ font-size:.8rem; opacity:.65; margin-right:6px; }
+#searchInput{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  font-family:var(--sans); font-size:.86rem; color:var(--ink);
+}
+#searchInput::placeholder{ color:var(--faint); }
+#searchInput::-webkit-search-cancel-button{ display:none; }
+.search-count{
+  font-family:var(--sans); font-size:.74rem; color:var(--muted);
+  white-space:nowrap; margin:0 4px; font-variant-numeric:tabular-nums;
+}
+.search-nav{
+  display:flex; gap:2px;
+}
+.mini-btn{
+  width:22px; height:22px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:.7rem; line-height:1;
+  color:var(--muted); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.mini-btn:hover{ background:var(--btn-bg-hover); color:var(--ink); }
+.mini-btn[hidden]{ display:none; }
+
+/* 阅读进度条 */
+.progress{
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:3px; background:transparent; overflow:hidden;
+}
+.progress-bar{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, var(--accent), var(--num-bg));
+  transition:width .08s linear;
+}
+
+/* =====================  布局  ===================== */
+.layout{
+  display:flex;
+  align-items:flex-start;
+  gap:26px;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 18px;
+}
+
+/* ---------- 侧边目录 ---------- */
+.toc{
+  position:sticky;
+  top:var(--topbar-h);
+  flex:0 0 var(--toc-w);
+  width:var(--toc-w);
+  max-height:calc(100vh - var(--topbar-h));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:20px 8px 28px 0;
+  font-family:var(--sans);
+}
+.toc-head{
+  font-size:.72rem; font-weight:800; letter-spacing:.24em;
+  color:var(--muted); text-transform:uppercase;
+  padding:0 10px 10px; border-bottom:1px solid var(--line); margin-bottom:8px;
+}
+.toc-nav{ display:flex; flex-direction:column; }
+.toc-item{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:6px 10px;
+  color:var(--ink-soft); text-decoration:none;
+  border-left:2px solid transparent;
+  border-radius:0 6px 6px 0;
+  line-height:1.45;
+  transition:background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.toc-item:hover{ background:var(--accent-soft); color:var(--ink); }
+.toc-item.lvl2{ font-size:.85rem; font-weight:700; margin-top:6px; }
+.toc-item.lvl3{ font-size:.79rem; font-weight:400; padding-left:30px; color:var(--muted); }
+.toc-item .toc-num{
+  flex:0 0 auto;
+  font-size:.68rem; font-weight:800;
+  min-width:1.35em; text-align:center;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:4px;
+  padding:0 2px; line-height:1.5;
+  margin-top:.15em;
+}
+.toc-item.active{
+  color:var(--accent); background:var(--accent-soft);
+  border-left-color:var(--accent); font-weight:800;
+}
+.toc-item.active .toc-num{ color:var(--accent); border-color:var(--accent); }
+.toc-item.active-parent{ color:var(--ink); border-left-color:var(--line-strong); }
+.toc-item .toc-hits{
+  margin-left:auto; flex:0 0 auto;
+  font-size:.68rem; font-weight:700;
+  color:var(--accent-ink); background:var(--accent);
+  border-radius:999px; padding:0 6px; line-height:1.6;
+}
+.toc-foot{
+  margin-top:14px; padding:10px 10px 0;
+  border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--faint);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+}
+.link-btn{
+  background:none; border:0; padding:0;
+  font-family:var(--sans); font-size:.72rem; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.link-btn:hover{ opacity:.75; }
+.scrim{
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,.45);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s var(--ease);
+}
+
+/* ---------- 正文容器 ---------- */
+.content{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:var(--content-max);
+  margin:0 auto;
+  padding:22px 0 90px;
+}
+
+/* ---------- 章节卡片 ---------- */
+.section{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-1);
+  padding:26px 30px 24px;
+  margin:0 0 20px;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+  transition:background-color .25s var(--ease), border-color .25s var(--ease);
+}
+.section:target{ border-color:var(--accent); }
+
+/* 可折叠标题 */
+h2.sec-head{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--sans);
+  font-size:1.42em; font-weight:800; letter-spacing:.03em;
+  margin:0 0 12px; padding:0 0 8px;
+  border-bottom:2px solid var(--line-strong);
+  cursor:pointer; user-select:none;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h2.sec-head:hover .h2-text{ color:var(--accent); }
+h2.sec-head:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+h2.sec-head .chapter-num{
+  flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55em; height:1.55em;
+  font-size:.72em; font-weight:800;
+  background:var(--num-bg); color:var(--num-ink);
+  border-radius:4px;
+}
+h2.sec-head .h2-text{ flex:1 1 auto; transition:color .15s var(--ease); }
+h2.sec-head .sec-caret{
+  flex:0 0 auto;
+  font-size:.62em; color:var(--muted);
+  transition:transform .22s var(--ease);
+}
+.section.collapsed h2.sec-head{ border-bottom-color:var(--line-mid); margin-bottom:0; }
+.section.collapsed h2.sec-head .sec-caret{ transform:rotate(-90deg); }
+.section.collapsed .sec-body{ display:none; }
+.sec-body{ animation:fadeIn .22s var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:none;} }
+
+/* ---------- 正文排版 ---------- */
+h3{
+  font-family:var(--sans);
+  font-size:1.06em; font-weight:700;
+  margin:1.5em 0 .55em; color:var(--ink);
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h3::before{ content:"▪"; margin-right:.5em; color:var(--accent); }
+h4{
+  font-family:var(--sans);
+  font-size:.95em; font-weight:700;
+  margin:1.1em 0 .4em; color:var(--ink-soft);
+}
+p{ margin:0 0 .72em; text-align:justify; text-indent:2em; }
+p.no-indent{ text-indent:0; }
+ul, ol{ margin:.5em 0 .9em; padding-left:1.6em; }
+li{ margin-bottom:.35em; text-align:justify; }
+strong{ font-weight:700; color:var(--ink); }
+em{ font-style:normal; }
+
+blockquote{
+  margin:1em 0; padding:.7em 1em;
+  border-left:3px solid var(--accent);
+  background:var(--quote-bg);
+  font-size:.96em; line-height:1.78;
+  border-radius:0 6px 6px 0;
+}
+blockquote p{ text-indent:0; margin:0 0 .4em; }
+blockquote p:last-child{ margin-bottom:0; }
+blockquote cite{
+  display:block; text-align:right;
+  font-size:.86em; color:var(--muted); font-style:normal; margin-top:.5em;
+}
+
+.box{
+  margin:1em 0; padding:.85em 1em;
+  border:1px solid var(--line-mid);
+  background:var(--box-bg);
+  border-radius:8px;
+}
+.box-title{
+  font-family:var(--sans);
+  font-size:.78em; font-weight:800; letter-spacing:.16em;
+  color:var(--accent);
+  margin-bottom:.6em; padding-bottom:.35em;
+  border-bottom:1px solid var(--line);
+}
+.box p{ text-indent:0; margin-bottom:.45em; }
+.box p:last-child{ margin-bottom:0; }
+.box dl{ margin:0; }
+.box dt{
+  font-family:var(--sans); font-weight:700; font-size:.84em;
+  margin-top:.6em; color:var(--muted); letter-spacing:.05em;
+}
+.box dd{ margin:.15em 0 .55em; font-size:.96em; text-align:justify; }
+
+.term{
+  font-family:var(--sans); font-weight:700;
+  border-bottom:1px solid var(--line-strong);
+  padding-bottom:1px;
+}
+
+.summary{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin:1em 0;
+}
+.summary .col{
+  padding:.8em .9em;
+  background:var(--col-bg);
+  border-top:2px solid var(--line-strong);
+  border-radius:0 0 6px 6px;
+}
+.summary .col-title{
+  font-family:var(--sans); font-weight:800; font-size:.82em;
+  margin-bottom:.5em; letter-spacing:.08em;
+}
+.summary .col p{ text-indent:0; font-size:.92em; margin:0 0 .45em; }
+.summary .col p:last-child{ margin-bottom:0; }
+
+.src-note{
+  font-size:.78em; color:var(--faint);
+  margin:1.1em 0 0; padding-top:.5em;
+  border-top:1px dotted var(--line-mid);
+  text-align:left; text-indent:0;
+}
+.footer-note{
+  margin-top:1.4em; padding-top:.7em;
+  border-top:1px solid var(--line);
+  font-size:.8em; color:var(--muted); text-align:center; text-indent:0;
+}
+.center{ text-align:center; }
+.small{ font-size:.9em; }
+
+/* ---------- 封面 ---------- */
+.section-cover{ padding:0; overflow:hidden; }
+.cover{
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center;
+  padding:58px 26px 34px;
+}
+.cover-tag{
+  font-family:var(--sans);
+  font-size:.72rem; letter-spacing:.4em;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:3px;
+  padding:5px 12px 5px 16px; margin-bottom:34px;
+}
+.cover h1{
+  font-family:var(--sans);
+  font-size:2.6em; font-weight:900; line-height:1.2;
+  margin:0 0 14px; letter-spacing:.08em;
+}
+.cover-subtitle{
+  font-size:1.02em; color:var(--ink-soft);
+  margin-bottom:26px; letter-spacing:.14em;
+}
+.cover-line{ width:150px; height:2px; background:var(--line-strong); margin:0 auto 22px; }
+.cover-source{ font-size:.96em; color:var(--muted); line-height:2; }
+.cover-foot{
+  margin-top:34px; padding-top:14px;
+  border-top:1px solid var(--line);
+  width:100%; max-width:520px;
+  font-size:.78em; color:var(--faint); letter-spacing:.08em;
+}
+
+/* ---------- 原印刷目录（正文内） ---------- */
+.toc-list{ list-style:none; padding:0; margin:.4em 0 0; }
+.toc-list li{ border-bottom:1px dotted var(--line-mid); }
+.toc-list li:last-child{ border-bottom:none; }
+.toc-list-link{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:.5em .3em; color:var(--ink); text-decoration:none;
+  border-radius:6px;
+  transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.toc-list-link:hover{ background:var(--accent-soft); color:var(--accent); }
+.toc-list .num{
+  font-family:var(--sans); font-weight:800;
+  margin-right:.6em; color:var(--muted);
+}
+.toc-list .title{ font-size:.98em; }
+.toc-list .author{
+  font-family:var(--sans);
+  font-size:.76em; color:var(--faint); white-space:nowrap;
+}
+
+/* ---------- 搜索高亮 ---------- */
+mark.hit{
+  background:var(--mark-bg); color:var(--mark-ink);
+  border-radius:2px; padding:0 1px;
+  scroll-margin-top:calc(var(--topbar-h) + 90px);
+}
+mark.hit.current{
+  background:var(--mark-cur); color:#fff;
+  box-shadow:0 0 0 2px var(--mark-cur);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.fab-group{
+  position:fixed; right:18px; bottom:18px; z-index:880;
+  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px;
+}
+.fab{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:10px 16px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink);
+  font-family:var(--sans); font-size:.84rem; font-weight:700;
+  text-decoration:none; border:0; cursor:pointer;
+  box-shadow:var(--shadow-2);
+  transition:transform .15s var(--ease), opacity .2s var(--ease);
+}
+.fab:hover{ transform:translateY(-2px); }
+.fab.fab-mini{
+  width:40px; height:40px; padding:0; justify-content:center;
+  font-size:1rem;
+  background:var(--btn-bg); color:var(--ink);
+  border:1px solid var(--line-mid);
+}
+.fab.hidden{ opacity:0; pointer-events:none; transform:translateY(8px); }
+
+/* ---------- 移动端 ---------- */
+@media (max-width:900px){
+  .layout{ gap:16px; padding:0 12px; }
+  :root{ --toc-w:240px; }
+}
+@media (max-width:768px){
+  :root{ --topbar-h:54px; }
+  .menu-btn{ display:inline-flex; }
+  .site-title .st-sub{ display:none; }
+  .tb-center{ order:3; flex:0 0 100%; }
+  .topbar{ flex-wrap:wrap; height:auto; padding:8px 10px 10px; gap:8px; row-gap:8px; }
+  .tb-left{ flex:1 1 auto; }
+  .search-wrap{ max-width:none; height:34px; }
+  .layout{ display:block; padding:0 10px; }
+  .content{ max-width:none; padding:14px 0 96px; }
+  .section{ padding:20px 16px 18px; border-radius:8px; }
+  .summary{ grid-template-columns:1fr; }
+  .cover{ padding:40px 18px 26px; }
+  .cover h1{ font-size:2.1em; }
+  .cover-tag{ margin-bottom:24px; }
+
+  /* TOC 抽屉 */
+  .toc{
+    position:fixed; top:0; left:0; bottom:0; z-index:860;
+    width:80vw; max-width:320px;
+    max-height:none; height:100%;
+    padding:18px 10px 24px 14px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    box-shadow:var(--shadow-2);
+    transform:translateX(-102%);
+    transition:transform .26s var(--ease);
+  }
+  body.toc-open .toc{ transform:translateX(0); }
+  body.toc-open .scrim{ opacity:1; pointer-events:auto; }
+  body.toc-open{ overflow:hidden; }
+  .fab-group{ right:12px; bottom:12px; }
+  .fab{ padding:9px 14px; font-size:.8rem; }
+  p{ text-indent:2em; }
+}
+@media (max-width:420px){
+  .icon-btn .btn-txt{ display:none; }
+  .toc-list-link{ flex-wrap:wrap; }
+}
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+
+/* =====================================================================
+   打印样式：隐藏所有交互界面，恢复干净的 A4 印刷排版
+   ===================================================================== */
+@page{
+  size:A4;
+  margin:20mm 18mm 20mm 18mm;
+}
+@media print{
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    font-family:var(--serif);
+    font-size:11pt !important;
+    line-height:1.85;
+  }
+  html{
+    --paper:#fff; --ink:#000; --ink-soft:#222; --muted:#666; --faint:#999;
+    --line:#ddd; --line-mid:#ccc; --line-strong:#000;
+    --accent:#000; --accent-soft:transparent; --accent-ink:#fff;
+    --num-bg:#000; --num-ink:#fff;
+    --quote-bg:#f7f7f7; --box-bg:#fff; --col-bg:#fafafa;
+  }
+  .topbar, .toc, .scrim, .fab-group, .progress, .skip-link, .sec-caret, .search-wrap{
+    display:none !important;
+  }
+  .layout{ display:block; max-width:none; padding:0; margin:0; }
+  .content{ max-width:none; margin:0; padding:0; }
+  .section{
+    background:#fff !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    page-break-before:always;
+    page-break-inside:auto;
+  }
+  .section:first-of-type{ page-break-before:auto; }
+  .section.collapsed .sec-body{ display:block !important; }
+  .sec-body{ animation:none !important; }
+  h2.sec-head{
+    display:block; cursor:auto;
+    font-size:18pt !important; font-weight:800;
+    margin:0 0 10pt !important; padding-bottom:6pt;
+    border-bottom:2pt solid #000 !important;
+    page-break-after:avoid;
+  }
+  h2.sec-head .chapter-num{
+    display:inline-block; width:28pt; height:28pt; line-height:28pt;
+    text-align:center; font-size:14pt; border-radius:0;
+    background:#000 !important; color:#fff !important;
+    margin-right:10pt; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h2.sec-head .h2-text{ display:inline; }
+  h3{ font-size:13pt !important; page-break-after:avoid; }
+  h3::before{ color:#666 !important; }
+  h4{ font-size:11pt !important; page-break-after:avoid; }
+  p{ orphans:2; widows:2; }
+  blockquote, .box, .summary, .cover-source{ page-break-inside:avoid; }
+  blockquote{
+    background:#f7f7f7 !important; border-left:3pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .box{ border:1pt solid #333 !important; border-radius:0; }
+  .box-title{ color:#000 !important; text-transform:uppercase; }
+  .summary .col{
+    background:#fafafa !important; border-top:2pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .section-cover{ padding:0 !important; }
+  .cover{ min-height:245mm; padding:0 !important; justify-content:center; }
+  .cover h1{ font-size:32pt !important; }
+  .cover-subtitle{ font-size:14pt !important; }
+  .cover-line{ width:60mm; background:#000 !important; }
+  .cover-foot{ border-top:0; margin-top:60mm; }
+  .toc-list-link{ color:#000 !important; text-decoration:none; padding:8pt 0; }
+  .toc-list li{ border-bottom:.5pt dotted #bbb; }
+  mark.hit, mark.hit.current{
+    background:transparent !important; color:inherit !important;
+    box-shadow:none !important; padding:0;
+  }
+  a{ color:inherit !important; text-decoration:none !important; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar" id="topbar">
+  <div class="tb-left">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开或关闭目录" aria-expanded="false" aria-controls="toc">☰<span class="btn-txt">菜单</span></button>
+    <span class="site-title">萨特<span class="dot">·</span><span class="st-sub">写作素材</span></span>
+  </div>
+
+  <div class="tb-center">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="searchInput" type="search" placeholder="全文搜索：存在先于本质 / 自欺 / 他人即地狱 / 自由 …" autocomplete="off" spellcheck="false" aria-label="全文搜索">
+      <span class="search-count" id="searchCount" aria-live="polite"></span>
+      <span class="search-nav">
+        <button class="mini-btn" id="prevHit" type="button" hidden aria-label="上一处匹配">▲</button>
+        <button class="mini-btn" id="nextHit" type="button" hidden aria-label="下一处匹配">▼</button>
+        <button class="mini-btn" id="clearSearch" type="button" hidden aria-label="清空搜索">✕</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tb-right">
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色/浅色主题" title="切换深色 / 浅色阅读模式">🌙</button>
+    <button class="icon-btn" id="fsDown" type="button" aria-label="缩小字号" title="缩小正文字号">A−</button>
+    <button class="icon-btn" id="fsUp" type="button" aria-label="放大字号" title="放大正文字号">A＋</button>
+  </div>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== 主体布局 ===================== -->
+<div class="layout">
+
+  <!-- 侧边目录 -->
+  <aside class="toc" id="toc" aria-label="章节目录">
+    <div class="toc-head">目录导航</div>
+    <nav class="toc-nav" id="tocNav"></nav>
+    <div class="toc-foot">
+      <span>共 <span id="secCount">0</span> 节</span>
+      <button class="link-btn" id="expandAll" type="button">全部展开</button>
+      <button class="link-btn" id="collapseAll" type="button">全部折叠</button>
+    </div>
+  </aside>
+
+  <!-- 正文 -->
+  <main class="content" id="main">
+
+    <!-- ========== 封面 ========== -->
+    <section class="section section-cover" id="sec-cover" data-toc="封面 · 人物名片">
+      <div class="cover">
+        <div class="cover-tag">高考写作素材</div>
+        <h1>萨特</h1>
+        <div class="cover-subtitle">现代西方思想史 · 存在主义与“人被判定为自由”</div>
+        <div class="cover-line"></div>
+        <div class="cover-source">
+          1905 — 1980<br>
+          法国哲学家 · 存在主义旗手<br>
+          “存在先于本质” · “他人即地狱”
+        </div>
+        <div class="cover-foot">本册为单人物深度版 · 含生平、著作、核心思想与写作应用</div>
+      </div>
+    </section>
+
+    <!-- ========== 目录 ========== -->
+    <section class="section" id="sec-contents">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="h2-text">目 录</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <ul class="toc-list">
+          <li><a class="toc-list-link" href="#sec-1"><span><span class="num">01</span><span class="title">人物定位与速览</span></span><span class="author">一句话读懂</span></a></li>
+          <li><a class="toc-list-link" href="#sec-2"><span><span class="num">02</span><span class="title">生平经历：从巴黎到巴黎</span></span><span class="author">1905–1980</span></a></li>
+          <li><a class="toc-list-link" href="#sec-3"><span><span class="num">03</span><span class="title">主要著作与学术成就</span></span><span class="author">存在主义奠基</span></a></li>
+          <li><a class="toc-list-link" href="#sec-4"><span><span class="num">04</span><span class="title">核心思想（一）：存在先于本质</span></span><span class="author">思想底座</span></a></li>
+          <li><a class="toc-list-link" href="#sec-5"><span><span class="num">05</span><span class="title">核心思想（二）：自在 / 自为</span></span><span class="author">存在的结构</span></a></li>
+          <li><a class="toc-list-link" href="#sec-6"><span><span class="num">06</span><span class="title">核心思想（三）：自欺（mauvaise foi）</span></span><span class="author">逃避自由</span></a></li>
+          <li><a class="toc-list-link" href="#sec-7"><span><span class="num">07</span><span class="title">核心思想（四）：他人即地狱</span></span><span class="author">注视与自由</span></a></li>
+          <li><a class="toc-list-link" href="#sec-8"><span><span class="num">08</span><span class="title">核心思想（五）：被判定为自由</span></span><span class="author">焦虑与责任</span></a></li>
+          <li><a class="toc-list-link" href="#sec-9"><span><span class="num">09</span><span class="title">我们该如何理解萨特</span></span><span class="author">理解视角</span></a></li>
+          <li><a class="toc-list-link" href="#sec-10"><span><span class="num">10</span><span class="title">写作应用提示</span></span><span class="author">上考场用</span></a></li>
+        </ul>
+        <div class="footer-note">本册每节末以灰色小字标注网络文献来源；思想用于论证，生平用于点缀。</div>
+      </div>
+    </section>
+
+    <!-- ========== 第一章 ========== -->
+    <section class="section" id="sec-1">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">1</span><span class="h2-text">人物定位与速览</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位：</strong>法国哲学家、文学家，20 世纪存在主义最响亮的公共代言人，与加缪并称为战后法国存在主义旗手。</p>
+        <p>让-保罗·萨特（Jean-Paul Sartre，1905—1980），法国哲学家、小说家、剧作家、文学批评家与社会活动家。他接过尼采“上帝死了”之后的思想真空，把“价值由人自己创造”这个命题推到极致：人没有预先给定的本性，先活着、再靠行动定义自己。如果说韦伯诊断了“世界的祛魅”、弗洛伊德剖开了“理性的自我”，那么萨特则把“自由”交还到人手上——并同时把“绝对的责任”压在人肩上。对高考生而言，萨特提供的是一组直面“自由 / 选择 / 自我塑造 / 本真”等母题的思想利器。</p>
+        <p>高考作文里，“自由与责任”“选择与成长”“认识自我”“孤独与群体”“荒诞与创造”“坚守本心”等题，都可以从萨特这里取到货真价实的思想资源。但萨特也是最容易被误读的思想家之一——“存在先于本质”常被读成“人可以为所欲为”，“他人即地狱”常被读成“厌世反社会”。本册的任务，正是把这些命题放回准确的语境，让你在考场上用得既高级又不出错。</p>
+
+        <div class="box no-break">
+          <div class="box-title">速览卡</div>
+          <dl>
+            <dt>生卒</dt><dd>1905 年 6 月 21 日生于法国巴黎 — 1980 年 4 月 15 日卒于法国巴黎，享年 74 岁。</dd>
+            <dt>国籍 / 身份</dt><dd>法国；哲学家、文学家，存在主义代表人物，“战后法国思想界的良心”。</dd>
+            <dt>研究领域</dt><dd>存在主义哲学 · 现象学 · 文学戏剧 · 马克思主义（晚期）· 伦理学。</dd>
+            <dt>核心命题</dt><dd>存在先于本质、自在/自为、自欺（mauvaise foi）、他人即地狱、人被判定为自由、本真（authenticity）。</dd>
+            <dt>代表著作</dt><dd>《恶心》《存在与虚无》《禁闭》《存在主义是一种人道主义》《辩证理性批判》。</dd>
+            <dt>一句名言</dt><dd>“存在先于本质。”——《存在主义是一种人道主义》</dd>
+          </dl>
+        </div>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Jean-Paul Sartre」、Stanford Encyclopedia of Philosophy「Jean-Paul Sartre」、Britannica「Jean-Paul Sartre」。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第二章 ========== -->
+    <section class="section" id="sec-2">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">2</span><span class="h2-text">生平经历：从巴黎到巴黎</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">萨特的思想不是书斋里的玄想，而是一个亲历战争、抵抗与时代动荡的巴黎人写下的。理解他的生平，才懂他为何把“自由”说得如此沉重。</p>
+
+        <h3>早慧的孤儿：外祖父的书房</h3>
+        <p>1905 年 6 月 21 日，萨特生于巴黎。父亲让-巴蒂斯特·萨特是海军军官，在萨特仅一岁多时病逝；母亲安娜-玛丽·施韦泽带着他回到娘家，萨特由母亲与外祖父夏尔·施韦泽（Charles Schweitzer）抚养长大。外祖父是阿尔萨斯籍的德语教师，也是著名神学家、1952 年诺贝尔和平奖得主阿尔贝·施韦泽（Albert Schweitzer）的叔父。童年的萨特在外祖父的书房里大量阅读，很早就显露写作与思辨的天赋，并一生保持惊人的阅读与写作量。</p>
+
+        <h3>高师岁月与“永恒伴侣”波伏娃</h3>
+        <p>1924 年，萨特考入巴黎高等师范学校（École Normale Supérieure），攻读哲学。1929 年，他通过法国哲学教师学衔考试（agrégation），名列全国第一；就在同一年，他结识了同校的西蒙娜·德·波伏娃（Simone de Beauvoir）——两人结成终身的智识与情感伴侣（相伴五十余年，但未结婚）。这段关系后来被写成《第二性》等巨著的波伏娃，本身也是 20 世纪重要的女性主义思想家。</p>
+
+        <h3>柏林之行：现象学的转向</h3>
+        <p>1933—1934 年，萨特赴柏林的法兰西学院，研习胡塞尔（Edmund Husserl）的现象学与海德格尔（Martin Heidegger）的存在哲学。现象学“回到事物本身”、关注“意识如何意向对象”的方法，加上海德格尔对“存在”问题的追问，使萨特的思想从早年的文学与心理学转向存在主义哲学——这是他后来写出《存在与虚无》的方法论根基。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“名师与转向”可用于“视野决定高度”“走出去看见更大的世界”等主题：萨特若未赴柏林接触胡塞尔、海德格尔，未必能写出《存在与虚无》。环境的打开，常是思想跃迁的前提。</p>
+        </div>
+
+        <h3>战争、俘虏与抵抗运动</h3>
+        <p>1938 年，萨特出版小说《恶心》（La Nausée），用文学笔法呈现“存在”的偶然、冗余与荒诞。1939 年二战爆发，萨特被征入伍；1940 年他被德军俘虏，在战俘营里给难友讲授哲学；1941 年因健康原因获释，回到巴黎后参加抵抗运动，并参与地下刊物。战争与囚禁的经历，让“自由”“责任”“在绝境中仍要选择”不再是抽象命题，而成为他切身背过的重量。</p>
+
+        <h3>战后：戏剧、演讲与拒绝诺奖</h3>
+        <p>1943 年，萨特出版哲学巨著《存在与虚无》（L'Être et le Néant）。1944 年，独幕剧《禁闭》（Huis clos，又译《隔离审讯》《无路可出》）在巴黎维约-科隆比耶剧院（Théâtre du Vieux-Colombier）首演，名句“他人即地狱”自此流传。1945 年 10 月 29 日，他在巴黎“当今俱乐部”（Club Maintenant）发表著名演讲；1946 年，演讲整理为《存在主义是一种人道主义》（L'existentialisme est un humanisme）出版。同年，他与波伏娃、梅洛-庞蒂（Maurice Merleau-Ponty）等创办《现代》杂志（Les Temps modernes），成为法国左翼思想的重要阵地。</p>
+        <p>1960 年，萨特出版《辩证理性批判》（Critique de la raison dialectique），尝试把存在主义与马克思主义结合起来。1964 年，瑞典学院决定授予他诺贝尔文学奖，他却公开拒绝，理由是“不愿让自己被改造成一个机构”，也不愿被东方或西方阵营当作符号利用。1980 年 4 月 15 日，萨特在巴黎病逝，数万巴黎民众自发走上街头为他送葬——这是一位思想家罕见的大众告别。</p>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Jean-Paul Sartre」、Britannica「Jean-Paul Sartre」、SEP「Jean-Paul Sartre」、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第三章 ========== -->
+    <section class="section" id="sec-3">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">3</span><span class="h2-text">主要著作与学术成就</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位（学术）：</strong>20 世纪存在主义哲学代表人物，以文学、戏剧与哲学并行的“行动式写作”，把存在主义推向公共视野。</p>
+
+        <h3>存在主义：从书斋到街头</h3>
+        <p>萨特的独特之处在于，他不是只写给哲学家的教授，而是用小说、戏剧、评论把“存在主义”变成一代人的共同语言。他的哲学与文学彼此支撑：小说《恶心》呈现存在的“荒诞感”，戏剧《禁闭》浓缩人际的“地狱感”，而《存在与虚无》《存在主义是一种人道主义》则把这些感受系统化为概念。这种“哲思与创作合一”的写法，本身就示范了存在主义的信条——人通过行动（写作即一种行动）自我定义。</p>
+
+        <h3>主要著作一览</h3>
+        <div class="summary no-break">
+          <div class="col">
+            <div class="col-title">哲学原典</div>
+            <p><strong>《存在与虚无》（1943）：</strong>存在主义哲学奠基之作，系统提出自在/自为、自欺、他人的注视等核心概念。</p>
+            <p><strong>《存在主义是一种人道主义》（1946）：</strong>通俗演讲集，集中阐述“存在先于本质”“人被判定为自由”，是大众进入存在主义最常被读的文本。</p>
+            <p><strong>《辩证理性批判》（1960）：</strong>晚期著作，尝试把存在主义与马克思主义结合，讨论“实践”与“群伙/系列”中的自由。</p>
+          </div>
+          <div class="col">
+            <div class="col-title">文学与戏剧</div>
+            <p><strong>《恶心》（1938）：</strong>日记体小说，以罗冈丹的体验呈现“存在”的偶然、冗余与荒诞。</p>
+            <p><strong>《禁闭》（1944）：</strong>独幕剧，“他人即地狱”（L'enfer, c'est les autres）的出处。</p>
+            <p><strong>《苍蝇》（1943）、《死无葬身之地》《脏手》等：</strong>以戏剧承载存在主义处境。</p>
+            <p><strong>《词语》（1964）：</strong>自传性随笔，回顾自己的阅读与童年。</p>
+          </div>
+        </div>
+
+        <h3>思想史地位：与尼采、弗洛伊德同列的“去幻者”</h3>
+        <p>如果说尼采宣告“上帝死了”、弗洛伊德剖开“理性的自我”，那么萨特则把“没有预先给定的本性”这件事推到底：人不是被任何先天蓝图规定的物，而是必须自己造就自己的自由。他与加缪并称为战后法国存在主义旗手（二人后来于 1952 年因政治与哲学分歧公开决裂，但常被并提）；其影响溢出哲学，深及文学、戏剧、电影、教育学、女性主义（经由波伏娃《第二性》）与社会批评。美国学者所罗门曾把萨特的存在主义称为“一种人本主义的存在主义”——它悲观地承认无依无靠，却乐观地交给人创造意义的主动权。</p>
+
+        <p class="src-note">来源：维基百科「Jean-Paul Sartre」著作目录、SEP「Jean-Paul Sartre」、Britannica「Jean-Paul Sartre」、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第四章 ========== -->
+    <section class="section" id="sec-4">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">4</span><span class="h2-text">核心思想（一）：存在先于本质</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是萨特思想的底座：人没有“天生该成为的样子”，先存在、再靠行动定义自己。</p>
+
+        <h3>颠倒“本质先于存在”</h3>
+        <p>传统思路（从柏拉图到基督教，再到某些现代决定论）常假设“本质先于存在”：一件器物，先有它的概念与用途（本质），才被制造出来（存在）。比如一把裁纸刀，工匠脑中先有“裁纸刀应当如何”的观念，才造出它；它“是什么”在它被造出之前就已确定。萨特把人与器物对调：<span class="term">人先存在、登场、遭遇自己，之后才通过行动定义自己</span>。没有谁在人造出之前，就为人写好了“该成为什么样”的蓝图。</p>
+
+        <h3>“人除自己所造就的样子外，什么也不是”</h3>
+        <p>由此萨特得出存在主义的第一个原则：“人除自己所造就的样子外，什么也不是。”（L'homme n'est rien d'autre que ce qu'il se fait。）这里的关键不是“人没有本性”，而是“人没有<em>先天给定</em>的本性”——没有“我天生懦弱”“我命中如此”“环境逼得我只能这样”这类现成借口。人一开始是一无所有的意识，全部内容都由后天的选择与行动填进去。</p>
+
+        <blockquote>
+          <p>人先是存在，遭遇自己，涌现在世界中——然后才定义自己。</p>
+          <cite>—— 萨特《存在主义是一种人道主义》（1946）（中译大意：L'homme d'abord n'est rien, puis il se fait）</cite>
+        </blockquote>
+
+        <h3>后果：没有借口，只有责任</h3>
+        <p>“存在先于本质”的真正重量在它的后果：因为人没有预先给定的本质可依赖，也就没有“天性”“命运”“血统”“环境”能替自己开脱。每一个选择，都是我对“人应当如何”的一次表态；我在选择自己的同时，也仿佛在替全人类选择一种典范——“在塑造自己时，我塑造了人类”（In fashioning myself, I fashion Man）。这把自由与责任焊在一起：自由越大，责任越重。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“存在先于本质”最适合论证“自我塑造”“选择与成长”“拒绝宿命论”。可用裁纸刀比喻点题：物先有蓝图后被造，人先被抛入世界再自己雕刻自己——所谓成长，就是亲手定义“我是谁”。</p>
+        </div>
+
+        <div class="box no-break">
+          <div class="box-title">延伸视角</div>
+          <p>注意辩证：萨特并非鼓吹“随便变成谁都行”的虚无。正相反，因为选择要为他人负责，“认真地自我塑造”才是严肃的事。这与“躺平”“摆烂”恰恰是相反的——躺平是把自由藏起来，萨特要求的是清醒地承担自由。</p>
+        </div>
+
+        <p class="src-note">来源：维基百科「Existentialism」「Existence precedes essence」、SEP「Jean-Paul Sartre」、萨特《存在主义是一种人道主义》（1946）中译。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第五章 ========== -->
+    <section class="section" id="sec-5">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">5</span><span class="h2-text">核心思想（二）：自在 / 自为</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>解释了“人为什么永远不安”：存在被分成“是其所是”的自在，与“永远不是其所是”的自为。</p>
+
+        <h3>两种存在</h3>
+        <p>在《存在与虚无》中，萨特把“存在”分成两类：</p>
+        <ol>
+          <li><strong>自在的存在（being-in-itself，en-soi）：</strong>如石头、桌子这类“物”。它是其所是，充实、完满、没有欠缺，也没有意识，不会“想要成为别的什么”。</li>
+          <li><strong>自为的存在（being-for-itself，pour-soi）：</strong>人的意识。它“是其所不是，不是其所是”——永远欠缺、永远空无、不断自我超越，能否定、能想象“别的可能”、能选择。</li>
+        </ol>
+        <p>人之所以是人，正在于这团“空无”的意识：它不圆满、不固定，总在“还不是”与“可以是”之间摇摆。这团空无，就是自由。</p>
+
+        <h3>人的“悲剧性”：想成为上帝却做不到</h3>
+        <p>人的困境在于：自为“不是其所是、是其所不是”。一方面，人总想把自己变成某种固定、完满的本质（像自在那样“踏踏实实”），渴望“一劳永逸地成为某个谁”；另一方面，意识永远做不到——它一旦固化，就不再是意识。萨特有一句刺骨的话：“人是无用的激情”（l'homme est une passion inutile）：人徒劳地想把自己变成“自在自为”的上帝（既圆满又自由），但作为意识，这永远不可能。考场不必深究这句术语，只需抓住核心：<strong>自为 = 能选择、能超越、永远在路上的自我</strong>；人不是“被做成”的物，而是“正在做成”的活的过程。</p>
+
+        <h3>与“存在先于本质”的呼应</h3>
+        <p>“自在/自为”是“存在先于本质”的形而上学说法：正因为人是“自为”（空无、有待充实的意识），才没有现成本质，必须自己填满自己。两者说的是同一件事的两面——一面讲“人没有先天本性”，一面讲“人因此是能选择、能超越的自由”。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“自为”可用于“终身成长”“拒绝被定义”：人不是出厂设置好的商品，而是一直在修改中的草稿。标签（内向/平庸/失败）只是他人给的“自在化”企图，真正的人始终“是其所不是”。</p>
+        </div>
+
+        <p class="src-note">来源：SEP「Jean-Paul Sartre」、维基百科「Being-for-itself」、《存在与虚无》（1943）中译、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第六章 ========== -->
+    <section class="section" id="sec-6">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">6</span><span class="h2-text">核心思想（三）：自欺（mauvaise foi）</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是高考最易出彩也容易用错的角度：人面对自由的重负，会本能地“对自己说谎”。</p>
+
+        <h3>什么是自欺</h3>
+        <p>既然人是绝对自由、必须为一切负责，这担子未免太重。于是人会本能地逃避：假装自己“别无选择”“我天生就这样”“是环境逼我的”“大家都这样我也只能这样”——这就是<span class="term">自欺</span>（mauvaise foi，bad faith）。自欺不是别人骗你，而是你<strong>对自己说谎</strong>：你明明知道自己是自由的，却把自己活成一件被决定的“物”。</p>
+
+        <h3>“既是欺人者，又是被骗者”</h3>
+        <p>萨特强调，自欺的微妙在于：人同时扮演骗人者和被骗者。你清楚地知道真相（你有选择），却又拼命把真相压下去（假装没选择）。例如那个过分投入的咖啡馆侍者：他把自己完全等同于“侍者”这个角色，仿佛“侍者”就是他的全部本性——这正是否定了自己的自由。又比如一句“我性格就这样，改不了”，本质是把活生生的自由塞进“性格”这个现成标签里。</p>
+
+        <blockquote>
+          <p>自欺不在于说谎骗别人，而在于对自己隐瞒真相：人既是欺骗者，又是被欺骗者。</p>
+          <cite>—— 萨特《存在与虚无》（1943）（中译大意）</cite>
+        </blockquote>
+
+        <h3>反面：本真（authenticity）</h3>
+        <p>自欺的反面常被译为“本真”或“真诚”（authenticity）。但要小心：萨特并不认为存在一个“真实的自我”藏在内心等你发现——因为人没有现成本质，也就没有“本来的我”可找。本真不是“做回自己”，而是<strong>清醒地承担自由、不再用借口掩盖选择</strong>：承认“这是我选的，后果我来负”。这比“找到真我”更难，也更诚实。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“自欺”可用于“从众与独立思考”“借口与担当”“认识自我”：多少人把“随大流”伪装成“我本来就想这样”？戳破自欺，就是成长的开始。注意别写成“虚伪”——自欺是自欺，不是故意骗人。</p>
+        </div>
+
+        <p class="src-note">来源：SEP「Jean-Paul Sartre」、维基百科「Bad faith (existentialism)」、《存在与虚无》（1943）中译。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第七章 ========== -->
+    <section class="section" id="sec-7">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">7</span><span class="h2-text">核心思想（四）：他人即地狱</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是萨特最被误读的一句。准确理解它，能把“孤独与群体”这类题写到极致。</p>
+
+        <h3>“L'enfer, c'est les autres”出自何处</h3>
+        <p>这句名言出自 1944 年的独幕剧《禁闭》（Huis clos，又译《隔离审讯》）：三个死后的人物被关进一间没有镜子、没有出口的房间，彼此成了对方的审判者、镜子和折磨者。主角加尔散（Garcin）最后悟出：地狱不是火刑与刑具，“<strong>他人即地狱</strong>”（L'enfer, c'est les autres）。</p>
+
+        <blockquote>
+          <p>哪里需要烧红的火钳？地狱——就是他人！</p>
+          <cite>—— 萨特《禁闭》（1944）台词（中译：L'enfer, c'est les autres）</cite>
+        </blockquote>
+
+        <h3>哲学内核：“他人的注视”</h3>
+        <p>这句话背后的概念是“他人的注视”（le regard）。当他人看向我，我突然成了“他人世界里的对象”——被固定、被评判、被贴上某个形象。人既渴望他人的认可来确证自己（“我被看见，我才存在”），又憎恨被他人简化成某个标签（“在别人眼里我只是个××”）。于是他人成了自由的威胁：为了换得他人的目光，人可能把自己活成别人期待的样子，从而交出自由。</p>
+
+        <h3>关键澄清：萨特自己都怕你误读</h3>
+        <p>这句名言流传极广，也误读极广。萨特在 1964 年的一次录音访谈中亲自澄清：这句话常被误解为“厌世”或“反社会”，但他本意是——<strong>只有当人际关系“扭曲、败坏”时，他人才是地狱</strong>；如果关系健康，他人不仅不是地狱，反而是我认识自己的必要条件。换言之，萨特批判的不是“他人”本身，而是“被他人的目光绑架、丧失自我”的异化状态。考场使用务必辩证：它不是鼓吹孤立与厌世，而是提醒你——别让别人的评价替你活。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“他人即地狱”可用于“独立思考 vs 从众”“社交媒体的评判焦虑”“坚守本心”：在朋友圈、弹幕与点赞里，人最容易把定义自己的权力交给他人的目光。萨特要的是——在关系中保持自由，而非逃离关系。</p>
+        </div>
+
+        <p class="src-note">来源：维基百科「No Exit」、Quotations.pro / 多家引文库对“L'enfer, c'est les autres”的核对、萨特 1964 年录音访谈澄清（转引自 quotations.pro 等）、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第八章 ========== -->
+    <section class="section" id="sec-8">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">8</span><span class="h2-text">核心思想（五）：被判定为自由</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>把自由说成“无法拒绝的命运”：连“不选择”本身也是一种选择。</p>
+
+        <h3>“人被判定为自由”</h3>
+        <p>在《存在主义是一种人道主义》中，萨特说出那句最刺骨也最常被引用的话：“<span class="term">人被判定为自由</span>”（l'homme est condamné à être libre）。自由不是天赋特权，而是人无法拒绝的处境——因为上帝不存在、没有先验价值来替人指路，人“孤独、无依无靠、没有借口”（abandon，被遗弃），只能自己为一切立法。这里的“判定”（condamné）带着刑罚的意味：自由是重负，可你逃不掉。</p>
+
+        <blockquote>
+          <p>我们孤独，没有借口。这正是我所谓“人被判定为自由”的意思。</p>
+          <cite>—— 萨特《存在主义是一种人道主义》（1946）（中译：Nous sommes seuls, sans excuses. C'est ce que j'exprime en disant que l'homme est condamné à être libre.）</cite>
+        </blockquote>
+
+        <h3>焦虑、被遗弃与绝望</h3>
+        <p>这种绝对责任带来三种相关体验：</p>
+        <ul>
+          <li><strong>焦虑（angoisse）：</strong>不是对某个具体危险的“害怕”，而是对“我是自己全部可能性的唯一作者”的眩晕——正如站在悬崖边，最怕的不是跌落，而是发现自己随时可以跳。萨特与克尔凯郭尔都把焦虑视为“自由本身的觉醒”（教学性联想，二者理论并不等同）。</li>
+          <li><strong>被遗弃（abandon）：</strong>无神论存在主义的前提——没有上帝或任何超验权威给人规定活法，人必须独自承担“自己该成为什么”的重负。</li>
+          <li><strong>绝望（désespoir）：</strong>不把希望寄托在无力改变的事物上，只信赖自己行动所能触及的可能，并坦然接受后果。绝望不是消极，而是“看清限度后仍行动”。</li>
+        </ul>
+
+        <h3>结论：存在主义是“乐观的人道主义”</h3>
+        <p>听起来很沉重，但萨特的落点恰恰相反。他说存在主义不是悲观主义、不是quietism（无为主义），而是“行动的哲学”“乐观的人道主义”：人没有现成本性，这正意味着人不会被任何宿命锁死；人通过行动自我造就，命运握在自己手里。真正的勇气，是在无依无靠中仍选择承担、仍去创造。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“被判定为自由”可用于“责任与担当”“在不确定中选择”“成长的代价”：自由不是轻松，而是“连不选择也是一种选择”的重负。成熟，就是不再拿“没办法”当借口。</p>
+        </div>
+
+        <p class="src-note">来源：维基百科「Existentialism Is a Humanism」、SEP「Jean-Paul Sartre」、philosophers.world 对《存在主义是一种人道主义》的逐段释义、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第九章 ========== -->
+    <section class="section" id="sec-9">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">9</span><span class="h2-text">我们该如何理解萨特</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">萨特常被读成“鼓吹放纵的虚无主义者”或“厌世的孤僻者”。恰恰相反，他是一个把自由交还给人、同时要求人严肃负责的思想家。</p>
+
+        <h3>首先，他不是在鼓吹“为所欲为”</h3>
+        <p>“存在先于本质”常被庸俗化为“我想怎样就怎样”。但萨特说，自由与责任是一体的：我在选择自己时，也仿佛在替人类选择一种典范。自由越大，责任越重——“自由”不是放纵的许可证，而是担当的起跑线。把萨特读成“随便活”的借口，是最大的误读。</p>
+
+        <h3>他不是否定意义，而是把创造意义的责任交还给人</h3>
+        <p>萨特的世界里没有“先天意义”，但这不等于“人生虚无、不必认真”。正相反：意义不是被发现的，而是被人的选择与行动“制造”出来的。世界本无剧本，人自己写——这恰恰是赋予人最高尊严的说法。存在主义因此是一种“人道主义”：它把人抬到价值创造者的位置。</p>
+
+        <h3>他不是孤立主义：“他人即地狱”须辩证读</h3>
+        <p>如第七章所言，萨特本人澄清“他人即地狱”只在关系扭曲时成立；人恰恰是通过他人来认识自己的（他后期也强调“互为主体性”intersubjectivity）。存在主义反对的是“被他人目光绑架”，不是“与他人相处”。考场写“孤独与群体”，务必点到这个辩证。</p>
+
+        <h3>自我批评与学界争议</h3>
+        <p>萨特的思想有清晰边界：其一，他本人晚年对《存在主义是一种人道主义》中的某些通俗表述有所保留，甚至“后悔其出版”（维基百科记载）；海德格尔读后评价“不过是形而上学的颠倒”，加缪也与他决裂。其二，存在主义是哲学/思想资源，不是可证伪的自然科学结论，考场应作为“论证的思想资源”而非“科学定论”使用。其三，萨特与加缪虽并称存在主义旗手，但二人思想有异、1952 年公开决裂，勿混为一谈。</p>
+
+        <p class="src-note">来源：维基百科「Existentialism Is a Humanism」（含海德格尔、加缪批评与萨特晚年保留态度的记载）、SEP「Jean-Paul Sartre」、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第十章 ========== -->
+    <section class="section" id="sec-10">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">10</span><span class="h2-text">写作应用提示</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">把萨特用在考场上，记住：<strong>思想用于论证，生平用于点缀，引文要“可上考场”，误读要避开。</strong></p>
+
+        <h3>一、适用主题速查</h3>
+        <ul>
+          <li><strong>自由与责任 / 选择与成长：</strong>存在先于本质、人被判定为自由、自欺。</li>
+          <li><strong>认识自我 / 自我塑造：</strong>人除自己所造就的样子外什么也不是、自为。</li>
+          <li><strong>独立思想 vs 从众：</strong>自欺、他人即地狱（辩证）、孤独个体（见克尔凯郭尔）。</li>
+          <li><strong>存在与意义 / 荒诞与创造：</strong>世界无先天意义，意义由行动创造。</li>
+          <li><strong>孤独与群体 / 社交焦虑：</strong>他人的注视、他人即地狱（辩证读）。</li>
+          <li><strong>坚守本心 / 担当：</strong>清醒承担自由，不再拿“没办法”当借口。</li>
+        </ul>
+
+        <h3>二、可嵌入的经典引文</h3>
+        <ul>
+          <li>“存在先于本质。”（L'existence précède l'essence）——《存在主义是一种人道主义》（1946）</li>
+          <li>“他人即地狱。”（L'enfer, c'est les autres）——《禁闭》（1944；注：萨特自释仅在关系扭曲时成立）</li>
+          <li>“人被判定为自由。”（l'homme est condamné à être libre）——《存在主义是一种人道主义》（1946）</li>
+          <li>“人除自己所造就的样子外，什么也不是。”（L'homme n'est rien d'autre que ce qu'il se fait）</li>
+          <li>“在塑造自己时，我塑造了人类。”（In fashioning myself, I fashion Man）</li>
+          <li>“三点钟对任何想做的事都总是太早，或太晚。”——《恶心》（1938，可作生平/荒诞感点缀）</li>
+        </ul>
+
+        <h3>三、易错提醒</h3>
+        <ul>
+          <li><strong>“存在先于本质”≠“人没有本性”的虚无：</strong>它是说没有“先天给定”的本性，人靠行动自我定义，而非鼓吹随便活。</li>
+          <li><strong>“他人即地狱”≠厌世：</strong>是警惕“被他人目光绑架”，非鼓吹孤立；萨特本人 1964 年专门澄清。</li>
+          <li><strong>萨特≠鼓吹放纵：</strong>自由即责任，“不选择”也是一种选择；担当才是落点。</li>
+          <li><strong>自欺 ≠ 虚伪：</strong>自欺是“对自己说谎”（既是骗人者又是被骗者），不是故意骗别人。</li>
+          <li><strong>理论是思想资源，非科学定论：</strong>且萨特晚年对《人道主义》部分表述有保留，引用宜注“1946 年通俗表述”。</li>
+          <li><strong>别混淆萨特与加缪：</strong>二人并称存在主义旗手但 1952 年决裂，思想有别。</li>
+        </ul>
+
+        <div class="footer-note">完 · 本册素材综合自公开网络文献与权威工具书，引文以通行中译为准，考场引用请依教材与权威译本。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== 悬浮按钮 ===================== -->
+<div class="fab-group">
+  <button class="fab fab-mini hidden" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">⤒</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 常量与元素引用 ================= */
+  var STORE_THEME = 'sartre.theme';
+  var STORE_FS    = 'sartre.fontSize';
+  var FS_LEVELS   = ['0', '1', '2'];
+
+  var html        = document.documentElement;
+  var body        = document.body;
+  var topbar      = document.getElementById('topbar');
+  var progressBar = document.getElementById('progressBar');
+  var main        = document.getElementById('main');
+  var tocEl       = document.getElementById('toc');
+  var tocNav      = document.getElementById('tocNav');
+  var secCountEl  = document.getElementById('secCount');
+  var scrim       = document.getElementById('scrim');
+  var menuBtn     = document.getElementById('menuBtn');
+  var themeBtn    = document.getElementById('themeBtn');
+  var fsUpBtn     = document.getElementById('fsUp');
+  var fsDownBtn   = document.getElementById('fsDown');
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
+  var prevHitBtn  = document.getElementById('prevHit');
+  var nextHitBtn  = document.getElementById('nextHit');
+  var clearBtn    = document.getElementById('clearSearch');
+  var expandAllBtn   = document.getElementById('expandAll');
+  var collapseAllBtn = document.getElementById('collapseAll');
+  var toTopBtn    = document.getElementById('toTop');
+
+  var sections   = [].slice.call(main.querySelectorAll('.section'));
+  var navTargets = [];   /* 目录跳转目标 id（文档顺序，含 h2 与 h3） */
+  var tocItems   = {};   /* id -> 目录 <a> 元素 */
+  var hits       = [];   /* 当前搜索命中的 <mark> 列表 */
+  var hitIndex   = -1;
+  var searchTimer = null;
+  var rafPending  = false;
+  var activeId    = '';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+  /* ================= 通用工具 ================= */
+
+  /** 安全读取 localStorage（隐私模式下可能抛错）。 */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  /** 安全写入 localStorage。 */
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* 忽略 */ }
+  }
+  /** 顶栏当前高度（移动端换行后会变高）。 */
+  function topbarHeight() {
+    return topbar ? topbar.offsetHeight : 58;
+  }
+  /** 取标题纯文本（剔除章节序号与折叠箭头）。 */
+  function headingText(heading) {
+    var clone = heading.cloneNode(true);
+    var junk = clone.querySelectorAll('.chapter-num, .sec-caret');
+    for (var i = 0; i < junk.length; i++) { junk[i].parentNode.removeChild(junk[i]); }
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** 元素是否当前可见（折叠后的内容不可见）。 */
+  function isVisible(el) {
+    return !!(el && el.offsetParent !== null);
+  }
+
+  /* ================= 主题 ================= */
+
+  function applyTheme(theme) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? '☀' : '🌙';
+    themeBtn.setAttribute('title', next === 'dark' ? '切换到浅色阅读模式' : '切换到深色阅读模式');
+  }
+
+  function initTheme() {
+    var saved = lsGet(STORE_THEME);
+    if (saved !== 'dark' && saved !== 'light') {
+      var prefersDark = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false;
+      saved = prefersDark ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+
+  themeBtn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    lsSet(STORE_THEME, next);
+  });
+
+  /* ================= 字号（三档） ================= */
+
+  function applyFontSize(level) {
+    var idx = FS_LEVELS.indexOf(String(level));
+    if (idx === -1) { idx = 1; }
+    html.setAttribute('data-fs', FS_LEVELS[idx]);
+    fsDownBtn.disabled = (idx === 0);
+    fsUpBtn.disabled = (idx === FS_LEVELS.length - 1);
+    fsDownBtn.style.opacity = idx === 0 ? '.45' : '1';
+    fsUpBtn.style.opacity = idx === FS_LEVELS.length - 1 ? '.45' : '1';
+  }
+
+  function stepFontSize(delta) {
+    var idx = FS_LEVELS.indexOf(html.getAttribute('data-fs'));
+    if (idx === -1) { idx = 1; }
+    var next = Math.min(FS_LEVELS.length - 1, Math.max(0, idx + delta));
+    applyFontSize(FS_LEVELS[next]);
+    lsSet(STORE_FS, FS_LEVELS[next]);
+  }
+
+  function initFontSize() {
+    var saved = lsGet(STORE_FS);
+    applyFontSize(saved === null ? '1' : saved);
+  }
+
+  fsUpBtn.addEventListener('click', function () { stepFontSize(1); });
+  fsDownBtn.addEventListener('click', function () { stepFontSize(-1); });
+
+  /* ================= 章节折叠 / 展开 ================= */
+
+  function setCollapsed(section, collapsed) {
+    var head = section.querySelector('h2.sec-head');
+    if (!head) { return; }
+    if (collapsed) {
+      section.classList.add('collapsed');
+      head.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      head.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function toggleSection(section) {
+    setCollapsed(section, !section.classList.contains('collapsed'));
+    requestActiveUpdate();
+  }
+
+  function expandSection(section) {
+    if (section && section.classList.contains('collapsed')) {
+      setCollapsed(section, false);
+    }
+  }
+
+  sections.forEach(function (section) {
+    var head = section.querySelector('h2.sec-head');
+    var bodyEl = section.querySelector('.sec-body');
+    if (!head || !bodyEl) { return; }
+    if (!bodyEl.id) { bodyEl.id = section.id + '-body'; }
+    head.setAttribute('aria-controls', bodyEl.id);
+
+    head.addEventListener('click', function () { toggleSection(section); });
+    head.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggleSection(section);
+      }
+    });
+  });
+
+  expandAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, false); });
+    requestActiveUpdate();
+  });
+  collapseAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, true); });
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    requestActiveUpdate();
+  });
+
+  /* ================= 目录（TOC）自动生成 ================= */
+
+  function buildToc() {
+    var frag = document.createDocumentFragment();
+    var chapterCount = 0;
+
+    sections.forEach(function (section, sIdx) {
+      if (!section.id) { section.id = 'sec-auto-' + sIdx; }
+
+      var head = section.querySelector('h2.sec-head');
+      var label = head ? headingText(head) : (section.getAttribute('data-toc') || ('第 ' + (sIdx + 1) + ' 节'));
+      var numEl = head ? head.querySelector('.chapter-num') : null;
+      var numText = numEl ? numEl.textContent.trim() : '·';
+      if (head) { chapterCount += 1; }
+
+      frag.appendChild(makeTocItem(section.id, label, numText, 2));
+      navTargets.push(section.id);
+
+      /* 子节标题（h3）自动提取 */
+      var subs = [].slice.call(section.querySelectorAll('h3'));
+      subs.forEach(function (h3, hIdx) {
+        if (!h3.id) { h3.id = section.id + '-h3-' + (hIdx + 1); }
+        frag.appendChild(makeTocItem(h3.id, headingText(h3), '', 3));
+        navTargets.push(h3.id);
+      });
+    });
+
+    tocNav.appendChild(frag);
+    secCountEl.textContent = String(chapterCount);
+  }
+
+  function makeTocItem(targetId, label, numText, level) {
+    var a = document.createElement('a');
+    a.className = 'toc-item lvl' + level;
+    a.href = '#' + targetId;
+    a.setAttribute('data-target', targetId);
+
+    if (level === 2) {
+      var num = document.createElement('span');
+      num.className = 'toc-num';
+      num.textContent = numText || '·';
+      a.appendChild(num);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'toc-text';
+    txt.textContent = label;
+    a.appendChild(txt);
+
+    tocItems[targetId] = a;
+    return a;
+  }
+
+  /* ================= 平滑滚动与锚点 ================= */
+
+  function scrollToTarget(targetId, updateHash) {
+    var el = document.getElementById(targetId);
+    if (!el) { return; }
+
+    var section = el.closest ? el.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    /* 折叠展开后再量位置，避免坐标错位 */
+    window.requestAnimationFrame(function () {
+      var rect = el.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - 14;
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+      if (updateHash !== false && history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+      }
+      setActive(targetId);
+    });
+  }
+
+  /* 侧边目录点击 */
+  tocNav.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-item') : null;
+    if (!link) { return; }
+    event.preventDefault();
+    scrollToTarget(link.getAttribute('data-target'));
+    closeDrawer();
+  });
+
+  /* 正文内“目 录”清单点击 */
+  main.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-list-link') : null;
+    if (!link) { return; }
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') { return; }
+    event.preventDefault();
+    scrollToTarget(href.slice(1));
+  });
+
+  /* ================= 当前章节高亮（IntersectionObserver + 滚动兜底） ================= */
+
+  /* 上报当前可见小节给原生层（用于"练习当前正文"只取正在看的那一节）。
+     通过隐藏 iframe 触发 philomenu:// scheme，由原生 shouldOverrideUrlLoading 拦截。 */
+  function reportActiveSection(targetId) {
+    try {
+      var el = document.getElementById(targetId);
+      var sec = el && el.closest ? el.closest('.section') : null;
+      // 仅上报顶层小节（sec-N）；封面 / 目录不计入练习范围
+      if (sec && /^sec-\d+$/.test(sec.id)) {
+        var person = 'sartre';
+        var url = 'philomenu://update_person?person=' + encodeURIComponent(person) +
+                  '&section=' + encodeURIComponent(sec.id);
+        var bridge = document.getElementById('__philomenu_bridge');
+        if (!bridge) {
+          bridge = document.createElement('iframe');
+          bridge.id = '__philomenu_bridge';
+          bridge.setAttribute('style', 'display:none;width:0;height:0;border:0;');
+          document.body.appendChild(bridge);
+        }
+        bridge.src = url;
+      }
+    } catch (_) { /* 静默失败，不影响阅读 */ }
+  }
+
+  function setActive(targetId) {
+    if (!targetId || targetId === activeId) { return; }
+    activeId = targetId;
+    reportActiveSection(targetId);
+
+
+
+    for (var key in tocItems) {
+      if (Object.prototype.hasOwnProperty.call(tocItems, key)) {
+        tocItems[key].classList.remove('active');
+        tocItems[key].classList.remove('active-parent');
+      }
+    }
+    var item = tocItems[targetId];
+    if (!item) { return; }
+    item.classList.add('active');
+
+    /* 若命中的是 h3，则同时标记所属大节 */
+    var el = document.getElementById(targetId);
+    var section = el && el.closest ? el.closest('.section') : null;
+    if (section && section.id !== targetId && tocItems[section.id]) {
+      tocItems[section.id].classList.add('active-parent');
+    }
+    keepTocItemVisible(item);
+  }
+
+  function keepTocItemVisible(item) {
+    if (body.classList.contains('toc-open')) { return; }
+    var cRect = tocEl.getBoundingClientRect();
+    var iRect = item.getBoundingClientRect();
+    if (iRect.top < cRect.top + 8) {
+      tocEl.scrollTop -= (cRect.top + 8 - iRect.top);
+    } else if (iRect.bottom > cRect.bottom - 8) {
+      tocEl.scrollTop += (iRect.bottom - (cRect.bottom - 8));
+    }
+  }
+
+  function computeActive() {
+    var boundary = topbarHeight() + 28;
+    var candidate = navTargets.length ? navTargets[0] : '';
+
+    for (var i = 0; i < navTargets.length; i++) {
+      var el = document.getElementById(navTargets[i]);
+      if (!el || !isVisible(el)) { continue; }
+      var top = el.getBoundingClientRect().top;
+      if (top - boundary <= 0) {
+        candidate = navTargets[i];
+      } else {
+        break;
+      }
+    }
+    /* 滚动到底部时强制高亮最后一节 */
+    var docH = document.documentElement.scrollHeight;
+    if (window.pageYOffset + window.innerHeight >= docH - 4 && navTargets.length) {
+      candidate = navTargets[navTargets.length - 1];
+    }
+    setActive(candidate);
+  }
+
+  function requestActiveUpdate() {
+    if (rafPending) { return; }
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      computeActive();
+      updateProgress();
+    });
+  }
+
+  function initObserver() {
+    if (!('IntersectionObserver' in window)) { return; }
+    var observer = new IntersectionObserver(function () {
+      requestActiveUpdate();
+    }, {
+      root: null,
+      rootMargin: '-' + (topbarHeight() + 10) + 'px 0px -55% 0px',
+      threshold: [0, 0.05, 0.3, 0.6, 1]
+    });
+    sections.forEach(function (section) { observer.observe(section); });
+    var subs = main.querySelectorAll('h3');
+    for (var i = 0; i < subs.length; i++) { observer.observe(subs[i]); }
+  }
+
+  /* ================= 阅读进度条 ================= */
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.pageYOffset / max) * 100 : 0;
+    if (pct < 0) { pct = 0; }
+    if (pct > 100) { pct = 100; }
+    progressBar.style.width = pct.toFixed(2) + '%';
+
+    if (window.pageYOffset > 420) {
+      toTopBtn.classList.remove('hidden');
+    } else {
+      toTopBtn.classList.add('hidden');
+    }
+  }
+
+  toTopBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 全文搜索 ================= */
+
+  /** 清除所有高亮，并把文本节点合并回原状。 */
+  function clearMarks() {
+    var marks = main.querySelectorAll('mark.hit');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+    hits = [];
+    hitIndex = -1;
+  }
+
+  /** 用 <mark class="hit"> 包裹所有 substring 匹配。 */
+  function applyMarks(term) {
+    var query = term.toLowerCase();
+    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var value = node.nodeValue;
+        if (!value || !value.trim()) { return NodeFilter.FILTER_REJECT; }
+        var parent = node.parentNode;
+        if (!parent) { return NodeFilter.FILTER_REJECT; }
+        var tag = parent.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') { return NodeFilter.FILTER_REJECT; }
+        if (value.toLowerCase().indexOf(query) === -1) { return NodeFilter.FILTER_REJECT; }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
+    var targets = [];
+    while (walker.nextNode()) { targets.push(walker.currentNode); }
+
+    for (var i = 0; i < targets.length; i++) {
+      var node = targets[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      var idx = lower.indexOf(query, cursor);
+
+      while (idx !== -1) {
+        if (idx > cursor) {
+          frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        cursor = idx + query.length;
+        idx = lower.indexOf(query, cursor);
+      }
+      if (cursor < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      if (node.parentNode) { node.parentNode.replaceChild(frag, node); }
+    }
+
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+  }
+
+  /** 在目录上标注每节命中数量。 */
+  function updateTocHits() {
+    for (var key in tocItems) {
+      if (!Object.prototype.hasOwnProperty.call(tocItems, key)) { continue; }
+      var badge = tocItems[key].querySelector('.toc-hits');
+      if (badge) { badge.parentNode.removeChild(badge); }
+    }
+    if (!hits.length) { return; }
+    sections.forEach(function (section) {
+      var count = section.querySelectorAll('mark.hit').length;
+      var item = tocItems[section.id];
+      if (!count || !item) { return; }
+      var badge = document.createElement('span');
+      badge.className = 'toc-hits';
+      badge.textContent = String(count);
+      item.appendChild(badge);
+    });
+  }
+
+  function gotoHit(index) {
+    if (!hits.length) { return; }
+    var total = hits.length;
+    hitIndex = ((index % total) + total) % total;
+
+    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove('current'); }
+    var target = hits[hitIndex];
+    target.classList.add('current');
+
+    var section = target.closest ? target.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    window.requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - Math.max(window.innerHeight * 0.28, 90);
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+    renderCount();
+  }
+
+  function renderCount() {
+    var term = searchInput.value.trim();
+    if (!term) {
+      searchCount.textContent = '';
+      return;
+    }
+    if (!hits.length) {
+      searchCount.textContent = '无匹配';
+      return;
+    }
+    searchCount.textContent = (hitIndex >= 0 ? (hitIndex + 1) + '/' : '') + hits.length + ' 处';
+  }
+
+  function toggleSearchButtons(show) {
+    prevHitBtn.hidden = !show;
+    nextHitBtn.hidden = !show;
+    clearBtn.hidden = !show;
+  }
+
+  function runSearch() {
+    var term = searchInput.value.trim();
+    clearMarks();
+
+    if (!term) {
+      updateTocHits();
+      toggleSearchButtons(false);
+      renderCount();
+      return;
+    }
+
+    applyMarks(term);
+    updateTocHits();
+    toggleSearchButtons(true);
+
+    /* 展开所有含命中的章节，避免匹配被折叠隐藏 */
+    sections.forEach(function (section) {
+      if (section.querySelector('mark.hit')) { expandSection(section); }
+    });
+    /* 折叠状态可能变化，重新收集顺序 */
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+
+    if (hits.length) {
+      gotoHit(0);
+    } else {
+      renderCount();
+    }
+  }
+
+  searchInput.addEventListener('input', function () {
+    if (searchTimer) { window.clearTimeout(searchTimer); }
+    searchTimer = window.setTimeout(runSearch, 180);
+  });
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = null; }
+      if (!hits.length) {
+        runSearch();
+      } else {
+        gotoHit(hitIndex + (event.shiftKey ? -1 : 1));
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      resetSearch();
+    }
+  });
+
+  function resetSearch() {
+    searchInput.value = '';
+    clearMarks();
+    updateTocHits();
+    toggleSearchButtons(false);
+    renderCount();
+    searchInput.blur();
+  }
+
+  clearBtn.addEventListener('click', resetSearch);
+  nextHitBtn.addEventListener('click', function () { gotoHit(hitIndex + 1); });
+  prevHitBtn.addEventListener('click', function () { gotoHit(hitIndex - 1); });
+
+  /* ================= 移动端抽屉 ================= */
+
+  function openDrawer() {
+    body.classList.add('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!body.classList.contains('toc-open')) { return; }
+    body.classList.remove('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (body.classList.contains('toc-open')) { closeDrawer(); } else { openDrawer(); }
+  });
+  scrim.addEventListener('click', closeDrawer);
+
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 768) { closeDrawer(); }
+    requestActiveUpdate();
+  });
+
+  /* ================= 全局键盘快捷键 ================= */
+
+  document.addEventListener('keydown', function (event) {
+    if (typeof event.key !== 'string') { return; }
+    var tag = (event.target && event.target.nodeName) || '';
+    var typing = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT');
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      searchInput.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  /* ================= 滚动监听 ================= */
+
+  window.addEventListener('scroll', requestActiveUpdate, { passive: true });
+
+  /* ================= 初始化 ================= */
+
+  initTheme();
+  initFontSize();
+  buildToc();
+  initObserver();
+  updateProgress();
+  computeActive();
+
+  /* 带 hash 进入时定位到对应章节 */
+  if (window.location.hash.length > 1) {
+    var initialId = decodeURIComponent(window.location.hash.slice(1));
+    if (document.getElementById(initialId)) {
+      window.setTimeout(function () { scrollToTarget(initialId, false); }, 60);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>

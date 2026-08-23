@@ -89,6 +89,14 @@ object AppPrefs {
     /** 底部导航栏开关：开启后底部显示 首页/我的文章/数据 三个入口，首页左下角入口按钮隐藏 */
     val bottomNavEnabledFlow: StateFlow<Boolean> = _bottomNavEnabledFlow.asStateFlow()
 
+    private val _builtInLibraryEnabledFlow = MutableStateFlow(false)
+    /** 内置素材库开关：开启后底部导航栏新增「素材库」入口，可在应用内离线查看内置的西方思想素材 */
+    val builtInLibraryEnabledFlow: StateFlow<Boolean> = _builtInLibraryEnabledFlow.asStateFlow()
+
+    private val _onboardingSeenFlow = MutableStateFlow(false)
+    /** 首次使用引导页是否已看过（首启展示一次，之后可在设置里重看） */
+    val onboardingSeenFlow: StateFlow<Boolean> = _onboardingSeenFlow.asStateFlow()
+
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -108,6 +116,8 @@ object AppPrefs {
         _aiSearchEnabledFlow.value = prefs.getBoolean("ai_search_enabled", false)
         _useSimilarityRatingFlow.value = prefs.getBoolean("use_similarity_rating", true)
         _bottomNavEnabledFlow.value = prefs.getBoolean("bottom_nav_enabled", true)
+        _builtInLibraryEnabledFlow.value = prefs.getBoolean("built_in_library_enabled", false)
+        _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
     }
 
     var predictiveBackEnabled: Boolean
@@ -262,6 +272,26 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("bottom_nav_enabled", value) }
                 _bottomNavEnabledFlow.value = value
+            }
+        }
+
+    /** 内置素材库开关（开启后底部导航栏出现「素材库」入口，可离线查看内置西方思想内容） */
+    var builtInLibraryEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("built_in_library_enabled", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("built_in_library_enabled", value) }
+                _builtInLibraryEnabledFlow.value = value
+            }
+        }
+
+    /** 首次使用引导页是否已看过；首启展示一次后置为 true，之后可从设置里重看 */
+    var onboardingSeen: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("onboarding_seen", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("onboarding_seen", value) }
+                _onboardingSeenFlow.value = value
             }
         }
 

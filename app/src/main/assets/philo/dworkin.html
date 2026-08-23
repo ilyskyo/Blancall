@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-fs="1">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="德沃金（1931 — 2013）高考写作素材：生平、著作、核心思想与写作应用提示。">
+<title>德沃金 · 哲思化写作素材</title>
+<style>
+/* =====================================================================
+   萨特 · 写作素材（可交互单页站点）
+   纯静态：HTML + CSS + 原生 JS，无外部依赖，可离线运行
+   ===================================================================== */
+
+/* ---------- 变量：主题 ---------- */
+:root{
+  --topbar-h: 58px;
+  --toc-w: 272px;
+  --content-max: 46rem;
+  --fs-root: 17px;
+  --radius: 10px;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+html[data-theme="light"]{
+  --bg:#f3f1ec;
+  --paper:#ffffff;
+  --ink:#1b1b1b;
+  --ink-soft:#333333;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --line:#e6e2da;
+  --line-mid:#cfc9bf;
+  --line-strong:#1b1b1b;
+  --accent:#b0742a;
+  --accent-soft:rgba(176,116,42,.10);
+  --accent-ink:#ffffff;
+  --num-bg:#1b1b1b;
+  --num-ink:#ffffff;
+  --quote-bg:#f7f4ee;
+  --box-bg:#ffffff;
+  --col-bg:#faf8f3;
+  --mark-bg:#ffe680;
+  --mark-ink:#1b1b1b;
+  --mark-cur:#ff9f2e;
+  --topbar-bg:rgba(255,255,255,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.06);
+  --shadow-2:0 8px 26px rgba(0,0,0,.16);
+  --btn-bg:#ffffff;
+  --btn-bg-hover:#f0ece4;
+  --field-bg:#f6f3ed;
+}
+html[data-theme="dark"]{
+  --bg:#12140f;
+  --paper:#1a1c16;
+  --ink:#e9e4d8;
+  --ink-soft:#d4cebf;
+  --muted:#9c968a;
+  --faint:#7e786d;
+  --line:#2a2c24;
+  --line-mid:#3a3c32;
+  --line-strong:#6e7464;
+  --accent:#e6b06a;
+  --accent-soft:rgba(230,176,106,.16);
+  --accent-ink:#16120a;
+  --num-bg:#e6b06a;
+  --num-ink:#16120a;
+  --quote-bg:#20221b;
+  --box-bg:#1d1f18;
+  --col-bg:#20221b;
+  --mark-bg:#7d6200;
+  --mark-ink:#fff6d8;
+  --mark-cur:#c9761a;
+  --topbar-bg:rgba(18,20,15,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  --shadow-2:0 8px 26px rgba(0,0,0,.5);
+  --btn-bg:#22251d;
+  --btn-bg-hover:#2b2e24;
+  --field-bg:#22251d;
+}
+/* ---------- 字号三档 ---------- */
+html[data-fs="0"]{ --fs-root:15px; }
+html[data-fs="1"]{ --fs-root:17px; }
+html[data-fs="2"]{ --fs-root:19.5px; }
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:auto; }
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:var(--fs-root);
+  line-height:1.85;
+  -webkit-text-size-adjust:100%;
+  transition:background-color .25s var(--ease), color .25s var(--ease);
+}
+
+/* ---------- 无障碍：跳到正文 ---------- */
+.skip-link{
+  position:absolute; left:-9999px; top:0; z-index:2000;
+  background:var(--accent); color:var(--accent-ink);
+  padding:8px 14px; border-radius:0 0 var(--radius) 0; font-family:var(--sans); font-size:.85rem;
+}
+.skip-link:focus{ left:0; }
+
+/* =====================  顶栏  ===================== */
+.topbar{
+  position:sticky; top:0; z-index:900;
+  display:flex; align-items:center; gap:10px;
+  height:var(--topbar-h);
+  padding:0 14px;
+  background:var(--topbar-bg);
+  backdrop-filter:saturate(150%) blur(10px);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+.tb-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.tb-right{ display:flex; align-items:center; gap:6px; }
+
+.site-title{
+  font-family:var(--sans);
+  font-size:.94rem;
+  font-weight:800;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--ink);
+}
+.site-title .dot{ color:var(--accent); margin:0 .15em; }
+.site-title .st-sub{ font-weight:500; color:var(--muted); }
+
+
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-width:34px; height:34px; padding:0 9px;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1;
+  color:var(--ink); background:var(--btn-bg);
+  border:1px solid var(--line-mid); border-radius:8px;
+  cursor:pointer; user-select:none;
+  transition:background-color .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease);
+}
+.icon-btn:hover{ background:var(--btn-bg-hover); }
+.icon-btn:active{ transform:translateY(1px); }
+.icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.menu-btn{ display:none; }
+
+/* 搜索框 */
+.search-wrap{
+  position:relative;
+  display:flex; align-items:center;
+  width:100%; max-width:430px;
+  height:36px;
+  background:var(--field-bg);
+  border:1px solid var(--line-mid);
+  border-radius:999px;
+  padding:0 8px 0 12px;
+  transition:border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.search-wrap:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.search-icon{ font-size:.8rem; opacity:.65; margin-right:6px; }
+#searchInput{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  font-family:var(--sans); font-size:.86rem; color:var(--ink);
+}
+#searchInput::placeholder{ color:var(--faint); }
+#searchInput::-webkit-search-cancel-button{ display:none; }
+.search-count{
+  font-family:var(--sans); font-size:.74rem; color:var(--muted);
+  white-space:nowrap; margin:0 4px; font-variant-numeric:tabular-nums;
+}
+.search-nav{
+  display:flex; gap:2px;
+}
+.mini-btn{
+  width:22px; height:22px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:.7rem; line-height:1;
+  color:var(--muted); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.mini-btn:hover{ background:var(--btn-bg-hover); color:var(--ink); }
+.mini-btn[hidden]{ display:none; }
+
+/* 阅读进度条 */
+.progress{
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:3px; background:transparent; overflow:hidden;
+}
+.progress-bar{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, var(--accent), var(--num-bg));
+  transition:width .08s linear;
+}
+
+/* =====================  布局  ===================== */
+.layout{
+  display:flex;
+  align-items:flex-start;
+  gap:26px;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 18px;
+}
+
+/* ---------- 侧边目录 ---------- */
+.toc{
+  position:sticky;
+  top:var(--topbar-h);
+  flex:0 0 var(--toc-w);
+  width:var(--toc-w);
+  max-height:calc(100vh - var(--topbar-h));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:20px 8px 28px 0;
+  font-family:var(--sans);
+}
+.toc-head{
+  font-size:.72rem; font-weight:800; letter-spacing:.24em;
+  color:var(--muted); text-transform:uppercase;
+  padding:0 10px 10px; border-bottom:1px solid var(--line); margin-bottom:8px;
+}
+.toc-nav{ display:flex; flex-direction:column; }
+.toc-item{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:6px 10px;
+  color:var(--ink-soft); text-decoration:none;
+  border-left:2px solid transparent;
+  border-radius:0 6px 6px 0;
+  line-height:1.45;
+  transition:background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.toc-item:hover{ background:var(--accent-soft); color:var(--ink); }
+.toc-item.lvl2{ font-size:.85rem; font-weight:700; margin-top:6px; }
+.toc-item.lvl3{ font-size:.79rem; font-weight:400; padding-left:30px; color:var(--muted); }
+.toc-item .toc-num{
+  flex:0 0 auto;
+  font-size:.68rem; font-weight:800;
+  min-width:1.35em; text-align:center;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:4px;
+  padding:0 2px; line-height:1.5;
+  margin-top:.15em;
+}
+.toc-item.active{
+  color:var(--accent); background:var(--accent-soft);
+  border-left-color:var(--accent); font-weight:800;
+}
+.toc-item.active .toc-num{ color:var(--accent); border-color:var(--accent); }
+.toc-item.active-parent{ color:var(--ink); border-left-color:var(--line-strong); }
+.toc-item .toc-hits{
+  margin-left:auto; flex:0 0 auto;
+  font-size:.68rem; font-weight:700;
+  color:var(--accent-ink); background:var(--accent);
+  border-radius:999px; padding:0 6px; line-height:1.6;
+}
+.toc-foot{
+  margin-top:14px; padding:10px 10px 0;
+  border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--faint);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+}
+.link-btn{
+  background:none; border:0; padding:0;
+  font-family:var(--sans); font-size:.72rem; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.link-btn:hover{ opacity:.75; }
+.scrim{
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,.45);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s var(--ease);
+}
+
+/* ---------- 正文容器 ---------- */
+.content{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:var(--content-max);
+  margin:0 auto;
+  padding:22px 0 90px;
+}
+
+/* ---------- 章节卡片 ---------- */
+.section{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-1);
+  padding:26px 30px 24px;
+  margin:0 0 20px;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+  transition:background-color .25s var(--ease), border-color .25s var(--ease);
+}
+.section:target{ border-color:var(--accent); }
+
+/* 可折叠标题 */
+h2.sec-head{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--sans);
+  font-size:1.42em; font-weight:800; letter-spacing:.03em;
+  margin:0 0 12px; padding:0 0 8px;
+  border-bottom:2px solid var(--line-strong);
+  cursor:pointer; user-select:none;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h2.sec-head:hover .h2-text{ color:var(--accent); }
+h2.sec-head:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+h2.sec-head .chapter-num{
+  flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55em; height:1.55em;
+  font-size:.72em; font-weight:800;
+  background:var(--num-bg); color:var(--num-ink);
+  border-radius:4px;
+}
+h2.sec-head .h2-text{ flex:1 1 auto; transition:color .15s var(--ease); }
+h2.sec-head .sec-caret{
+  flex:0 0 auto;
+  font-size:.62em; color:var(--muted);
+  transition:transform .22s var(--ease);
+}
+.section.collapsed h2.sec-head{ border-bottom-color:var(--line-mid); margin-bottom:0; }
+.section.collapsed h2.sec-head .sec-caret{ transform:rotate(-90deg); }
+.section.collapsed .sec-body{ display:none; }
+.sec-body{ animation:fadeIn .22s var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:none;} }
+
+/* ---------- 正文排版 ---------- */
+h3{
+  font-family:var(--sans);
+  font-size:1.06em; font-weight:700;
+  margin:1.5em 0 .55em; color:var(--ink);
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h3::before{ content:"▪"; margin-right:.5em; color:var(--accent); }
+h4{
+  font-family:var(--sans);
+  font-size:.95em; font-weight:700;
+  margin:1.1em 0 .4em; color:var(--ink-soft);
+}
+p{ margin:0 0 .72em; text-align:justify; text-indent:2em; }
+p.no-indent{ text-indent:0; }
+ul, ol{ margin:.5em 0 .9em; padding-left:1.6em; }
+li{ margin-bottom:.35em; text-align:justify; }
+strong{ font-weight:700; color:var(--ink); }
+em{ font-style:normal; }
+
+blockquote{
+  margin:1em 0; padding:.7em 1em;
+  border-left:3px solid var(--accent);
+  background:var(--quote-bg);
+  font-size:.96em; line-height:1.78;
+  border-radius:0 6px 6px 0;
+}
+blockquote p{ text-indent:0; margin:0 0 .4em; }
+blockquote p:last-child{ margin-bottom:0; }
+blockquote cite{
+  display:block; text-align:right;
+  font-size:.86em; color:var(--muted); font-style:normal; margin-top:.5em;
+}
+
+.box{
+  margin:1em 0; padding:.85em 1em;
+  border:1px solid var(--line-mid);
+  background:var(--box-bg);
+  border-radius:8px;
+}
+.box-title{
+  font-family:var(--sans);
+  font-size:.78em; font-weight:800; letter-spacing:.16em;
+  color:var(--accent);
+  margin-bottom:.6em; padding-bottom:.35em;
+  border-bottom:1px solid var(--line);
+}
+.box p{ text-indent:0; margin-bottom:.45em; }
+.box p:last-child{ margin-bottom:0; }
+.box dl{ margin:0; }
+.box dt{
+  font-family:var(--sans); font-weight:700; font-size:.84em;
+  margin-top:.6em; color:var(--muted); letter-spacing:.05em;
+}
+.box dd{ margin:.15em 0 .55em; font-size:.96em; text-align:justify; }
+
+.term{
+  font-family:var(--sans); font-weight:700;
+  border-bottom:1px solid var(--line-strong);
+  padding-bottom:1px;
+}
+
+.summary{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin:1em 0;
+}
+.summary .col{
+  padding:.8em .9em;
+  background:var(--col-bg);
+  border-top:2px solid var(--line-strong);
+  border-radius:0 0 6px 6px;
+}
+.summary .col-title{
+  font-family:var(--sans); font-weight:800; font-size:.82em;
+  margin-bottom:.5em; letter-spacing:.08em;
+}
+.summary .col p{ text-indent:0; font-size:.92em; margin:0 0 .45em; }
+.summary .col p:last-child{ margin-bottom:0; }
+
+.src-note{
+  font-size:.78em; color:var(--faint);
+  margin:1.1em 0 0; padding-top:.5em;
+  border-top:1px dotted var(--line-mid);
+  text-align:left; text-indent:0;
+}
+.footer-note{
+  margin-top:1.4em; padding-top:.7em;
+  border-top:1px solid var(--line);
+  font-size:.8em; color:var(--muted); text-align:center; text-indent:0;
+}
+.center{ text-align:center; }
+.small{ font-size:.9em; }
+
+/* ---------- 封面 ---------- */
+.section-cover{ padding:0; overflow:hidden; }
+.cover{
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center;
+  padding:58px 26px 34px;
+}
+.cover-tag{
+  font-family:var(--sans);
+  font-size:.72rem; letter-spacing:.4em;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:3px;
+  padding:5px 12px 5px 16px; margin-bottom:34px;
+}
+.cover h1{
+  font-family:var(--sans);
+  font-size:2.6em; font-weight:900; line-height:1.2;
+  margin:0 0 14px; letter-spacing:.08em;
+}
+.cover-subtitle{
+  font-size:1.02em; color:var(--ink-soft);
+  margin-bottom:26px; letter-spacing:.14em;
+}
+.cover-line{ width:150px; height:2px; background:var(--line-strong); margin:0 auto 22px; }
+.cover-source{ font-size:.96em; color:var(--muted); line-height:2; }
+.cover-foot{
+  margin-top:34px; padding-top:14px;
+  border-top:1px solid var(--line);
+  width:100%; max-width:520px;
+  font-size:.78em; color:var(--faint); letter-spacing:.08em;
+}
+
+/* ---------- 原印刷目录（正文内） ---------- */
+.toc-list{ list-style:none; padding:0; margin:.4em 0 0; }
+.toc-list li{ border-bottom:1px dotted var(--line-mid); }
+.toc-list li:last-child{ border-bottom:none; }
+.toc-list-link{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:.5em .3em; color:var(--ink); text-decoration:none;
+  border-radius:6px;
+  transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.toc-list-link:hover{ background:var(--accent-soft); color:var(--accent); }
+.toc-list .num{
+  font-family:var(--sans); font-weight:800;
+  margin-right:.6em; color:var(--muted);
+}
+.toc-list .title{ font-size:.98em; }
+.toc-list .author{
+  font-family:var(--sans);
+  font-size:.76em; color:var(--faint); white-space:nowrap;
+}
+
+/* ---------- 搜索高亮 ---------- */
+mark.hit{
+  background:var(--mark-bg); color:var(--mark-ink);
+  border-radius:2px; padding:0 1px;
+  scroll-margin-top:calc(var(--topbar-h) + 90px);
+}
+mark.hit.current{
+  background:var(--mark-cur); color:#fff;
+  box-shadow:0 0 0 2px var(--mark-cur);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.fab-group{
+  position:fixed; right:18px; bottom:18px; z-index:880;
+  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px;
+}
+.fab{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:10px 16px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink);
+  font-family:var(--sans); font-size:.84rem; font-weight:700;
+  text-decoration:none; border:0; cursor:pointer;
+  box-shadow:var(--shadow-2);
+  transition:transform .15s var(--ease), opacity .2s var(--ease);
+}
+.fab:hover{ transform:translateY(-2px); }
+.fab.fab-mini{
+  width:40px; height:40px; padding:0; justify-content:center;
+  font-size:1rem;
+  background:var(--btn-bg); color:var(--ink);
+  border:1px solid var(--line-mid);
+}
+.fab.hidden{ opacity:0; pointer-events:none; transform:translateY(8px); }
+
+/* ---------- 移动端 ---------- */
+@media (max-width:900px){
+  .layout{ gap:16px; padding:0 12px; }
+  :root{ --toc-w:240px; }
+}
+@media (max-width:768px){
+  :root{ --topbar-h:54px; }
+  .menu-btn{ display:inline-flex; }
+  .site-title .st-sub{ display:none; }
+  .tb-center{ order:3; flex:0 0 100%; }
+  .topbar{ flex-wrap:wrap; height:auto; padding:8px 10px 10px; gap:8px; row-gap:8px; }
+  .tb-left{ flex:1 1 auto; }
+  .search-wrap{ max-width:none; height:34px; }
+  .layout{ display:block; padding:0 10px; }
+  .content{ max-width:none; padding:14px 0 96px; }
+  .section{ padding:20px 16px 18px; border-radius:8px; }
+  .summary{ grid-template-columns:1fr; }
+  .cover{ padding:40px 18px 26px; }
+  .cover h1{ font-size:2.1em; }
+  .cover-tag{ margin-bottom:24px; }
+
+  /* TOC 抽屉 */
+  .toc{
+    position:fixed; top:0; left:0; bottom:0; z-index:860;
+    width:80vw; max-width:320px;
+    max-height:none; height:100%;
+    padding:18px 10px 24px 14px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    box-shadow:var(--shadow-2);
+    transform:translateX(-102%);
+    transition:transform .26s var(--ease);
+  }
+  body.toc-open .toc{ transform:translateX(0); }
+  body.toc-open .scrim{ opacity:1; pointer-events:auto; }
+  body.toc-open{ overflow:hidden; }
+  .fab-group{ right:12px; bottom:12px; }
+  .fab{ padding:9px 14px; font-size:.8rem; }
+  p{ text-indent:2em; }
+}
+@media (max-width:420px){
+  .icon-btn .btn-txt{ display:none; }
+  .toc-list-link{ flex-wrap:wrap; }
+}
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+
+/* =====================================================================
+   打印样式：隐藏所有交互界面，恢复干净的 A4 印刷排版
+   ===================================================================== */
+@page{
+  size:A4;
+  margin:20mm 18mm 20mm 18mm;
+}
+@media print{
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    font-family:var(--serif);
+    font-size:11pt !important;
+    line-height:1.85;
+  }
+  html{
+    --paper:#fff; --ink:#000; --ink-soft:#222; --muted:#666; --faint:#999;
+    --line:#ddd; --line-mid:#ccc; --line-strong:#000;
+    --accent:#000; --accent-soft:transparent; --accent-ink:#fff;
+    --num-bg:#000; --num-ink:#fff;
+    --quote-bg:#f7f7f7; --box-bg:#fff; --col-bg:#fafafa;
+  }
+  .topbar, .toc, .scrim, .fab-group, .progress, .skip-link, .sec-caret, .search-wrap{
+    display:none !important;
+  }
+  .layout{ display:block; max-width:none; padding:0; margin:0; }
+  .content{ max-width:none; margin:0; padding:0; }
+  .section{
+    background:#fff !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    page-break-before:always;
+    page-break-inside:auto;
+  }
+  .section:first-of-type{ page-break-before:auto; }
+  .section.collapsed .sec-body{ display:block !important; }
+  .sec-body{ animation:none !important; }
+  h2.sec-head{
+    display:block; cursor:auto;
+    font-size:18pt !important; font-weight:800;
+    margin:0 0 10pt !important; padding-bottom:6pt;
+    border-bottom:2pt solid #000 !important;
+    page-break-after:avoid;
+  }
+  h2.sec-head .chapter-num{
+    display:inline-block; width:28pt; height:28pt; line-height:28pt;
+    text-align:center; font-size:14pt; border-radius:0;
+    background:#000 !important; color:#fff !important;
+    margin-right:10pt; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h2.sec-head .h2-text{ display:inline; }
+  h3{ font-size:13pt !important; page-break-after:avoid; }
+  h3::before{ color:#666 !important; }
+  h4{ font-size:11pt !important; page-break-after:avoid; }
+  p{ orphans:2; widows:2; }
+  blockquote, .box, .summary, .cover-source{ page-break-inside:avoid; }
+  blockquote{
+    background:#f7f7f7 !important; border-left:3pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .box{ border:1pt solid #333 !important; border-radius:0; }
+  .box-title{ color:#000 !important; text-transform:uppercase; }
+  .summary .col{
+    background:#fafafa !important; border-top:2pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .section-cover{ padding:0 !important; }
+  .cover{ min-height:245mm; padding:0 !important; justify-content:center; }
+  .cover h1{ font-size:32pt !important; }
+  .cover-subtitle{ font-size:14pt !important; }
+  .cover-line{ width:60mm; background:#000 !important; }
+  .cover-foot{ border-top:0; margin-top:60mm; }
+  .toc-list-link{ color:#000 !important; text-decoration:none; padding:8pt 0; }
+  .toc-list li{ border-bottom:.5pt dotted #bbb; }
+  mark.hit, mark.hit.current{
+    background:transparent !important; color:inherit !important;
+    box-shadow:none !important; padding:0;
+  }
+  a{ color:inherit !important; text-decoration:none !important; }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar" id="topbar">
+  <div class="tb-left">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开或关闭目录" aria-expanded="false" aria-controls="toc">☰<span class="btn-txt">菜单</span></button>
+    <span class="site-title">德沃金<span class="dot">·</span><span class="st-sub">写作素材</span></span>
+  </div>
+
+  <div class="tb-center">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="searchInput" type="search" placeholder="全文搜索：平等的关怀与尊重 / 敏于志向钝于禀赋 / 权利作为王牌 …" autocomplete="off" spellcheck="false" aria-label="全文搜索">
+      <span class="search-count" id="searchCount" aria-live="polite"></span>
+      <span class="search-nav">
+        <button class="mini-btn" id="prevHit" type="button" hidden aria-label="上一处匹配">▲</button>
+        <button class="mini-btn" id="nextHit" type="button" hidden aria-label="下一处匹配">▼</button>
+        <button class="mini-btn" id="clearSearch" type="button" hidden aria-label="清空搜索">✕</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tb-right">
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色/浅色主题" title="切换深色 / 浅色阅读模式">🌙</button>
+    <button class="icon-btn" id="fsDown" type="button" aria-label="缩小字号" title="缩小正文字号">A−</button>
+    <button class="icon-btn" id="fsUp" type="button" aria-label="放大字号" title="放大正文字号">A＋</button>
+  </div>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== 主体布局 ===================== -->
+<div class="layout">
+
+  <aside class="toc" id="toc" aria-label="章节目录">
+    <div class="toc-head">目录导航</div>
+    <nav class="toc-nav" id="tocNav"></nav>
+    <div class="toc-foot">
+      <span>共 <span id="secCount">0</span> 节</span>
+      <button class="link-btn" id="expandAll" type="button">全部展开</button>
+      <button class="link-btn" id="collapseAll" type="button">全部折叠</button>
+    </div>
+  </aside>
+
+  <main class="content" id="main">
+
+    <section class="section section-cover" id="sec-cover" data-toc="封面 · 人物名片">
+      <div class="cover">
+        <div class="cover-tag">高考写作素材</div>
+        <h1>德沃金</h1>
+        <div class="cover-subtitle">现代西方思想史 · 认真对待权利</div>
+        <div class="cover-line"></div>
+        <div class="cover-source">1931 — 2013<br>
+美国法哲学家 · 牛津与纽约大学教授<br>
+“权利是王牌” · “敏于志向，钝于禀赋” · “自由主义的平等观”</div>
+        <div class="cover-foot">本册为单人物深度版 · 含生平、著作、核心思想与写作应用</div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-contents">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="h2-text">目 录</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <ul class="toc-list">
+          <li><a class="toc-list-link" href="#sec-1"><span><span class="num">01</span><span class="title">人物定位与速览</span></span><span class="author">一句话读懂</span></a></li>
+          <li><a class="toc-list-link" href="#sec-2"><span><span class="num">02</span><span class="title">生平：从律所到牛津法理学教席</span></span><span class="author">经历如何长成思想</span></a></li>
+          <li><a class="toc-list-link" href="#sec-3"><span><span class="num">03</span><span class="title">主要著作与学术成就</span></span><span class="author">一条从“认真对待权利”到“整体性”的线索</span></a></li>
+          <li><a class="toc-list-link" href="#sec-4"><span><span class="num">04</span><span class="title">核心思想（一）平等的尊重与关怀</span></span><span class="author">追求平等是为了什么</span></a></li>
+          <li><a class="toc-list-link" href="#sec-5"><span><span class="num">05</span><span class="title">核心思想（二）敏于志向，钝于禀赋</span></span><span class="author">运气与应得</span></a></li>
+          <li><a class="toc-list-link" href="#sec-6"><span><span class="num">06</span><span class="title">核心思想（三）权利作为王牌</span></span><span class="author">认真对待权利</span></a></li>
+          <li><a class="toc-list-link" href="#sec-7"><span><span class="num">07</span><span class="title">核心思想（四）法律作为整体性</span></span><span class="author">法官不是机器，是解释者</span></a></li>
+          <li><a class="toc-list-link" href="#sec-8"><span><span class="num">08</span><span class="title">核心思想（五）资源平等</span></span><span class="author">把运气拉平，把选择留给个人</span></a></li>
+          <li><a class="toc-list-link" href="#sec-9"><span><span class="num">09</span><span class="title">我们该如何理解德沃金</span></span><span class="author">对今天的意义</span></a></li>
+          <li><a class="toc-list-link" href="#sec-10"><span><span class="num">10</span><span class="title">写作应用提示</span></span><span class="author">如何用进考场</span></a></li>
+        </ul>
+        <div class="footer-note">本册每节末以灰色小字标注网络文献来源；思想用于论证，生平用于点缀。</div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-1">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">1</span><span class="h2-text">人物定位与速览</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">德沃金是二十世纪下半叶最重要的法哲学家与政治哲学家之一。他同时打两场仗：在法理学上，他论证法律不只是规则，更是原则，法官在疑难案件中必须做出道德的判断——这使他成为法律实证主义最有力的批评者；在政治哲学上，他给出了当代自由派平等观最精致的版本——平等的关怀与尊重。1980年代那场著名的“什么的平等”（equality of what）大辩论中，他的答案是：我们要的不是某个物品分配的均等，而是把人当作平等的人来对待。</p>
+        <blockquote><p>权利是王牌。（Rights are trumps.）</p><cite>—— 德沃金《认真对待权利》（Taking Rights Seriously，1977）第四章</cite></blockquote>
+        <p>“权利是王牌”是说：个人权利在原则上有优先性，它可以压过集体目标的算计——哪怕某项政策能带来更大的总体好处，只要它侵犯了个人的基本权利，就不被允许。这不是对功利的敌视，而是对底线的守护：有些事，多数人赞成、总收益更高也不能做。正是这句话，使他在“个人 vs 集体”这个作文母题上成为极好用的支点。</p>
+        <div class="box no-break"><div class="box-title">速览卡</div><dl><dt>生卒</dt><dd>1931年12月11日生于美国马萨诸塞州伍斯特；2013年2月14日卒于英国伦敦，享年81岁</dd><dt>国籍/身份</dt><dd>美国；法哲学家、政治哲学家、法学家；曾任牛津大学法理学首席教授（1969–1998），后任纽约大学法学院教授（1975年起）与伦敦大学学院教授（2009–2013）</dd><dt>研究领域</dt><dd>法哲学（法律解释、司法推理）、政治哲学（平等、权利、自由主义）、宪法解释；与罗尔斯、诺齐克并称当代政治哲学三大家</dd><dt>核心命题</dt><dd>个人权利是压过集体目标的“王牌”；政府必须“平等地关怀与尊重”每一个公民；法律不只是规则而是“整体性”的解释实践；正义应“敏于志向，钝于禀赋”——回应个人选择、排除天赋运气</dd><dt>代表著作</dt><dd>《认真对待权利》（Taking Rights Seriously，1977）、《原则问题》（A Matter of Principle，1985）、《法律帝国》（Law's Empire，1986）、《至上的美德》（Sovereign Virtue，2000）、《刺猬的正义》（Justice for Hedgehogs，2011）</dd><dt>一句名言</dt><dd>“权利是王牌。”（《认真对待权利》第四章）</dd></dl></div>
+        <p class="src">来源：刘擎《西方现代思想讲义》第34讲（平等问题框架、牛津教席二十年、2013年去世）；Britannica/SEP “Ronald Dworkin”（生卒地、学术履历、代表著作年表）。</p>
+        <p class="src-note">来源：刘擎《西方现代思想讲义》第34讲；Stanford Encyclopedia of Philosophy “Ronald Dworkin”；Britannica “Ronald Dworkin”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-2">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">2</span><span class="h2-text">生平：从律所到牛津法理学教席</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">德沃金1931年生于马萨诸塞州伍斯特。他在哈佛学院读本科，随后作为罗德学者赴牛津深造，再回哈佛法学院，最后在耶鲁法学院获得法学博士。毕业后他先为著名法官勒尼德·汉德（Learned Hand）担任书记员，又在一家大律所执业数年，然后才转入学术——这段“先做实务、再谈理论”的经历，使他后来的法哲学始终贴着真实案件的纹理说话，而不是悬在抽象的上空。</p>
+        <p>1969年，他接替哈特（H. L. A. Hart）出任牛津大学法理学首席教授，长达二十年。正是在这段时间，他写出了对法律实证主义最系统的批判——从1967年那篇著名的《规则模式》（The Model of Rules）开始，到1977年汇集成《认真对待权利》。他与哈特之间绵延多年的论战，是二十世纪法哲学最重要的对话之一。此后他同时在牛津与纽约大学执教，晚年又任教于伦敦大学学院，直到2013年在伦敦去世。</p>
+        <p>刘擎在书中用一句话交代了他的位置：德沃金和罗尔斯、诺齐克都是好朋友。这三位政治哲学家几乎同时定义了当代的论战格局——罗尔斯问分配如何才算公道，诺齐克问凭什么由你来分配，德沃金则问：追求平等到底是为了什么？他给出的答案朴素而有力：为了把人当作平等的人来对待。</p>
+        <div class="box no-break"><div class="box-title">生平可用素材点</div><p>从律所到学院：先做法官书记员与大律师，再谈理论。写“实践的重量”“理论不悬空”时可用。</p><p>接哈特的班：在最强对手的教席上反驳对手的体系。写“论辩的德性”“正面交锋”时可用。</p><p>与罗尔斯、诺齐克是好友：三种针锋相对的立场，出自彼此尊重的同行。写“学术共同体的样子”时极佳。</p><p>两面作战：一边批评实证主义的“规则观”，一边批评功利主义的“加总观”。写“一以贯之”“不讨好任何一方”时可用。</p></div>
+        <p class="src">来源：SEP “Ronald Dworkin”（教育、勒尼德·汉德书记员、牛津接替哈特、《规则模式》）；EBSCO Research Starters “Ronald Dworkin”（律所执业、2009年后任教伦敦大学学院、2013年卒于伦敦）；刘擎《西方现代思想讲义》第34讲（与罗尔斯、诺齐克是好友，牛津教席二十年，2013年去世）。</p>
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy “Ronald Dworkin”；EBSCO Research Starters “Ronald Dworkin”；刘擎《西方现代思想讲义》第34讲</p>
+      </div>
+    </section>
+    <section class="section" id="sec-3">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">3</span><span class="h2-text">主要著作与学术成就</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <h3>《认真对待权利》（1977）：把权利写进法哲学</h3>
+        <p class="no-indent">这本文集标志着德沃金对法律实证主义与功利主义的双重开战。他论证：法律不只是规则（rules），还包括原则（principles）——原则不是非此即彼地适用，而是有分量、可权衡的规范。法官在“疑难案件”（hard cases）中必须依据原则作出道德判断，而不只是机械套用规则或诉诸立法意图。由此他提出著名的口号：权利是王牌。</p>
+        <h3>《法律帝国》（1986）：法律作为整体性</h3>
+        <p class="no-indent">他把成熟的法律理论命名为“法律作为整体性”（law as integrity）：法官应当把整个法律传统解释成一部连贯的道德作品，让每个判决既“契合”（fit）既往判例，又“证成”（justify）其背后的原则。他借“连环小说”作喻——每个法官都是接着上一章往下写的作者；又设想了无所不能的理想法官“赫拉克勒斯”（Hercules）。该书开篇的名句后来被反复引用：“法律帝国是由态度界定的，而不是由疆土、权力或程序界定的。”</p>
+        <h3>《至上的美德》（2000）：资源平等</h3>
+        <p class="no-indent">在这部政治哲学代表作中，他提出“资源平等”（equality of resources）：公平不是让人人拥有同样的物品，而是让人人拥有同样的起点去追求自己的生活计划。他用“嫉妒检验”（envy test）与“拍卖＋保险”的思想实验说明：由天赋运气造成的差别应予补偿，由自愿选择造成的差别则应自负其责。这是他对“什么的平等”问题最完整的回答。</p>
+        <h3>《刺猬的正义》（2011）：价值的统一</h3>
+        <p class="no-indent">晚年这部集大成的著作主张：伦理、道德与政治道德是同一个价值领域的不同部门，不存在不可通约的价值碎片。他用狐狸与刺猬的意象——狐狸知道很多事，刺猬只知道一件大事——为自己的立场命名：他站刺猬一边，相信价值最终是统一的。书名取自古希腊诗人阿基洛库斯的名句“狐狸多知，而刺猬有一大知”。</p>
+        <div class="summary no-break"><div class="col"><div class="col-title">学术贡献</div><p>以“原则与规则之分”重挫法律实证主义，迫使法学界承认道德判断内在于法律推理。</p><p>以“权利是王牌”为个人权利提供了强于任何集体目标算计的论证。</p><p>提出“法律作为整体性”的解释理论，使法哲学与诠释学、政治哲学重新接轨。</p><p>以“资源平等”与“敏于志向，钝于禀赋”给出自由派平等观最精致的版本。</p><p>晚年《刺猬的正义》主张价值统一，回应价值多元论的碎片化。</p></div><div class="col"><div class="col-title">思想史效应</div><p>与罗尔斯、诺齐克构成当代政治哲学的三极，定义了此后数十年论战的基本坐标。</p><p>“什么的平等”之问（equality of what）成为分析平等问题的标准问题框架。</p><p>刘擎《西方现代思想讲义》所讲的现代困境——自由、平等与多元价值如何相容——德沃金给出了一种“自由主义的平等观”的回答。</p><p>他对宪法“道德阅读”（moral reading）的主张，持续影响着今天关于司法审查与权利条款的争论。</p></div></div>
+        <p class="src">来源：SEP “Ronald Dworkin”（各著作主题、《规则模式》、赫拉克勒斯、资源平等、道德阅读）；EBSCO Research Starters “Ronald Dworkin”（连环小说之喻、“法院是法律帝国的首都，法官是帝国的王侯”）；Britannica “Ronald Dworkin”（著作年表）。按：本书目仅列其最常被引用的五部，德沃金另有《生命的主权》《自由的法》等，未逐一展开。</p>
+        <p class="src-note">来源：Stanford Encyclopedia of Philosophy “Ronald Dworkin”；EBSCO Research Starters “Ronald Dworkin”；Britannica “Ronald Dworkin”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-4">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">4</span><span class="h2-text">核心思想（一）平等的尊重与关怀</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">刘擎在书中这样引入德沃金：1980年代西方学术界有一场著名辩论，主题是“什么的平等”（equality of what）——我们究竟要把什么拉平，才算实现了平等？德沃金的理论很复杂，却从一个朴素的问题开始：我们追求平等，到底是为了什么？他的答案更朴素：为了对每个人好，更确切地说，是“一视同仁地对每个人好”。怎么才能做到？他提出两个原则：平等的尊重，平等的关怀。</p>
+        <h3>平等的尊重：把人当人</h3>
+        <p class="no-indent">把人当人，就是尊重每个人的自主性——平等地尊重每个人自己选择的生活目标和方式。德沃金由此推出“国家中立性原则”：对于各种不同的生活理想和方式，只要本人自愿而且不伤害他人，国家就不能干涉，也不应当偏袒，应该一视同仁、保持中立。若国家以“高尚生活”为由，向“刷搞笑视频的人”多征税、去扶持歌剧院与博物馆，在德沃金看来，就是把一些人当成了工具，而非当作人来尊重——这恰恰违背了平等的尊重。</p>
+        <h3>平等的关怀：当作平等的人来对待</h3>
+        <p class="no-indent">但德沃金认为，只有尊重还不够：尊重可以停留在“不干涉”，而对一个人说“我尊重你的选择”然后不再理会。尊重还应更积极——因为实现不同的生活理想都需要资源，公平的做法是为这些理想提供平等的资源。这就引出他的第二个原则：“平等的关怀”。</p>
+        <div class="box no-break"><div class="box-title">关键区分</div><dl><dt>平等的待遇（equal treatment）</dt><dd>给所有人同样的东西。如疫情中给每人免费发五只口罩——形式平等，实际并不平等。</dd><dt>当作平等的人来对待（treating as equals）</dt><dd>考虑处境造成的不同需求。如给近视的弟弟配眼镜、哥哥没有——待遇不同，却是把两人当作平等的人。</dd><dt>国家中立性原则</dt><dd>只要自愿且不伤害他人，国家不得偏袒或贬低任何生活理想；不得把某种生活方式捧为“高尚”、另一些贬为“庸俗”。</dd></dl></div>
+        <p>配眼镜的例子值得反复咀嚼：形式上的平等（都不配）反而制造了实质的不平等；被大家认为“差别对待”的做法，恰恰才是把两个人当作平等的人。德沃金由此提醒我们，平等从来不是“一碗水端平”的算术，而是对人的处境差异保持敏感。</p>
+        <p class="src">来源：刘擎《西方现代思想讲义》第34讲（口罩、配眼镜两例及“当作平等的人来对待”的原文表述）；SEP “Ronald Dworkin”（equal concern and respect 在权利理论中的位置）。按：刘擎书中对“平等的尊重／平等的关怀”的中文表述即“一视同仁地对每个人好”“国家中立性原则”“当作平等的人来对待”，本册沿用其措辞。</p>
+        <p class="src-note">来源：刘擎《西方现代思想讲义》第34讲（本章主体框架与“一视同仁地对每个人好”“国家中立性原则”“当作平等的人来对待”等表述）；Stanford Encyclopedia of Philosophy “Ronald Dworkin”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-5">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">5</span><span class="h2-text">核心思想（二）敏于志向，钝于禀赋</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">“平等的关怀”是否意味着无条件地满足每个人的偏好？刘擎书中的鱼子酱例子给出了否定的答案：发放食品津贴时，有人喜欢花生酱、有人喜欢苹果酱都没问题，但有人声称“我的需求是鱼子酱”——价格贵十倍以上，难道要给他十倍津贴才算“平等的关怀”吗？这听上去就不合适了。</p>
+        <p>德沃金指出了区别：对资源的需求，有些出于自愿选择的偏好（鱼子酱），有些出于环境所迫（疫情重灾区的口罩）。二者不能混为一谈。要实现平等的关怀，首先要识别：哪些需求是自己不能选择的处境造成的，哪些是个人自愿选择的偏好造成的。对前者，应当弥补处境造成的差别；对后者，应当接受选择造成的差异，让个人为自己的选择负责——你喜欢鱼子酱，就自己花钱去买。</p>
+        <p>这与罗尔斯有相似处，又有关键区别。相似处在于：二人都认为，所有自己无法选择的偶然因素（天赋、出身、环境）不应当影响一个人的命运——它们是运气，无论好坏，从道德角度看都是你不应得的。区别在于：罗尔斯只问“处境最差的人”需要什么，却不问他们的处境是如何变差的；德沃金则坚持区分“志向”与“禀赋”——把鱼子酱花光工资而致贫的人，其困苦是自己选择的志向所致，是他应得的处境，不应获得救助；而先天听力障碍者考砸英语听力，则是禀赋所致的坏运气，应当获得助听设备才算公平。</p>
+        <blockquote><p>社会对个人的奖赏或惩罚，应该针对个人的选择——个人的“志向”，而不是针对那些个人无法选择的天赋因素。……这个观点有一个很典雅的中文翻译，叫作“敏于志向，钝于禀赋”。</p><cite>—— 刘擎《西方现代思想讲义》第34讲</cite></blockquote>
+        <p>“敏于志向，钝于禀赋”是一把极锋利的思辨之尺：它同时拒绝两种粗暴——既拒绝“吃大锅饭”（对选择无差别补贴），也拒绝“出身论”（让天赋运气决定命运）。它要求制度在回应个人努力的同时，抹平不可选择的运气。这一区分也让学生作文里常见的“公平”话题立刻有了层次：不是在“平均”与“效率”之间二选一，而是先问差距从何而来。</p>
+        <p class="src">来源：刘擎《西方现代思想讲义》第34讲（鱼子酱、助听设备两例，“敏于志向，钝于禀赋”译法及其与罗尔斯差异原则的对照）；SEP “Ronald Dworkin”（luck egalitarianism 语境下的选择/运气区分）。按：当代学界把此类立场称为“运气平等主义”（luck egalitarianism）的一个变体，德沃金本人并不完全认同该标签，表述时宜以“选择/运气之辨”为主。</p>
+        <p class="src-note">来源：刘擎《西方现代思想讲义》第34讲（鱼子酱、助听设备两例与“敏于志向，钝于禀赋”的典雅译法）；Stanford Encyclopedia of Philosophy “Ronald Dworkin”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-6">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">6</span><span class="h2-text">核心思想（三）权利作为王牌</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">德沃金对“权利”的理解，其锋芒在于对抗“集体目标”。在他的论证里，个人权利像扑克牌中的王牌（trump）：当某个政策只是为了让总体福利更大、让多数人更满意时，权利可以压过它。即便政策的收益很大，只要以牺牲某人的基本权利为代价，它就不被允许。这与功利主义“最大多数人的最大幸福”针锋相对——功利主义允许为了总量牺牲个体，德沃金说：不行。</p>
+        <blockquote><p>权利是王牌。</p><cite>—— 德沃金《认真对待权利》（1977）第四章</cite></blockquote>
+        <p>“王牌”不是“压倒一切”，而是“在多数决与总效用的领域里压过它们”。德沃金并不反对政策（policy）——那些追求集体目标的决定——但他主张，在疑难案件中，判决应当基于原则（principle）而非政策：原则诉诸个体的权利，政策诉诸集体的利益；当二者冲突，权利优先。换句话说，多数人的赞成票不能自动证成对一个人基本权利的剥夺——这正是“认真对待权利”的含义。</p>
+        <p>这套论证的精彩之处在于它不预设任何玄学。它只问一个朴素的问题：如果把权利当作可以随时被“大局”压过的东西，那么所谓权利就只是政策的影子；而如果权利真的存在，它就必须在关键时刻能挡住“大局”。德沃金选择相信后者，并为此把权利牢牢焊在“平等的关怀与尊重”之上——每个人作为平等的生命，值得被当作目的本身来对待。</p>
+        <p class="src">来源：Ronald Dworkin, Taking Rights Seriously, Harvard University Press, 1977（ch.4 “Hard Cases”与 ch.12 中 rights as trumps 的表述）；SEP “Ronald Dworkin”（rights as trumps 的标准解释与限度——权利并非绝对，只在与集体目标的权衡中优先）。按：“王牌”隐喻是对“权利优先于效用计算”的形象表述，德沃金本人亦承认权利之间可相互权衡。</p>
+        <p class="src-note">来源：Ronald Dworkin, Taking Rights Seriously, Harvard University Press, 1977, ch.4 与 ch.12；Stanford Encyclopedia of Philosophy “Ronald Dworkin”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-7">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">7</span><span class="h2-text">核心思想（四）法律作为整体性</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">《法律帝国》是德沃金法哲学的成熟形态。他要同时反驳两种流行的法律观：法律实证主义（法律只是由社会事实确定的规则集合）与法律实用主义（法律就是预测判决的工具）。他主张：法律是一项解释实践——要理解法律，就要把一种有历史、有目的的社会实践解释成最好的样子。</p>
+        <h3>原则与规则：对实证主义的一击</h3>
+        <p class="no-indent">德沃金最早、也最著名的论点是：法律体系不只包含规则（rules），还包含原则（principles）。规则以“全有或全无”的方式适用；原则则具有“分量”与“维度”——如“任何人不得因自己的错误而获利”，它不是非此即彼的开关，而是要在具体案件中权衡。既然法官在疑难案件中必须诉诸原则，而原则无法从任何“承认规则”中推出，那么“法律就是社会事实”的实证主义图景就是错的。</p>
+        <h3>赫拉克勒斯与连环小说</h3>
+        <p class="no-indent">他设想一位理想法官“赫拉克勒斯”——拥有超凡的精力、耐心与能力，把整个法律传统解释为一部连贯的作品，让每个判决既“契合”既往判例，又“证成”其背后的原则。他又用“连环小说”作喻：每个法官都像接着前一位作者往下写的小说家，既要忠实于已写成的部分，又要尽可能把它写得更好。这个比喻把“遵守先例”与“道德判断”统一在同一个动作里：解释。</p>
+        <blockquote><p>法律坚持：无论目的多么有益或高尚，除非得到源自过往政治决定的个人权利与责任的许可，集体强制不得被使用或扣留。</p><cite>—— 德沃金《法律帝国》（1986）第93页</cite></blockquote>
+        <blockquote><p>法律帝国是由态度界定的，而不是由疆土、权力或程序界定的。……法院是法律帝国的首都，法官是帝国的王侯。</p><cite>—— 德沃金《法律帝国》（1986）导言与末章</cite></blockquote>
+        <p>“法律帝国是由态度界定的”——这句话极适合引入作文：法律的力量不来自强制机器，而来自一种“解释的态度”，即每个人把自己看作参与者的态度。这与“制度是死的、人是活的”同构：再严密的规则，若无人以解释的态度去践行，也只是纸面；反之，只要解释的态度还在，制度就能自我更新。</p>
+        <p class="src">来源：Ronald Dworkin, Law's Empire, Harvard University Press, 1986（导言“由态度界定”、p.93 强制条款、末章“法院是法律帝国的首都，法官是帝国的王侯”）；EBSCO Research Starters “Ronald Dworkin”（连环小说之喻、“author in the chain of common law”）；SEP “Ronald Dworkin”（原则与规则之分、赫拉克勒斯）。</p>
+        <p class="src-note">来源：Ronald Dworkin, Law's Empire, Harvard University Press, 1986（导言、p.93、末章）；EBSCO Research Starters “Ronald Dworkin”；Stanford Encyclopedia of Philosophy “Ronald Dworkin”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-8">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">8</span><span class="h2-text">核心思想（五）资源平等</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">如果说“平等的关怀”是原则，那么“资源平等”（equality of resources）就是德沃金给出的制度构想。它的目标是：让每个人在开始追求自己的生活计划时，拥有与他人平等的资源起点——不是结果平等，而是起点平等；不是福利平等，而是资源平等。</p>
+        <h3>嫉妒检验（envy test）</h3>
+        <p class="no-indent">德沃金用一个思想实验来界定“公平分配”：假设一群人漂流到无人荒岛，把资源分成若干堆，由一人“切”、其他人“选”——每个人都不会嫉妒别人的那份，分配就是公平的。他的标准就叫“嫉妒检验”：一种分配是公平的，当且仅当没有人会愿意用自己的那份去换别人的那份。</p>
+        <h3>拍卖与保险：补偿运气，自负选择</h3>
+        <p class="no-indent">但资源各有不同：天赋、健康、才能都是“资源”，却无法用切蛋糕的方式平分。德沃金的应对是“虚拟保险市场”：设想人们在不知道自己天赋高低的情况下，为“运气不好”投保——比如为将来可能残疾、平庸或失业买保险。真实的再分配就被解释为兑现这些保险金：它补偿的是不可选择的运气，而不是任何人的努力。这样一来，天赋运气造成的差距被拉平，而个人选择造成的差距（如勤奋、偏好、挥霍）则完全留给个人负责。</p>
+        <p>这个构想最漂亮的一点，是把“平等”从“结果一样”改写为“规则公平＋运气补偿”。它让“敏于志向，钝于禀赋”有了可操作的形态：制度不知道谁聪明、谁健康，但在保险的意义上，把坏运气造成的损失在事前拉平。用它写“公平”“制度设计”“起点与结果”类题目，比泛泛谈“平均分配”高出整整一个层级。</p>
+        <p class="src">来源：Ronald Dworkin, Sovereign Virtue, Harvard University Press, 2000（资源平等、嫉妒检验、拍卖与保险实验的完整表述）；SEP “Ronald Dworkin”（luck egalitarianism 语境与对资源平等的标准批评：天赋本身难以与人分离地“投保”、激励问题）。按：对资源平等的批评——如“把天赋当作可分配资源会把人工具化”——学界常见，本册在“我们该如何理解德沃金”一节有交代。</p>
+        <p class="src-note">来源：Ronald Dworkin, Sovereign Virtue, Harvard University Press, 2000（equality of resources、envy test、拍卖与保险实验）；Stanford Encyclopedia of Philosophy “Ronald Dworkin”；Britannica “Ronald Dworkin”</p>
+      </div>
+    </section>
+    <section class="section" id="sec-9">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">9</span><span class="h2-text">我们该如何理解德沃金</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">刘擎在章末给出了理解德沃金的总纲：在现代西方社会，公民的基本自由受宪法保障已是根深蒂固的共识，左右各派原则上都无异议；对自由主义来说，最突出的问题是如何确立一种恰当的平等观。德沃金的“平等的尊重和关怀”之所以重要，正在于它同时回应了现代人对自由、平等与多元价值的三种诉求——这正是他所说的“自由主义的平等观”。</p>
+        <p>第一重意义，是它给出了“平等”最不坏的论证方式。德沃金没有把平等建立在“人应当拥有相同的东西”上，而是建立在“人应当被当作平等的人对待”上。后者不需要牺牲自由，反而以自由为前提——它尊重每个人选择生活方式的自主性，同时对不可选择的运气保持警觉。这使平等不再是左翼的专利，而成为任何认真讨论公平的人都要面对的立场。</p>
+        <p>第二重意义，是它示范了“权利”如何不流于口号。“权利是王牌”之所以有力，是因为它有对手——集体目标、总体福利、多数意见。一篇作文若只喊“要尊重权利”，是没有重量的；一旦写出“权利是王牌，哪怕多数人赞成、总收益更高，也不能以牺牲一个人为代价”，思辨的深度立刻显现。</p>
+        <p>但也须诚实面对批评。社群主义者（如桑德尔）质疑：把权利置于共同体归属与良善生活之上，是否预设了一个“无牵无挂的自我”？运气平等主义者则批评资源平等把天赋当成了可再分配的资源。德沃金晚年《刺猬的正义》承认价值世界需要统一，但他坚持：那个统一的原则就是“每个人的人生具有同等重要性”——这与“平等的关怀与尊重”是一以贯之的。</p>
+        <p class="src">来源：刘擎《西方现代思想讲义》第34讲（“同时回应自由、平等与多元价值的三种诉求”）；SEP “Ronald Dworkin”（对资源平等与权利优先论的标准批评）；Michael Sandel, Liberalism and the Limits of Justice, 1982（社群主义批评的权利优先论靶子）。</p>
+        <p class="src-note">来源：刘擎《西方现代思想讲义》第34讲（“自由主义的平等观”小结）；Stanford Encyclopedia of Philosophy “Ronald Dworkin”；Michael Sandel, Liberalism and the Limits of Justice, 1982（社群主义对权利优先的批评）</p>
+      </div>
+    </section>
+    <section class="section" id="sec-10">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">10</span><span class="h2-text">写作应用提示</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">德沃金的独特价值在于他同时提供“权利的硬度”与“平等的精度”。写“个人与集体”用“权利是王牌”，写“公平”用“敏于志向，钝于禀赋”，写“制度与解释”用“法律帝国由态度界定”——三个概念分别对应三种题型，彼此独立、都好用。</p>
+        <div class="box no-break"><div class="box-title">适配题型与切入角度</div><dl><dt>个人与集体</dt><dd>用“权利是王牌”：个人权利可压过集体目标——哪怕总收益更高、多数人赞成，也不能以牺牲一个人的基本权利为代价。反驳“成大事者不拘小节”“为了大局”一类论述极有力。</dd><dt>公平与正义</dt><dd>用“敏于志向，钝于禀赋”：公平不是平均，而是回应选择、排除运气。可辨析“应得”与“不应得”，写出“公平有方向”的层次感。</dd><dt>自由与多元</dt><dd>用“国家中立性原则”：只要自愿且不伤害他人，任何生活方式都不应被贬低或捧高。适合“尊重差异”“多元共存”类题。</dd><dt>形式平等与实质平等</dt><dd>用“当作平等的人来对待”对“平等的待遇”：配眼镜的例子——形式上的平均反而制造实质不平等。写“教育公平”“机会公平”极佳。</dd><dt>制度与人心</dt><dd>用“法律帝国由态度界定”：制度的力量不来自强制，而来自参与者的解释态度。写“传承”“规则与人”“仪式的意义”类题可用。</dd><dt>运气与努力</dt><dd>用“运气补偿＋自负选择”：天赋运气造成的差距应被拉平，选择造成的差距由个人负责。写“出身与奋斗”“环境与个人”时让文章脱离“努力决定论”的俗套。</dd></dl></div>
+        <div class="box no-break"><div class="box-title">可直接背诵引用</div><p>“权利是王牌。”（Rights are trumps.）——《认真对待权利》第四章</p><p>“我们必须把人当作平等的人来对待，即给予平等的关怀与尊重，而不只是让他们平等地享有某种特定物品的分配。”——《认真对待权利》第十二章</p><p>“法律帝国是由态度界定的，而不是由疆土、权力或程序界定的。”——《法律帝国》导言</p><p>“法院是法律帝国的首都，法官是帝国的王侯。”——《法律帝国》末章</p><p>“敏于志向，钝于禀赋。”——刘擎《西方现代思想讲义》对德沃金平等观的典雅概括（可注明转述）</p></div>
+        <div class="box no-break"><div class="box-title">常见误用与纠正</div><p>误：德沃金反对一切功利考量。正：他反对的是“为总体利益牺牲个人权利”的加总逻辑，并不反对合理的政策考量本身。</p><p>误：“权利是王牌”等于权利绝对、不可权衡。正：王牌指权利在与集体目标的权衡中优先，不同权利之间仍可相互权衡。</p><p>误：德沃金主张绝对的平均分配。正：他主张的是“当作平等的人来对待”与“敏于志向，钝于禀赋”——差异只要出自选择就应被接受。</p><p>误：把“平等的关怀”等同于无条件满足需求。正：鱼子酱例子恰恰说明，自愿选择的偏好不在补偿之列。</p><p>误：把德沃金与诺齐克写成同一路人。正：二人同为“权利优先”的重镇，但诺齐克以权利反对再分配、走向自由至上，德沃金以权利支撑平等、走向自由派平等主义——方向恰恰相反。</p></div>
+        <div class="box no-break"><div class="box-title">示例段（可仿写）</div><p>德沃金把个人权利比作扑克牌里的王牌：多数人赞成、总收益更高，都不能让一张王牌出局。这一比喻的锋利处在于它不诉诸感伤，而诉诸规则——正如球场上再多观众高喊“假摔”，裁判的手势仍由规则说了算。可当我们抱怨“这不公平”时，要小心：你想要的究竟是“结果一样”，还是“被当作平等的人对待”？给近视的弟弟配一副眼镜，形式上是差别待遇，实质上才是把兄弟俩当作平等的人。公平不是一碗水端平的算术，而是先问差距从何而来：出自你的选择，就由你负责；来自你无法选择的运气，社会才欠你一份补偿。这大概就是“敏于志向，钝于禀赋”九个字的分量。</p></div>
+        <p class="src">来源：写作建议为编者整理；所引命题与文句依据 Ronald Dworkin, Taking Rights Seriously (1977) / Law's Empire (1986) / Sovereign Virtue (2000) 及刘擎《西方现代思想讲义》第34讲、SEP/Britannica/EBSCO 相关条目。</p>
+        <p class="src-note">来源：本节为编者整理的写作用法，思想依据见前各节所引原著与刘擎《西方现代思想讲义》第34讲</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== 悬浮按钮 ===================== -->
+<div class="fab-group">
+  <button class="fab fab-mini hidden" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">⤒</button>
+</div>
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 常量与元素引用 ================= */
+  var STORE_THEME = 'sartre.theme';
+  var STORE_FS    = 'sartre.fontSize';
+  var FS_LEVELS   = ['0', '1', '2'];
+
+  var html        = document.documentElement;
+  var body        = document.body;
+  var topbar      = document.getElementById('topbar');
+  var progressBar = document.getElementById('progressBar');
+  var main        = document.getElementById('main');
+  var tocEl       = document.getElementById('toc');
+  var tocNav      = document.getElementById('tocNav');
+  var secCountEl  = document.getElementById('secCount');
+  var scrim       = document.getElementById('scrim');
+  var menuBtn     = document.getElementById('menuBtn');
+  var themeBtn    = document.getElementById('themeBtn');
+  var fsUpBtn     = document.getElementById('fsUp');
+  var fsDownBtn   = document.getElementById('fsDown');
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
+  var prevHitBtn  = document.getElementById('prevHit');
+  var nextHitBtn  = document.getElementById('nextHit');
+  var clearBtn    = document.getElementById('clearSearch');
+  var expandAllBtn   = document.getElementById('expandAll');
+  var collapseAllBtn = document.getElementById('collapseAll');
+  var toTopBtn    = document.getElementById('toTop');
+
+  var sections   = [].slice.call(main.querySelectorAll('.section'));
+  var navTargets = [];   /* 目录跳转目标 id（文档顺序，含 h2 与 h3） */
+  var tocItems   = {};   /* id -> 目录 <a> 元素 */
+  var hits       = [];   /* 当前搜索命中的 <mark> 列表 */
+  var hitIndex   = -1;
+  var searchTimer = null;
+  var rafPending  = false;
+  var activeId    = '';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+  /* ================= 通用工具 ================= */
+
+  /** 安全读取 localStorage（隐私模式下可能抛错）。 */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  /** 安全写入 localStorage。 */
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* 忽略 */ }
+  }
+  /** 顶栏当前高度（移动端换行后会变高）。 */
+  function topbarHeight() {
+    return topbar ? topbar.offsetHeight : 58;
+  }
+  /** 取标题纯文本（剔除章节序号与折叠箭头）。 */
+  function headingText(heading) {
+    var clone = heading.cloneNode(true);
+    var junk = clone.querySelectorAll('.chapter-num, .sec-caret');
+    for (var i = 0; i < junk.length; i++) { junk[i].parentNode.removeChild(junk[i]); }
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** 元素是否当前可见（折叠后的内容不可见）。 */
+  function isVisible(el) {
+    return !!(el && el.offsetParent !== null);
+  }
+
+  /* ================= 主题 ================= */
+
+  function applyTheme(theme) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? '☀' : '🌙';
+    themeBtn.setAttribute('title', next === 'dark' ? '切换到浅色阅读模式' : '切换到深色阅读模式');
+  }
+
+  function initTheme() {
+    var saved = lsGet(STORE_THEME);
+    if (saved !== 'dark' && saved !== 'light') {
+      var prefersDark = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false;
+      saved = prefersDark ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+
+  themeBtn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    lsSet(STORE_THEME, next);
+  });
+
+  /* ================= 字号（三档） ================= */
+
+  function applyFontSize(level) {
+    var idx = FS_LEVELS.indexOf(String(level));
+    if (idx === -1) { idx = 1; }
+    html.setAttribute('data-fs', FS_LEVELS[idx]);
+    fsDownBtn.disabled = (idx === 0);
+    fsUpBtn.disabled = (idx === FS_LEVELS.length - 1);
+    fsDownBtn.style.opacity = idx === 0 ? '.45' : '1';
+    fsUpBtn.style.opacity = idx === FS_LEVELS.length - 1 ? '.45' : '1';
+  }
+
+  function stepFontSize(delta) {
+    var idx = FS_LEVELS.indexOf(html.getAttribute('data-fs'));
+    if (idx === -1) { idx = 1; }
+    var next = Math.min(FS_LEVELS.length - 1, Math.max(0, idx + delta));
+    applyFontSize(FS_LEVELS[next]);
+    lsSet(STORE_FS, FS_LEVELS[next]);
+  }
+
+  function initFontSize() {
+    var saved = lsGet(STORE_FS);
+    applyFontSize(saved === null ? '1' : saved);
+  }
+
+  fsUpBtn.addEventListener('click', function () { stepFontSize(1); });
+  fsDownBtn.addEventListener('click', function () { stepFontSize(-1); });
+
+  /* ================= 章节折叠 / 展开 ================= */
+
+  function setCollapsed(section, collapsed) {
+    var head = section.querySelector('h2.sec-head');
+    if (!head) { return; }
+    if (collapsed) {
+      section.classList.add('collapsed');
+      head.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      head.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function toggleSection(section) {
+    setCollapsed(section, !section.classList.contains('collapsed'));
+    requestActiveUpdate();
+  }
+
+  function expandSection(section) {
+    if (section && section.classList.contains('collapsed')) {
+      setCollapsed(section, false);
+    }
+  }
+
+  sections.forEach(function (section) {
+    var head = section.querySelector('h2.sec-head');
+    var bodyEl = section.querySelector('.sec-body');
+    if (!head || !bodyEl) { return; }
+    if (!bodyEl.id) { bodyEl.id = section.id + '-body'; }
+    head.setAttribute('aria-controls', bodyEl.id);
+
+    head.addEventListener('click', function () { toggleSection(section); });
+    head.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggleSection(section);
+      }
+    });
+  });
+
+  expandAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, false); });
+    requestActiveUpdate();
+  });
+  collapseAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, true); });
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    requestActiveUpdate();
+  });
+
+  /* ================= 目录（TOC）自动生成 ================= */
+
+  function buildToc() {
+    var frag = document.createDocumentFragment();
+    var chapterCount = 0;
+
+    sections.forEach(function (section, sIdx) {
+      if (!section.id) { section.id = 'sec-auto-' + sIdx; }
+
+      var head = section.querySelector('h2.sec-head');
+      var label = head ? headingText(head) : (section.getAttribute('data-toc') || ('第 ' + (sIdx + 1) + ' 节'));
+      var numEl = head ? head.querySelector('.chapter-num') : null;
+      var numText = numEl ? numEl.textContent.trim() : '·';
+      if (head) { chapterCount += 1; }
+
+      frag.appendChild(makeTocItem(section.id, label, numText, 2));
+      navTargets.push(section.id);
+
+      /* 子节标题（h3）自动提取 */
+      var subs = [].slice.call(section.querySelectorAll('h3'));
+      subs.forEach(function (h3, hIdx) {
+        if (!h3.id) { h3.id = section.id + '-h3-' + (hIdx + 1); }
+        frag.appendChild(makeTocItem(h3.id, headingText(h3), '', 3));
+        navTargets.push(h3.id);
+      });
+    });
+
+    tocNav.appendChild(frag);
+    secCountEl.textContent = String(chapterCount);
+  }
+
+  function makeTocItem(targetId, label, numText, level) {
+    var a = document.createElement('a');
+    a.className = 'toc-item lvl' + level;
+    a.href = '#' + targetId;
+    a.setAttribute('data-target', targetId);
+
+    if (level === 2) {
+      var num = document.createElement('span');
+      num.className = 'toc-num';
+      num.textContent = numText || '·';
+      a.appendChild(num);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'toc-text';
+    txt.textContent = label;
+    a.appendChild(txt);
+
+    tocItems[targetId] = a;
+    return a;
+  }
+
+  /* ================= 平滑滚动与锚点 ================= */
+
+  function scrollToTarget(targetId, updateHash) {
+    var el = document.getElementById(targetId);
+    if (!el) { return; }
+
+    var section = el.closest ? el.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    /* 折叠展开后再量位置，避免坐标错位 */
+    window.requestAnimationFrame(function () {
+      var rect = el.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - 14;
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+      if (updateHash !== false && history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+      }
+      setActive(targetId);
+    });
+  }
+
+  /* 侧边目录点击 */
+  tocNav.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-item') : null;
+    if (!link) { return; }
+    event.preventDefault();
+    scrollToTarget(link.getAttribute('data-target'));
+    closeDrawer();
+  });
+
+  /* 正文内“目 录”清单点击 */
+  main.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-list-link') : null;
+    if (!link) { return; }
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') { return; }
+    event.preventDefault();
+    scrollToTarget(href.slice(1));
+  });
+
+  /* ================= 当前章节高亮（IntersectionObserver + 滚动兜底） ================= */
+
+  /* 上报当前可见小节给原生层（用于"练习当前正文"只取正在看的那一节）。
+     通过隐藏 iframe 触发 philomenu:// scheme，由原生 shouldOverrideUrlLoading 拦截。 */
+  function reportActiveSection(targetId) {
+    try {
+      var el = document.getElementById(targetId);
+      var sec = el && el.closest ? el.closest('.section') : null;
+      // 仅上报顶层小节（sec-N）；封面 / 目录不计入练习范围
+      if (sec && /^sec-\d+$/.test(sec.id)) {
+        var person = 'dworkin';
+        var url = 'philomenu://update_person?person=' + encodeURIComponent(person) +
+                  '&section=' + encodeURIComponent(sec.id);
+        var bridge = document.getElementById('__philomenu_bridge');
+        if (!bridge) {
+          bridge = document.createElement('iframe');
+          bridge.id = '__philomenu_bridge';
+          bridge.setAttribute('style', 'display:none;width:0;height:0;border:0;');
+          document.body.appendChild(bridge);
+        }
+        bridge.src = url;
+      }
+    } catch (_) { /* 静默失败，不影响阅读 */ }
+  }
+
+  function setActive(targetId) {
+    if (!targetId || targetId === activeId) { return; }
+    activeId = targetId;
+    reportActiveSection(targetId);
+
+
+
+    for (var key in tocItems) {
+      if (Object.prototype.hasOwnProperty.call(tocItems, key)) {
+        tocItems[key].classList.remove('active');
+        tocItems[key].classList.remove('active-parent');
+      }
+    }
+    var item = tocItems[targetId];
+    if (!item) { return; }
+    item.classList.add('active');
+
+    /* 若命中的是 h3，则同时标记所属大节 */
+    var el = document.getElementById(targetId);
+    var section = el && el.closest ? el.closest('.section') : null;
+    if (section && section.id !== targetId && tocItems[section.id]) {
+      tocItems[section.id].classList.add('active-parent');
+    }
+    keepTocItemVisible(item);
+  }
+
+  function keepTocItemVisible(item) {
+    if (body.classList.contains('toc-open')) { return; }
+    var cRect = tocEl.getBoundingClientRect();
+    var iRect = item.getBoundingClientRect();
+    if (iRect.top < cRect.top + 8) {
+      tocEl.scrollTop -= (cRect.top + 8 - iRect.top);
+    } else if (iRect.bottom > cRect.bottom - 8) {
+      tocEl.scrollTop += (iRect.bottom - (cRect.bottom - 8));
+    }
+  }
+
+  function computeActive() {
+    var boundary = topbarHeight() + 28;
+    var candidate = navTargets.length ? navTargets[0] : '';
+
+    for (var i = 0; i < navTargets.length; i++) {
+      var el = document.getElementById(navTargets[i]);
+      if (!el || !isVisible(el)) { continue; }
+      var top = el.getBoundingClientRect().top;
+      if (top - boundary <= 0) {
+        candidate = navTargets[i];
+      } else {
+        break;
+      }
+    }
+    /* 滚动到底部时强制高亮最后一节 */
+    var docH = document.documentElement.scrollHeight;
+    if (window.pageYOffset + window.innerHeight >= docH - 4 && navTargets.length) {
+      candidate = navTargets[navTargets.length - 1];
+    }
+    setActive(candidate);
+  }
+
+  function requestActiveUpdate() {
+    if (rafPending) { return; }
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      computeActive();
+      updateProgress();
+    });
+  }
+
+  function initObserver() {
+    if (!('IntersectionObserver' in window)) { return; }
+    var observer = new IntersectionObserver(function () {
+      requestActiveUpdate();
+    }, {
+      root: null,
+      rootMargin: '-' + (topbarHeight() + 10) + 'px 0px -55% 0px',
+      threshold: [0, 0.05, 0.3, 0.6, 1]
+    });
+    sections.forEach(function (section) { observer.observe(section); });
+    var subs = main.querySelectorAll('h3');
+    for (var i = 0; i < subs.length; i++) { observer.observe(subs[i]); }
+  }
+
+  /* ================= 阅读进度条 ================= */
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.pageYOffset / max) * 100 : 0;
+    if (pct < 0) { pct = 0; }
+    if (pct > 100) { pct = 100; }
+    progressBar.style.width = pct.toFixed(2) + '%';
+
+    if (window.pageYOffset > 420) {
+      toTopBtn.classList.remove('hidden');
+    } else {
+      toTopBtn.classList.add('hidden');
+    }
+  }
+
+  toTopBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 全文搜索 ================= */
+
+  /** 清除所有高亮，并把文本节点合并回原状。 */
+  function clearMarks() {
+    var marks = main.querySelectorAll('mark.hit');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+    hits = [];
+    hitIndex = -1;
+  }
+
+  /** 用 <mark class="hit"> 包裹所有 substring 匹配。 */
+  function applyMarks(term) {
+    var query = term.toLowerCase();
+    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var value = node.nodeValue;
+        if (!value || !value.trim()) { return NodeFilter.FILTER_REJECT; }
+        var parent = node.parentNode;
+        if (!parent) { return NodeFilter.FILTER_REJECT; }
+        var tag = parent.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') { return NodeFilter.FILTER_REJECT; }
+        if (value.toLowerCase().indexOf(query) === -1) { return NodeFilter.FILTER_REJECT; }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
+    var targets = [];
+    while (walker.nextNode()) { targets.push(walker.currentNode); }
+
+    for (var i = 0; i < targets.length; i++) {
+      var node = targets[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      var idx = lower.indexOf(query, cursor);
+
+      while (idx !== -1) {
+        if (idx > cursor) {
+          frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        cursor = idx + query.length;
+        idx = lower.indexOf(query, cursor);
+      }
+      if (cursor < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      if (node.parentNode) { node.parentNode.replaceChild(frag, node); }
+    }
+
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+  }
+
+  /** 在目录上标注每节命中数量。 */
+  function updateTocHits() {
+    for (var key in tocItems) {
+      if (!Object.prototype.hasOwnProperty.call(tocItems, key)) { continue; }
+      var badge = tocItems[key].querySelector('.toc-hits');
+      if (badge) { badge.parentNode.removeChild(badge); }
+    }
+    if (!hits.length) { return; }
+    sections.forEach(function (section) {
+      var count = section.querySelectorAll('mark.hit').length;
+      var item = tocItems[section.id];
+      if (!count || !item) { return; }
+      var badge = document.createElement('span');
+      badge.className = 'toc-hits';
+      badge.textContent = String(count);
+      item.appendChild(badge);
+    });
+  }
+
+  function gotoHit(index) {
+    if (!hits.length) { return; }
+    var total = hits.length;
+    hitIndex = ((index % total) + total) % total;
+
+    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove('current'); }
+    var target = hits[hitIndex];
+    target.classList.add('current');
+
+    var section = target.closest ? target.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    window.requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - Math.max(window.innerHeight * 0.28, 90);
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+    renderCount();
+  }
+
+  function renderCount() {
+    var term = searchInput.value.trim();
+    if (!term) {
+      searchCount.textContent = '';
+      return;
+    }
+    if (!hits.length) {
+      searchCount.textContent = '无匹配';
+      return;
+    }
+    searchCount.textContent = (hitIndex >= 0 ? (hitIndex + 1) + '/' : '') + hits.length + ' 处';
+  }
+
+  function toggleSearchButtons(show) {
+    prevHitBtn.hidden = !show;
+    nextHitBtn.hidden = !show;
+    clearBtn.hidden = !show;
+  }
+
+  function runSearch() {
+    var term = searchInput.value.trim();
+    clearMarks();
+
+    if (!term) {
+      updateTocHits();
+      toggleSearchButtons(false);
+      renderCount();
+      return;
+    }
+
+    applyMarks(term);
+    updateTocHits();
+    toggleSearchButtons(true);
+
+    /* 展开所有含命中的章节，避免匹配被折叠隐藏 */
+    sections.forEach(function (section) {
+      if (section.querySelector('mark.hit')) { expandSection(section); }
+    });
+    /* 折叠状态可能变化，重新收集顺序 */
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+
+    if (hits.length) {
+      gotoHit(0);
+    } else {
+      renderCount();
+    }
+  }
+
+  searchInput.addEventListener('input', function () {
+    if (searchTimer) { window.clearTimeout(searchTimer); }
+    searchTimer = window.setTimeout(runSearch, 180);
+  });
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = null; }
+      if (!hits.length) {
+        runSearch();
+      } else {
+        gotoHit(hitIndex + (event.shiftKey ? -1 : 1));
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      resetSearch();
+    }
+  });
+
+  function resetSearch() {
+    searchInput.value = '';
+    clearMarks();
+    updateTocHits();
+    toggleSearchButtons(false);
+    renderCount();
+    searchInput.blur();
+  }
+
+  clearBtn.addEventListener('click', resetSearch);
+  nextHitBtn.addEventListener('click', function () { gotoHit(hitIndex + 1); });
+  prevHitBtn.addEventListener('click', function () { gotoHit(hitIndex - 1); });
+
+  /* ================= 移动端抽屉 ================= */
+
+  function openDrawer() {
+    body.classList.add('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!body.classList.contains('toc-open')) { return; }
+    body.classList.remove('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (body.classList.contains('toc-open')) { closeDrawer(); } else { openDrawer(); }
+  });
+  scrim.addEventListener('click', closeDrawer);
+
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 768) { closeDrawer(); }
+    requestActiveUpdate();
+  });
+
+  /* ================= 全局键盘快捷键 ================= */
+
+  document.addEventListener('keydown', function (event) {
+    if (typeof event.key !== 'string') { return; }
+    var tag = (event.target && event.target.nodeName) || '';
+    var typing = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT');
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      searchInput.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  /* ================= 滚动监听 ================= */
+
+  window.addEventListener('scroll', requestActiveUpdate, { passive: true });
+
+  /* ================= 初始化 ================= */
+
+  initTheme();
+  initFontSize();
+  buildToc();
+  initObserver();
+  updateProgress();
+  computeActive();
+
+  /* 带 hash 进入时定位到对应章节 */
+  if (window.location.hash.length > 1) {
+    var initialId = decodeURIComponent(window.location.hash.slice(1));
+    if (document.getElementById(initialId)) {
+      window.setTimeout(function () { scrollToTarget(initialId, false); }, 60);
+    }
+  }
+})();
+</script>
+</body>
+</html>

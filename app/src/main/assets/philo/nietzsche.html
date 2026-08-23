@@ -1,0 +1,1717 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-fs="1">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="尼采（1844—1900）高考写作素材：生平、著作、核心思想（上帝已死、积极的虚无主义与超人、权力意志、永恒轮回、主人道德与奴隶道德、日神与酒神、视角主义）与写作应用提示。">
+<title>尼采 · 哲思化写作素材</title>
+<style>
+/* =====================================================================
+   尼采 · 写作素材（可交互单页站点）
+   纯静态：HTML + CSS + 原生 JS，无外部依赖，可离线运行
+   ===================================================================== */
+
+/* ---------- 变量：主题 ---------- */
+:root{
+  --topbar-h: 58px;
+  --toc-w: 272px;
+  --content-max: 46rem;
+  --fs-root: 17px;
+  --radius: 10px;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+html[data-theme="light"]{
+  --bg:#f3f3f0;
+  --paper:#ffffff;
+  --ink:#1b1b1b;
+  --ink-soft:#333333;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --line:#e4e4e0;
+  --line-mid:#cfcfc9;
+  --line-strong:#1b1b1b;
+  --accent:#1f3a5f;
+  --accent-soft:rgba(31,58,95,.10);
+  --accent-ink:#ffffff;
+  --num-bg:#1b1b1b;
+  --num-ink:#ffffff;
+  --quote-bg:#f7f7f5;
+  --box-bg:#ffffff;
+  --col-bg:#fafaf8;
+  --mark-bg:#ffe680;
+  --mark-ink:#1b1b1b;
+  --mark-cur:#ff9f2e;
+  --topbar-bg:rgba(255,255,255,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.06);
+  --shadow-2:0 8px 26px rgba(0,0,0,.16);
+  --btn-bg:#ffffff;
+  --btn-bg-hover:#f0f0ec;
+  --field-bg:#f6f6f3;
+}
+html[data-theme="dark"]{
+  --bg:#12141a;
+  --paper:#1a1d23;
+  --ink:#e7e5df;
+  --ink-soft:#d3d0c9;
+  --muted:#9b988f;
+  --faint:#7e7b74;
+  --line:#2a2e36;
+  --line-mid:#3a3f49;
+  --line-strong:#6e747f;
+  --accent:#83b2ff;
+  --accent-soft:rgba(131,178,255,.14);
+  --accent-ink:#0d1016;
+  --num-bg:#83b2ff;
+  --num-ink:#0d1016;
+  --quote-bg:#1f232a;
+  --box-bg:#1d2027;
+  --col-bg:#1f232a;
+  --mark-bg:#7d6200;
+  --mark-ink:#fff6d8;
+  --mark-cur:#c9761a;
+  --topbar-bg:rgba(18,20,26,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  --shadow-2:0 8px 26px rgba(0,0,0,.5);
+  --btn-bg:#22262e;
+  --btn-bg-hover:#2b3038;
+  --field-bg:#22262e;
+}
+/* ---------- 字号三档 ---------- */
+html[data-fs="0"]{ --fs-root:15px; }
+html[data-fs="1"]{ --fs-root:17px; }
+html[data-fs="2"]{ --fs-root:19.5px; }
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:auto; }
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:var(--fs-root);
+  line-height:1.85;
+  -webkit-text-size-adjust:100%;
+  transition:background-color .25s var(--ease), color .25s var(--ease);
+}
+
+/* ---------- 无障碍：跳到正文 ---------- */
+.skip-link{
+  position:absolute; left:-9999px; top:0; z-index:2000;
+  background:var(--accent); color:var(--accent-ink);
+  padding:8px 14px; border-radius:0 0 var(--radius) 0; font-family:var(--sans); font-size:.85rem;
+}
+.skip-link:focus{ left:0; }
+
+/* =====================  顶栏  ===================== */
+.topbar{
+  position:sticky; top:0; z-index:900;
+  display:flex; align-items:center; gap:10px;
+  height:var(--topbar-h);
+  padding:0 14px;
+  background:var(--topbar-bg);
+  backdrop-filter:saturate(150%) blur(10px);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+.tb-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.tb-right{ display:flex; align-items:center; gap:6px; }
+
+.site-title{
+  font-family:var(--sans);
+  font-size:.94rem;
+  font-weight:800;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--ink);
+}
+.site-title .dot{ color:var(--accent); margin:0 .15em; }
+.site-title .st-sub{ font-weight:500; color:var(--muted); }
+
+
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-width:34px; height:34px; padding:0 9px;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1;
+  color:var(--ink); background:var(--btn-bg);
+  border:1px solid var(--line-mid); border-radius:8px;
+  cursor:pointer; user-select:none;
+  transition:background-color .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease);
+}
+.icon-btn:hover{ background:var(--btn-bg-hover); }
+.icon-btn:active{ transform:translateY(1px); }
+.icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.menu-btn{ display:none; }
+
+/* 搜索框 */
+.search-wrap{
+  position:relative;
+  display:flex; align-items:center;
+  width:100%; max-width:430px;
+  height:36px;
+  background:var(--field-bg);
+  border:1px solid var(--line-mid);
+  border-radius:999px;
+  padding:0 8px 0 12px;
+  transition:border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.search-wrap:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.search-icon{ font-size:.8rem; opacity:.65; margin-right:6px; }
+#searchInput{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  font-family:var(--sans); font-size:.86rem; color:var(--ink);
+}
+#searchInput::placeholder{ color:var(--faint); }
+#searchInput::-webkit-search-cancel-button{ display:none; }
+.search-count{
+  font-family:var(--sans); font-size:.74rem; color:var(--muted);
+  white-space:nowrap; margin:0 4px; font-variant-numeric:tabular-nums;
+}
+.search-nav{
+  display:flex; gap:2px;
+}
+.mini-btn{
+  width:22px; height:22px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:.7rem; line-height:1;
+  color:var(--muted); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.mini-btn:hover{ background:var(--btn-bg-hover); color:var(--ink); }
+.mini-btn[hidden]{ display:none; }
+
+/* 阅读进度条 */
+.progress{
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:3px; background:transparent; overflow:hidden;
+}
+.progress-bar{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, var(--accent), var(--num-bg));
+  transition:width .08s linear;
+}
+
+/* =====================  布局  ===================== */
+.layout{
+  display:flex;
+  align-items:flex-start;
+  gap:26px;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 18px;
+}
+
+/* ---------- 侧边目录 ---------- */
+.toc{
+  position:sticky;
+  top:var(--topbar-h);
+  flex:0 0 var(--toc-w);
+  width:var(--toc-w);
+  max-height:calc(100vh - var(--topbar-h));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:20px 8px 28px 0;
+  font-family:var(--sans);
+}
+.toc-head{
+  font-size:.72rem; font-weight:800; letter-spacing:.24em;
+  color:var(--muted); text-transform:uppercase;
+  padding:0 10px 10px; border-bottom:1px solid var(--line); margin-bottom:8px;
+}
+.toc-nav{ display:flex; flex-direction:column; }
+.toc-item{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:6px 10px;
+  color:var(--ink-soft); text-decoration:none;
+  border-left:2px solid transparent;
+  border-radius:0 6px 6px 0;
+  line-height:1.45;
+  transition:background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.toc-item:hover{ background:var(--accent-soft); color:var(--ink); }
+.toc-item.lvl2{ font-size:.85rem; font-weight:700; margin-top:6px; }
+.toc-item.lvl3{ font-size:.79rem; font-weight:400; padding-left:30px; color:var(--muted); }
+.toc-item .toc-num{
+  flex:0 0 auto;
+  font-size:.68rem; font-weight:800;
+  min-width:1.35em; text-align:center;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:4px;
+  padding:0 2px; line-height:1.5;
+  margin-top:.15em;
+}
+.toc-item.active{
+  color:var(--accent); background:var(--accent-soft);
+  border-left-color:var(--accent); font-weight:800;
+}
+.toc-item.active .toc-num{ color:var(--accent); border-color:var(--accent); }
+.toc-item.active-parent{ color:var(--ink); border-left-color:var(--line-strong); }
+.toc-item .toc-hits{
+  margin-left:auto; flex:0 0 auto;
+  font-size:.68rem; font-weight:700;
+  color:var(--accent-ink); background:var(--accent);
+  border-radius:999px; padding:0 6px; line-height:1.6;
+}
+.toc-foot{
+  margin-top:14px; padding:10px 10px 0;
+  border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--faint);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+}
+.link-btn{
+  background:none; border:0; padding:0;
+  font-family:var(--sans); font-size:.72rem; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.link-btn:hover{ opacity:.75; }
+.scrim{
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,.45);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s var(--ease);
+}
+
+/* ---------- 正文容器 ---------- */
+.content{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:var(--content-max);
+  margin:0 auto;
+  padding:22px 0 90px;
+}
+
+/* ---------- 章节卡片 ---------- */
+.section{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-1);
+  padding:26px 30px 24px;
+  margin:0 0 20px;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+  transition:background-color .25s var(--ease), border-color .25s var(--ease);
+}
+.section:target{ border-color:var(--accent); }
+
+/* 可折叠标题 */
+h2.sec-head{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--sans);
+  font-size:1.42em; font-weight:800; letter-spacing:.03em;
+  margin:0 0 12px; padding:0 0 8px;
+  border-bottom:2px solid var(--line-strong);
+  cursor:pointer; user-select:none;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h2.sec-head:hover .h2-text{ color:var(--accent); }
+h2.sec-head:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+h2.sec-head .chapter-num{
+  flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55em; height:1.55em;
+  font-size:.72em; font-weight:800;
+  background:var(--num-bg); color:var(--num-ink);
+  border-radius:4px;
+}
+h2.sec-head .h2-text{ flex:1 1 auto; transition:color .15s var(--ease); }
+h2.sec-head .sec-caret{
+  flex:0 0 auto;
+  font-size:.62em; color:var(--muted);
+  transition:transform .22s var(--ease);
+}
+.section.collapsed h2.sec-head{ border-bottom-color:var(--line-mid); margin-bottom:0; }
+.section.collapsed h2.sec-head .sec-caret{ transform:rotate(-90deg); }
+.section.collapsed .sec-body{ display:none; }
+.sec-body{ animation:fadeIn .22s var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:none;} }
+
+/* ---------- 正文排版 ---------- */
+h3{
+  font-family:var(--sans);
+  font-size:1.06em; font-weight:700;
+  margin:1.5em 0 .55em; color:var(--ink);
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h3::before{ content:"▪"; margin-right:.5em; color:var(--accent); }
+h4{
+  font-family:var(--sans);
+  font-size:.95em; font-weight:700;
+  margin:1.1em 0 .4em; color:var(--ink-soft);
+}
+p{ margin:0 0 .72em; text-align:justify; text-indent:2em; }
+p.no-indent{ text-indent:0; }
+ul, ol{ margin:.5em 0 .9em; padding-left:1.6em; }
+li{ margin-bottom:.35em; text-align:justify; }
+strong{ font-weight:700; color:var(--ink); }
+em{ font-style:normal; }
+
+blockquote{
+  margin:1em 0; padding:.7em 1em;
+  border-left:3px solid var(--accent);
+  background:var(--quote-bg);
+  font-size:.96em; line-height:1.78;
+  border-radius:0 6px 6px 0;
+}
+blockquote p{ text-indent:0; margin:0 0 .4em; }
+blockquote p:last-child{ margin-bottom:0; }
+blockquote cite{
+  display:block; text-align:right;
+  font-size:.86em; color:var(--muted); font-style:normal; margin-top:.5em;
+}
+
+.box{
+  margin:1em 0; padding:.85em 1em;
+  border:1px solid var(--line-mid);
+  background:var(--box-bg);
+  border-radius:8px;
+}
+.box-title{
+  font-family:var(--sans);
+  font-size:.78em; font-weight:800; letter-spacing:.16em;
+  color:var(--accent);
+  margin-bottom:.6em; padding-bottom:.35em;
+  border-bottom:1px solid var(--line);
+}
+.box p{ text-indent:0; margin-bottom:.45em; }
+.box p:last-child{ margin-bottom:0; }
+.box dl{ margin:0; }
+.box dt{
+  font-family:var(--sans); font-weight:700; font-size:.84em;
+  margin-top:.6em; color:var(--muted); letter-spacing:.05em;
+}
+.box dd{ margin:.15em 0 .55em; font-size:.96em; text-align:justify; }
+
+.term{
+  font-family:var(--sans); font-weight:700;
+  border-bottom:1px solid var(--line-strong);
+  padding-bottom:1px;
+}
+
+.summary{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin:1em 0;
+}
+.summary .col{
+  padding:.8em .9em;
+  background:var(--col-bg);
+  border-top:2px solid var(--line-strong);
+  border-radius:0 0 6px 6px;
+}
+.summary .col-title{
+  font-family:var(--sans); font-weight:800; font-size:.82em;
+  margin-bottom:.5em; letter-spacing:.08em;
+}
+.summary .col p{ text-indent:0; font-size:.92em; margin:0 0 .45em; }
+.summary .col p:last-child{ margin-bottom:0; }
+
+.src-note{
+  font-size:.78em; color:var(--faint);
+  margin:1.1em 0 0; padding-top:.5em;
+  border-top:1px dotted var(--line-mid);
+  text-align:left; text-indent:0;
+}
+.footer-note{
+  margin-top:1.4em; padding-top:.7em;
+  border-top:1px solid var(--line);
+  font-size:.8em; color:var(--muted); text-align:center; text-indent:0;
+}
+.center{ text-align:center; }
+.small{ font-size:.9em; }
+
+/* ---------- 封面 ---------- */
+.section-cover{ padding:0; overflow:hidden; }
+.cover{
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center;
+  padding:58px 26px 34px;
+}
+.cover-tag{
+  font-family:var(--sans);
+  font-size:.72rem; letter-spacing:.4em;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:3px;
+  padding:5px 12px 5px 16px; margin-bottom:34px;
+}
+.cover h1{
+  font-family:var(--sans);
+  font-size:2.6em; font-weight:900; line-height:1.2;
+  margin:0 0 14px; letter-spacing:.08em;
+}
+.cover-subtitle{
+  font-size:1.02em; color:var(--ink-soft);
+  margin-bottom:26px; letter-spacing:.14em;
+}
+.cover-line{ width:150px; height:2px; background:var(--line-strong); margin:0 auto 22px; }
+.cover-source{ font-size:.96em; color:var(--muted); line-height:2; }
+.cover-foot{
+  margin-top:34px; padding-top:14px;
+  border-top:1px solid var(--line);
+  width:100%; max-width:520px;
+  font-size:.78em; color:var(--faint); letter-spacing:.08em;
+}
+
+/* ---------- 原印刷目录（正文内） ---------- */
+.toc-list{ list-style:none; padding:0; margin:.4em 0 0; }
+.toc-list li{ border-bottom:1px dotted var(--line-mid); }
+.toc-list li:last-child{ border-bottom:none; }
+.toc-list-link{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:.5em .3em; color:var(--ink); text-decoration:none;
+  border-radius:6px;
+  transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.toc-list-link:hover{ background:var(--accent-soft); color:var(--accent); }
+.toc-list .num{
+  font-family:var(--sans); font-weight:800;
+  margin-right:.6em; color:var(--muted);
+}
+.toc-list .title{ font-size:.98em; }
+.toc-list .author{
+  font-family:var(--sans);
+  font-size:.76em; color:var(--faint); white-space:nowrap;
+}
+
+/* ---------- 搜索高亮 ---------- */
+mark.hit{
+  background:var(--mark-bg); color:var(--mark-ink);
+  border-radius:2px; padding:0 1px;
+  scroll-margin-top:calc(var(--topbar-h) + 90px);
+}
+mark.hit.current{
+  background:var(--mark-cur); color:#fff;
+  box-shadow:0 0 0 2px var(--mark-cur);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.fab-group{
+  position:fixed; right:18px; bottom:18px; z-index:880;
+  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px;
+}
+.fab{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:10px 16px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink);
+  font-family:var(--sans); font-size:.84rem; font-weight:700;
+  text-decoration:none; border:0; cursor:pointer;
+  box-shadow:var(--shadow-2);
+  transition:transform .15s var(--ease), opacity .2s var(--ease);
+}
+.fab:hover{ transform:translateY(-2px); }
+.fab.fab-mini{
+  width:40px; height:40px; padding:0; justify-content:center;
+  font-size:1rem;
+  background:var(--btn-bg); color:var(--ink);
+  border:1px solid var(--line-mid);
+}
+.fab.hidden{ opacity:0; pointer-events:none; transform:translateY(8px); }
+
+/* ---------- 移动端 ---------- */
+@media (max-width:900px){
+  .layout{ gap:16px; padding:0 12px; }
+  :root{ --toc-w:240px; }
+}
+@media (max-width:768px){
+  :root{ --topbar-h:54px; }
+  .menu-btn{ display:inline-flex; }
+  .site-title .st-sub{ display:none; }
+  .tb-center{ order:3; flex:0 0 100%; }
+  .topbar{ flex-wrap:wrap; height:auto; padding:8px 10px 10px; gap:8px; row-gap:8px; }
+  .tb-left{ flex:1 1 auto; }
+  .search-wrap{ max-width:none; height:34px; }
+  .layout{ display:block; padding:0 10px; }
+  .content{ max-width:none; padding:14px 0 96px; }
+  .section{ padding:20px 16px 18px; border-radius:8px; }
+  .summary{ grid-template-columns:1fr; }
+  .cover{ padding:40px 18px 26px; }
+  .cover h1{ font-size:2.1em; }
+  .cover-tag{ margin-bottom:24px; }
+
+  /* TOC 抽屉 */
+  .toc{
+    position:fixed; top:0; left:0; bottom:0; z-index:860;
+    width:80vw; max-width:320px;
+    max-height:none; height:100%;
+    padding:18px 10px 24px 14px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    box-shadow:var(--shadow-2);
+    transform:translateX(-102%);
+    transition:transform .26s var(--ease);
+  }
+  body.toc-open .toc{ transform:translateX(0); }
+  body.toc-open .scrim{ opacity:1; pointer-events:auto; }
+  body.toc-open{ overflow:hidden; }
+  .fab-group{ right:12px; bottom:12px; }
+  .fab{ padding:9px 14px; font-size:.8rem; }
+  p{ text-indent:2em; }
+}
+@media (max-width:420px){
+  .icon-btn .btn-txt{ display:none; }
+  .toc-list-link{ flex-wrap:wrap; }
+}
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+
+/* =====================================================================
+   打印样式：隐藏所有交互界面，恢复干净的 A4 印刷排版
+   ===================================================================== */
+@page{
+  size:A4;
+  margin:20mm 18mm 20mm 18mm;
+}
+@media print{
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    font-family:var(--serif);
+    font-size:11pt !important;
+    line-height:1.85;
+  }
+  html{
+    --paper:#fff; --ink:#000; --ink-soft:#222; --muted:#666; --faint:#999;
+    --line:#ddd; --line-mid:#ccc; --line-strong:#000;
+    --accent:#000; --accent-soft:transparent; --accent-ink:#fff;
+    --num-bg:#000; --num-ink:#fff;
+    --quote-bg:#f7f7f7; --box-bg:#fff; --col-bg:#fafafa;
+  }
+  .topbar, .toc, .scrim, .fab-group, .progress, .skip-link, .sec-caret, .search-wrap{
+    display:none !important;
+  }
+  .layout{ display:block; max-width:none; padding:0; margin:0; }
+  .content{ max-width:none; margin:0; padding:0; }
+  .section{
+    background:#fff !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    page-break-before:always;
+    page-break-inside:auto;
+  }
+  .section:first-of-type{ page-break-before:auto; }
+  .section.collapsed .sec-body{ display:block !important; }
+  .sec-body{ animation:none !important; }
+  h2.sec-head{
+    display:block; cursor:auto;
+    font-size:18pt !important; font-weight:800;
+    margin:0 0 10pt !important; padding-bottom:6pt;
+    border-bottom:2pt solid #000 !important;
+    page-break-after:avoid;
+  }
+  h2.sec-head .chapter-num{
+    display:inline-block; width:28pt; height:28pt; line-height:28pt;
+    text-align:center; font-size:14pt; border-radius:0;
+    background:#000 !important; color:#fff !important;
+    margin-right:10pt; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h2.sec-head .h2-text{ display:inline; }
+  h3{ font-size:13pt !important; page-break-after:avoid; }
+  h3::before{ color:#666 !important; }
+  h4{ font-size:11pt !important; page-break-after:avoid; }
+  p{ orphans:2; widows:2; }
+  blockquote, .box, .summary, .cover-source{ page-break-inside:avoid; }
+  blockquote{
+    background:#f7f7f7 !important; border-left:3pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .box{ border:1pt solid #333 !important; border-radius:0; }
+  .box-title{ color:#000 !important; text-transform:uppercase; }
+  .summary .col{
+    background:#fafafa !important; border-top:2pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .section-cover{ padding:0 !important; }
+  .cover{ min-height:245mm; padding:0 !important; justify-content:center; }
+  .cover h1{ font-size:32pt !important; }
+  .cover-subtitle{ font-size:14pt !important; }
+  .cover-line{ width:60mm; background:#000 !important; }
+  .cover-foot{ border-top:0; margin-top:60mm; }
+  .toc-list-link{ color:#000 !important; text-decoration:none; padding:8pt 0; }
+  .toc-list li{ border-bottom:.5pt dotted #bbb; }
+  mark.hit, mark.hit.current{
+    background:transparent !important; color:inherit !important;
+    box-shadow:none !important; padding:0;
+  }
+  a{ color:inherit !important; text-decoration:none !important; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar" id="topbar">
+  <div class="tb-left">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开或关闭目录" aria-expanded="false" aria-controls="toc">☰<span class="btn-txt">菜单</span></button>
+    <span class="site-title">尼采<span class="dot">·</span><span class="st-sub">写作素材</span></span>
+  </div>
+
+  <div class="tb-center">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="searchInput" type="search" placeholder="全文搜索：上帝死了 / 超人 / 权力意志 …" autocomplete="off" spellcheck="false" aria-label="全文搜索">
+      <span class="search-count" id="searchCount" aria-live="polite"></span>
+      <span class="search-nav">
+        <button class="mini-btn" id="prevHit" type="button" hidden aria-label="上一处匹配">▲</button>
+        <button class="mini-btn" id="nextHit" type="button" hidden aria-label="下一处匹配">▼</button>
+        <button class="mini-btn" id="clearSearch" type="button" hidden aria-label="清空搜索">✕</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tb-right">
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色/浅色主题" title="切换深色 / 浅色阅读模式">🌙</button>
+    <button class="icon-btn" id="fsDown" type="button" aria-label="缩小字号" title="缩小正文字号">A−</button>
+    <button class="icon-btn" id="fsUp" type="button" aria-label="放大字号" title="放大正文字号">A＋</button>
+  </div>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== 主体布局 ===================== -->
+<div class="layout">
+
+  <!-- 侧边目录 -->
+  <aside class="toc" id="toc" aria-label="章节目录">
+    <div class="toc-head">目录导航</div>
+    <nav class="toc-nav" id="tocNav"></nav>
+    <div class="toc-foot">
+      <span>共 <span id="secCount">0</span> 节</span>
+      <button class="link-btn" id="expandAll" type="button">全部展开</button>
+      <button class="link-btn" id="collapseAll" type="button">全部折叠</button>
+    </div>
+  </aside>
+
+  <!-- 正文 -->
+  <main class="content" id="main">
+
+    <!-- ========== 封面 ========== -->
+    <section class="section section-cover" id="sec-cover" data-toc="封面 · 人物名片">
+      <div class="cover">
+        <div class="cover-tag">高考写作素材</div>
+        <h1>尼采</h1>
+        <div class="cover-subtitle">现代西方思想史 · 积极的虚无主义与超人</div>
+        <div class="cover-line"></div>
+        <div class="cover-source">
+          1844 — 1900<br>
+          德国哲学家 · 古典语文学者<br>
+          “上帝已死”的宣告者 · 重估一切价值的先知
+        </div>
+        <div class="cover-foot">本册为单人物深度版 · 含生平、著作、核心思想与写作应用</div>
+      </div>
+    </section>
+
+    <!-- ========== 目录 ========== -->
+    <section class="section" id="sec-contents">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="h2-text">目 录</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <ul class="toc-list">
+          <li><a class="toc-list-link" href="#sec-1"><span><span class="num">01</span><span class="title">人物定位与速览</span></span><span class="author">一句话读懂</span></a></li>
+          <li><a class="toc-list-link" href="#sec-2"><span><span class="num">02</span><span class="title">生平经历：从勒肯到魏玛</span></span><span class="author">1844–1900</span></a></li>
+          <li><a class="toc-list-link" href="#sec-3"><span><span class="num">03</span><span class="title">主要著作与思想成就</span></span><span class="author">三阶段与代表作</span></a></li>
+          <li><a class="toc-list-link" href="#sec-4"><span><span class="num">04</span><span class="title">核心思想（一）：上帝之死与虚无主义</span></span><span class="author">价值危机</span></a></li>
+          <li><a class="toc-list-link" href="#sec-5"><span><span class="num">05</span><span class="title">核心思想（二）：生命强健——日神酒神、权力意志与超人</span></span><span class="author">最常用角度</span></a></li>
+          <li><a class="toc-list-link" href="#sec-6"><span><span class="num">06</span><span class="title">核心思想（三）：道德谱系与视角主义</span></span><span class="author">重估与谦逊</span></a></li>
+          <li><a class="toc-list-link" href="#sec-7"><span><span class="num">07</span><span class="title">我们该如何理解尼采</span></span><span class="author">理解视角</span></a></li>
+          <li><a class="toc-list-link" href="#sec-8"><span><span class="num">08</span><span class="title">写作应用提示</span></span><span class="author">上考场用</span></a></li>
+        </ul>
+        <div class="footer-note">本册每节末以灰色小字标注网络文献来源；思想用于论证，生平用于点缀。</div>
+      </div>
+    </section>
+
+    <!-- ========== 第一章 ========== -->
+    <section class="section" id="sec-1">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">1</span><span class="h2-text">人物定位与速览</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位：</strong>德国哲学家，提出“人生虚无，理论虚假，生命强健”。</p>
+        <p>尼采是现代思想史上最具“爆破力”的人物之一。他宣告“上帝死了”，戳穿了传统形而上学的安慰，也把“生命本身强健”当作人在虚无中唯一的依靠。对高考生而言，他提供的不是一套标准答案，而是一组<strong>直面“意义与虚无”的思想武器</strong>：为什么时代越“进步”人却越迷茫？当旧的信仰崩塌之后，人靠什么活下去？在“内卷”“躺平”“意义感缺失”频繁成为话题的今天，尼采的“成为你自己”几乎是为现代人量身定做的命题——这正是“自我与成长”“理想与现实”“直面挫折”“坚守与创造”等高考母题的哲学富矿。</p>
+
+        <blockquote>
+          <p>一个人能承受多少真相，是对他精神强度的考验。</p>
+          <p>总有一天，我的名字将会和某种可怕的记忆连在一起。因为我不是人，我是炸药，我是真理之身。</p>
+        </blockquote>
+
+        <div class="box no-break">
+          <div class="box-title">速览卡</div>
+          <dl>
+            <dt>生卒</dt><dd>1844 年 10 月 15 日（普鲁士萨克森省勒肯）— 1900 年 8 月 25 日（魏玛），享年 55 岁。</dd>
+            <dt>国籍 / 身份</dt><dd>德国；古典语文学者出身，24 岁任巴塞尔大学古典语文学教授；1879 年因病辞职后为独立写作者，终身“无国籍”。</dd>
+            <dt>思想领域</dt><dd>道德哲学 · 价值理论 · 美学（悲剧论） · 文化批判 · 心理学 · 虚无主义。</dd>
+            <dt>核心命题</dt><dd>上帝已死、虚无主义（消极 / 积极）、权力意志、超人、永恒轮回、主人道德与奴隶道德、日神与酒神、视角主义、重估一切价值。</dd>
+            <dt>代表著作</dt><dd>《悲剧的诞生》《查拉图斯特拉如是说》《善恶的彼岸》《论道德的谱系》《偶像的黄昏》《瞧，这个人》。</dd>
+            <dt>一句名言</dt><dd>“人是一根系在动物与超人之间的绳索——一根悬在深渊之上的绳索。”</dd>
+          </dl>
+        </div>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Friedrich Nietzsche」「弗里德里希·尼采」、百度百科、刘擎《西方现代思想讲义》（尼采章）。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第二章 ========== -->
+    <section class="section" id="sec-2">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">2</span><span class="h2-text">生平经历：从勒肯到魏玛</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">尼采的一生像他的哲学一样充满张力：最出色的学院派学者，却主动抛弃教席去漫游；最先洞察“上帝之死”的人，最后在都灵街头精神崩溃；生前寂寞无闻，死后却成为 20 世纪思想的风暴眼。理解他的生平，才能理解那句“我的时代还没有到来，有的人是死后才出生的”。</p>
+
+        <h3>家世与早年：牧师长子与音乐天才（1844—1864）</h3>
+        <p>1844 年 10 月 15 日，尼采生于普鲁士萨克森省吕岑附近的勒肯（Röcken）。祖父与父亲两代都是路德宗牧师；父亲卡尔·路德维希·尼采在他年仅 4 岁时（1849）因脑病去世，此后他与妹妹伊丽莎白由虔信的母亲弗朗西斯卡抚养，全家迁居瑙姆堡。尼采自幼体弱多病，却早慧过人：10 岁已能作曲，14 岁入著名的普夫塔（Schulpforta）文科中学，受到严格的古典学训练，为他日后“最年轻的古典语文学教授”生涯打下底子。</p>
+
+        <h3>求学：波恩、莱比锡与叔本华（1864—1869）</h3>
+        <p>1864 年尼采入波恩大学，初修神学与古典语文学，一学期后放弃神学、失去基督教信仰；1865 年随导师里奇尔（F. W. Ritschl）转入莱比锡大学，专攻古典语文学。同一时期，他读到叔本华《作为意志和表象的世界》，深受震撼——叔本华把“意志”当作世界的本质，这成了尼采后来“权力意志”思想的重要起点。1868 年 11 月，他在莱比锡结识作曲家理查德·瓦格纳，两人一见如故。</p>
+
+        <h3>巴塞尔教授与瓦格纳的十年（1869—1879）</h3>
+        <p>1869 年，年仅 24 岁的尼采在尚未完成博士论文的情况下，被瑞士巴塞尔大学聘为古典语文学副教授，次年转正教授——这是当时德国学术史上最年轻的文科教授之一。他为此放弃了普鲁士国籍，此后终身无国籍。普法战争期间他志愿担任医护兵，染上白喉与痢疾，身体从此每况愈下。</p>
+        <p>1872 年，他出版第一部著作《悲剧的诞生》，扉页上写着“献给理查德·瓦格纳”，把复兴希腊悲剧文化的希望寄托于瓦格纳的音乐。但这份友谊很快走向幻灭：1876 年第一届拜罗伊特音乐节上，尼采目睹偶像在浮华与庸俗的捧场中沦为一个“戏子”，失望至极，中途离场；1878 年《人性的，太人性的》出版，公开宣告与瓦格纳、与叔本华的悲观哲学决裂；1882 年瓦格纳寄来《帕西法尔》，尼采斥之为“颓废”。1888 年他写出《瓦格纳事件》，对这段关系做了最后的清算。</p>
+        <p>与此同时，头痛、眼疾、呕吐等病痛不断折磨他。1879 年，他被迫辞去巴塞尔教职，领取微薄的养老金，时年 34 岁。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“从崇拜到决裂”是极好的叙事素材：可用于“偶像与自我”“热爱与清醒”“走出前人阴影”“敬仰而不盲从”等主题。注意：尼采对瓦格纳的决裂不是意气用事，而是思想者拒绝把灵魂抵押给偶像的“诚实的残酷”。</p>
+        </div>
+
+        <h3>漫游者的十年：写作的爆发期（1879—1888）</h3>
+        <p>此后近十年，尼采辗转于瑞士、意大利与法国南部——尼斯、锡尔斯—玛丽亚、热那亚、都灵——以“无国籍漫游者”的身份寻找适宜健康的气候，同时也迎来了创作的高峰：《曙光》（1881）、《快乐的科学》（1882）、《查拉图斯特拉如是说》（1883—1885，四卷）、《善恶的彼岸》（1886）、《论道德的谱系》（1887）。1882 年他在罗马结识俄国姑娘露·莎乐美并求婚未果，感情受挫。1888 年是他创作的“爆发之年”，一口气写出《瓦格纳事件》《偶像的黄昏》《敌基督》《瞧，这个人》等著作。也正是在这一年，他的书信开始出现亢奋与自大倾向，这是精神崩溃的前兆。</p>
+
+        <h3>都灵崩溃与最后的岁月（1889—1900）</h3>
+        <p>1889 年 1 月 3 日，尼采在都灵街头精神崩溃。一个流传甚广的传说是：他目睹马夫鞭打一匹老马，冲上前抱住马的脖子护住它，随后瘫倒在地（这一“马匹事件”的真实性学界存疑，常被视为轶闻）。崩溃后的他给友人写下签名“狄俄尼索斯”或“被钉十字架者”的疯癫便条；好友奥弗贝克从巴塞尔赶来，把他送入精神病院。此后十余年，他在母亲（瑙姆堡）与妹妹（魏玛）的照料下度过，先后经历数次中风，丧失了说话与行走能力。1900 年 8 月 25 日，尼采因肺炎在魏玛逝世，葬于出生地勒肯的教堂旁。</p>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Friedrich Nietzsche」「弗里德里希·尼采」、斯坦福哲学百科全书（SEP）「Nietzsche」、Biography.com、百度百科、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第三章 ========== -->
+    <section class="section" id="sec-3">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">3</span><span class="h2-text">主要著作与思想成就</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位（学术）：</strong>德国哲学家、诗人、文化批评家、古典语文学家与作曲家；以对传统欧洲道德与宗教的毫不妥协的批判而闻名，被视为“怀疑的解释学”（与马克思、弗洛伊德并列）的先驱，深刻影响了存在主义、后现代主义、精神分析与文学艺术。</p>
+
+        <h3>思想的三阶段</h3>
+        <p>尼采的写作常被分为三期：<strong>早期（1872—1876）</strong>受叔本华与瓦格纳影响，以《悲剧的诞生》为代表，提出日神与酒神之说；<strong>中期（1878—1882）</strong>“自由精神”时期，以格言体写《人性的，太人性的》《曙光》《快乐的科学》，宣告“上帝死了”，与悲观哲学决裂；<strong>晚期（1883—1888）</strong>自《查拉图斯特拉如是说》起，系统阐发超人、权力意志、永恒轮回与重估一切价值。</p>
+
+        <h3>代表作一览</h3>
+        <div class="summary no-break">
+          <div class="col">
+            <div class="col-title">早期 · 美学与文化批判</div>
+            <p><strong>《悲剧的诞生》（1872）：</strong>提出日神与酒神二元冲动，论希腊悲剧的诞生与衰亡，副题初为“悲剧从音乐精神中诞生”。</p>
+            <p><strong>《不合时宜的沉思》（1873—1876）：</strong>四篇论文，批判时代风气，讴歌叔本华与瓦格纳。</p>
+            <p><strong>《人性的，太人性的》（1878）：</strong>格言体转向之作，标志着与瓦格纳、叔本华悲观的决裂。</p>
+          </div>
+          <div class="col">
+            <div class="col-title">晚期 · 成熟体系</div>
+            <p><strong>《查拉图斯特拉如是说》（1883—1885）：</strong>诗体哲学巨著，首次系统提出超人、永恒轮回。</p>
+            <p><strong>《善恶的彼岸》（1886）：</strong>论权力意志与主奴道德，副题“未来哲学序曲”。</p>
+            <p><strong>《论道德的谱系》（1887）：</strong>三篇论文，考据道德起源（“好/坏”与“善/恶”）。</p>
+            <p><strong>《偶像的黄昏》（1888）：</strong>副题“如何以锤子进行哲学思考”，浓缩其一生的批判。</p>
+            <p><strong>《瞧，这个人》（1888 年写，1908 年出版）：</strong>思想自传，末章“为什么我是命运”。</p>
+          </div>
+        </div>
+
+        <h3>关于《权力意志》遗稿</h3>
+        <p>尼采 1888 年 8 月底放弃出版计划中的《权力意志·重估一切价值的尝试》；他逝世后，妹妹伊丽莎白从遗稿中编纂出版《权力意志》（1901），学界普遍认为该编本歪曲了尼采本意（蒙提纳里甚至称之为“伪造”），并被纳粹意识形态滥用。孙周兴已据德国“科利版”考订研究版全集重译，还其本来面目。写作引用时应谨慎：<strong>《权力意志》作为“书名”有争议，但“权力意志”作为思想本身确凿无疑</strong>。</p>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Friedrich Nietzsche」、斯坦福哲学百科全书（SEP）「Nietzsche」、中国作家网《走近尼采的导引》、中国社会科学网（张庆熊文）、商务印书馆《权力意志》译序。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第四章 ========== -->
+    <section class="section" id="sec-4">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">4</span><span class="h2-text">核心思想（一）：上帝之死与虚无主义</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是尼采全部思想的出发点，也是高考切入“信仰崩塌”“意义危机”“精神迷茫”类题目的钥匙：先看清“上帝死后”的真相，才谈得上如何重建意义。</p>
+
+        <h3>“上帝死了”</h3>
+        <p>尼采可怕的宣言：“上帝死了！是我们杀死了上帝！这个世界上最神圣、最万能的上帝，现在已经倒在我们的刀下。我们这些最残忍的凶手，如何才能洗清我们身上的血迹啊？”</p>
+        <p>基督教信仰是整个西方世界的道德基础和人生意义的寄托，意义极其重大。正因为如此，这种信仰本该是真诚的，容不得作假。但人们对上帝的信仰并不是真实的，而是基于一种“虚假的信念”。</p>
+        <p>“地球仿佛正在向下坠落”“没有尽头的黑夜来临了，天越来越冷”“笼罩我们的是永恒的虚空”。对于当时的西方人，否定了上帝，信仰的大厦完全倒塌，生命找不到意义，人们就会陷入虚无主义之中。</p>
+        <p>尼采"上帝已死"的命题（德文：Gott ist tot）最早出现于《快乐的科学》（Die fröhliche Wissenschaft，1882）§108（"新的斗争"），其著名的"疯子"（The Madman）寓言出自 §125，后又在 §343（"我们愉快之含义"）重申；通行英译以 Walter Kaufmann 译本为权威标准。此语出自 §125 的寓言——一个疯子大白天提着灯笼在集市上寻找上帝，遭到众人嘲笑。原文是："上帝死了！上帝仍死了！是我们杀死了他！我们这些最大的谋杀犯，要如何安慰自己？"值得注意的是，尼采的宣告不是无神论的欢呼，而是对"信仰何以变得不可信"的沉痛诊断：现代科学、理性与世俗化，让"对基督教上帝的信仰变得不可信"，而建立在这一信仰之上的一切，包括整个欧洲道德，都注定要崩塌。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>"上帝死了"最常被误用为"人从此可以为所欲为"。正确的用法是：它意味着旧的价值根基失效，人不该再靠"虚假的信念"麻醉自己——这恰恰是对人的更高要求：自己为自己立法。可论证"信仰与理性""规则与自由""重建价值"。</p>
+        </div>
+
+        <p class="src-note">关联：尼采在自传《瞧，这个人》"为什么我是命运"章（Warum ich ein Schicksal bin，1888 写、1908 出版）自陈"我不是人，我是炸药"（德文：Ich bin kein Mensch, ich bin Dynamit），与其"上帝已死"的爆破者姿态一脉相承。</p>
+
+        <h3>虚假的形而上学</h3>
+        <p>尼采批判的虚假形而上学包含三种信念：</p>
+        <ol>
+          <li>相信在感知的表象世界背后有一个更真实的本质世界；</li>
+          <li>相信这个混乱的世界实际上是有目的的；</li>
+          <li>相信这个纷乱多样的世界背后有一种统一性。</li>
+        </ol>
+        <p>尼采认为，那个所谓更真实的、有目的的、有统一性的本质世界根本不存在，而是形而上学的编造，因为人的心灵很脆弱。在这个纷乱繁杂的世界中，我们需要安慰。虚假思想虽然能带来安慰，但最终会带来恶果。</p>
+        <p>换句话说：形而上学之所以流行，不是因为世界真的有“本质”，而是因为人承受不了“世界本就无意义”的真相。它像麻醉剂，暂时止痛，却让人的精神日渐衰弱——当它与生命本能相冲突时，寄托其上的希望破碎，人反而跌入更深的虚无。</p>
+
+        <h3>消极的虚无主义与积极的虚无主义</h3>
+        <div class="summary">
+          <div class="col">
+            <div class="col-title">消极的虚无主义</div>
+            <p>抱有虚幻的信念，认为在世界的表象背后还存在绝对的本质，并且认为人生必须依靠这个绝对的本质才能找到价值和意义，面对虚无的世界遭受毁灭性打击，陷入悲观和绝望。</p>
+          </div>
+          <div class="col">
+            <div class="col-title">积极的虚无主义</div>
+            <p>生命本身是强健有力的。并不存在什么绝对的本质或者真理，人生的意义也并不依赖于它；认识到世界本无意义，这恰恰带来了创造的自由。所有的价值都是人主观创造出来的。</p>
+          </div>
+        </div>
+        <p>关键在于：虚无主义本身并不可怕，可怕的是<strong>消极地承受虚无</strong>。尼采要做的是把“世界无意义”从绝望的深渊，翻转成“创造意义”的自由空间——这正是他区别于一般悲观主义者的地方。</p>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》（尼采章）、维基百科「God is dead」「上帝已死」、斯坦福哲学百科全书（SEP）「Nietzsche」、中国社会科学报《18世纪的“上帝死了”》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第五章 ========== -->
+    <section class="section" id="sec-5">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">5</span><span class="h2-text">核心思想（二）：生命强健——日神酒神、权力意志与超人</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是高考作文最高频的可用角度：“生命强健”可以直击“奋斗与创造”“直面苦难”“自我超越”“热爱生活”等几乎所有正面母题。</p>
+
+        <h3>诚实的英雄主义</h3>
+        <p>生命欲望是真实的，也是正当的。即使因为挫折而痛苦，我们也应当直面它们。鲁迅说：“真的猛士，敢于直面惨淡的人生，敢于正视淋漓的鲜血。”反观禁欲主义，用否定生命欲望来逃避痛苦，只会陷入自欺欺人的虚假人生。</p>
+        <p>如果我们相信虚假思想，就是把生命的希望寄托在不可靠的事物上面。当它们和生命本能冲突，我们会怀疑这些虚假思想。结果是把我们寄托在上面的希望给打破了，人陷入虚无当中。那些看上去高尚典雅、充满确定感的形而上学才是虚无主义的真正根源。</p>
+
+        <h3>虚假的理论掩盖了生命的真相</h3>
+        <p>希腊神话中，人间最好的事情就是你没有生出来，第二好的事情就是你生下来以后快快死掉；最糟糕的就是你继续活着。人生并不存在什么客观的真理或意义，等你去探索，然后发现出来。这本身就是一种幻觉。如果你带着这种幻觉去探索，那么你注定会幻灭，然后你会感到悲观。但是，如果你从来都不相信这种幻觉，就无所谓悲观了。</p>
+
+        <h3>日神与酒神</h3>
+        <p>希腊神话中，有太阳神阿波罗（理性精神）和酒神狄俄尼索斯（注重生命本能的创造力，带有否定理性的反叛精神）。</p>
+        <p>“理论文化”掩盖了“生命本身虚无”的真相：从苏格拉底之后，希腊人开始用理性的方式来论证生活；到了近代，更有高度理性化的科学理论试图用因果规律来解释一切现象，包括人生意义，让人陷入一种幻觉，获得虚假的安慰，这就是理论虚假。（《偶像的黄昏》或怎样用铁锤从事哲学思考）</p>
+        <p>在《悲剧的诞生》中，尼采把这两种精神视为人类文化中最根本的两种冲动：<span class="term">日神（阿波罗）精神</span>象征梦境、形式、清晰、秩序与"美的外观"，让人在幻象中得到安顿；<span class="term">酒神（狄俄尼索斯）精神</span>象征醉态、音乐、迷狂与生命本能的奔涌，让个体消融于整体的洪流。古希腊悲剧的伟大，正在于酒神的深渊本能穿上了日神的美的形式——既直面生命的苦难，又不被苦难压垮。而苏格拉底式理性主义兴起后，人试图用"知识"和"因果律"解释一切，悲剧精神随之衰亡。</p>
+
+        <p>在《悲剧的诞生》（1872）之后，狄奥尼索斯（酒神）精神在尼采晚期进一步升华为"生命肯定"（life-affirmation）的核心象征：它代表对生命苦难的纵身一跃与无条件肯定，与日神"美的外观"相对。他在《偶像的黄昏》"苏格拉底的问题"章中，把苏格拉底主义、理性乐观主义视为悲剧精神的死敌，认为"理论人"用因果律麻醉了生命的深渊。</p>
+
+        <h3>权力意志</h3>
+        <p>尼采把生命最根本的动力称为<span class="term">权力意志（Wille zur Macht）</span>，又译“强力意志”。它不同于叔本华“求生存的意志”：生命不仅要保存自己，更要扩张、增长、克服阻碍、自我超越。权力意志不是政治上的“争权夺利”，而是生命自我强健的创造性能量——追求更高、更强、更完满的生命状态。</p>
+        <blockquote>
+          <p>什么是善？一切提升人身上的权力感、权力意志、权力本身的东西。<br>什么是恶？一切源于虚弱的东西。<br>什么是幸福？权力增长的感觉，阻力被克服的感觉。</p>
+          <cite>—— 尼采《敌基督》开篇（1888）</cite>
+        </blockquote>
+
+        <h3>超人</h3>
+        <p>“超人与普通人的差距，相当于人与猿猴的差距。”超人用自己的生命意志去创造，追求自身生命力量的增长和完满，最终确立和实现自己的生命意义。</p>
+        <p>在《查拉图斯特拉如是说》的序言中，尼采借查拉图斯特拉之口宣告：“超人是大地的意义。”他劝诫人们不要去向往“彼岸”的安慰，而要忠实于大地——<strong>超人不是生物学意义上的“新物种”，也不是“人种优越论”，而是“上帝死后”能够自我立法、自我超越、重估一切价值的精神理想人格</strong>。与此相对的是“末人”：只顾安逸、毫无理想、在平庸中自得其乐的人。</p>
+        <blockquote>
+          <p>人是一根系在动物与超人之间的绳索——一根悬在深渊之上的绳索。一种危险的穿越，一种危险的路途，一种危险的回顾，一种危险的战栗和停留。</p>
+          <cite>—— 尼采《查拉图斯特拉如是说》序言第 4 节</cite>
+        </blockquote>
+
+        <h3>末人与超人</h3>
+        <p>"末人"（Last Man）是《查拉图斯特拉》序言里那种满足于安逸与平庸、追逐微小快乐、对"创造新价值"毫无兴趣的人；与之相对，"超人"（Übermensch）不是生物学新品种，而是不断自我克服、自我立法、创造新价值的超越者。超人从末人中走出，正是"上帝死后"人应当努力成为的方向。</p>
+
+        <h3>精神三变</h3>
+        <p>在《查拉图斯特拉》"三种变形"章中，精神经历三重 metamorphoses：先是负重而驯顺的<strong>骆驼</strong>（承载传统与重负），继而奋起反抗的<strong>狮子</strong>（夺取自由、喊出"我要"），最终成为纯净创造的<strong>孩子</strong>（忘却重负、重新开始、作"神圣的肯定"）。这正对应"成为你自己"的成长之路。</p>
+
+        <h3>永恒轮回</h3>
+        <p>“永恒轮回”是尼采的另一个思想实验：假如一切都将无限次地重来，你此刻的生命、痛苦与选择都要永恒地重复下去，你是否仍愿意这样生活？它首次出现于《快乐的科学》§341——尼采称之为"最大的重量"。这个假说不是对宇宙的物理断言，而是<strong>检验一个人是否真正热爱生命的试金石</strong>：只有像超人那样彻底肯定生命的人，才敢说“我愿如此，永恒地如此”。它把每一刻都变成值得为之负责的“永恒瞬间”，是“爱命运（amor fati）”的极致表达。</p>
+
+        <h3>方法论：成为你自己</h3>
+        <p>面对无意义的世界和无意义的生命，人应该立足于现实，直面无意义的荒谬，以强大的生命本能舞蹈，在生命活动中创造价值，就是“成为你自己”。</p>
+        <p>虚无不再会让你沮丧和绝望，反倒给你最广阔的创造自我意义的空间，虚无让人变成了积极的创造者。</p>
+
+        <p class="src-note">"成为你自己"（Become who you are）是尼采反复申说的方法论命题，亦散见于《快乐的科学》等著作，与"自我立法""忠实于大地"一脉相承。</p>
+
+        <blockquote>
+          <p>法国作家加缪笔下的西西弗斯的命运象征着人生的困境，一切都是徒劳。他可以选择沮丧绝望，充满怨恨和悲哀，让这件事变成最痛苦的折磨；但他可以选择勇敢无畏地、精神焕发地去推动这块巨石。这样一来，这件事就不再是无意义的。用选择创造意义，用斗争对抗虚无。</p>
+          <p>“登上顶峰的斗争本身足以充实人的心灵。应该设想，西西弗斯是幸福的。”</p>
+        </blockquote>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“权力意志”可论证“奋斗与超越”“生命的韧性”；“超人”可论证“自我立法”“卓越与平庸”；“永恒轮回”与“西西弗斯”可论证“热爱当下”“过程的意义”“在重复中创造”；“成为你自己”可直接用于“做自己”“不随波逐流”。注意：尼采的“超人”绝不能被写成“强者欺负弱者”。</p>
+        </div>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》、维基百科「Übermensch」「Eternal return」「Will to power」、斯坦福哲学百科全书（SEP）「Nietzsche」、快懂百科「快乐的科学」。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第六章 ========== -->
+    <section class="section" id="sec-6">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">6</span><span class="h2-text">核心思想（三）：道德谱系与视角主义</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是尼采最锋利的部分：他追问“善恶是从哪里来的”，也追问“我们凭什么相信自己看见的就是真相”。前者用于“道德反思”“何为善良”，后者用于“认识自我”“理解他人”“多元与包容”。</p>
+
+        <h3>奴隶道德与主人道德</h3>
+        <p>“人类的高贵在于自身有决定价值的能力，不需要别人同意，他懂得自己给事物以荣耀。”每个人都是西西弗斯，面对虚无的人生，有两种截然不同的选择：</p>
+        <ul>
+          <li><strong>奴隶道德：</strong>放弃自己生命的激情，用虚假的思想来约束自己、安慰自己，把人生希望寄托在虚妄的观念之中。</li>
+          <li><strong>主人道德：</strong>放弃一切幻觉，直面虚无和荒谬，像西西弗斯那样用生命的激情去自我创造，做一个勇敢、荒谬的英雄。</li>
+        </ul>
+        <p>在《论道德的谱系》中，尼采用"谱系学"方法还原道德的起源：原初的贵族以"好 / 坏"评价自身与低贱者（主人道德）；被压迫的弱者无力反抗，便以"怨恨（Ressentiment）"创造出一套"善 / 恶"的价值，把强者的力量、骄傲与危险统统判为"恶"，把自己的软弱、谦卑与顺从颂为"善"——尼采称之为"道德中的奴隶起义"。在他看来，基督教道德正是这种奴隶道德的胜利。注意：尼采并非简单地"褒主人而贬奴隶"，而是要揭示道德并非神圣天启，而是权力关系的产物——由此才有"重估一切价值"的可能。</p>
+
+        <p class="src-note">谱系学（Genealogie）是尼采在《论道德的谱系》（1887）中开创的方法：不追问道德"是否真理"，而追问它"从何处来、因何历史而成"；该书第一篇即以"怨恨"（Ressentiment）解释奴隶道德的心理起源，是理解主人道德 / 奴隶道德的关键。</p>
+
+        <blockquote>
+          <p>难道我们不能使自己成为上帝吗？就算哪怕试一试也不行吗？</p>
+        </blockquote>
+
+        <h3>反对教条</h3>
+        <p>“你们说相信查拉图斯特拉，但查拉图斯特拉算什么？你们说是我的信徒，但所有的信徒又算得了什么？你们没有探索自己，却发现了我……现在我要你们丢开我去发现自己，只有当你们全部否定我的时候，我才会回到你们身边。”</p>
+        <p>所有关于生命的言说都不能成为教条，如果你屈从了这种教条，变成了盲从的信徒，那么你的信仰就毫无价值。</p>
+        <p>这或许是尼采对自己最深的“自我防御”：他的哲学不是让人膜拜的新偶像，而是催促每个人自己去思考。真正的追随，是超越他、成为自己。</p>
+
+        <h3>后真相与视角主义</h3>
+        <p>后真相的时代，客观的事实真相可能根本不存在，或视角是所有生活的基本条件。</p>
+        <p>传统认知模式（如苏轼“横看成岭侧成峰”）的前提是：存在一个客观的真相或者真理。我们去认知它，就是努力地去理解这个真相，再把它表达出来，只要不断向前推进，就可以越来越接近这个真相，最终完全认识和掌握真相。</p>
+
+        <div class="box no-break">
+          <div class="box-title">视角主义</div>
+          <p>“存在一个客观真相”不过是一个一厢情愿的假设，无法确定（“上帝已死”）。人能得到的，就是一个个不同的视角看到的不同真相。更准确地说，人不是“看到”真相，而是“制造”了真相。</p>
+          <p>公认的客观性不过是一种合理的错觉，因为人们有共同视角，得出一致解释，才造成错觉。“共同视角”变，客观事实也会变。（从天狗吃月亮到月食，印象派由嘲讽变为艺术流派名）</p>
+        </div>
+
+        <blockquote>
+          <p>我们越是运用更多的眼睛、不同的眼睛去观察同一个东西，我们对这个东西的“概念”就越完整，我们也能越“客观”。</p>
+          <cite>—— 尼采《道德的谱系》</cite>
+        </blockquote>
+
+        <p>视角主义教给我们的，不是分裂的必然，而是谦逊的必要。一个人的视角并不是天生固定的，而是在自身经历中形成的。改变自己的视角绝非易事，但这仍然是可能的，它取决于我们的选择。我们应该试着去改变自己的视角，超越自己的视角去理解他人，寻找让不同视角互相理解、融合出共同视角的可能性。理论勾勒了某种灰暗的前景，不意味着我们只能心灰意冷；它恰恰给了我们改变这个前景的机会。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“主奴道德”可用于“何为真正的善良”“警惕道德绑架”“独立思考”；“视角主义”可用于“换位思考”“多元包容”“认识有局限，所以要谦逊”。引用时强调：尼采反对的不是“善良”本身，而是把“软弱”包装成“善良”的自欺。</p>
+        </div>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》、斯坦福哲学百科全书（SEP）「Nietzsche」、维基百科「Master–slave morality」、中国社会科学网（张庆熊文）、五南《道德的谱系》译序。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第七章 ========== -->
+    <section class="section" id="sec-7">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">7</span><span class="h2-text">我们该如何理解尼采</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">尼采大概是现代思想史上被误解最深的人。世人曾把他读成“疯子的呓语”“虚无主义的鼓吹者”，甚至“纳粹的思想源头”。但这些读法，恰恰是他一生最反对的东西。</p>
+
+        <div class="box no-break">
+          <div class="box-title">破除四种常见误读</div>
+          <p><strong>一、尼采不是悲观虚无主义者。</strong>他诊断虚无主义，是为了开出“积极的虚无主义”这一解药。恰恰相反，他是生命最强有力的肯定者——“一个看清了生命真相却依然热爱生命的人”。</p>
+          <p><strong>二、尼采不是反科学、反理性的疯子。</strong>他反对的是“把一切都交给理性因果律”的迷信，即“理论文化”对人的生命本能的压抑。他批判的是理性的僭越，而非理性本身。</p>
+          <p><strong>三、“超人”不是人种优越论。</strong>超人是精神自我超越的理想形象，与种族、血统无关。妹妹伊丽莎白与纳粹对他的歪曲利用，是哲学史上最大的背叛——尼采本人明确反对反犹主义。</p>
+          <p><strong>四、“权力意志”不是弱肉强食。</strong>权力意志的核心是“自我克服、自我超越”，是让生命更有力地创造与承担，而非强者对弱者的欺凌。尼采真正的敌人，是精神上的懦弱与自欺。</p>
+        </div>
+
+        <h3>面向深渊：清醒的强度</h3>
+        <p>尼采有一句广为流传的话，出自《善恶的彼岸》格言 146：“与怪物战斗的人，应当小心自己不要也因此变成怪物。如果你长时间凝视深渊，深渊也会凝视你。”这句话常被用来形容“在对抗邪恶中反被邪恶吞噬”，但更贴近尼采本意的读法，是<strong>对自我反思的警醒</strong>：人的精神在与虚无、与黑暗搏斗时，必须有足够强度守住自己，否则会被深渊同化。</p>
+
+        <h3>尼采式收束：像罗曼·罗兰说的那样</h3>
+        <p>刘擎在讲到尼采时，曾引罗曼·罗兰的话作为总结：“世界上只有一种英雄主义，那就是在看清生活的真相之后，依然热爱生活。”尼采的思想底色正是这种英雄主义：他不给你虚假的安慰，而是把最冰冷的真相摆在你面前——然后告诉你，<strong>你比自己想象的更有力量</strong>。一个人的精神强度，不在于他相信了什么，而在于他敢于直面多少真相而不垮。</p>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》、斯坦福哲学百科全书（SEP）「Nietzsche」、罗曼·罗兰《米开朗琪罗传》、维基百科「Nietzsche and fascism」相关条目。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第八章 ========== -->
+    <section class="section" id="sec-8">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">8</span><span class="h2-text">写作应用提示</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">把尼采用在考场上，记住：<strong>思想用于论证，生平用于点缀，引文要“可上考场”。</strong></p>
+
+        <h3>一、适用主题速查</h3>
+        <ul>
+          <li><strong>自我与成长 / 成为自己：</strong>“成为你自己”、反对教条、精神三变（骆驼—狮子—孩子）。</li>
+          <li><strong>理想与现实 / 直面挫折：</strong>诚实的英雄主义、西西弗斯、永恒轮回中的“热爱当下”。</li>
+          <li><strong>信仰与理性 / 意义危机：</strong>上帝已死、消极与积极虚无主义、重估一切价值。</li>
+          <li><strong>奋斗与超越 / 卓越：</strong>权力意志、超人、末人的平庸与安逸。</li>
+          <li><strong>理性与本能 / 科技与人文：</strong>日神与酒神、理论文化对生命真相的掩盖。</li>
+          <li><strong>道德反思 / 何为善良：</strong>主人道德与奴隶道德、怨恨与自欺。</li>
+          <li><strong>多元与包容 / 理解他人：</strong>视角主义、认识的谦逊、超越自身视角。</li>
+          <li><strong>偶像与自我 / 独立思考：</strong>与瓦格纳的决裂、反对教条。</li>
+        </ul>
+
+        <h3>二、可嵌入的经典引文</h3>
+        <ul>
+          <li>“一个人能承受多少真相，是对他精神强度的考验。”（直面真相与挫折；转引自刘擎《西方现代思想讲义》）</li>
+          <li>“上帝死了！上帝仍死了！是我们杀死了他！”（《快乐的科学》第 125 节；信仰崩塌与价值重估）</li>
+          <li>"人是一根系在动物与超人之间的绳索——一根悬在深渊之上的绳索。"（《查拉图斯特拉如是说》序言 §4；德文：Der Mensch ist ein Seil, geknüpft zwischen Tier und Übermensch；人的未完成性与自我超越）</li>
+          <li>“超人是大地的意义。”（同上；忠实于生活本身，不寄托于彼岸）</li>
+          <li>"凡不能杀死我的，使我更强大。"（德文：Was mich nicht umbringt, macht mich stärker.《偶像的黄昏》"格言与箭"第 8 节；《瞧，这个人》中展开论述；苦难与成长）</li>
+          <li>"如果你长时间凝视深渊，深渊也会凝视你。"（德文：Wer mit Ungeheuern kämpft, mag zusehn, dass er nicht dabei zum Ungeheuer wird. Und wenn du lange in einen Abgrund blickst, blickt der Abgrund auch in dich hinein.《善恶的彼岸》格言 146（"格言与插曲"章）；在对抗黑暗时守住自己）</li>
+          <li>"我不是人，我是炸药。"（德文：Ich bin kein Mensch, ich bin Dynamit；直译即"我不是炸药"）——《瞧，这个人》"为什么我是命运"章（Warum ich ein Schicksal bin，1888 写、1908 出版；自我定位与力量自述）</li>
+          <li>“一个人心中必须还有混沌，才能诞生一颗跳舞的星。”（《查拉图斯特拉如是说》；在混乱与不安中孕育创造力）</li>
+          <li>“你们说是我的信徒，但所有的信徒又算得了什么？……丢开我去发现自己。”（同上；独立思考，反对盲从）</li>
+        </ul>
+
+        <h3>三、易错提醒</h3>
+        <ul>
+          <li><strong>“上帝死了”≠ 欢呼无神论：</strong>它是沉痛的诊断与警告，用于“信仰崩塌后的重建”，别写成“尼采说人可以无法无天”。</li>
+          <li><strong>虚无主义 ≠ 尼采的主张：</strong>尼采诊断消极虚无主义，药方是积极虚无主义与超人；别把尼采写成悲观主义者。</li>
+          <li><strong>超人 ≠ 种族优越论：</strong>超人是精神自我超越的理想，与血统无关；务必与纳粹式误读划清界限。</li>
+          <li><strong>权力意志 ≠ 弱肉强食：</strong>它是生命的自我超越与自我强健，不是强者欺凌弱者的借口。</li>
+          <li><strong>主奴道德 ≠ 鼓吹不平等：</strong>尼采是在揭示道德的“谱系”与“来源”，提醒人警惕以“善良”之名行自欺之实。</li>
+          <li><strong>引文出处要留意：</strong>“一个人能承受多少真相”通行出自刘擎转引，原德文句出处学界存疑；“马匹事件”是否为史实尚无定论，写作时若使用宜注明“据传”。</li>
+        </ul>
+
+        <div class="footer-note">完 · 本册素材综合自公开网络文献与刘擎《西方现代思想讲义》，引文以通行中译为准，考场引用请依教材与权威译本。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== 悬浮按钮 ===================== -->
+<div class="fab-group">
+  <button class="fab fab-mini hidden" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">⤒</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 常量与元素引用 ================= */
+  var STORE_THEME = 'weber.theme';
+  var STORE_FS    = 'weber.fontSize';
+  var FS_LEVELS   = ['0', '1', '2'];
+
+  var html        = document.documentElement;
+  var body        = document.body;
+  var topbar      = document.getElementById('topbar');
+  var progressBar = document.getElementById('progressBar');
+  var main        = document.getElementById('main');
+  var tocEl       = document.getElementById('toc');
+  var tocNav      = document.getElementById('tocNav');
+  var secCountEl  = document.getElementById('secCount');
+  var scrim       = document.getElementById('scrim');
+  var menuBtn     = document.getElementById('menuBtn');
+  var themeBtn    = document.getElementById('themeBtn');
+  var fsUpBtn     = document.getElementById('fsUp');
+  var fsDownBtn   = document.getElementById('fsDown');
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
+  var prevHitBtn  = document.getElementById('prevHit');
+  var nextHitBtn  = document.getElementById('nextHit');
+  var clearBtn    = document.getElementById('clearSearch');
+  var expandAllBtn   = document.getElementById('expandAll');
+  var collapseAllBtn = document.getElementById('collapseAll');
+  var toTopBtn    = document.getElementById('toTop');
+
+  var sections   = [].slice.call(main.querySelectorAll('.section'));
+  var navTargets = [];   /* 目录跳转目标 id（文档顺序，含 h2 与 h3） */
+  var tocItems   = {};   /* id -> 目录 <a> 元素 */
+  var hits       = [];   /* 当前搜索命中的 <mark> 列表 */
+  var hitIndex   = -1;
+  var searchTimer = null;
+  var rafPending  = false;
+  var activeId    = '';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+  /* ================= 通用工具 ================= */
+
+  /** 安全读取 localStorage（隐私模式下可能抛错）。 */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  /** 安全写入 localStorage。 */
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* 忽略 */ }
+  }
+  /** 顶栏当前高度（移动端换行后会变高）。 */
+  function topbarHeight() {
+    return topbar ? topbar.offsetHeight : 58;
+  }
+  /** 取标题纯文本（剔除章节序号与折叠箭头）。 */
+  function headingText(heading) {
+    var clone = heading.cloneNode(true);
+    var junk = clone.querySelectorAll('.chapter-num, .sec-caret');
+    for (var i = 0; i < junk.length; i++) { junk[i].parentNode.removeChild(junk[i]); }
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** 元素是否当前可见（折叠后的内容不可见）。 */
+  function isVisible(el) {
+    return !!(el && el.offsetParent !== null);
+  }
+
+  /* ================= 主题 ================= */
+
+  function applyTheme(theme) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? '☀' : '🌙';
+    themeBtn.setAttribute('title', next === 'dark' ? '切换到浅色阅读模式' : '切换到深色阅读模式');
+  }
+
+  function initTheme() {
+    var saved = lsGet(STORE_THEME);
+    if (saved !== 'dark' && saved !== 'light') {
+      var prefersDark = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false;
+      saved = prefersDark ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+
+  themeBtn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    lsSet(STORE_THEME, next);
+  });
+
+  /* ================= 字号（三档） ================= */
+
+  function applyFontSize(level) {
+    var idx = FS_LEVELS.indexOf(String(level));
+    if (idx === -1) { idx = 1; }
+    html.setAttribute('data-fs', FS_LEVELS[idx]);
+    fsDownBtn.disabled = (idx === 0);
+    fsUpBtn.disabled = (idx === FS_LEVELS.length - 1);
+    fsDownBtn.style.opacity = idx === 0 ? '.45' : '1';
+    fsUpBtn.style.opacity = idx === FS_LEVELS.length - 1 ? '.45' : '1';
+  }
+
+  function stepFontSize(delta) {
+    var idx = FS_LEVELS.indexOf(html.getAttribute('data-fs'));
+    if (idx === -1) { idx = 1; }
+    var next = Math.min(FS_LEVELS.length - 1, Math.max(0, idx + delta));
+    applyFontSize(FS_LEVELS[next]);
+    lsSet(STORE_FS, FS_LEVELS[next]);
+  }
+
+  function initFontSize() {
+    var saved = lsGet(STORE_FS);
+    applyFontSize(saved === null ? '1' : saved);
+  }
+
+  fsUpBtn.addEventListener('click', function () { stepFontSize(1); });
+  fsDownBtn.addEventListener('click', function () { stepFontSize(-1); });
+
+  /* ================= 章节折叠 / 展开 ================= */
+
+  function setCollapsed(section, collapsed) {
+    var head = section.querySelector('h2.sec-head');
+    if (!head) { return; }
+    if (collapsed) {
+      section.classList.add('collapsed');
+      head.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      head.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function toggleSection(section) {
+    setCollapsed(section, !section.classList.contains('collapsed'));
+    requestActiveUpdate();
+  }
+
+  function expandSection(section) {
+    if (section && section.classList.contains('collapsed')) {
+      setCollapsed(section, false);
+    }
+  }
+
+  sections.forEach(function (section) {
+    var head = section.querySelector('h2.sec-head');
+    var bodyEl = section.querySelector('.sec-body');
+    if (!head || !bodyEl) { return; }
+    if (!bodyEl.id) { bodyEl.id = section.id + '-body'; }
+    head.setAttribute('aria-controls', bodyEl.id);
+
+    head.addEventListener('click', function () { toggleSection(section); });
+    head.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggleSection(section);
+      }
+    });
+  });
+
+  expandAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, false); });
+    requestActiveUpdate();
+  });
+  collapseAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, true); });
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    requestActiveUpdate();
+  });
+
+  /* ================= 目录（TOC）自动生成 ================= */
+
+  function buildToc() {
+    var frag = document.createDocumentFragment();
+    var chapterCount = 0;
+
+    sections.forEach(function (section, sIdx) {
+      if (!section.id) { section.id = 'sec-auto-' + sIdx; }
+
+      var head = section.querySelector('h2.sec-head');
+      var label = head ? headingText(head) : (section.getAttribute('data-toc') || ('第 ' + (sIdx + 1) + ' 节'));
+      var numEl = head ? head.querySelector('.chapter-num') : null;
+      var numText = numEl ? numEl.textContent.trim() : '·';
+      if (head) { chapterCount += 1; }
+
+      frag.appendChild(makeTocItem(section.id, label, numText, 2));
+      navTargets.push(section.id);
+
+      /* 子节标题（h3）自动提取 */
+      var subs = [].slice.call(section.querySelectorAll('h3'));
+      subs.forEach(function (h3, hIdx) {
+        if (!h3.id) { h3.id = section.id + '-h3-' + (hIdx + 1); }
+        frag.appendChild(makeTocItem(h3.id, headingText(h3), '', 3));
+        navTargets.push(h3.id);
+      });
+    });
+
+    tocNav.appendChild(frag);
+    secCountEl.textContent = String(chapterCount);
+  }
+
+  function makeTocItem(targetId, label, numText, level) {
+    var a = document.createElement('a');
+    a.className = 'toc-item lvl' + level;
+    a.href = '#' + targetId;
+    a.setAttribute('data-target', targetId);
+
+    if (level === 2) {
+      var num = document.createElement('span');
+      num.className = 'toc-num';
+      num.textContent = numText || '·';
+      a.appendChild(num);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'toc-text';
+    txt.textContent = label;
+    a.appendChild(txt);
+
+    tocItems[targetId] = a;
+    return a;
+  }
+
+  /* ================= 平滑滚动与锚点 ================= */
+
+  function scrollToTarget(targetId, updateHash) {
+    var el = document.getElementById(targetId);
+    if (!el) { return; }
+
+    var section = el.closest ? el.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    /* 折叠展开后再量位置，避免坐标错位 */
+    window.requestAnimationFrame(function () {
+      var rect = el.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - 14;
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+      if (updateHash !== false && history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+      }
+      setActive(targetId);
+    });
+  }
+
+  /* 侧边目录点击 */
+  tocNav.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-item') : null;
+    if (!link) { return; }
+    event.preventDefault();
+    scrollToTarget(link.getAttribute('data-target'));
+    closeDrawer();
+  });
+
+  /* 正文内“目 录”清单点击 */
+  main.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-list-link') : null;
+    if (!link) { return; }
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') { return; }
+    event.preventDefault();
+    scrollToTarget(href.slice(1));
+  });
+
+  /* ================= 当前章节高亮（IntersectionObserver + 滚动兜底） ================= */
+
+  /* 上报当前可见小节给原生层（用于"练习当前正文"只取正在看的那一节）。
+     通过隐藏 iframe 触发 philomenu:// scheme，由原生 shouldOverrideUrlLoading 拦截。 */
+  function reportActiveSection(targetId) {
+    try {
+      var el = document.getElementById(targetId);
+      var sec = el && el.closest ? el.closest('.section') : null;
+      // 仅上报顶层小节（sec-N）；封面 / 目录不计入练习范围
+      if (sec && /^sec-\d+$/.test(sec.id)) {
+        var person = 'nietzsche';
+        var url = 'philomenu://update_person?person=' + encodeURIComponent(person) +
+                  '&section=' + encodeURIComponent(sec.id);
+        var bridge = document.getElementById('__philomenu_bridge');
+        if (!bridge) {
+          bridge = document.createElement('iframe');
+          bridge.id = '__philomenu_bridge';
+          bridge.setAttribute('style', 'display:none;width:0;height:0;border:0;');
+          document.body.appendChild(bridge);
+        }
+        bridge.src = url;
+      }
+    } catch (_) { /* 静默失败，不影响阅读 */ }
+  }
+
+  function setActive(targetId) {
+    if (!targetId || targetId === activeId) { return; }
+    activeId = targetId;
+    reportActiveSection(targetId);
+
+
+
+    for (var key in tocItems) {
+      if (Object.prototype.hasOwnProperty.call(tocItems, key)) {
+        tocItems[key].classList.remove('active');
+        tocItems[key].classList.remove('active-parent');
+      }
+    }
+    var item = tocItems[targetId];
+    if (!item) { return; }
+    item.classList.add('active');
+
+    /* 若命中的是 h3，则同时标记所属大节 */
+    var el = document.getElementById(targetId);
+    var section = el && el.closest ? el.closest('.section') : null;
+    if (section && section.id !== targetId && tocItems[section.id]) {
+      tocItems[section.id].classList.add('active-parent');
+    }
+    keepTocItemVisible(item);
+  }
+
+  function keepTocItemVisible(item) {
+    if (body.classList.contains('toc-open')) { return; }
+    var cRect = tocEl.getBoundingClientRect();
+    var iRect = item.getBoundingClientRect();
+    if (iRect.top < cRect.top + 8) {
+      tocEl.scrollTop -= (cRect.top + 8 - iRect.top);
+    } else if (iRect.bottom > cRect.bottom - 8) {
+      tocEl.scrollTop += (iRect.bottom - (cRect.bottom - 8));
+    }
+  }
+
+  function computeActive() {
+    var boundary = topbarHeight() + 28;
+    var candidate = navTargets.length ? navTargets[0] : '';
+
+    for (var i = 0; i < navTargets.length; i++) {
+      var el = document.getElementById(navTargets[i]);
+      if (!el || !isVisible(el)) { continue; }
+      var top = el.getBoundingClientRect().top;
+      if (top - boundary <= 0) {
+        candidate = navTargets[i];
+      } else {
+        break;
+      }
+    }
+    /* 滚动到底部时强制高亮最后一节 */
+    var docH = document.documentElement.scrollHeight;
+    if (window.pageYOffset + window.innerHeight >= docH - 4 && navTargets.length) {
+      candidate = navTargets[navTargets.length - 1];
+    }
+    setActive(candidate);
+  }
+
+  function requestActiveUpdate() {
+    if (rafPending) { return; }
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      computeActive();
+      updateProgress();
+    });
+  }
+
+  function initObserver() {
+    if (!('IntersectionObserver' in window)) { return; }
+    var observer = new IntersectionObserver(function () {
+      requestActiveUpdate();
+    }, {
+      root: null,
+      rootMargin: '-' + (topbarHeight() + 10) + 'px 0px -55% 0px',
+      threshold: [0, 0.05, 0.3, 0.6, 1]
+    });
+    sections.forEach(function (section) { observer.observe(section); });
+    var subs = main.querySelectorAll('h3');
+    for (var i = 0; i < subs.length; i++) { observer.observe(subs[i]); }
+  }
+
+  /* ================= 阅读进度条 ================= */
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.pageYOffset / max) * 100 : 0;
+    if (pct < 0) { pct = 0; }
+    if (pct > 100) { pct = 100; }
+    progressBar.style.width = pct.toFixed(2) + '%';
+
+    if (window.pageYOffset > 420) {
+      toTopBtn.classList.remove('hidden');
+    } else {
+      toTopBtn.classList.add('hidden');
+    }
+  }
+
+  toTopBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 全文搜索 ================= */
+
+  /** 清除所有高亮，并把文本节点合并回原状。 */
+  function clearMarks() {
+    var marks = main.querySelectorAll('mark.hit');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+    hits = [];
+    hitIndex = -1;
+  }
+
+  /** 用 <mark class="hit"> 包裹所有 substring 匹配。 */
+  function applyMarks(term) {
+    var query = term.toLowerCase();
+    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var value = node.nodeValue;
+        if (!value || !value.trim()) { return NodeFilter.FILTER_REJECT; }
+        var parent = node.parentNode;
+        if (!parent) { return NodeFilter.FILTER_REJECT; }
+        var tag = parent.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') { return NodeFilter.FILTER_REJECT; }
+        if (value.toLowerCase().indexOf(query) === -1) { return NodeFilter.FILTER_REJECT; }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
+    var targets = [];
+    while (walker.nextNode()) { targets.push(walker.currentNode); }
+
+    for (var i = 0; i < targets.length; i++) {
+      var node = targets[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      var idx = lower.indexOf(query, cursor);
+
+      while (idx !== -1) {
+        if (idx > cursor) {
+          frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        cursor = idx + query.length;
+        idx = lower.indexOf(query, cursor);
+      }
+      if (cursor < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      if (node.parentNode) { node.parentNode.replaceChild(frag, node); }
+    }
+
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+  }
+
+  /** 在目录上标注每节命中数量。 */
+  function updateTocHits() {
+    for (var key in tocItems) {
+      if (!Object.prototype.hasOwnProperty.call(tocItems, key)) { continue; }
+      var badge = tocItems[key].querySelector('.toc-hits');
+      if (badge) { badge.parentNode.removeChild(badge); }
+    }
+    if (!hits.length) { return; }
+    sections.forEach(function (section) {
+      var count = section.querySelectorAll('mark.hit').length;
+      var item = tocItems[section.id];
+      if (!count || !item) { return; }
+      var badge = document.createElement('span');
+      badge.className = 'toc-hits';
+      badge.textContent = String(count);
+      item.appendChild(badge);
+    });
+  }
+
+  function gotoHit(index) {
+    if (!hits.length) { return; }
+    var total = hits.length;
+    hitIndex = ((index % total) + total) % total;
+
+    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove('current'); }
+    var target = hits[hitIndex];
+    target.classList.add('current');
+
+    var section = target.closest ? target.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    window.requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - Math.max(window.innerHeight * 0.28, 90);
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+    renderCount();
+  }
+
+  function renderCount() {
+    var term = searchInput.value.trim();
+    if (!term) {
+      searchCount.textContent = '';
+      return;
+    }
+    if (!hits.length) {
+      searchCount.textContent = '无匹配';
+      return;
+    }
+    searchCount.textContent = (hitIndex >= 0 ? (hitIndex + 1) + '/' : '') + hits.length + ' 处';
+  }
+
+  function toggleSearchButtons(show) {
+    prevHitBtn.hidden = !show;
+    nextHitBtn.hidden = !show;
+    clearBtn.hidden = !show;
+  }
+
+  function runSearch() {
+    var term = searchInput.value.trim();
+    clearMarks();
+
+    if (!term) {
+      updateTocHits();
+      toggleSearchButtons(false);
+      renderCount();
+      return;
+    }
+
+    applyMarks(term);
+    updateTocHits();
+    toggleSearchButtons(true);
+
+    /* 展开所有含命中的章节，避免匹配被折叠隐藏 */
+    sections.forEach(function (section) {
+      if (section.querySelector('mark.hit')) { expandSection(section); }
+    });
+    /* 折叠状态可能变化，重新收集顺序 */
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+
+    if (hits.length) {
+      gotoHit(0);
+    } else {
+      renderCount();
+    }
+  }
+
+  searchInput.addEventListener('input', function () {
+    if (searchTimer) { window.clearTimeout(searchTimer); }
+    searchTimer = window.setTimeout(runSearch, 180);
+  });
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = null; }
+      if (!hits.length) {
+        runSearch();
+      } else {
+        gotoHit(hitIndex + (event.shiftKey ? -1 : 1));
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      resetSearch();
+    }
+  });
+
+  function resetSearch() {
+    searchInput.value = '';
+    clearMarks();
+    updateTocHits();
+    toggleSearchButtons(false);
+    renderCount();
+    searchInput.blur();
+  }
+
+  clearBtn.addEventListener('click', resetSearch);
+  nextHitBtn.addEventListener('click', function () { gotoHit(hitIndex + 1); });
+  prevHitBtn.addEventListener('click', function () { gotoHit(hitIndex - 1); });
+
+  /* ================= 移动端抽屉 ================= */
+
+  function openDrawer() {
+    body.classList.add('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!body.classList.contains('toc-open')) { return; }
+    body.classList.remove('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (body.classList.contains('toc-open')) { closeDrawer(); } else { openDrawer(); }
+  });
+  scrim.addEventListener('click', closeDrawer);
+
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 768) { closeDrawer(); }
+    requestActiveUpdate();
+  });
+
+  /* ================= 全局键盘快捷键 ================= */
+
+  document.addEventListener('keydown', function (event) {
+    if (typeof event.key !== 'string') { return; }
+    var tag = (event.target && event.target.nodeName) || '';
+    var typing = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT');
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      searchInput.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  /* ================= 滚动监听 ================= */
+
+  window.addEventListener('scroll', requestActiveUpdate, { passive: true });
+
+  /* ================= 初始化 ================= */
+
+  initTheme();
+  initFontSize();
+  buildToc();
+  initObserver();
+  updateProgress();
+  computeActive();
+
+  /* 带 hash 进入时定位到对应章节 */
+  if (window.location.hash.length > 1) {
+    var initialId = decodeURIComponent(window.location.hash.slice(1));
+    if (document.getElementById(initialId)) {
+      window.setTimeout(function () { scrollToTarget(initialId, false); }, 60);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -18,6 +18,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -37,8 +40,12 @@ import com.ilyskyo.blancall.ui.practice.PracticeScreen
 import com.ilyskyo.blancall.ui.reader.ReaderScreen
 import com.ilyskyo.blancall.ui.settings.SettingsScreen
 import com.ilyskyo.blancall.ui.settings.HelpScreen
+import com.ilyskyo.blancall.ui.western.WesternThoughtScreen
+import com.ilyskyo.blancall.ui.western.LibraryContentPage
 import com.ilyskyo.blancall.ui.statistics.OverviewScreen
 import com.ilyskyo.blancall.ui.statistics.StatisticsScreen
+import com.ilyskyo.blancall.ui.onboarding.OnboardingScreen
+import com.ilyskyo.blancall.ui.search.SearchScreen
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.ilyskyo.blancall.ui.viewmodel.SectionMode
@@ -49,16 +56,32 @@ fun AppNavigation() {
     val predictiveBack by AppPrefs.predictiveBackFlow.collectAsState()
     // 底部导航栏开关（设置中可开：底部显示 首页/我的文章/数据）
     val bottomNavEnabled by AppPrefs.bottomNavEnabledFlow.collectAsState()
+    // 内置素材库开关（开启后底部导航栏追加「素材库」入口）
+    val builtInLibraryEnabled by AppPrefs.builtInLibraryEnabledFlow.collectAsState()
     // 当前路由（用于底部导航栏高亮）
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
 
-    // 底部导航栏仅在三个根页面显示（子页面如阅读/练习不显示）
-    val rootRoutes = listOf("home", "list", "overview")
-    val currentTab = when (currentRoute) {
-        "home" -> 0
-        "list" -> 1
-        "overview" -> 2
+    // 首次使用引导页：首次启动展示一次，设置里也可重看
+    val onboardingSeen by AppPrefs.onboardingSeenFlow.collectAsState()
+    var onboardingRedirected by remember { mutableStateOf(!onboardingSeen) }
+    LaunchedEffect(onboardingSeen) {
+        if (!onboardingSeen && !onboardingRedirected) {
+            onboardingRedirected = true
+            navController.navigate("onboarding")
+        }
+    }
+
+    // 底部导航栏根页面：home/list/overview 固定，开启内置素材库时追加 philo
+    val rootRoutes = listOf("home", "list", "overview") +
+        if (builtInLibraryEnabled) listOf("philo") else emptyList()
+    // 按「根 tab 归属」匹配，覆盖各根页面的直接子路由（如 statistics/xxx、philo_content/xxx），
+    // 保证进入子页面时底部导航栏仍可见且高亮正确，用户可随时点其它 tab 跳出。
+    val currentTab = when {
+        currentRoute == "home" || currentRoute?.startsWith("home/") == true -> 0
+        currentRoute == "list" || currentRoute?.startsWith("list/") == true -> 1
+        currentRoute == "overview" || currentRoute?.startsWith("statistics/") == true -> 2
+        currentRoute == "philo" || currentRoute?.startsWith("philo_content/") == true -> 3
         else -> -1
     }
     // 首页在底部导航模式下不再显示左下角入口按钮（入口已迁移到导航栏）。
@@ -69,15 +92,17 @@ fun AppNavigation() {
     fun selectTab(index: Int) {
         val route = rootRoutes[index]
         if (route == currentRoute) return
-        // 关键修复：使用导航图起始目的地 id 做 popUpTo，可兼容「从子页面/统计页等任意深度返回根 tab」，
-        // 并避免 restoreState + launchSingleTop 在回到 startDestination 时偶发不切换页面的问题。
+        // 用目标 route 自身做 popUpTo（而非 startDestinationId）：
+        // 1) 兼容「从子页面/统计页等任意深度返回根 tab」——把目标 tab 之上的所有页面弹出；
+        // 2) 关键：去掉 restoreState，避免回到 startDestination(home) 时状态被恢复、
+        //    NavHost 不再重组该 destination 导致的「点了首页无反应」问题。
         navController.navigate(route) {
-            popUpTo(navController.graph.startDestinationId) {
+            popUpTo(route) {
                 saveState = true
                 inclusive = false
             }
             launchSingleTop = true
-            restoreState = true
+            restoreState = false
         }
     }
 
@@ -267,6 +292,28 @@ fun AppNavigation() {
             SettingsScreen(navController)
         }
 
+        // 首页搜索页（搜索标题 / 正文 / 添加日期）
+        composable(
+            "search",
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            SearchScreen(navController)
+        }
+
+        // 首次使用引导页（首启自动进入；设置里可从「帮助」重看）
+        composable(
+            "onboarding",
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            OnboardingScreen(navController)
+        }
+
         composable(
             "help",
             enterTransition = enterSlide,
@@ -275,6 +322,33 @@ fun AppNavigation() {
             popEnterTransition = popEnterSlide
         ) {
             HelpScreen(navController)
+        }
+
+        // 内置素材库卡片页（底部「素材库」tab 进入，同级根页面，无返回键）
+        // 与 home/list/overview 一样：底部导航模式下 tab 切换无动画，直接出现
+        composable(
+            "philo",
+            enterTransition = if (bottomNavEnabled) noneTransition else enterSlide,
+            exitTransition = if (bottomNavEnabled) noneExitTransition else exitSlide,
+            popExitTransition = if (bottomNavEnabled) noneExitTransition else popExitSlide,
+            popEnterTransition = if (bottomNavEnabled) noneTransition else popEnterSlide
+        ) {
+            WesternThoughtScreen(navController)
+        }
+
+        // 素材库内容页（点卡片进入对应库 WebView）
+        composable(
+            route = "philo_content/{libraryId}",
+            arguments = listOf(
+                navArgument("libraryId") { type = NavType.StringType }
+            ),
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) { backStackEntry ->
+            val libraryId = backStackEntry.arguments?.getString("libraryId") ?: "western"
+            LibraryContentPage(navController, libraryId)
         }
 
         composable(
@@ -374,7 +448,8 @@ fun AppNavigation() {
         if (bottomNavEnabled && currentTab >= 0) {
             BottomNavBar(
                 currentTab = currentTab,
-                onSelect = { selectTab(it) }
+                onSelect = { selectTab(it) },
+                showLibraryTab = builtInLibraryEnabled
             )
         }
     } // close Column

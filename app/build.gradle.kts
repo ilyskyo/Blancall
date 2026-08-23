@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "3.2"
+        versionCode = 9
+        versionName = "3.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -1,0 +1,1682 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-fs="1">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="马克斯·韦伯（1864—1920）高考写作素材：生平、著作、核心思想（理性化与祛魅、工具理性与价值理性、天职观与现代铁笼、价值多元、责任伦理、学术志业）与写作应用提示。">
+<title>马克斯·韦伯 · 哲思化写作素材</title>
+<style>
+/* =====================================================================
+   马克斯·韦伯 · 写作素材（可交互单页站点）
+   纯静态：HTML + CSS + 原生 JS，无外部依赖，可离线运行
+   ===================================================================== */
+
+/* ---------- 变量：主题 ---------- */
+:root{
+  --topbar-h: 58px;
+  --toc-w: 272px;
+  --content-max: 46rem;
+  --fs-root: 17px;
+  --radius: 10px;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+html[data-theme="light"]{
+  --bg:#f3f3f0;
+  --paper:#ffffff;
+  --ink:#1b1b1b;
+  --ink-soft:#333333;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --line:#e4e4e0;
+  --line-mid:#cfcfc9;
+  --line-strong:#1b1b1b;
+  --accent:#1f3a5f;
+  --accent-soft:rgba(31,58,95,.10);
+  --accent-ink:#ffffff;
+  --num-bg:#1b1b1b;
+  --num-ink:#ffffff;
+  --quote-bg:#f7f7f5;
+  --box-bg:#ffffff;
+  --col-bg:#fafaf8;
+  --mark-bg:#ffe680;
+  --mark-ink:#1b1b1b;
+  --mark-cur:#ff9f2e;
+  --topbar-bg:rgba(255,255,255,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.06), 0 8px 22px rgba(0,0,0,.06);
+  --shadow-2:0 8px 26px rgba(0,0,0,.16);
+  --btn-bg:#ffffff;
+  --btn-bg-hover:#f0f0ec;
+  --field-bg:#f6f6f3;
+}
+html[data-theme="dark"]{
+  --bg:#12141a;
+  --paper:#1a1d23;
+  --ink:#e7e5df;
+  --ink-soft:#d3d0c9;
+  --muted:#9b988f;
+  --faint:#7e7b74;
+  --line:#2a2e36;
+  --line-mid:#3a3f49;
+  --line-strong:#6e747f;
+  --accent:#83b2ff;
+  --accent-soft:rgba(131,178,255,.14);
+  --accent-ink:#0d1016;
+  --num-bg:#83b2ff;
+  --num-ink:#0d1016;
+  --quote-bg:#1f232a;
+  --box-bg:#1d2027;
+  --col-bg:#1f232a;
+  --mark-bg:#7d6200;
+  --mark-ink:#fff6d8;
+  --mark-cur:#c9761a;
+  --topbar-bg:rgba(18,20,26,.92);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  --shadow-2:0 8px 26px rgba(0,0,0,.5);
+  --btn-bg:#22262e;
+  --btn-bg-hover:#2b3038;
+  --field-bg:#22262e;
+}
+/* ---------- 字号三档 ---------- */
+html[data-fs="0"]{ --fs-root:15px; }
+html[data-fs="1"]{ --fs-root:17px; }
+html[data-fs="2"]{ --fs-root:19.5px; }
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:auto; }
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:var(--fs-root);
+  line-height:1.85;
+  -webkit-text-size-adjust:100%;
+  transition:background-color .25s var(--ease), color .25s var(--ease);
+}
+
+/* ---------- 无障碍：跳到正文 ---------- */
+.skip-link{
+  position:absolute; left:-9999px; top:0; z-index:2000;
+  background:var(--accent); color:var(--accent-ink);
+  padding:8px 14px; border-radius:0 0 var(--radius) 0; font-family:var(--sans); font-size:.85rem;
+}
+.skip-link:focus{ left:0; }
+
+/* =====================  顶栏  ===================== */
+.topbar{
+  position:sticky; top:0; z-index:900;
+  display:flex; align-items:center; gap:10px;
+  height:var(--topbar-h);
+  padding:0 14px;
+  background:var(--topbar-bg);
+  backdrop-filter:saturate(150%) blur(10px);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+.tb-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.tb-right{ display:flex; align-items:center; gap:6px; }
+
+.site-title{
+  font-family:var(--sans);
+  font-size:.94rem;
+  font-weight:800;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--ink);
+}
+.site-title .dot{ color:var(--accent); margin:0 .15em; }
+.site-title .st-sub{ font-weight:500; color:var(--muted); }
+
+
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-width:34px; height:34px; padding:0 9px;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1;
+  color:var(--ink); background:var(--btn-bg);
+  border:1px solid var(--line-mid); border-radius:8px;
+  cursor:pointer; user-select:none;
+  transition:background-color .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease);
+}
+.icon-btn:hover{ background:var(--btn-bg-hover); }
+.icon-btn:active{ transform:translateY(1px); }
+.icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.menu-btn{ display:none; }
+
+/* 搜索框 */
+.search-wrap{
+  position:relative;
+  display:flex; align-items:center;
+  width:100%; max-width:430px;
+  height:36px;
+  background:var(--field-bg);
+  border:1px solid var(--line-mid);
+  border-radius:999px;
+  padding:0 8px 0 12px;
+  transition:border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.search-wrap:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.search-icon{ font-size:.8rem; opacity:.65; margin-right:6px; }
+#searchInput{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  font-family:var(--sans); font-size:.86rem; color:var(--ink);
+}
+#searchInput::placeholder{ color:var(--faint); }
+#searchInput::-webkit-search-cancel-button{ display:none; }
+.search-count{
+  font-family:var(--sans); font-size:.74rem; color:var(--muted);
+  white-space:nowrap; margin:0 4px; font-variant-numeric:tabular-nums;
+}
+.search-nav{
+  display:flex; gap:2px;
+}
+.mini-btn{
+  width:22px; height:22px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:.7rem; line-height:1;
+  color:var(--muted); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.mini-btn:hover{ background:var(--btn-bg-hover); color:var(--ink); }
+.mini-btn[hidden]{ display:none; }
+
+/* 阅读进度条 */
+.progress{
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:3px; background:transparent; overflow:hidden;
+}
+.progress-bar{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, var(--accent), var(--num-bg));
+  transition:width .08s linear;
+}
+
+/* =====================  布局  ===================== */
+.layout{
+  display:flex;
+  align-items:flex-start;
+  gap:26px;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 18px;
+}
+
+/* ---------- 侧边目录 ---------- */
+.toc{
+  position:sticky;
+  top:var(--topbar-h);
+  flex:0 0 var(--toc-w);
+  width:var(--toc-w);
+  max-height:calc(100vh - var(--topbar-h));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:20px 8px 28px 0;
+  font-family:var(--sans);
+}
+.toc-head{
+  font-size:.72rem; font-weight:800; letter-spacing:.24em;
+  color:var(--muted); text-transform:uppercase;
+  padding:0 10px 10px; border-bottom:1px solid var(--line); margin-bottom:8px;
+}
+.toc-nav{ display:flex; flex-direction:column; }
+.toc-item{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:6px 10px;
+  color:var(--ink-soft); text-decoration:none;
+  border-left:2px solid transparent;
+  border-radius:0 6px 6px 0;
+  line-height:1.45;
+  transition:background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.toc-item:hover{ background:var(--accent-soft); color:var(--ink); }
+.toc-item.lvl2{ font-size:.85rem; font-weight:700; margin-top:6px; }
+.toc-item.lvl3{ font-size:.79rem; font-weight:400; padding-left:30px; color:var(--muted); }
+.toc-item .toc-num{
+  flex:0 0 auto;
+  font-size:.68rem; font-weight:800;
+  min-width:1.35em; text-align:center;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:4px;
+  padding:0 2px; line-height:1.5;
+  margin-top:.15em;
+}
+.toc-item.active{
+  color:var(--accent); background:var(--accent-soft);
+  border-left-color:var(--accent); font-weight:800;
+}
+.toc-item.active .toc-num{ color:var(--accent); border-color:var(--accent); }
+.toc-item.active-parent{ color:var(--ink); border-left-color:var(--line-strong); }
+.toc-item .toc-hits{
+  margin-left:auto; flex:0 0 auto;
+  font-size:.68rem; font-weight:700;
+  color:var(--accent-ink); background:var(--accent);
+  border-radius:999px; padding:0 6px; line-height:1.6;
+}
+.toc-foot{
+  margin-top:14px; padding:10px 10px 0;
+  border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--faint);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+}
+.link-btn{
+  background:none; border:0; padding:0;
+  font-family:var(--sans); font-size:.72rem; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.link-btn:hover{ opacity:.75; }
+.scrim{
+  position:fixed; inset:0; z-index:850;
+  background:rgba(0,0,0,.45);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s var(--ease);
+}
+
+/* ---------- 正文容器 ---------- */
+.content{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:var(--content-max);
+  margin:0 auto;
+  padding:22px 0 90px;
+}
+
+/* ---------- 章节卡片 ---------- */
+.section{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-1);
+  padding:26px 30px 24px;
+  margin:0 0 20px;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+  transition:background-color .25s var(--ease), border-color .25s var(--ease);
+}
+.section:target{ border-color:var(--accent); }
+
+/* 可折叠标题 */
+h2.sec-head{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--sans);
+  font-size:1.42em; font-weight:800; letter-spacing:.03em;
+  margin:0 0 12px; padding:0 0 8px;
+  border-bottom:2px solid var(--line-strong);
+  cursor:pointer; user-select:none;
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h2.sec-head:hover .h2-text{ color:var(--accent); }
+h2.sec-head:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+h2.sec-head .chapter-num{
+  flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55em; height:1.55em;
+  font-size:.72em; font-weight:800;
+  background:var(--num-bg); color:var(--num-ink);
+  border-radius:4px;
+}
+h2.sec-head .h2-text{ flex:1 1 auto; transition:color .15s var(--ease); }
+h2.sec-head .sec-caret{
+  flex:0 0 auto;
+  font-size:.62em; color:var(--muted);
+  transition:transform .22s var(--ease);
+}
+.section.collapsed h2.sec-head{ border-bottom-color:var(--line-mid); margin-bottom:0; }
+.section.collapsed h2.sec-head .sec-caret{ transform:rotate(-90deg); }
+.section.collapsed .sec-body{ display:none; }
+.sec-body{ animation:fadeIn .22s var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:none;} }
+
+/* ---------- 正文排版 ---------- */
+h3{
+  font-family:var(--sans);
+  font-size:1.06em; font-weight:700;
+  margin:1.5em 0 .55em; color:var(--ink);
+  scroll-margin-top:calc(var(--topbar-h) + 16px);
+}
+h3::before{ content:"▪"; margin-right:.5em; color:var(--accent); }
+h4{
+  font-family:var(--sans);
+  font-size:.95em; font-weight:700;
+  margin:1.1em 0 .4em; color:var(--ink-soft);
+}
+p{ margin:0 0 .72em; text-align:justify; text-indent:2em; }
+p.no-indent{ text-indent:0; }
+ul, ol{ margin:.5em 0 .9em; padding-left:1.6em; }
+li{ margin-bottom:.35em; text-align:justify; }
+strong{ font-weight:700; color:var(--ink); }
+em{ font-style:normal; }
+
+blockquote{
+  margin:1em 0; padding:.7em 1em;
+  border-left:3px solid var(--accent);
+  background:var(--quote-bg);
+  font-size:.96em; line-height:1.78;
+  border-radius:0 6px 6px 0;
+}
+blockquote p{ text-indent:0; margin:0 0 .4em; }
+blockquote p:last-child{ margin-bottom:0; }
+blockquote cite{
+  display:block; text-align:right;
+  font-size:.86em; color:var(--muted); font-style:normal; margin-top:.5em;
+}
+
+.box{
+  margin:1em 0; padding:.85em 1em;
+  border:1px solid var(--line-mid);
+  background:var(--box-bg);
+  border-radius:8px;
+}
+.box-title{
+  font-family:var(--sans);
+  font-size:.78em; font-weight:800; letter-spacing:.16em;
+  color:var(--accent);
+  margin-bottom:.6em; padding-bottom:.35em;
+  border-bottom:1px solid var(--line);
+}
+.box p{ text-indent:0; margin-bottom:.45em; }
+.box p:last-child{ margin-bottom:0; }
+.box dl{ margin:0; }
+.box dt{
+  font-family:var(--sans); font-weight:700; font-size:.84em;
+  margin-top:.6em; color:var(--muted); letter-spacing:.05em;
+}
+.box dd{ margin:.15em 0 .55em; font-size:.96em; text-align:justify; }
+
+.term{
+  font-family:var(--sans); font-weight:700;
+  border-bottom:1px solid var(--line-strong);
+  padding-bottom:1px;
+}
+
+.summary{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin:1em 0;
+}
+.summary .col{
+  padding:.8em .9em;
+  background:var(--col-bg);
+  border-top:2px solid var(--line-strong);
+  border-radius:0 0 6px 6px;
+}
+.summary .col-title{
+  font-family:var(--sans); font-weight:800; font-size:.82em;
+  margin-bottom:.5em; letter-spacing:.08em;
+}
+.summary .col p{ text-indent:0; font-size:.92em; margin:0 0 .45em; }
+.summary .col p:last-child{ margin-bottom:0; }
+
+.src-note{
+  font-size:.78em; color:var(--faint);
+  margin:1.1em 0 0; padding-top:.5em;
+  border-top:1px dotted var(--line-mid);
+  text-align:left; text-indent:0;
+}
+.footer-note{
+  margin-top:1.4em; padding-top:.7em;
+  border-top:1px solid var(--line);
+  font-size:.8em; color:var(--muted); text-align:center; text-indent:0;
+}
+.center{ text-align:center; }
+.small{ font-size:.9em; }
+
+/* ---------- 封面 ---------- */
+.section-cover{ padding:0; overflow:hidden; }
+.cover{
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center;
+  padding:58px 26px 34px;
+}
+.cover-tag{
+  font-family:var(--sans);
+  font-size:.72rem; letter-spacing:.4em;
+  color:var(--muted);
+  border:1px solid var(--line-mid); border-radius:3px;
+  padding:5px 12px 5px 16px; margin-bottom:34px;
+}
+.cover h1{
+  font-family:var(--sans);
+  font-size:2.6em; font-weight:900; line-height:1.2;
+  margin:0 0 14px; letter-spacing:.08em;
+}
+.cover-subtitle{
+  font-size:1.02em; color:var(--ink-soft);
+  margin-bottom:26px; letter-spacing:.14em;
+}
+.cover-line{ width:150px; height:2px; background:var(--line-strong); margin:0 auto 22px; }
+.cover-source{ font-size:.96em; color:var(--muted); line-height:2; }
+.cover-foot{
+  margin-top:34px; padding-top:14px;
+  border-top:1px solid var(--line);
+  width:100%; max-width:520px;
+  font-size:.78em; color:var(--faint); letter-spacing:.08em;
+}
+
+/* ---------- 原印刷目录（正文内） ---------- */
+.toc-list{ list-style:none; padding:0; margin:.4em 0 0; }
+.toc-list li{ border-bottom:1px dotted var(--line-mid); }
+.toc-list li:last-child{ border-bottom:none; }
+.toc-list-link{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:.5em .3em; color:var(--ink); text-decoration:none;
+  border-radius:6px;
+  transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.toc-list-link:hover{ background:var(--accent-soft); color:var(--accent); }
+.toc-list .num{
+  font-family:var(--sans); font-weight:800;
+  margin-right:.6em; color:var(--muted);
+}
+.toc-list .title{ font-size:.98em; }
+.toc-list .author{
+  font-family:var(--sans);
+  font-size:.76em; color:var(--faint); white-space:nowrap;
+}
+
+/* ---------- 搜索高亮 ---------- */
+mark.hit{
+  background:var(--mark-bg); color:var(--mark-ink);
+  border-radius:2px; padding:0 1px;
+  scroll-margin-top:calc(var(--topbar-h) + 90px);
+}
+mark.hit.current{
+  background:var(--mark-cur); color:#fff;
+  box-shadow:0 0 0 2px var(--mark-cur);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.fab-group{
+  position:fixed; right:18px; bottom:18px; z-index:880;
+  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px;
+}
+.fab{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:10px 16px; border-radius:999px;
+  background:var(--accent); color:var(--accent-ink);
+  font-family:var(--sans); font-size:.84rem; font-weight:700;
+  text-decoration:none; border:0; cursor:pointer;
+  box-shadow:var(--shadow-2);
+  transition:transform .15s var(--ease), opacity .2s var(--ease);
+}
+.fab:hover{ transform:translateY(-2px); }
+.fab.fab-mini{
+  width:40px; height:40px; padding:0; justify-content:center;
+  font-size:1rem;
+  background:var(--btn-bg); color:var(--ink);
+  border:1px solid var(--line-mid);
+}
+.fab.hidden{ opacity:0; pointer-events:none; transform:translateY(8px); }
+
+/* ---------- 移动端 ---------- */
+@media (max-width:900px){
+  .layout{ gap:16px; padding:0 12px; }
+  :root{ --toc-w:240px; }
+}
+@media (max-width:768px){
+  :root{ --topbar-h:54px; }
+  .menu-btn{ display:inline-flex; }
+  .site-title .st-sub{ display:none; }
+  .tb-center{ order:3; flex:0 0 100%; }
+  .topbar{ flex-wrap:wrap; height:auto; padding:8px 10px 10px; gap:8px; row-gap:8px; }
+  .tb-left{ flex:1 1 auto; }
+  .search-wrap{ max-width:none; height:34px; }
+  .layout{ display:block; padding:0 10px; }
+  .content{ max-width:none; padding:14px 0 96px; }
+  .section{ padding:20px 16px 18px; border-radius:8px; }
+  .summary{ grid-template-columns:1fr; }
+  .cover{ padding:40px 18px 26px; }
+  .cover h1{ font-size:2.1em; }
+  .cover-tag{ margin-bottom:24px; }
+
+  /* TOC 抽屉 */
+  .toc{
+    position:fixed; top:0; left:0; bottom:0; z-index:860;
+    width:80vw; max-width:320px;
+    max-height:none; height:100%;
+    padding:18px 10px 24px 14px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    box-shadow:var(--shadow-2);
+    transform:translateX(-102%);
+    transition:transform .26s var(--ease);
+  }
+  body.toc-open .toc{ transform:translateX(0); }
+  body.toc-open .scrim{ opacity:1; pointer-events:auto; }
+  body.toc-open{ overflow:hidden; }
+  .fab-group{ right:12px; bottom:12px; }
+  .fab{ padding:9px 14px; font-size:.8rem; }
+  p{ text-indent:2em; }
+}
+@media (max-width:420px){
+  .icon-btn .btn-txt{ display:none; }
+  .toc-list-link{ flex-wrap:wrap; }
+}
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+
+/* =====================================================================
+   打印样式：隐藏所有交互界面，恢复干净的 A4 印刷排版
+   ===================================================================== */
+@page{
+  size:A4;
+  margin:20mm 18mm 20mm 18mm;
+}
+@media print{
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    font-family:var(--serif);
+    font-size:11pt !important;
+    line-height:1.85;
+  }
+  html{
+    --paper:#fff; --ink:#000; --ink-soft:#222; --muted:#666; --faint:#999;
+    --line:#ddd; --line-mid:#ccc; --line-strong:#000;
+    --accent:#000; --accent-soft:transparent; --accent-ink:#fff;
+    --num-bg:#000; --num-ink:#fff;
+    --quote-bg:#f7f7f7; --box-bg:#fff; --col-bg:#fafafa;
+  }
+  .topbar, .toc, .scrim, .fab-group, .progress, .skip-link, .sec-caret, .search-wrap{
+    display:none !important;
+  }
+  .layout{ display:block; max-width:none; padding:0; margin:0; }
+  .content{ max-width:none; margin:0; padding:0; }
+  .section{
+    background:#fff !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    page-break-before:always;
+    page-break-inside:auto;
+  }
+  .section:first-of-type{ page-break-before:auto; }
+  .section.collapsed .sec-body{ display:block !important; }
+  .sec-body{ animation:none !important; }
+  h2.sec-head{
+    display:block; cursor:auto;
+    font-size:18pt !important; font-weight:800;
+    margin:0 0 10pt !important; padding-bottom:6pt;
+    border-bottom:2pt solid #000 !important;
+    page-break-after:avoid;
+  }
+  h2.sec-head .chapter-num{
+    display:inline-block; width:28pt; height:28pt; line-height:28pt;
+    text-align:center; font-size:14pt; border-radius:0;
+    background:#000 !important; color:#fff !important;
+    margin-right:10pt; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h2.sec-head .h2-text{ display:inline; }
+  h3{ font-size:13pt !important; page-break-after:avoid; }
+  h3::before{ color:#666 !important; }
+  h4{ font-size:11pt !important; page-break-after:avoid; }
+  p{ orphans:2; widows:2; }
+  blockquote, .box, .summary, .cover-source{ page-break-inside:avoid; }
+  blockquote{
+    background:#f7f7f7 !important; border-left:3pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .box{ border:1pt solid #333 !important; border-radius:0; }
+  .box-title{ color:#000 !important; text-transform:uppercase; }
+  .summary .col{
+    background:#fafafa !important; border-top:2pt solid #000 !important; border-radius:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .section-cover{ padding:0 !important; }
+  .cover{ min-height:245mm; padding:0 !important; justify-content:center; }
+  .cover h1{ font-size:32pt !important; }
+  .cover-subtitle{ font-size:14pt !important; }
+  .cover-line{ width:60mm; background:#000 !important; }
+  .cover-foot{ border-top:0; margin-top:60mm; }
+  .toc-list-link{ color:#000 !important; text-decoration:none; padding:8pt 0; }
+  .toc-list li{ border-bottom:.5pt dotted #bbb; }
+  mark.hit, mark.hit.current{
+    background:transparent !important; color:inherit !important;
+    box-shadow:none !important; padding:0;
+  }
+  a{ color:inherit !important; text-decoration:none !important; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar" id="topbar">
+  <div class="tb-left">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开或关闭目录" aria-expanded="false" aria-controls="toc">☰<span class="btn-txt">菜单</span></button>
+    <span class="site-title">马克斯·韦伯<span class="dot">·</span><span class="st-sub">写作素材</span></span>
+  </div>
+
+  <div class="tb-center">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="searchInput" type="search" placeholder="全文搜索：祛魅 / 天职 / 铁笼 …" autocomplete="off" spellcheck="false" aria-label="全文搜索">
+      <span class="search-count" id="searchCount" aria-live="polite"></span>
+      <span class="search-nav">
+        <button class="mini-btn" id="prevHit" type="button" hidden aria-label="上一处匹配">▲</button>
+        <button class="mini-btn" id="nextHit" type="button" hidden aria-label="下一处匹配">▼</button>
+        <button class="mini-btn" id="clearSearch" type="button" hidden aria-label="清空搜索">✕</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tb-right">
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色/浅色主题" title="切换深色 / 浅色阅读模式">🌙</button>
+    <button class="icon-btn" id="fsDown" type="button" aria-label="缩小字号" title="缩小正文字号">A−</button>
+    <button class="icon-btn" id="fsUp" type="button" aria-label="放大字号" title="放大正文字号">A＋</button>
+  </div>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== 主体布局 ===================== -->
+<div class="layout">
+
+  <!-- 侧边目录 -->
+  <aside class="toc" id="toc" aria-label="章节目录">
+    <div class="toc-head">目录导航</div>
+    <nav class="toc-nav" id="tocNav"></nav>
+    <div class="toc-foot">
+      <span>共 <span id="secCount">0</span> 节</span>
+      <button class="link-btn" id="expandAll" type="button">全部展开</button>
+      <button class="link-btn" id="collapseAll" type="button">全部折叠</button>
+    </div>
+  </aside>
+
+  <!-- 正文 -->
+  <main class="content" id="main">
+
+    <!-- ========== 封面 ========== -->
+    <section class="section section-cover" id="sec-cover" data-toc="封面 · 人物名片">
+      <div class="cover">
+        <div class="cover-tag">高考写作素材</div>
+        <h1>马克斯·韦伯</h1>
+        <div class="cover-subtitle">现代西方思想史 · 理性化与祛魅的时代</div>
+        <div class="cover-line"></div>
+        <div class="cover-source">
+          1864 — 1920<br>
+          德国思想家 · 现代社会学的奠基人<br>
+          “组织理论之父”
+        </div>
+        <div class="cover-foot">本册为单人物深度版 · 含生平、著作、核心思想与写作应用</div>
+      </div>
+    </section>
+
+    <!-- ========== 目录 ========== -->
+    <section class="section" id="sec-contents">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="h2-text">目 录</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <ul class="toc-list">
+          <li><a class="toc-list-link" href="#sec-1"><span><span class="num">01</span><span class="title">人物定位与速览</span></span><span class="author">一句话读懂</span></a></li>
+          <li><a class="toc-list-link" href="#sec-2"><span><span class="num">02</span><span class="title">生平经历：从崩溃到清明</span></span><span class="author">1864–1920</span></a></li>
+          <li><a class="toc-list-link" href="#sec-3"><span><span class="num">03</span><span class="title">主要著作与学术成就</span></span><span class="author">社会学奠基</span></a></li>
+          <li><a class="toc-list-link" href="#sec-4"><span><span class="num">04</span><span class="title">核心思想（一）：理性化、祛魅与两种理性</span></span><span class="author">现代性底色</span></a></li>
+          <li><a class="toc-list-link" href="#sec-5"><span><span class="num">05</span><span class="title">核心思想（二）：天职、铁笼与价值多元</span></span><span class="author">最常用角度</span></a></li>
+          <li><a class="toc-list-link" href="#sec-6"><span><span class="num">06</span><span class="title">核心思想（三）：权威、责任伦理与学术志业</span></span><span class="author">担当与清醒</span></a></li>
+          <li><a class="toc-list-link" href="#sec-7"><span><span class="num">07</span><span class="title">我们该如何理解韦伯</span></span><span class="author">理解视角</span></a></li>
+          <li><a class="toc-list-link" href="#sec-8"><span><span class="num">08</span><span class="title">写作应用提示</span></span><span class="author">上考场用</span></a></li>
+        </ul>
+        <div class="footer-note">本册每节末以灰色小字标注网络文献来源；思想用于论证，生平用于点缀。</div>
+      </div>
+    </section>
+
+    <!-- ========== 第一章 ========== -->
+    <section class="section" id="sec-1">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">1</span><span class="h2-text">人物定位与速览</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>一句话定位：</strong>德国思想家、社会学家、政治经济学家，与马克思、涂尔干并列“现代社会学的三大奠基人”，被誉为“组织理论之父”。他是最早把“现代人为何陷入精神困境”说清楚的人——困境不是因为科学太少，而是因为理性太多。</p>
+        <p>韦伯的思想横跨社会学、政治学、经济学与宗教研究。对高考生而言，他提供的是一组<strong>理解“现代生活”的钥匙</strong>：为什么我们效率越来越高却越来越迷茫？为什么世界越来越“讲道理”却失去了神圣感？为什么好人之间也会为了不同的“正确”而不可调和？这些，正是高考作文里“科技与人文”“传统与现代”“意义与价值”“理性与温情”等母题的思想资源。</p>
+
+        <div class="box no-break">
+          <div class="box-title">速览卡</div>
+          <dl>
+            <dt>生卒</dt><dd>1864 年 4 月 21 日（埃尔福特）— 1920 年 6 月 14 日（慕尼黑），享年 56 岁。</dd>
+            <dt>国籍 / 身份</dt><dd>德国；海德堡、弗莱堡大学教授，后长期为独立学者；曾参与起草魏玛宪法。</dd>
+            <dt>研究领域</dt><dd>社会学 · 政治社会学 · 宗教社会学 · 经济史 · 方法论。</dd>
+            <dt>核心命题</dt><dd>理性化与祛魅、工具理性与价值理性、现代铁笼、价值多元（诸神之争）、责任伦理。</dd>
+            <dt>代表著作</dt><dd>《新教伦理与资本主义精神》《经济与社会》《学术与政治》《中国的宗教》《古犹太教》。</dd>
+            <dt>一句名言</dt><dd>“专家没有灵魂，纵欲者没有心肝；这个废物幻想着它自己已达到了前所未有的文明程度。”</dd>
+          </dl>
+        </div>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Max Weber」、百度百科、MBA智库百科「马克斯·韦伯」。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第二章 ========== -->
+    <section class="section" id="sec-2">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">2</span><span class="h2-text">生平经历：从崩溃到清明</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">韦伯的思想不是书斋里的玄想，而是用一生“清醒”换来的。理解他的生平，才懂他为何既不盲目乐观、也不彻底悲观——他见过世界最亮的光，也熬过最暗的夜。</p>
+
+        <h3>家世与早年：两种力量的撕扯</h3>
+        <p>父亲老韦伯是热衷社交、崇尚世俗权力的政客；母亲海伦妮则虔诚、克制、内向。家中常聚学者与政要，韦伯耳濡目染。十三岁便写出两篇历史论文，十四岁信中已能征引荷马、西塞罗，大学前熟读歌德、斯宾诺莎、康德、叔本华。这种<strong>“世俗权力”与“虔诚信仰”的家庭张力</strong>，正是他后来反复思考“价值冲突”的源头。</p>
+
+        <h3>求学与学术起步：严谨的经验训练</h3>
+        <p>1882 年入海德堡大学学法律，其间短期服役；1884 年转柏林大学，兼修经济、中世纪史与神学。1889 年以《中世纪商业组织史》获法学博士，1891 年以罗马农业史通过任教资格。1893 年娶表妹玛丽安娜（后为女性主义作家，并整理其遗稿）；1894 年任弗莱堡经济学教授，1896 年回母校海德堡任教授。早期他以农业经济与“东部移民问题”的扎实经验调查崭露头角，显示出<strong>重证据、拒空谈</strong>的学术底色。</p>
+
+        <h3>崩溃与沉寂（1897）：在谷底看清世界</h3>
+        <p>1897 年，韦伯与父亲激烈争吵，两月后父亲离世，父子竟未和解。他随即精神崩溃，患神经衰弱、严重失眠与焦虑，无法授课，进出疗养院约五年（1897—1902/03）。这段“被迫停顿”恰是他从法律经济史转向宏大思想问题的关键：在沉默中他遍读世界宗教，酝酿出《新教伦理与资本主义精神》。</p>
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>这段经历可用于“停顿与沉淀”“苦难催生思想”“在谷底看清世界”“理性也会压垮人”等主题。注意：崩溃不是软弱，而是敏感灵魂对时代病症的过早承受。</p>
+        </div>
+
+        <h3>复出与巅峰：自由学者的黄金期</h3>
+        <p>1903 年辞去正式教职，成为独立学者。1904 年起，与雅费（Edgar Jaffé）、松巴特三人共同接办并更名《社会科学与社会政策文库》（Archiv für Sozialwissenschaft und Sozialpolitik；该刊 1888 年由海因里希·布劳恩创办，1903 年雅费购入），韦伯任主编之一，这也成为他发表核心论著的阵地。1904—1905 年在该刊发表《新教伦理与资本主义精神》——这是韦伯生前以单行本形式出版的最重要的代表性著作（生前另出版过博士论文《中世纪商业组织史》、任教资格论文《罗马农业史》等），奠定其不朽声名。1904 年访美，参加圣路易斯世博会附属的国际科学与艺术大会。1907 年获一笔遗产，从此无经济之忧，得以潜心著述。</p>
+
+        <h3>战争与政治：从爱国到批判</h3>
+        <p>一战初期他曾支持德国；后期转向批判，主张民主化。战后参与起草魏玛宪法，共同创立德国民主党并参选，未果。他对“民主与官僚铁笼”的关系抱有深沉忧虑，后世认为这在一定程度上预见了纳粹的兴起。</p>
+
+        <h3>晚年与离世：两场“志业”演说</h3>
+        <p>1917 年作《以学术为业》、1919 年作《以政治为业》两场慕尼黑演说（史称“志业演说”），影响延续百年。1920 年他染西班牙流感引发的肺炎去世，年仅 56 岁。未竟巨著《经济与社会》由妻子玛丽安娜整理，于 1921—22 年出版（学界通行著录为 1921–22）。</p>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Max Weber」、Biography.com、MBA智库百科、刘擎《西方现代思想讲义》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第三章 ========== -->
+    <section class="section" id="sec-3">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">3</span><span class="h2-text">主要著作与学术成就</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>人物定位（学术）：</strong>现代社会学的奠基人之一，与马克思、涂尔干并列；在管理思想史上被称为“组织理论之父”。</p>
+
+        <h3>社会学三大奠基人</h3>
+        <p>与孔德—涂尔干一脉的<strong>实证主义</strong>不同，韦伯走“反实证主义 / 理解社会学”路线：他主张社会现象不能像自然物那样只用因果律处理，因为人是有意义的行动者。这一路线开启了社会科学强调“理解”的传统。</p>
+
+        <h3>方法论上的三大贡献</h3>
+        <ul>
+          <li><strong>理解社会学（Verstehen）：</strong>社会学要“理解”行动者赋予行为的主观意义，而非仅观察外部行为。</li>
+          <li><strong>理想类型（Ideal Type）：</strong>为分析而抽象出的纯粹概念原型（如“官僚制”“新教伦理”），它不与任何现实完全等同，只是用来对照、衡量现实的思想工具。</li>
+          <li><strong>价值无涉（Value-freedom）：</strong>学术应区分“事实”与“价值”；学者在课堂上、研究中不应把个人价值偏好伪装成客观真理强加于人。</li>
+        </ul>
+
+        <h3>代表作一览</h3>
+        <div class="summary no-break">
+          <div class="col">
+            <div class="col-title">思想原典</div>
+            <p><strong>《新教伦理与资本主义精神》（1904—05）：</strong>追问宗教伦理如何催生“资本主义精神”。</p>
+            <p><strong>《经济与社会》（1922，遗作）：</strong>社会学体系巨著，含官僚制、支配类型、社会行动理论。</p>
+            <p><strong>《学术与政治》（1917 / 1919 志业演说）：</strong>谈学术与政治的意义、伦理与界限。</p>
+          </div>
+          <div class="col">
+            <div class="col-title">比较宗教研究</div>
+            <p><strong>《中国的宗教》《印度的宗教》《古犹太教》：</strong>跨文明比较，追问“为何理性化只在西方独自长成”。</p>
+            <p>这些比较研究共同指向一个母题：<strong>“世界的祛魅”是西方特有的轨迹</strong>，不同文明以不同方式安顿意义。</p>
+          </div>
+        </div>
+
+        <p class="src-note">来源：维基百科 / Wikiwand「Max Weber」、MBA智库百科、刘擎《西方现代思想讲义》、《新教伦理与资本主义精神》中译导论。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第四章 ========== -->
+    <section class="section" id="sec-4">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">4</span><span class="h2-text">核心思想（一）：理性化、祛魅与两种理性</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是韦伯思想的底色，也是高考最基础的切入角度：现代性的真相，是“理性”把世界照亮，也把世界抽空。</p>
+
+        <h3>看清理性化的世界</h3>
+        <p>工业革命、科学革命、地理大发现背后有一个统一的思想动力，就是“理性主义”：过去的不幸都源于蒙昧与无知，只要用理性清除蒙昧，我们就会走向真理、越来越幸福。</p>
+
+        <h3>反思理性化的后果</h3>
+        <p>认为“科学是通向幸福之路”，是一种<strong>天真的乐观主义</strong>。科学能给出最优的“方案”，却回答不了“幸福”“意义”这类问题——最优方案不等于最优选择。</p>
+
+        <h3>魅惑的古代世界</h3>
+        <p>在古代，神灵意味着人与世界可以建立联系、甚至沟通互动。人从“宇宙秩序”中确立生存意义，获得所谓“安身立命”的根据，并不孤独。</p>
+
+        <h3>理性化与祛魅</h3>
+        <p>“祛魅”就是用理性的力量驱散神秘的迷惑。从宗教的理性化（牛顿、孟德尔、利玛窦、汤若望皆虔诚却重理性），到宗教本身（尼采“上帝死了”），世界逐渐被理性化。</p>
+
+        <blockquote>
+          <p>我们的时代，是一个理性化、理知化，尤其是将世界之迷魅加以祛除的时代；我们这个时代的宿命，便是一切终极而最崇高的价值（包括宗教信仰），已自公共领域隐没……</p>
+          <cite>—— 马克斯·韦伯《学术与政治》（志业演说）</cite>
+        </blockquote>
+
+        <h3>清澈之后的荒凉</h3>
+        <p>古代人是“嵌入”世界的，与现代社会连为一体；现代人被从那巨大的“母体”中剥离，从此孤独、无依地存活。回望古代，会有一种“大梦初醒”的感觉——这便是“世界的祛魅”。</p>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》（韦伯章）、维基百科「Disenchantment」。</p>
+
+        <h3>事实判断与价值判断</h3>
+        <p><span class="term">事实判断</span>描述一个事实，有迹可循、可验证；<span class="term">价值判断</span>表达“应当怎样”，无客观公认标准可循。二者混淆，是现代纷争的根源之一。</p>
+
+        <h3>工具理性与价值理性</h3>
+        <p><span class="term">工具理性</span>关心“怎么把事做成”：针对确定目标，计算成本与收益，找最优手段，不问目的本身。<span class="term">价值理性</span>关心“这事该不该做”：由信仰、理想决定目的。工具理性的计算有客观标准、可普遍化；价值理性的权衡没有公认标准，在现代社会中常被压倒。</p>
+
+        <h3>金钱的意义</h3>
+        <p>齐美尔（G. Simmel）在《货币哲学》(1900) 中比喻：金钱有点像上帝，对所有人一视同仁，是通用的工具。但“金钱只是通向最终价值的桥梁，而人是无法栖居在桥上的”——若把手段当目的，人就悬空了。（此为齐美尔之喻，非韦伯原话，引述时勿误归。）</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“工具理性 vs 价值理性”最适合论证“效率与意义”“方法与目的”“内卷与初心”。可对比：用最优手段考上名校（工具理性），但若不知为何而学（价值理性缺席），便只剩空洞的“铁笼”。</p>
+        </div>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》、维基百科「Instrumental and value-rational action」。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第五章 ========== -->
+    <section class="section" id="sec-5">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">5</span><span class="h2-text">核心思想（二）：天职、铁笼与价值多元</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>是高考作文最高频的可用角度，尤其“天职观”与“现代铁笼”，可直接支撑“敬业”“劳动的意义”“科技与人性”等题。</p>
+
+        <h3>天职观与新教伦理</h3>
+        <p>韦伯发现：资本主义在西欧（而非天主教地区）率先壮大，与新教（尤其加尔文教）的伦理有“<strong>选择性亲和</strong>”（Wahlverwandtschaft／elective affinity，源自歌德《亲和力》）。核心在“天职”（Beruf，原意“召唤”）：新教把人在尘世中的职业劳动，视为上帝安排的任务、荣耀上帝的方式。</p>
+        <p>加尔文教的“预定论”让人无法确知自己是否被拯救，于是<strong>以世俗职业的成功来证明恩宠</strong>；由此催生“入世禁欲主义”——一方面勤勉劳动、积极进取，一方面最大限度节俭、抵制享乐，视积累财富为道德、视骄奢纵欲为罪恶。韦伯强调：宗教改革是“促进”而非“单独导致”资本主义，他明确反对文化决定论与经济决定论。</p>
+
+        <blockquote>
+          <p>一个人对天职负有责任——乃是资产阶级文化的社会伦理中最具代表性的东西，而且在某种意义上说，它是资产阶级文化的根本基础。</p>
+          <cite>—— 马克斯·韦伯《新教伦理与资本主义精神》</cite>
+        </blockquote>
+
+        <h3>“现代的铁笼”</h3>
+        <p>当工具理性压倒价值理性，社会像一条流水线，各部门自我循环；人被“非人化”，简化为可量化的指标与机器的零件。</p>
+
+        <div class="summary no-break">
+          <div class="col">
+            <div class="col-title">铁笼的禁锢</div>
+            <p><strong>弊端一：</strong>造就片面的社会文化，把道德问题变成利益计算——能规避惩罚、提高收益，人就可能违背道德。</p>
+            <p><strong>弊端二：</strong>片面的社会关系。人与人、人与组织渐成“供求关系”。看似强调个性自由，实则难以滋养自由而丰富的精神人格。</p>
+          </div>
+          <div class="col">
+            <div class="col-title">铁笼的庇护</div>
+            <p>现代优越的物质条件、高效运转的社会，创造出巨量工作机会与空前丰富的产品，解决了贫困、匮乏、奴役、疾病等古老难题。铁笼并非只有黑暗一面。</p>
+          </div>
+        </div>
+
+        <blockquote>
+          <p>专家没有灵魂，纵欲者没有心肝；这个废物幻想着它自己已达到了前所未有的文明程度。</p>
+          <cite>—— 马克斯·韦伯《新教伦理与资本主义精神》结尾（德文原词 stahlhartes Gehäuse，直译“钢硬的外壳”；帕森斯 1930 年英译为 iron cage，“铁笼”由此通行）</cite>
+        </blockquote>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》、维基百科「Protestant ethic」、Newton 百科「新教伦理」、汉斯出版社《新教伦理与资本主义精神的亲和与分离》。</p>
+
+        <h3>价值多元与诸神之争</h3>
+        <h4>个人层面</h4>
+        <p>价值多元增加了人的困惑与迷茫。科学理性打破了传统价值规范，却没建立新标准，无法提供生命意义的指南。托尔斯泰说：“科学与意义无关……我们应当做什么？我们应当如何生活？科学本身提供不了任何答案。”这便是“价值真空”，使现代人被焦虑与无意义感困扰。</p>
+        <h4>社会层面</h4>
+        <p>公共生活中激烈对立的议题（如堕胎合法化）、更基础的政治分歧（安全秩序 vs 自由权利），根子常是不同的“终极价值”不可调和。</p>
+
+        <div class="box no-break">
+          <div class="box-title">方法论提示</div>
+          <p>许多冲突无法化解，韦伯称之为“诸神之间无穷无尽的斗争”：“个人必须决定，在他看来，哪一方是上帝，哪一方是恶魔。”坦然面对现代性困境并与之共存，才是智性成熟的标志。</p>
+        </div>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》、维基百科「Value pluralism」。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第六章 ========== -->
+    <section class="section" id="sec-6">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">6</span><span class="h2-text">核心思想（三）：权威、责任伦理与学术志业</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent"><strong>本组命题</strong>补充了韦伯对“政治”与“学术”的成熟见解，极适合高考“担当”“务实”“热爱与坚守”等主题。</p>
+
+        <h3>三种权威类型</h3>
+        <p>任何稳定统治都建立在被统治者对“合法性”的认可上。韦伯在《经济与社会》中划分三种纯粹类型：</p>
+        <ul>
+          <li><strong>传统型权威：</strong>合法性源于“历来如此”，依附于古老习俗与个人/家族（如世袭君主、家长制）。</li>
+          <li><strong>卡理斯玛型权威：</strong>合法性源于领袖个人的超凡魅力、英雄气概或神圣性；追随者因信仰而服从（如先知、革命领袖、群众煽动家），不稳定。</li>
+          <li><strong>法理型权威：</strong>合法性源于法律与理性建立的制度，权力归属“职位”而非个人；人服从的是非人格化的规则（现代官僚制、科层制）。</li>
+        </ul>
+        <p>现代社会的“祛魅”，正体现为由传统/卡理斯玛，逐渐转向<strong>法理型权威与官僚制</strong>——这既是高效治理的基石，也是“铁笼”的制度形态。</p>
+
+        <h3>责任伦理 vs 信念伦理</h3>
+        <p>韦伯在《以政治为业》中指出，一切有伦理取向的行为，可受两种准则支配：<span class="term">信念伦理</span>以“目的/意图”计，只求意图纯洁，把后果推给上帝或历史；<span class="term">责任伦理</span>以“结果”计，要求行动者对可预见的后果主动担责。二者并非截然对立，而是互为补充。</p>
+
+        <blockquote>
+          <p>一个成熟的人（无论年龄大小），他意识到了对自己行为后果的责任，真正发自内心地感受着这一责任，然后他遵照责任伦理采取行动，在做到一定的时候，他说：“这就是我的立场，我只能如此。”这才是真正符合人性的、令人感动的表现。</p>
+          <p>唯有将两者结合在一起，才构成一个真正的人——一个能够担当“政治使命”的人。</p>
+          <cite>—— 马克斯·韦伯《以政治为业》</cite>
+        </blockquote>
+        <p>韦伯提出担当“志业”的政治家需有三种品质：<strong>激情</strong>（献身事业）、<strong>责任感</strong>（对后果负责）、<strong>判断力</strong>（与现实保持距离、冷静权衡）。这对所有“做事的人”都成立。</p>
+
+        <p class="src-note">来源：维基百科「Tripartite classification of authority」、爱思想 aisixiang.com《以政治为业》及解读、百度百科「责任伦理」。</p>
+
+        <h3>学术作为志业</h3>
+        <p>在《以学术为业》中，韦伯冷峻地告诉年轻人：学术生涯是一场“鲁莽的赌博”（德文 wildes Hasardspiel，冯克利译），外界条件严苛。他给出的准入标准极高——</p>
+
+        <blockquote>
+          <p>你能够承受年复一年看着那些平庸之辈爬到你头上，而你却能既不怨恨也不颓废吗？当然，你总会听到这样的回答：“我只为我的天职而生。”但能忍受这一切而不为所动的人，实在寥寥无几。</p>
+          <p>任何人如果不能……认定他的灵魂的命运就取决于他能否在这篇草稿的这一段里做出正确的推测，那么他还是离学术远点好。没有这种奇特的“陶醉感”，没有这份热情，你将永远没有从事学术工作的召唤。</p>
+          <cite>—— 马克斯·韦伯《以学术为业》</cite>
+        </blockquote>
+        <p>韦伯同时消解了学术的浪漫幻象：学术只带来知识、方法与“一份清明”，并不替我们回答意义。但正因如此，<strong>清醒地热爱、克制地献身</strong>，才显出英雄气。</p>
+
+        <div class="box no-break">
+          <div class="box-title">写作应用提示</div>
+          <p>“责任伦理”可用于“担当与务实”“理想与现实”“成熟的爱”；“学术志业”可用于“热爱与坚守”“志业 vs 职业”“清醒的英雄主义”。引用时强调：韦伯赞成的不是盲动，而是“看清代价后仍选择承担”。</p>
+        </div>
+
+        <p class="src-note">来源：维基百科「Max Weber·志业演说」、西安交大《学术是一种英雄主义》、爱思想相关解读。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第七章 ========== -->
+    <section class="section" id="sec-7">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">7</span><span class="h2-text">我们该如何理解韦伯</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">韦伯常被误读成“悲观的虚无主义者”。恰恰相反，他是一位“清醒的乐观主义者”——看清真相，却不逃走。</p>
+
+        <div class="box no-break">
+          <div class="box-title">方法论总纲：破除悲观，获得清明，达到从容</div>
+          <p><strong>一、悲观主义恰恰是盲目乐观主义造成的。</strong>先信理性能解决一切，幻灭后便跌入绝望；应警惕这种钟摆。</p>
+          <p><strong>二、正视真相，诚实相对。</strong>在清醒中保持坚强，只有清醒才能获得真正坚强。祛魅不是反科学，而是承认科学不负意义之责。</p>
+          <p><strong>三、在铁笼中保持灵魂。</strong>现代制度提供庇护也施加禁锢；成熟的人既享其利，又以责任伦理与内心价值与之共存，不被完全“非人化”。</p>
+          <p><strong>四、罗曼·罗兰式收束：</strong>“世界上只有一种英雄主义，那就是在看清生活的真相之后，依然热爱生活。”韦伯的“清明”，正是这种英雄主义的思想底色。</p>
+        </div>
+
+        <p class="src-note">来源：刘擎《西方现代思想讲义》（方法论总纲）、罗曼·罗兰《米开朗琪罗传》。</p>
+      </div>
+    </section>
+
+    <!-- ========== 第八章 ========== -->
+    <section class="section" id="sec-8">
+      <h2 class="sec-head" role="button" tabindex="0" aria-expanded="true" title="点击折叠 / 展开本节"><span class="chapter-num">8</span><span class="h2-text">写作应用提示</span><span class="sec-caret" aria-hidden="true">▾</span></h2>
+      <div class="sec-body">
+        <p class="no-indent">把韦伯用在考场上，记住：<strong>思想用于论证，生平用于点缀，引文要“可上考场”。</strong></p>
+
+        <h3>一、适用主题速查</h3>
+        <ul>
+          <li><strong>科技与人文 / 理性与温情：</strong>工具理性 vs 价值理性、祛魅后的荒凉。</li>
+          <li><strong>传统与现代：</strong>世界的祛魅、法理型权威取代传统权威。</li>
+          <li><strong>劳动与敬业 / 文化与经济：</strong>天职观、入世禁欲、新教伦理与资本主义精神。</li>
+          <li><strong>意义与价值 / 焦虑与坚守：</strong>价值多元、诸神之争、价值真空。</li>
+          <li><strong>担当与务实 / 成熟：</strong>责任伦理 vs 信念伦理、政治家三品质。</li>
+          <li><strong>热爱与坚守 / 志业：</strong>以学术为业、清醒的英雄主义。</li>
+          <li><strong>制度与人性：</strong>现代铁笼的禁锢与庇护。</li>
+        </ul>
+
+        <h3>二、可嵌入的经典引文</h3>
+        <ul>
+          <li>“专家没有灵魂，纵欲者没有心肝；这个废物幻想着它自己已达到了前所未有的文明程度。”（批判工具理性异化）</li>
+          <li>“个人必须决定，在他看来，哪一方是上帝，哪一方是恶魔。”（价值多元下主体须抉择）</li>
+          <li>“一个人对天职负有责任——乃是资产阶级文化的根本基础。”（敬业/劳动意义）</li>
+          <li>“你能够承受年复一年看着那些平庸之辈爬到你头上，而你却能既不怨恨也不颓废吗？”（志业者的清醒坚守）</li>
+          <li>“在看清生活的真相之后，依然热爱生活。”（罗曼·罗兰，可作韦伯式收束）</li>
+        </ul>
+
+        <h3>三、易错提醒</h3>
+        <ul>
+          <li><strong>祛魅 ≠ 反科学：</strong>韦伯尊重科学，只说科学不负责“意义”，别写成“科学有害”。</li>
+          <li><strong>铁笼 ≠ 全盘否定现代：</strong>铁笼也提供物质繁荣与高效治理，应辩证写“禁锢与庇护”。</li>
+          <li><strong>价值多元 ≠ 放纵相对主义：</strong>多元意味着“须自己抉择并担责”，不是“怎样都对”。</li>
+          <li><strong>韦伯 ≠ 悲观虚无：</strong>他是“清醒的英雄主义”，主张看清后从容共存，而非躺平。</li>
+          <li><strong>新教伦理 ≠ 宗教决定论：</strong>韦伯明确反对决定论，宗教是“促进”而非“单独导致”资本主义。</li>
+        </ul>
+
+        <div class="footer-note">完 · 本册素材综合自公开网络文献，引文以通行中译为准，考场引用请依教材与权威译本。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== 悬浮按钮 ===================== -->
+<div class="fab-group">
+  <button class="fab fab-mini hidden" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">⤒</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 常量与元素引用 ================= */
+  var STORE_THEME = 'weber.theme';
+  var STORE_FS    = 'weber.fontSize';
+  var FS_LEVELS   = ['0', '1', '2'];
+
+  var html        = document.documentElement;
+  var body        = document.body;
+  var topbar      = document.getElementById('topbar');
+  var progressBar = document.getElementById('progressBar');
+  var main        = document.getElementById('main');
+  var tocEl       = document.getElementById('toc');
+  var tocNav      = document.getElementById('tocNav');
+  var secCountEl  = document.getElementById('secCount');
+  var scrim       = document.getElementById('scrim');
+  var menuBtn     = document.getElementById('menuBtn');
+  var themeBtn    = document.getElementById('themeBtn');
+  var fsUpBtn     = document.getElementById('fsUp');
+  var fsDownBtn   = document.getElementById('fsDown');
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
+  var prevHitBtn  = document.getElementById('prevHit');
+  var nextHitBtn  = document.getElementById('nextHit');
+  var clearBtn    = document.getElementById('clearSearch');
+  var expandAllBtn   = document.getElementById('expandAll');
+  var collapseAllBtn = document.getElementById('collapseAll');
+  var toTopBtn    = document.getElementById('toTop');
+
+  var sections   = [].slice.call(main.querySelectorAll('.section'));
+  var navTargets = [];   /* 目录跳转目标 id（文档顺序，含 h2 与 h3） */
+  var tocItems   = {};   /* id -> 目录 <a> 元素 */
+  var hits       = [];   /* 当前搜索命中的 <mark> 列表 */
+  var hitIndex   = -1;
+  var searchTimer = null;
+  var rafPending  = false;
+  var activeId    = '';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+  /* ================= 通用工具 ================= */
+
+  /** 安全读取 localStorage（隐私模式下可能抛错）。 */
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  /** 安全写入 localStorage。 */
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* 忽略 */ }
+  }
+  /** 顶栏当前高度（移动端换行后会变高）。 */
+  function topbarHeight() {
+    return topbar ? topbar.offsetHeight : 58;
+  }
+  /** 取标题纯文本（剔除章节序号与折叠箭头）。 */
+  function headingText(heading) {
+    var clone = heading.cloneNode(true);
+    var junk = clone.querySelectorAll('.chapter-num, .sec-caret');
+    for (var i = 0; i < junk.length; i++) { junk[i].parentNode.removeChild(junk[i]); }
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** 元素是否当前可见（折叠后的内容不可见）。 */
+  function isVisible(el) {
+    return !!(el && el.offsetParent !== null);
+  }
+
+  /* ================= 主题 ================= */
+
+  function applyTheme(theme) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? '☀' : '🌙';
+    themeBtn.setAttribute('title', next === 'dark' ? '切换到浅色阅读模式' : '切换到深色阅读模式');
+  }
+
+  function initTheme() {
+    var saved = lsGet(STORE_THEME);
+    if (saved !== 'dark' && saved !== 'light') {
+      var prefersDark = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false;
+      saved = prefersDark ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+
+  themeBtn.addEventListener('click', function () {
+    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    lsSet(STORE_THEME, next);
+  });
+
+  /* ================= 字号（三档） ================= */
+
+  function applyFontSize(level) {
+    var idx = FS_LEVELS.indexOf(String(level));
+    if (idx === -1) { idx = 1; }
+    html.setAttribute('data-fs', FS_LEVELS[idx]);
+    fsDownBtn.disabled = (idx === 0);
+    fsUpBtn.disabled = (idx === FS_LEVELS.length - 1);
+    fsDownBtn.style.opacity = idx === 0 ? '.45' : '1';
+    fsUpBtn.style.opacity = idx === FS_LEVELS.length - 1 ? '.45' : '1';
+  }
+
+  function stepFontSize(delta) {
+    var idx = FS_LEVELS.indexOf(html.getAttribute('data-fs'));
+    if (idx === -1) { idx = 1; }
+    var next = Math.min(FS_LEVELS.length - 1, Math.max(0, idx + delta));
+    applyFontSize(FS_LEVELS[next]);
+    lsSet(STORE_FS, FS_LEVELS[next]);
+  }
+
+  function initFontSize() {
+    var saved = lsGet(STORE_FS);
+    applyFontSize(saved === null ? '1' : saved);
+  }
+
+  fsUpBtn.addEventListener('click', function () { stepFontSize(1); });
+  fsDownBtn.addEventListener('click', function () { stepFontSize(-1); });
+
+  /* ================= 章节折叠 / 展开 ================= */
+
+  function setCollapsed(section, collapsed) {
+    var head = section.querySelector('h2.sec-head');
+    if (!head) { return; }
+    if (collapsed) {
+      section.classList.add('collapsed');
+      head.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      head.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function toggleSection(section) {
+    setCollapsed(section, !section.classList.contains('collapsed'));
+    requestActiveUpdate();
+  }
+
+  function expandSection(section) {
+    if (section && section.classList.contains('collapsed')) {
+      setCollapsed(section, false);
+    }
+  }
+
+  sections.forEach(function (section) {
+    var head = section.querySelector('h2.sec-head');
+    var bodyEl = section.querySelector('.sec-body');
+    if (!head || !bodyEl) { return; }
+    if (!bodyEl.id) { bodyEl.id = section.id + '-body'; }
+    head.setAttribute('aria-controls', bodyEl.id);
+
+    head.addEventListener('click', function () { toggleSection(section); });
+    head.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggleSection(section);
+      }
+    });
+  });
+
+  expandAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, false); });
+    requestActiveUpdate();
+  });
+  collapseAllBtn.addEventListener('click', function () {
+    sections.forEach(function (s) { setCollapsed(s, true); });
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    requestActiveUpdate();
+  });
+
+  /* ================= 目录（TOC）自动生成 ================= */
+
+  function buildToc() {
+    var frag = document.createDocumentFragment();
+    var chapterCount = 0;
+
+    sections.forEach(function (section, sIdx) {
+      if (!section.id) { section.id = 'sec-auto-' + sIdx; }
+
+      var head = section.querySelector('h2.sec-head');
+      var label = head ? headingText(head) : (section.getAttribute('data-toc') || ('第 ' + (sIdx + 1) + ' 节'));
+      var numEl = head ? head.querySelector('.chapter-num') : null;
+      var numText = numEl ? numEl.textContent.trim() : '·';
+      if (head) { chapterCount += 1; }
+
+      frag.appendChild(makeTocItem(section.id, label, numText, 2));
+      navTargets.push(section.id);
+
+      /* 子节标题（h3）自动提取 */
+      var subs = [].slice.call(section.querySelectorAll('h3'));
+      subs.forEach(function (h3, hIdx) {
+        if (!h3.id) { h3.id = section.id + '-h3-' + (hIdx + 1); }
+        frag.appendChild(makeTocItem(h3.id, headingText(h3), '', 3));
+        navTargets.push(h3.id);
+      });
+    });
+
+    tocNav.appendChild(frag);
+    secCountEl.textContent = String(chapterCount);
+  }
+
+  function makeTocItem(targetId, label, numText, level) {
+    var a = document.createElement('a');
+    a.className = 'toc-item lvl' + level;
+    a.href = '#' + targetId;
+    a.setAttribute('data-target', targetId);
+
+    if (level === 2) {
+      var num = document.createElement('span');
+      num.className = 'toc-num';
+      num.textContent = numText || '·';
+      a.appendChild(num);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'toc-text';
+    txt.textContent = label;
+    a.appendChild(txt);
+
+    tocItems[targetId] = a;
+    return a;
+  }
+
+  /* ================= 平滑滚动与锚点 ================= */
+
+  function scrollToTarget(targetId, updateHash) {
+    var el = document.getElementById(targetId);
+    if (!el) { return; }
+
+    var section = el.closest ? el.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    /* 折叠展开后再量位置，避免坐标错位 */
+    window.requestAnimationFrame(function () {
+      var rect = el.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - 14;
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+      if (updateHash !== false && history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+      }
+      setActive(targetId);
+    });
+  }
+
+  /* 侧边目录点击 */
+  tocNav.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-item') : null;
+    if (!link) { return; }
+    event.preventDefault();
+    scrollToTarget(link.getAttribute('data-target'));
+    closeDrawer();
+  });
+
+  /* 正文内“目 录”清单点击 */
+  main.addEventListener('click', function (event) {
+    var link = event.target.closest ? event.target.closest('.toc-list-link') : null;
+    if (!link) { return; }
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') { return; }
+    event.preventDefault();
+    scrollToTarget(href.slice(1));
+  });
+
+  /* ================= 当前章节高亮（IntersectionObserver + 滚动兜底） ================= */
+
+  /* 上报当前可见小节给原生层（用于"练习当前正文"只取正在看的那一节）。
+     通过隐藏 iframe 触发 philomenu:// scheme，由原生 shouldOverrideUrlLoading 拦截。 */
+  function reportActiveSection(targetId) {
+    try {
+      var el = document.getElementById(targetId);
+      var sec = el && el.closest ? el.closest('.section') : null;
+      // 仅上报顶层小节（sec-N）；封面 / 目录不计入练习范围
+      if (sec && /^sec-\d+$/.test(sec.id)) {
+        var person = 'weber';
+        var url = 'philomenu://update_person?person=' + encodeURIComponent(person) +
+                  '&section=' + encodeURIComponent(sec.id);
+        var bridge = document.getElementById('__philomenu_bridge');
+        if (!bridge) {
+          bridge = document.createElement('iframe');
+          bridge.id = '__philomenu_bridge';
+          bridge.setAttribute('style', 'display:none;width:0;height:0;border:0;');
+          document.body.appendChild(bridge);
+        }
+        bridge.src = url;
+      }
+    } catch (_) { /* 静默失败，不影响阅读 */ }
+  }
+
+  function setActive(targetId) {
+    if (!targetId || targetId === activeId) { return; }
+    activeId = targetId;
+    reportActiveSection(targetId);
+
+    for (var key in tocItems) {
+      if (Object.prototype.hasOwnProperty.call(tocItems, key)) {
+        tocItems[key].classList.remove('active');
+        tocItems[key].classList.remove('active-parent');
+      }
+    }
+    var item = tocItems[targetId];
+    if (!item) { return; }
+    item.classList.add('active');
+
+    /* 若命中的是 h3，则同时标记所属大节 */
+    var el = document.getElementById(targetId);
+    var section = el && el.closest ? el.closest('.section') : null;
+    if (section && section.id !== targetId && tocItems[section.id]) {
+      tocItems[section.id].classList.add('active-parent');
+    }
+    keepTocItemVisible(item);
+  }
+
+  function keepTocItemVisible(item) {
+    if (body.classList.contains('toc-open')) { return; }
+    var cRect = tocEl.getBoundingClientRect();
+    var iRect = item.getBoundingClientRect();
+    if (iRect.top < cRect.top + 8) {
+      tocEl.scrollTop -= (cRect.top + 8 - iRect.top);
+    } else if (iRect.bottom > cRect.bottom - 8) {
+      tocEl.scrollTop += (iRect.bottom - (cRect.bottom - 8));
+    }
+  }
+
+  function computeActive() {
+    var boundary = topbarHeight() + 28;
+    var candidate = navTargets.length ? navTargets[0] : '';
+
+    for (var i = 0; i < navTargets.length; i++) {
+      var el = document.getElementById(navTargets[i]);
+      if (!el || !isVisible(el)) { continue; }
+      var top = el.getBoundingClientRect().top;
+      if (top - boundary <= 0) {
+        candidate = navTargets[i];
+      } else {
+        break;
+      }
+    }
+    /* 滚动到底部时强制高亮最后一节 */
+    var docH = document.documentElement.scrollHeight;
+    if (window.pageYOffset + window.innerHeight >= docH - 4 && navTargets.length) {
+      candidate = navTargets[navTargets.length - 1];
+    }
+    setActive(candidate);
+  }
+
+  function requestActiveUpdate() {
+    if (rafPending) { return; }
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      computeActive();
+      updateProgress();
+    });
+  }
+
+  function initObserver() {
+    if (!('IntersectionObserver' in window)) { return; }
+    var observer = new IntersectionObserver(function () {
+      requestActiveUpdate();
+    }, {
+      root: null,
+      rootMargin: '-' + (topbarHeight() + 10) + 'px 0px -55% 0px',
+      threshold: [0, 0.05, 0.3, 0.6, 1]
+    });
+    sections.forEach(function (section) { observer.observe(section); });
+    var subs = main.querySelectorAll('h3');
+    for (var i = 0; i < subs.length; i++) { observer.observe(subs[i]); }
+  }
+
+  /* ================= 阅读进度条 ================= */
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.pageYOffset / max) * 100 : 0;
+    if (pct < 0) { pct = 0; }
+    if (pct > 100) { pct = 100; }
+    progressBar.style.width = pct.toFixed(2) + '%';
+
+    if (window.pageYOffset > 420) {
+      toTopBtn.classList.remove('hidden');
+    } else {
+      toTopBtn.classList.add('hidden');
+    }
+  }
+
+  toTopBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 全文搜索 ================= */
+
+  /** 清除所有高亮，并把文本节点合并回原状。 */
+  function clearMarks() {
+    var marks = main.querySelectorAll('mark.hit');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i];
+      var parent = mark.parentNode;
+      if (!parent) { continue; }
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+    hits = [];
+    hitIndex = -1;
+  }
+
+  /** 用 <mark class="hit"> 包裹所有 substring 匹配。 */
+  function applyMarks(term) {
+    var query = term.toLowerCase();
+    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var value = node.nodeValue;
+        if (!value || !value.trim()) { return NodeFilter.FILTER_REJECT; }
+        var parent = node.parentNode;
+        if (!parent) { return NodeFilter.FILTER_REJECT; }
+        var tag = parent.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') { return NodeFilter.FILTER_REJECT; }
+        if (value.toLowerCase().indexOf(query) === -1) { return NodeFilter.FILTER_REJECT; }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
+    var targets = [];
+    while (walker.nextNode()) { targets.push(walker.currentNode); }
+
+    for (var i = 0; i < targets.length; i++) {
+      var node = targets[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      var idx = lower.indexOf(query, cursor);
+
+      while (idx !== -1) {
+        if (idx > cursor) {
+          frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        cursor = idx + query.length;
+        idx = lower.indexOf(query, cursor);
+      }
+      if (cursor < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      if (node.parentNode) { node.parentNode.replaceChild(frag, node); }
+    }
+
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+  }
+
+  /** 在目录上标注每节命中数量。 */
+  function updateTocHits() {
+    for (var key in tocItems) {
+      if (!Object.prototype.hasOwnProperty.call(tocItems, key)) { continue; }
+      var badge = tocItems[key].querySelector('.toc-hits');
+      if (badge) { badge.parentNode.removeChild(badge); }
+    }
+    if (!hits.length) { return; }
+    sections.forEach(function (section) {
+      var count = section.querySelectorAll('mark.hit').length;
+      var item = tocItems[section.id];
+      if (!count || !item) { return; }
+      var badge = document.createElement('span');
+      badge.className = 'toc-hits';
+      badge.textContent = String(count);
+      item.appendChild(badge);
+    });
+  }
+
+  function gotoHit(index) {
+    if (!hits.length) { return; }
+    var total = hits.length;
+    hitIndex = ((index % total) + total) % total;
+
+    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove('current'); }
+    var target = hits[hitIndex];
+    target.classList.add('current');
+
+    var section = target.closest ? target.closest('.section') : null;
+    if (section) { expandSection(section); }
+
+    window.requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var top = window.pageYOffset + rect.top - topbarHeight() - Math.max(window.innerHeight * 0.28, 90);
+      window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+    renderCount();
+  }
+
+  function renderCount() {
+    var term = searchInput.value.trim();
+    if (!term) {
+      searchCount.textContent = '';
+      return;
+    }
+    if (!hits.length) {
+      searchCount.textContent = '无匹配';
+      return;
+    }
+    searchCount.textContent = (hitIndex >= 0 ? (hitIndex + 1) + '/' : '') + hits.length + ' 处';
+  }
+
+  function toggleSearchButtons(show) {
+    prevHitBtn.hidden = !show;
+    nextHitBtn.hidden = !show;
+    clearBtn.hidden = !show;
+  }
+
+  function runSearch() {
+    var term = searchInput.value.trim();
+    clearMarks();
+
+    if (!term) {
+      updateTocHits();
+      toggleSearchButtons(false);
+      renderCount();
+      return;
+    }
+
+    applyMarks(term);
+    updateTocHits();
+    toggleSearchButtons(true);
+
+    /* 展开所有含命中的章节，避免匹配被折叠隐藏 */
+    sections.forEach(function (section) {
+      if (section.querySelector('mark.hit')) { expandSection(section); }
+    });
+    /* 折叠状态可能变化，重新收集顺序 */
+    hits = [].slice.call(main.querySelectorAll('mark.hit'));
+
+    if (hits.length) {
+      gotoHit(0);
+    } else {
+      renderCount();
+    }
+  }
+
+  searchInput.addEventListener('input', function () {
+    if (searchTimer) { window.clearTimeout(searchTimer); }
+    searchTimer = window.setTimeout(runSearch, 180);
+  });
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = null; }
+      if (!hits.length) {
+        runSearch();
+      } else {
+        gotoHit(hitIndex + (event.shiftKey ? -1 : 1));
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      resetSearch();
+    }
+  });
+
+  function resetSearch() {
+    searchInput.value = '';
+    clearMarks();
+    updateTocHits();
+    toggleSearchButtons(false);
+    renderCount();
+    searchInput.blur();
+  }
+
+  clearBtn.addEventListener('click', resetSearch);
+  nextHitBtn.addEventListener('click', function () { gotoHit(hitIndex + 1); });
+  prevHitBtn.addEventListener('click', function () { gotoHit(hitIndex - 1); });
+
+  /* ================= 移动端抽屉 ================= */
+
+  function openDrawer() {
+    body.classList.add('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!body.classList.contains('toc-open')) { return; }
+    body.classList.remove('toc-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (body.classList.contains('toc-open')) { closeDrawer(); } else { openDrawer(); }
+  });
+  scrim.addEventListener('click', closeDrawer);
+
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 768) { closeDrawer(); }
+    requestActiveUpdate();
+  });
+
+  /* ================= 全局键盘快捷键 ================= */
+
+  document.addEventListener('keydown', function (event) {
+    if (typeof event.key !== 'string') { return; }
+    var tag = (event.target && event.target.nodeName) || '';
+    var typing = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT');
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      searchInput.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  /* ================= 滚动监听 ================= */
+
+  window.addEventListener('scroll', requestActiveUpdate, { passive: true });
+
+  /* ================= 初始化 ================= */
+
+  initTheme();
+  initFontSize();
+  buildToc();
+  initObserver();
+  updateProgress();
+  computeActive();
+
+  /* 带 hash 进入时定位到对应章节 */
+  if (window.location.hash.length > 1) {
+    var initialId = decodeURIComponent(window.location.hash.slice(1));
+    if (document.getElementById(initialId)) {
+      window.setTimeout(function () { scrollToTarget(initialId, false); }, 60);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>

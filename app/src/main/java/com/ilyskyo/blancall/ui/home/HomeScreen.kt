@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -19,6 +18,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -27,11 +34,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -65,6 +74,7 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.common.listItemEnter
@@ -83,6 +93,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import androidx.compose.runtime.produceState
@@ -110,6 +121,64 @@ fun HomeScreen(
     val recordRepo = remember { RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath) }
     val allRecords by recordRepo.records.collectAsState()
     val dateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
+
+    // 搜索栏右侧「添加」按钮实测宽度；供品牌栏「设置」按钮等宽对齐
+    var addButtonWidth by remember { mutableStateOf(0.dp) }
+
+    // ── 首页顶部品牌头部：默认收起（仅搜索框），下拉(滚到顶再拉)时展开 ──
+    val homeScrollState = rememberScrollState()
+    // 展开比例 0..1（0=收起，仅显示搜索框；1=全开，显示 logo+导入+设置）
+    val brandProgress = remember { Animatable(0f) }
+    // 品牌栏(logo+设置)全展开高度；搜索栏常驻不折叠，故无需计入头部展开预算
+    val brandHeight = 72.dp
+    val headerScope = rememberCoroutineScope()
+    // 品牌栏开合用带回弹的弹簧动画（略 overshoot，收尾更有弹性）
+    val bounceSpring = spring<Float>(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow
+    )
+    val topBarConnection = remember(homeScrollState, brandProgress, headerScope, bounceSpring) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val dy = available.y
+                // 滚到顶再继续下拉：
+                //  - 未展开：over-scroll 实时转为头部展开（手指拖动跟随）
+                //  - 已拉满：再次下拉 → 回弹收起（toggle）
+                if (dy > 0f && homeScrollState.value <= 0f) {
+                    if (brandProgress.value >= 0.98f) {
+                        headerScope.launch { brandProgress.animateTo(0f, bounceSpring) }
+                    } else {
+                        headerScope.launch {
+                            brandProgress.snapTo((brandProgress.value + dy / 300f).coerceIn(0f, 1f))
+                        }
+                    }
+                    return Offset(0f, dy)
+                }
+                return Offset.Zero
+            }
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                // 向下滚动内容时若头部开着则回弹收起
+                if (homeScrollState.value > 0f && brandProgress.value > 0f) {
+                    headerScope.launch { brandProgress.animateTo(0f, bounceSpring) }
+                }
+                return Offset.Zero
+            }
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (homeScrollState.value <= 0f && brandProgress.value > 0f) {
+                    headerScope.launch {
+                        // 拉满则回弹到完全展开（便于点设置），否则松手回弹收起
+                        if (brandProgress.value >= 0.98f) {
+                            brandProgress.animateTo(1f, bounceSpring)
+                        } else {
+                            brandProgress.animateTo(0f, bounceSpring)
+                        }
+                    }
+                    return available
+                }
+                return Velocity.Zero
+            }
+        }
+    }
 
     // 首页隐藏的文章（长按"从首页删除"，仅从首页移除，不从文章列表删除）
     val hiddenArticleIds by AppPrefs.hiddenArticleIdsFlow.collectAsState()
@@ -431,91 +500,98 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .nestedScroll(topBarConnection)
+                    .verticalScroll(homeScrollState)
                     .padding(horizontal = 20.dp)
             ) {
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // ── 品牌区：诗意的标题栏 ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // ── 品牌栏：logo + 设置，默认收起；下拉(滚到顶再拉)时滑出。
+            //    此处不再放「添加」按钮（搜索栏右侧已有），避免重复 ──
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(brandHeight * brandProgress.value)
+                    .clipToBounds()
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth().height(brandHeight),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Logo 图标（可点击换 emoji）：设置中可关闭显示
-                    if (showHomeEmoji) {
-                        Surface(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .semantics { contentDescription = "应用图标，点击更换" }
-                                .clickable { showEmojiPicker = true },
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                AppIcon(
-                                    kind = appIconKindFromKey(homeIconKey),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(12.dp))
-                    }
-                    Column {
-                        Text(
-                            text = "Blancall",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            maxLines = 1
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        // 副标题：单行显示，设备放不下时自适应缩小字号
-                        val labelSmallFontSize = MaterialTheme.typography.labelSmall.fontSize
-                        var subtitleFontSize by remember(subtitle) {
-                            mutableStateOf(labelSmallFontSize)
-                        }
-                        Text(
-                            text = subtitle,
-                            maxLines = 1,
-                            overflow = TextOverflow.Clip,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = subtitleFontSize),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            letterSpacing = 0.5.sp,
-                            onTextLayout = { result ->
-                                // 溢出时逐步缩小字号（下限 8sp），直到单行放下
-                                if (result.hasVisualOverflow && subtitleFontSize.value > 8f) {
-                                    subtitleFontSize = (subtitleFontSize.value - 0.5f).sp
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Logo 图标（可点击换 emoji）：设置中可关闭显示
+                        if (showHomeEmoji) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .semantics { contentDescription = "应用图标，点击更换" }
+                                    .clickable { showEmojiPicker = true },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    AppIcon(
+                                        kind = appIconKindFromKey(homeIconKey),
+                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
-                            },
-                            modifier = Modifier.clickable { showSubtitleEditor = true }
-                        )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Column {
+                            Text(
+                                text = "Blancall",
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                maxLines = 1
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            // 副标题：单行显示，设备放不下时自适应缩小字号
+                            val labelSmallFontSize = MaterialTheme.typography.labelSmall.fontSize
+                            var subtitleFontSize by remember(subtitle) {
+                                mutableStateOf(labelSmallFontSize)
+                            }
+                            Text(
+                                text = subtitle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = subtitleFontSize),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                letterSpacing = 0.5.sp,
+                                onTextLayout = { result ->
+                                    if (result.hasVisualOverflow && subtitleFontSize.value > 8f) {
+                                        subtitleFontSize = (subtitleFontSize.value - 0.5f).sp
+                                    }
+                                },
+                                modifier = Modifier.clickable { showSubtitleEditor = true }
+                            )
+                        }
                     }
-                }
-
-                GlassButton(
-                    onClick = { navController.navigate("import") },
-                    modifier = Modifier.height(40.dp)
-                ) {
-                    Text("添加", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface)
-                }
-                Spacer(Modifier.width(8.dp))
-                GlassButton(
-                    onClick = { navController.navigate("settings") },
-                    modifier = Modifier
-                        .height(40.dp)
-                        .semantics { contentDescription = "设置" }
-                ) {
-                    // 自绘齿轮图标：矢量绘制精确居中，规避文本字形（emoji）偏移问题
-                    SettingsGearIcon(color = MaterialTheme.colorScheme.onSurface)
+                    GlassButton(
+                        onClick = { navController.navigate("settings") },
+                        modifier = Modifier
+                            // 与搜索栏右侧「添加」按钮等宽对齐
+                            .width(if (addButtonWidth > 0.dp) addButtonWidth else 44.dp)
+                            .height(40.dp)
+                            .semantics { contentDescription = "设置" }
+                    ) {
+                        SettingsGearIcon(color = MaterialTheme.colorScheme.onSurface)
+                    }
                 }
             }
 
-            Spacer(Modifier.height(22.dp))
+            // ── 搜索栏：常驻显示（不参与折叠），右侧「添加」直导入 ──
+            HomeSearchBar(
+                onSearch = { navController.navigate("search") },
+                onAdd = { navController.navigate("import") },
+                onAddWidthMeasured = { addButtonWidth = it }
+            )
+
+            Spacer(Modifier.height(14.dp))
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                 thickness = 0.5.dp
@@ -524,19 +600,10 @@ fun HomeScreen(
 
             // ── 今日待复习卡片 ──
             if (dueArticles.isNotEmpty()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            width = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp)
-                        ),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    containerColor = MaterialTheme.colorScheme.errorContainer
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Row(
@@ -544,7 +611,7 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "今日待复习（${dueArticles.size}篇）",
+                                "要复习的任务（${dueArticles.size}篇）",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onErrorContainer
@@ -596,19 +663,10 @@ fun HomeScreen(
                 val articleMap = remember(articles) { articles.associateBy { it.id } }
                 // 标题最大宽度限制：不超过屏幕宽度的 2/3，超出以省略号截断
                 val maxTitleWidth = (LocalConfiguration.current.screenWidthDp * 2 / 3).dp
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            width = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp)
-                        ),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
                 ) {
                     Column(
                         Modifier
@@ -616,7 +674,7 @@ fun HomeScreen(
                             .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp)
                     ) {
                         Text(
-                            "继续练习（${resumables.size}）",
+                            "待继续完成（${resumables.size}）",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -683,23 +741,11 @@ fun HomeScreen(
             // 学习数据卡片关闭状态：以练习次数为 key，做新练习后自动恢复显示
             var statsCardDismissed by remember(totalPractices) { mutableStateOf(false) }
             if (totalPractices > 0 && !statsCardDismissed) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            width = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { navController.navigate("overview") },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    onClick = { navController.navigate("overview") }
                 ) {
                     Row(
                         Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp).fillMaxWidth(),
@@ -782,7 +828,7 @@ fun HomeScreen(
                 }
             } else {
                 Text(
-                    "最近文章",
+                    "最近使用",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -998,6 +1044,74 @@ fun HomeScreen(
     )
 }
 
+/**
+ * 首页搜索栏：磨砂玻璃质感，点击进入搜索页；右侧「添加」按钮直达导入。
+ * 常驻显示，不随下拉折叠；实测「添加」宽度上报给品牌栏「设置」按钮等宽对齐。
+ */
+@Composable
+private fun HomeSearchBar(
+    onSearch: () -> Unit,
+    onAdd: () -> Unit,
+    modifier: Modifier = Modifier,
+    onAddWidthMeasured: (androidx.compose.ui.unit.Dp) -> Unit = {}
+) {
+    val isDark = isSystemInDarkTheme()
+    val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
+    val container = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
+    val shape = RoundedCornerShape(14.dp)
+    val density = LocalDensity.current
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // 搜索框占位：点击进入独立搜索页
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(46.dp)
+                .clip(shape)
+                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
+                .background(container)
+                .clickable(onClick = onSearch),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AppIcon(
+                    kind = AppIconKind.SearchHint,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "搜索标题 / 正文 / 添加日期",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        // 添加按钮（实测宽度上报，供品牌栏「设置」按钮等宽对齐）
+        GlassButton(
+            onClick = onAdd,
+            modifier = Modifier
+                .height(46.dp)
+                .onGloballyPositioned {
+                    onAddWidthMeasured(with(density) { it.size.width.toDp() })
+                }
+        ) {
+            Text(
+                text = "添加",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
 @Composable
 private fun HomeArticleCard(
     article: Article,
@@ -1009,29 +1123,14 @@ private fun HomeArticleCard(
     practiceModifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(),
-                onClick = onClick,
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                }
-            )
-            // 收敛表面语言：对齐兄弟 M3 卡片（扁平 + 0.5dp 描边 + elevation=0），
-            // 移除原先 1.dp 抬升高光，消除「三种卡片语言混用」。
-            .border(
-                0.5.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                RoundedCornerShape(12.dp)
-            ),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        onClick = onClick,
+        onLongClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onLongClick()
+        }
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(

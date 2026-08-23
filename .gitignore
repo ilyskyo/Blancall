@@ -33,3 +33,13 @@ apk-output/
 docs
 
 build_compile.log
+
+# 本地临时脚本与产物（严格不入库，仅本地保留）
+*.py
+*.mp4
+hs_err_*.log
+*.txt
+
+# 其它本地开发工具目录
+.qoder/
+.trae/

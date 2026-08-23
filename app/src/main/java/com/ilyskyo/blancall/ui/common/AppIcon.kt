@@ -12,6 +12,8 @@ import androidx.compose.material.icons.outlined.Celebration
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Insights
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.outlined.ViewAgenda
@@ -42,7 +45,8 @@ import androidx.compose.ui.unit.dp
  */
 enum class AppIconKind {
     Logo, Close, Edit, Inbox, Celebrate, ArrowForward, OpenInFull, Check,
-    Home, Articles, Insights, MoreVert, SwapHoriz, TrackChanges, ViewAgenda, Pdf, Share
+    Home, Articles, Insights, MoreVert, SwapHoriz, TrackChanges, ViewAgenda, Pdf, Share, Library, ChevronRight,
+    SearchHint
 }
 
 /** 将存储 key 解析为 [AppIconKind]（未知 / 空 → [AppIconKind.Logo]） */
@@ -92,6 +96,9 @@ fun AppIcon(
         AppIconKind.ViewAgenda -> Icons.Outlined.ViewAgenda
         AppIconKind.Pdf -> Icons.Outlined.PictureAsPdf
         AppIconKind.Share -> Icons.Outlined.Share
+        AppIconKind.Library -> Icons.Outlined.AutoStories
+        AppIconKind.ChevronRight -> Icons.Outlined.ChevronRight
+        AppIconKind.SearchHint -> Icons.Outlined.Search
         AppIconKind.Logo -> null
     }
     if (image != null) {

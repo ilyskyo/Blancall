@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>现代西方思想史 · 高考哲思化写作素材库</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background:
+      radial-gradient(60% 50% at 12% 8%, rgba(31,58,95,.10) 0%, rgba(31,58,95,0) 60%),
+      radial-gradient(55% 45% at 88% 18%, rgba(122,47,47,.08) 0%, rgba(122,47,47,0) 60%),
+      radial-gradient(60% 50% at 70% 92%, rgba(74,63,120,.09) 0%, rgba(74,63,120,0) 60%),
+      linear-gradient(160deg, #f6f7f9 0%, #eef1f5 100%);
+    background-attachment: fixed;
+    color: #1a1a1a;
+    min-height: 100vh;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 24px 40px; }
+  header { text-align: center; margin-bottom: 44px; }
+  .kicker {
+    display: inline-block; font-size: 12px; letter-spacing: .35em;
+    color: #8a8f98; border: 1px solid #d5d9e0; border-radius: 999px;
+    padding: 5px 16px; margin-bottom: 22px; text-transform: uppercase;
+  }
+  h1 { font-size: 34px; font-weight: 800; letter-spacing: .06em; margin-bottom: 12px; }
+  .sub { font-size: 15px; color: #6b7280; letter-spacing: .18em; margin-bottom: 26px; }
+  .intro { max-width: 640px; margin: 0 auto; font-size: 14px; color: #555c66; }
+  .search-box{ position:relative; max-width:520px; margin:20px auto 0; }
+  #searchInput{
+    width:100%; box-sizing:border-box;
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif; font-size:16px;
+    padding:11px 42px 11px 16px; border:1px solid #d5d9e0; border-radius:12px;
+    background:#fff; color:#1a1a1a; outline:none;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  #searchInput:focus{ border-color:#1f3a5f; box-shadow:0 0 0 3px rgba(31,58,95,.12); }
+  #searchClear{
+    position:absolute; top:50%; right:10px; transform:translateY(-50%);
+    width:26px; height:26px; border:none; border-radius:50%;
+    background:#e8ebf0; color:#6b7280; font-size:16px; line-height:1;
+    cursor:pointer; display:none; align-items:center; justify-content:center;
+    transition:background .15s ease, color .15s ease;
+  }
+  #searchClear:hover{ background:#d5d9e0; color:#1a1a1a; }
+  #searchClear.show{ display:flex; }
+  .no-result{ text-align:center; color:#8a8f98; font-size:14px; padding:30px 0; }
+  /* ===== 玻璃规范（与练习/正文页统一）：saturate(150%) blur(10px)，半透明白 .92 ===== */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+  .map-banner{
+    position: relative; display: block; margin-bottom: 18px;
+    background:
+      linear-gradient(120deg, var(--mc1, #1f3a5f) 0%, var(--mc2, #4a3f78) 38%, var(--mc3, #7a2f2f) 72%, var(--mc4, #2f6b4f) 100%);
+    border-radius: 20px; padding: 28px 30px 26px;
+    color: #fff; text-decoration: none; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.16);
+    /* 玻璃层：在彩色底上叠一层半透明白玻璃，统一模糊质感 */
+    box-shadow: 0 1px 2px rgba(0,0,0,.10), 0 12px 30px rgba(30,40,60,.18);
+    -webkit-backdrop-filter: saturate(150%) blur(10px);
+    backdrop-filter: saturate(150%) blur(10px);
+    transition: transform .2s var(--ease, ease), box-shadow .2s var(--ease, ease);
+  }
+  .map-banner::after{
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+    pointer-events: none;
+  }
+  .map-banner:hover{ transform: translateY(-3px); box-shadow: 0 2px 4px rgba(0,0,0,.12), 0 18px 44px rgba(30,40,60,.26); }
+  .map-banner-tag{
+    display: inline-block; font-size: 11px; letter-spacing: .28em;
+    border: 1px solid rgba(255,255,255,.45); border-radius: 999px;
+    padding: 4px 13px; margin-bottom: 13px;
+    background: rgba(255,255,255,.10);
+  }
+  .map-banner-title{ font-size: 25px; font-weight: 800; letter-spacing: .05em; margin-bottom: 5px; }
+  .map-banner-sub{ font-size: 13.5px; opacity: .9; margin-bottom: 16px; letter-spacing: .04em; line-height: 1.6; }
+  .map-banner-go{
+    display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700;
+    background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.40);
+    border-radius: 999px; padding: 9px 20px;
+    -webkit-backdrop-filter: saturate(150%) blur(10px);
+    backdrop-filter: saturate(150%) blur(10px);
+    transition: background .15s ease;
+  }
+  .map-banner:hover .map-banner-go{ background: rgba(255,255,255,.26); }
+  .card {
+    position: relative; border-radius: 20px; padding: 24px 22px 22px;
+    text-decoration: none; color: inherit; display: flex; flex-direction: column;
+    overflow: hidden;
+    /* Apple 毛玻璃卡片：半透明白 + 统一模糊 + 细描边 + 柔和阴影 + 顶部高光 */
+    background: rgba(255,255,255,.72);
+    border: 1px solid rgba(255,255,255,.55);
+    box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 10px 30px rgba(30,40,60,.10);
+    -webkit-backdrop-filter: saturate(150%) blur(10px);
+    backdrop-filter: saturate(150%) blur(10px);
+    transition: transform .2s var(--ease, ease), box-shadow .2s var(--ease, ease), background-color .2s var(--ease, ease);
+  }
+  .card::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent);
+    pointer-events: none;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    background: rgba(255,255,255,.86);
+    box-shadow: 0 2px 4px rgba(0,0,0,.06), 0 16px 40px rgba(30,40,60,.16);
+  }
+  .card .accent-bar {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: var(--accent, #1f3a5f); border-radius: 0 4px 4px 0; opacity: .85;
+  }
+  .card .num { font-size: 12px; color: #9aa1ab; letter-spacing: .2em; margin-bottom: 8px; }
+  .card h2 { font-size: 23px; font-weight: 800; letter-spacing: .04em; margin-bottom: 2px; }
+  .card .life { font-size: 13px; color: #8a8f98; margin-bottom: 12px; letter-spacing: .06em; }
+  .card .tag { font-size: 14px; color: #2c2c2e; margin-bottom: 12px; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+  .chip {
+    font-size: 12px; color: #4b5563; background: rgba(255,255,255,.6);
+    border: 1px solid rgba(30,40,60,.08);
+    border-radius: 999px; padding: 3px 11px;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .chip.more { background: rgba(30,40,60,.06); color: #8a8f98; font-weight: 600; }
+  .go {
+    margin-top: auto; align-self: flex-start;
+    font-size: 14px; font-weight: 600; color: #1d1d1f;
+    background: rgba(255,255,255,.7);
+    border: 1px solid rgba(30,40,60,.12); border-radius: 999px;
+    padding: 8px 18px; transition: all .15s ease;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .card:hover .go { background: var(--accent, #1f3a5f); color: #fff; border-color: transparent; }
+  footer { margin-top: 48px; text-align: center; font-size: 12.5px; color: #8a8f98; line-height: 2; }
+  footer b { color: #555c66; }
+@media (max-width: 560px) {
+  .wrap { padding: 36px 16px 32px; }
+  h1 { font-size: 26px; }
+  .grid { gap: 14px; }
+  .card { padding: 20px 16px 18px; }
+  .chip { font-size: 11px; padding: 4px 9px; }
+  .chips { gap: 5px; margin-bottom: 14px; }
+  .search-box{ padding:0 4px; }
+  /* C7: 窄屏标签截断，避免长标签撑爆卡片 */
+  .card .chips { max-height: 56px; overflow: hidden; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="kicker">高考作文素材库</span>
+    <h1>现代西方思想史</h1>
+    <div class="sub">理性化 · 存在 · 虚无 · 无意识</div>
+    <p class="intro">二十位改变现代人心灵图景的思想家，每条素材均经多源联网核验，节末附来源标注。点击进入可交互素材页：支持搜索、目录、折叠、明暗主题与字号调节，适合手机背诵与打印。</p>
+    <div class="search-box">
+      <input id="searchInput" type="text" placeholder="搜索思想家或概念，如：罗尔斯 / 无知之幕" autocomplete="off" aria-label="搜索思想家或概念">
+      <button id="searchClear" type="button" aria-label="清除搜索">×</button>
+    </div>
+  </header>
+
+  <a class="map-banner" href="concept-map.html"
+     style="--mc1:#1f3a5f; --mc2:#4a3f78; --mc3:#7a2f2f; --mc4:#2f6b4f">
+    <span class="map-banner-tag">互动新功能</span>
+    <div class="map-banner-title">概念关联 · 思维导图</div>
+    <div class="map-banner-sub">融会贯通二十位思想家 · 自由拖动画布 · 跨人物连线 · 点击概念看释义</div>
+    <span class="map-banner-go">进入画布 →</span>
+  </a>
+
+  <main class="grid">
+    <a class="card" href="weber.html" style="--accent:#1f3a5f">
+      <div class="accent-bar"></div>
+      <div class="num">01</div>
+      <h2>韦伯</h2>
+      <div class="life">1864 — 1920</div>
+      <div class="tag">理性化与祛魅的时代</div>
+      <div class="chips"><span class="chip">工具理性/价值理性</span><span class="chip">现代铁笼</span><span class="chip">责任伦理</span><span class="chip">三种权威</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+
+    <a class="card" href="kierkegaard.html" style="--accent:#4a3f78">
+      <div class="accent-bar"></div>
+      <div class="num">02</div>
+      <h2>克尔凯郭尔</h2>
+      <div class="life">1813 — 1855</div>
+      <div class="tag">存在主义的思想源头</div>
+      <div class="chips"><span class="chip">存在三阶段</span><span class="chip">主观真理</span><span class="chip">信仰之跃</span><span class="chip">孤独个体</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+
+    <a class="card" href="nietzsche.html" style="--accent:#7a2f2f">
+      <div class="accent-bar"></div>
+      <div class="num">03</div>
+      <h2>尼采</h2>
+      <div class="life">1844 — 1900</div>
+      <div class="tag">积极的虚无主义与超人</div>
+      <div class="chips"><span class="chip">上帝已死</span><span class="chip">权力意志</span><span class="chip">超人</span><span class="chip">永恒轮回</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+
+    <a class="card" href="freud.html" style="--accent:#2f6b4f">
+      <div class="accent-bar"></div>
+      <div class="num">04</div>
+      <h2>弗洛伊德</h2>
+      <div class="life">1856 — 1939</div>
+      <div class="tag">理性人的死亡</div>
+      <div class="chips"><span class="chip">无意识</span><span class="chip">本我/自我/超我</span><span class="chip">俄狄浦斯情结</span><span class="chip">梦的解析</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+
+    <a class="card" href="sartre.html" style="--accent:#b0742a">
+      <div class="accent-bar"></div>
+      <div class="num">05</div>
+      <h2>萨特</h2>
+      <div class="life">1905 — 1980</div>
+      <div class="tag">存在主义与"人被判定为自由"</div>
+      <div class="chips"><span class="chip">存在先于本质</span><span class="chip">自欺</span><span class="chip">他人即地狱</span><span class="chip">绝对责任</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="arendt.html" style="--accent:#b5533a">
+      <div class="accent-bar"></div>
+      <div class="num">06</div>
+      <h2>阿伦特</h2>
+      <div class="life">1906 — 1975</div>
+      <div class="tag">平庸之恶、积极生活与判断的责任</div>
+      <div class="chips"><span class="chip">平庸之恶</span><span class="chip">极权主义</span><span class="chip">积极生活</span><span class="chip">思考的能力</span><span class="chip">判断</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="bauman.html" style="--accent:#5566a8">
+      <div class="accent-bar"></div>
+      <div class="num">07</div>
+      <h2>鲍曼</h2>
+      <div class="life">1925 — 2017</div>
+      <div class="tag">大屠杀的现代性反思与液态现代性</div>
+      <div class="chips"><span class="chip">大屠杀</span><span class="chip">道德休眠</span><span class="chip">液态现代性</span><span class="chip">园丁国家</span><span class="chip">陌生人</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="berlin.html" style="--accent:#8e44ad">
+      <div class="accent-bar"></div>
+      <div class="num">08</div>
+      <h2>伯林</h2>
+      <div class="life">1909 — 1997</div>
+      <div class="tag">消极自由 · 积极自由 · 价值多元论</div>
+      <div class="chips"><span class="chip">消极自由</span><span class="chip">积极自由</span><span class="chip">价值多元论</span><span class="chip">狐狸与刺猬</span><span class="chip">两种自由概念</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="dworkin.html" style="--accent:#2980b9">
+      <div class="accent-bar"></div>
+      <div class="num">09</div>
+      <h2>德沃金</h2>
+      <div class="life">1931 — 2013</div>
+      <div class="tag">平等的关怀与尊重 · 权利作为王牌 · 法律作为整体性</div>
+      <div class="chips"><span class="chip">平等的关怀与尊重</span><span class="chip">敏于志向钝于禀赋</span><span class="chip">权利作为王牌</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="fukuyama.html" style="--accent:#af7d3b">
+      <div class="accent-bar"></div>
+      <div class="num">10</div>
+      <h2>福山</h2>
+      <div class="life">1952 — </div>
+      <div class="tag">历史终结论 · 为承认而斗争 · 政治秩序</div>
+      <div class="chips"><span class="chip">历史终结论</span><span class="chip">为承认而斗争</span><span class="chip">普遍历史</span><span class="chip">政治秩序</span><span class="chip">制度衰败</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="habermas.html" style="--accent:#2c3e8c">
+      <div class="accent-bar"></div>
+      <div class="num">11</div>
+      <h2>哈贝马斯</h2>
+      <div class="life">1929 — 2026</div>
+      <div class="tag">交往理性 · 公共领域 · 协商民主</div>
+      <div class="chips"><span class="chip">交往理性</span><span class="chip">公共领域</span><span class="chip">协商民主</span><span class="chip">韦伯难题</span><span class="chip">生活世界</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="hayek.html" style="--accent:#6b8e23">
+      <div class="accent-bar"></div>
+      <div class="num">12</div>
+      <h2>哈耶克</h2>
+      <div class="life">1899 — 1992</div>
+      <div class="tag">自发秩序 · 理性的自负 · 通往奴役之路</div>
+      <div class="chips"><span class="chip">自发秩序</span><span class="chip">理性的自负</span><span class="chip">通往奴役之路</span><span class="chip">价格机制</span><span class="chip">知识问题</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="huntington.html" style="--accent:#922b5b">
+      <div class="accent-bar"></div>
+      <div class="num">13</div>
+      <h2>亨廷顿</h2>
+      <div class="life">1927 — 2008</div>
+      <div class="tag">文明冲突论 · 文明圈 · 制度与文化之争</div>
+      <div class="chips"><span class="chip">文明冲突论</span><span class="chip">文明圈</span><span class="chip">断层线</span><span class="chip">制度与文化</span><span class="chip">我们是谁</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="marcuse.html" style="--accent:#c0392b">
+      <div class="accent-bar"></div>
+      <div class="num">14</div>
+      <h2>马尔库塞</h2>
+      <div class="life">1898 — 1979</div>
+      <div class="tag">单向度的人 · 虚假的需求 · 大拒绝</div>
+      <div class="chips"><span class="chip">单向度的人</span><span class="chip">虚假的需求</span><span class="chip">压抑性去升华</span><span class="chip">大拒绝</span><span class="chip">法兰克福学派</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="nozick.html" style="--accent:#d35400">
+      <div class="accent-bar"></div>
+      <div class="num">15</div>
+      <h2>诺齐克</h2>
+      <div class="life">1938 — 2002</div>
+      <div class="tag">最小国家 · 权利理论 · 张伯伦论证</div>
+      <div class="chips"><span class="chip">最小国家</span><span class="chip">权利理论</span><span class="chip">张伯伦论证</span><span class="chip">边际约束</span><span class="chip">体验机</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="popper.html" style="--accent:#2f8f8f">
+      <div class="accent-bar"></div>
+      <div class="num">16</div>
+      <h2>波普尔</h2>
+      <div class="life">1902 — 1994</div>
+      <div class="tag">证伪主义、开放社会与对历史决定论的批判</div>
+      <div class="chips"><span class="chip">可证伪性</span><span class="chip">批判理性主义</span><span class="chip">开放社会</span><span class="chip">历史决定论</span><span class="chip">渐进工程</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="rawls.html" style="--accent:#16a085">
+      <div class="accent-bar"></div>
+      <div class="num">17</div>
+      <h2>罗尔斯</h2>
+      <div class="life">1921 — 2002</div>
+      <div class="tag">无知之幕 · 作为公平的正义 · 差异原则</div>
+      <div class="chips"><span class="chip">无知之幕</span><span class="chip">作为公平的正义</span><span class="chip">差异原则</span><span class="chip">原初状态</span><span class="chip">反思的平衡</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="sandel.html" style="--accent:#7d6608">
+      <div class="accent-bar"></div>
+      <div class="num">18</div>
+      <h2>桑德尔</h2>
+      <div class="life">1953 — </div>
+      <div class="tag">社群主义 · 对自由主义的批判 · 公正观 · 优绩主义批判</div>
+      <div class="chips"><span class="chip">社群主义</span><span class="chip">公正</span><span class="chip">对自由主义的批判</span><span class="chip">构成性的社群</span><span class="chip">无拘无束的自我</span><span class="chip">优绩主义</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="taylor.html" style="--accent:#117864">
+      <div class="accent-bar"></div>
+      <div class="num">19</div>
+      <h2>泰勒</h2>
+      <div class="life">1931 — </div>
+      <div class="tag">本真性 · 视域/地平线 · 对话性的自我 · 承认的政治</div>
+      <div class="chips"><span class="chip">本真性</span><span class="chip">视域</span><span class="chip">对话性的自我</span><span class="chip">承认的政治</span><span class="chip">现代性的两难</span><span class="chip">社群主义</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+    <a class="card" href="walzer.html" style="--accent:#a0407c">
+      <div class="accent-bar"></div>
+      <div class="num">20</div>
+      <h2>沃尔泽</h2>
+      <div class="life">1935 — </div>
+      <div class="tag">复合平等 · 分配正义 · 领域分离 · 后社会的自我</div>
+      <div class="chips"><span class="chip">复合平等</span><span class="chip">正义诸领域</span><span class="chip">分配正义</span><span class="chip">后社会的自我</span><span class="chip">社群主义</span><span class="chip">原子化个人</span></div>
+      <span class="go">进入素材页 →</span>
+    </a>
+  </main>
+
+  <div class="no-result" id="noResult" hidden>未找到匹配的思想家，换个关键词试试。</div>
+
+  <footer>
+    <b>素材说明</b>：生平、著作、思想与引文均经 ≥2 个独立来源交叉核验（维基/Wikiwand、Stanford Encyclopedia of Philosophy、Britannica、刘擎《西方现代思想讲义》等）；出处存疑的引文已在页内明确标注。<br>
+    每册页面支持打印（浏览器"打印为 PDF"），也可直接下载 PDF 版。
+  </footer>
+</div>
+
+<script>
+(function () {
+  var input = document.getElementById('searchInput');
+  var clearBtn = document.getElementById('searchClear');
+  var cards = Array.prototype.slice.call(document.querySelectorAll('main.grid .card'));
+  var noResult = document.getElementById('noResult');
+  if (!input) return;
+
+  function normalize(s) { return (s || '').toLowerCase().replace(/[\s/·・、]/g, ''); }
+
+  function applyFilter() {
+    var q = normalize(input.value.trim());
+    var shown = 0;
+    cards.forEach(function (c) {
+      var hit = q === '' || normalize(c.textContent).indexOf(q) !== -1;
+      c.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    if (noResult) noResult.hidden = shown !== 0;
+    if (clearBtn) clearBtn.classList.toggle('show', input.value.length > 0);
+  }
+
+  input.addEventListener('input', applyFilter);
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function () {
+      input.value = '';
+      applyFilter();
+      input.focus();
+    });
+  }
+
+  // C7: 窄屏下按真实溢出截断多余标签，显示 "+N"
+  function clampChips() {
+    var isNarrow = window.matchMedia('(max-width: 560px)').matches;
+    cards.forEach(function (card) {
+      var wrap = card.querySelector('.chips');
+      var chips = Array.prototype.slice.call(wrap.querySelectorAll('.chip:not(.more)'));
+      var more = wrap.querySelector('.chip.more');
+      if (more) { more.remove(); }
+      // 还原全部标签，便于重新测量
+      chips.forEach(function (ch) { ch.style.display = ''; });
+      if (!isNarrow) return;
+      // 逐一切掉尾部标签直到不再溢出
+      var hidden = 0;
+      while (wrap.scrollHeight > wrap.clientHeight + 1 && chips.length - hidden > 0) {
+        chips[chips.length - 1 - hidden].style.display = 'none';
+        hidden++;
+      }
+      if (hidden > 0) {
+        var span = document.createElement('span');
+        span.className = 'chip more';
+        span.textContent = '+' + hidden;
+        wrap.appendChild(span);
+      }
+    });
+  }
+
+  clampChips();
+  var rt;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(clampChips, 150);
+  });
+})();
+</script>
+</body>
+</html>
