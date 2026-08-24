@@ -23,9 +23,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.PdfTextExtractor
 import kotlin.math.max
@@ -80,16 +82,25 @@ fun TextContentReader(
             )
         }
         Spacer(Modifier.height(14.dp))
-        // 正文：正常字号与行距，保留换行
-        Text(
-            text = body,
-            style = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = 18.sp,
-                lineHeight = 30.sp
-            ),
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.fillMaxWidth()
-        )
+        // 正文：按空行分段落，每段首行缩进两个汉字（与原文段落一致）
+        val paragraphs = body.split(Regex("\\n\\s*\\n"))
+        paragraphs.forEachIndexed { index, para ->
+            if (para.isNotBlank()) {
+                Text(
+                    text = para,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 18.sp,
+                        lineHeight = 30.sp,
+                        textIndent = TextIndent(firstLine = 2.em)
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (index != paragraphs.lastIndex) {
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+        }
         Spacer(Modifier.height(24.dp))
     }
 }

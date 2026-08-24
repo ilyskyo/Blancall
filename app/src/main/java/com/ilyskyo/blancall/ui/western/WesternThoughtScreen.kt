@@ -285,14 +285,24 @@ fun LibraryContentPage(
     val context = LocalContext.current
     var webView by remember { mutableStateOf<WebView?>(null) }
 
-    // 非官方第三方素材免责提示（如 gaokao 高考库）：仅首次进入弹一次
-    var showDisclaimer by remember { mutableStateOf(lib.id == "gaokao" && !AppPrefs.isDisclaimerSeen("gaokao")) }
+    // 非官方第三方素材免责提示：每个库首次进入弹一次（gaokao / western 各自记忆）
+    var showDisclaimer by remember { mutableStateOf(
+        (lib.id == "gaokao" && !AppPrefs.isDisclaimerSeen("gaokao")) ||
+            (lib.id == "western" && !AppPrefs.isDisclaimerSeen("western"))
+    ) }
 
     if (showDisclaimer) {
         BlancallAlertDialog(
             onDismissRequest = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false },
             title = { Text("提示") },
-            text = { Text("该内容非 Blancall 官方制作，它提供的一切联系信息都与 Blancall 无关。") },
+            text = {
+                Text(
+                    when (lib.id) {
+                        "gaokao" -> "该内容非 Blancall 官方制作，它提供的一切联系信息都与 Blancall 无关。"
+                        else -> "该素材库内容由AI汇总整理，不保证内容完全正确。请勿用作论文引用依据、考试答题模板等。它不可替代深度阅读，亦不可作为权威解读。请务必将其视为对话的起点，而非思考的终点。"
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(onClick = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false }) { Text("知道了") }
             }
