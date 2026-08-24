@@ -9,6 +9,7 @@ import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -300,8 +301,6 @@ fun LibraryContentPage(
 
     // 一级菜单：⋮ 三点点
     var showMenu by remember { mutableStateOf(false) }
-    // 二级菜单（下载 / 导入 二选一页 / 全部页）
-    var subMenuKind by remember { mutableStateOf<SubMenuKind?>(null) }
     // 当前人物 ID（由 JS / onPageFinished 更新）
     var currentPerson by remember { mutableStateOf("") }
     // 当前正在浏览的小节 id（如 sec-2），由 JS 滚动监听上报；空串=整篇
@@ -434,9 +433,9 @@ fun LibraryContentPage(
 
                     GlassMenuDivider()
 
-                    // 仅在进入了具体人物页时显示二级操作
+                    // 仅在进入了具体人物页时显示操作（仅西方思想库有该入口）
                     if (currentPerson.isNotEmpty() && currentPerson != "index" && currentPerson != "concept-map") {
-                        // === 下载 PDF ===
+                        // === 下载 PDF（直接下载当前人物，无二级菜单） ===
                         GlassMenuItem(
                             leadingIcon = {
                                 AppIcon(
@@ -445,17 +444,15 @@ fun LibraryContentPage(
                                     modifier = Modifier.size(20.dp)
                                 )
                             },
-                            trailing = {
-                                AppIcon(
-                                    kind = AppIconKind.ChevronRight,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            },
                             label = { Text("下载 PDF", fontWeight = FontWeight.Medium) },
-                            onClick = { subMenuKind = SubMenuKind.DOWNLOAD }
+                            onClick = {
+                                showMenu = false
+                                if (currentPerson.isNotBlank()) {
+                                    openAssetPdf(context, "file:///android_asset/philo/$currentPerson.pdf")
+                                }
+                            }
                         )
-                        // === 导入到 Blancall 背诵列表 ===
+                        // === 全文导入到 Blancall 背诵列表（导入后提示已导入，不进入练习） ===
                         GlassMenuItem(
                             leadingIcon = {
                                 AppIcon(
@@ -464,15 +461,23 @@ fun LibraryContentPage(
                                     modifier = Modifier.size(20.dp)
                                 )
                             },
-                            trailing = {
-                                AppIcon(
-                                    kind = AppIconKind.ChevronRight,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            },
-                            label = { Text("导入到 Blancall 背诵列表", fontWeight = FontWeight.Medium) },
-                            onClick = { subMenuKind = SubMenuKind.IMPORT }
+                            label = { Text("全文导入背诵列表", fontWeight = FontWeight.Medium) },
+                            onClick = {
+                                showMenu = false
+                                if (currentPerson.isNotBlank()) {
+                                    val text = extractContentBodyFromAssets(context, "philo/${currentPerson}.html")
+                                    if (text.isNotBlank()) {
+                                        scope.launch {
+                                            val articleId = importPhiloToBlancall(
+                                                context, currentPerson, text, currentPerson
+                                            )
+                                            if (articleId > 0) {
+                                                Toast.makeText(context, "已导入", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         )
                         GlassMenuDivider()
                         // （练习当前页的功能已并入顶栏「练习 · 第X节」按钮，菜单不再重复放，避免同一功能多入口）
@@ -588,117 +593,7 @@ fun LibraryContentPage(
                 update = {}
             )
 
-            // 子菜单覆盖层（"本页" / "全部页"）
-            if (subMenuKind != null) {
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { subMenuKind = null }
-                ) {
-                    androidx.compose.foundation.layout.Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 52.dp, end = 12.dp)
-                    ) {
-                        GlassDropdownMenu(
-                            expanded = true,
-                            onDismissRequest = { subMenuKind = null }
-                        ) {
-                            val titleText = when (subMenuKind) {
-                                SubMenuKind.DOWNLOAD -> "下载 PDF"
-                                SubMenuKind.IMPORT -> "导入到 Blancall 背诵列表"
-                                null -> ""
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = titleText,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    letterSpacing = 1.5.sp
-                                )
-                            }
-                            GlassMenuDivider()
-
-                            // 本页（仅当前人物）— 每个哲学家都只有一个 PDF，行为与"全部页"一致
-                            GlassMenuItem(
-                                leadingIcon = {
-                                    AppIcon(
-                                        kind = AppIconKind.ChevronRight,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                label = { Text("仅本页", fontWeight = FontWeight.Medium) },
-                                trailing = {
-                                    Text(
-                                        text = currentPerson,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                onClick = {
-                                    val picked = subMenuKind
-                                    subMenuKind = null
-                                    showMenu = false
-                                    if (picked != null) {
-                                        executeScopeAction(
-                                            scope = scope,
-                                            context = context,
-                                            personId = currentPerson,
-                                            kind = picked,
-                                            strategy = ScopeStrategy.SINGLE_PAGE,
-                                            navController = navController
-                                        )
-                                    }
-                                }
-                            )
-                            // 全部页（当前人物的全套 PDF —— 当前架构下与「仅本页」一致，保留选项便于未来扩展）
-                            GlassMenuItem(
-                                leadingIcon = {
-                                    AppIcon(
-                                        kind = AppIconKind.Library,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                label = { Text("该人物全部页", fontWeight = FontWeight.Medium) },
-                                trailing = {
-                                    Text(
-                                        text = "PDF · $currentPerson",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                onClick = {
-                                    val picked = subMenuKind
-                                    subMenuKind = null
-                                    showMenu = false
-                                    if (picked != null) {
-                                        executeScopeAction(
-                                            scope = scope,
-                                            context = context,
-                                            personId = currentPerson,
-                                            kind = picked,
-                                            strategy = ScopeStrategy.ALL_PAGES,
-                                            navController = navController
-                                        )
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
+            // 二级菜单已移除：下载 PDF / 全文导入背诵列表 直接在一级菜单执行
         }
     }
 
@@ -725,59 +620,6 @@ fun LibraryContentPage(
             pendingPracticeText = ""
         }
     )
-}
-
-/**
- * 二级菜单类别：下载 PDF / 导入 Blancall
- */
-private enum class SubMenuKind { DOWNLOAD, IMPORT }
-
-/**
- * 二级菜单作用域：本页 / 全部页。
- * 当下实现每个哲学家只有 1 个 PDF，「全部页」与「仅本页」行为一致。
- * 保留两个入口，便于后续支持多 PDF 的人物（例如：分章节 PDF）时直接复用 UI。
- */
-private enum class ScopeStrategy { SINGLE_PAGE, ALL_PAGES }
-
-/**
- * 执行二级菜单的实际动作。
- * 封装到独立函数里，避免 lambda 内嵌过深的逻辑分叉。
- */
-private fun executeScopeAction(
-    scope: kotlinx.coroutines.CoroutineScope,
-    context: Context,
-    personId: String,
-    kind: SubMenuKind,
-    strategy: ScopeStrategy,
-    navController: NavController
-) {
-    when (kind) {
-        SubMenuKind.DOWNLOAD -> {
-            if (personId.isNotBlank()) {
-                openAssetPdf(context, "file:///android_asset/philo/$personId.pdf")
-            }
-        }
-        SubMenuKind.IMPORT -> {
-            if (personId.isNotBlank()) {
-                val text = extractContentBodyFromAssets(
-                    context,
-                    "philo/${personId}.html"
-                )
-                if (text.isNotBlank()) {
-                    scope.launch {
-                        // 此路径为「导入全文」：整篇人物导入，标题用纯人名。
-                        val articleId = importPhiloToBlancall(context, personId, text, personId)
-                        if (articleId > 0) {
-                            navController.navigate("practice/${articleId}?mode=SENTENCE")
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // strategy 当前不分支（每人 1 个 PDF），保留以备多 PDF 时扩展。
-    @Suppress("UNUSED_VARIABLE")
-    val unused = strategy
 }
 
 /**
