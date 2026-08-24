@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.ui.western
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
+import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +32,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon as M3Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -61,9 +64,11 @@ import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
+import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.reader.TextContentReader
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -134,8 +139,24 @@ fun PdfPreviewScreenOptimized(
     var showPicker by remember { mutableStateOf(false) }
     // 缩放状态：放大时禁用列表滚动，双指缩放 / 单指拖动
     var isZoomed by remember { mutableStateOf(false) }
-    // 渲染模式：true = 矢量文本渲染，false = 原始 PDF 渲染
-    var useVectorRendering by remember { mutableStateOf(true) }
+    // 渲染模式：true = 纯文本排版，false = 原 PDF 图片渲染（记忆上次选择，跨篇目保持）
+    var useVectorRendering by remember { mutableStateOf(AppPrefs.pdfViewMode() != "image") }
+
+    // 从 asset 解析篇目序号（如 gaokao/p5.pdf 或缓存绝对路径中的 p5）
+    val pageNum = remember(asset) {
+        Regex("p(\\d+)").find(asset)?.groupValues?.get(1)?.toIntOrNull()
+    }
+    // 上一篇 / 下一篇的 asset 路径（保持与当前相同的路径格式）
+    val prevAsset = pageNum?.takeIf { it > 1 }?.let { asset.replace(Regex("p\\d+"), "p${it - 1}") }
+    val nextAsset = pageNum?.takeIf { it < 60 }?.let { asset.replace(Regex("p\\d+"), "p${it + 1}") }
+    // 打开相邻篇目（替换当前预览页，避免返回栈堆积）
+    fun openSiblingPdf(assetPath: String) {
+        val currentId = navController.currentBackStackEntry?.destination?.id
+        navController.navigate("pdf_preview?asset=${Uri.encode(assetPath)}") {
+            if (currentId != null) popUpTo(currentId) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
 
     BackHandler(onBack = { navController.popBackStack() })
 
@@ -163,17 +184,6 @@ fun PdfPreviewScreenOptimized(
                 modifier = Modifier.weight(1f)
             )
             
-            // 渲染模式切换按钮（仅在文本提取成功时显示）
-            if (textPages.isNotEmpty()) {
-                IconButton(onClick = { useVectorRendering = !useVectorRendering }) {
-                    M3Icon(
-                        imageVector = Icons.Filled.MoreVert,
-                        contentDescription = if (useVectorRendering) "切换到 PDF 渲染" else "切换到文本渲染",
-                        tint = if (useVectorRendering) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
             if (textLoaded != null || textPages.isNotEmpty()) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
@@ -184,6 +194,25 @@ fun PdfPreviewScreenOptimized(
                         )
                     }
                     GlassDropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        // 视图模式切换（记忆选择，跨篇目保持）
+                        if (textLoaded != null || textPages.isNotEmpty()) {
+                            GlassMenuItem(
+                                leadingIcon = {
+                                    AppIcon(
+                                        kind = if (useVectorRendering) AppIconKind.Pdf else AppIconKind.ViewAgenda,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                label = { Text(if (useVectorRendering) "查看图片模式" else "查看文本模式", fontWeight = FontWeight.Medium) },
+                                onClick = {
+                                    showMenu = false
+                                    useVectorRendering = !useVectorRendering
+                                    AppPrefs.setPdfViewMode(if (useVectorRendering) "text" else "image")
+                                }
+                            )
+                            GlassMenuDivider()
+                        }
                         GlassMenuItem(
                             leadingIcon = {
                                 AppIcon(
@@ -219,21 +248,54 @@ fun PdfPreviewScreenOptimized(
                 modifier = Modifier.padding(40.dp)
             )
         } else if (useVectorRendering && (textLoaded != null || textPages.isNotEmpty())) {
-            // 矢量模式：优先用配套纯文字版（排版最干净），否则用 PDF 提取文本
+            // 文本模式：优先用配套纯文字版（排版最干净），否则用 PDF 提取文本
             val content = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
-            TextContentReader(
-                title = displayTitle,
-                content = content,
-                modifier = Modifier.fillMaxSize()
-            )
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                TextContentReader(
+                    title = displayTitle,
+                    content = content,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         } else {
-            // 使用原始 PDF 渲染（兼容性保证）
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = !isZoomed
+            // 图片模式：原 PDF 渲染
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = !isZoomed
+                ) {
+                    items(renderer.pageCount) { index ->
+                        ZoomablePdfPage(renderer, index, isZoomed, onZoomChanged = { isZoomed = it })
+                    }
+                }
+            }
+        }
+
+        // 底部：上一篇 / 下一篇（仅素材库篇目 pN 格式时显示）
+        if (pageNum != null) {
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                items(renderer.pageCount) { index ->
-                    ZoomablePdfPage(renderer, index, isZoomed, onZoomChanged = { isZoomed = it })
+                OutlinedButton(
+                    onClick = { prevAsset?.let { openSiblingPdf(it) } },
+                    enabled = prevAsset != null,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                ) {
+                    Text("‹ 上一篇")
+                }
+                OutlinedButton(
+                    onClick = { nextAsset?.let { openSiblingPdf(it) } },
+                    enabled = nextAsset != null,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                ) {
+                    Text("下一篇 ›")
                 }
             }
         }

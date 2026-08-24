@@ -54,6 +54,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -305,6 +306,8 @@ fun LibraryContentPage(
     var currentPerson by remember { mutableStateOf("") }
     // 当前正在浏览的小节 id（如 sec-2），由 JS 滚动监听上报；空串=整篇
     var currentSection by remember { mutableStateOf("") }
+    // 目录页滚动位置：进入篇目预览前保存，返回时恢复（不回到默认顶部）
+    var savedScrollY by rememberSaveable { mutableStateOf(0) }
     // 顶栏「练习」按钮：先弹出练习模式选择选项卡，选定后再导入并进入，不默认任何模式
     var showPracticePicker by remember { mutableStateOf(false) }
     var pendingPracticePerson by remember { mutableStateOf("") }
@@ -514,6 +517,8 @@ fun LibraryContentPage(
                             allowFileAccess = true
                             allowContentAccess = true
                         }
+                        // 记录滚动位置：返回本页时恢复，避免目录回到顶部
+                        setOnScrollChangeListener { _, _, scrollY, _, _ -> savedScrollY = scrollY }
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(
                                 view: WebView?,
@@ -562,6 +567,8 @@ fun LibraryContentPage(
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 url ?: return
+                                // 返回本页时恢复目录滚动位置（从篇目预览返回后仍在原处）
+                                if (savedScrollY > 0) view?.scrollTo(0, savedScrollY)
                                 // 从 URL 中提取文件名（如 weber.html / arendt.html）
                                 val fileName = url.substringAfterLast("/").substringBefore(".html")
                                 // 仅「具体人物页」才算进入可操作页；index（库首页）与
