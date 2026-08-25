@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -328,13 +329,21 @@ fun PdfPreviewScreenOptimized(
         onDismiss = { showPicker = false },
         onModeSelected = { mode ->
             showPicker = false
-            if (pendingText.isNotBlank()) {
+            // 先捕获值再启动协程：pendingText 随后会被重置，协程延迟执行时读取会拿到空串
+            val finalTitle = pendingTitle
+            val finalText = pendingText
+            if (finalText.isNotBlank()) {
                 scope.launch {
-                    val articleId = importTextToBlancall(context, pendingTitle, pendingText)
+                    val articleId = importTextToBlancall(context, finalTitle, finalText)
                     if (articleId > 0) {
+                        Toast.makeText(context, "已导入", Toast.LENGTH_SHORT).show()
                         navController.navigate("practice/${articleId}?mode=${mode.name}")
+                    } else {
+                        Toast.makeText(context, "导入失败，请重试", Toast.LENGTH_SHORT).show()
                     }
                 }
+            } else {
+                Toast.makeText(context, "内容为空，无法导入", Toast.LENGTH_SHORT).show()
             }
             pendingText = ""
         }

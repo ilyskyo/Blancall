@@ -218,6 +218,10 @@ internal suspend fun importTextToBlancall(
         val repo = ArticleRepository.getInstance(
             context.filesDir.resolve("articles.json").absolutePath
         )
+        android.util.Log.d("BlancallImport", "导入 title=$title content长度=${content.length}")
         repo.insert(Article(title = title.ifBlank { "未命名" }, content = content))
-    } catch (_: Exception) { -1L }
+    } catch (e: Exception) {
+        android.util.Log.e("BlancallImport", "导入失败", e)
+        -1L
+    }
 }

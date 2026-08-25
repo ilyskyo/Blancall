@@ -261,9 +261,12 @@ fun OptimizedPdfPreviewScreen(
         onDismiss = { showPicker = false },
         onModeSelected = { mode ->
             showPicker = false
-            if (pendingText.isNotBlank()) {
+            // 先捕获值再启动协程：pendingText 随后会被重置，协程延迟执行时读取会拿到空串
+            val finalTitle = pendingTitle
+            val finalText = pendingText
+            if (finalText.isNotBlank()) {
                 scope.launch {
-                    val articleId = importTextToBlancall(context, pendingTitle, pendingText)
+                    val articleId = importTextToBlancall(context, finalTitle, finalText)
                     if (articleId > 0) {
                         navController.navigate("practice/${articleId}?mode=${mode.name}")
                     }
