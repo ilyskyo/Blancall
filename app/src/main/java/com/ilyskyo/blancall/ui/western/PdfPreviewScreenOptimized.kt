@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.HorizontalDivider
@@ -75,6 +76,16 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
+ * 高考 60 篇各篇在完整 PDF（gaokao_full.pdf）中的起始页（0-based，由目录书内页码 +2 生成）。
+ * 单篇 PDF 已合并为完整 PDF 以大幅减小 APK 体积，预览时按此表定位到对应篇目。
+ */
+private val GAOKAO_PAGE_START = intArrayOf(
+    3, 5, 6, 7, 9, 11, 13, 15, 17, 20, 22, 24, 25, 28, 29, 31, 34, 36, 38, 40,
+    42, 43, 44, 45, 46, 47, 48, 49, 51, 52, 54, 56, 57, 59, 60, 61, 62, 63, 66, 67,
+    68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 87, 88
+)
+
+/**
  * 优化的 PDF 预览页：支持矢量文本渲染和无损放大
  * 
  * 主要改进：
@@ -96,11 +107,22 @@ fun PdfPreviewScreenOptimized(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 解析为可读文件：已存在的绝对路径直接用，否则视为 assets 内资源并复制到缓存
-    val pdfFile = remember(asset) {
-        val direct = File(asset)
-        if (direct.exists()) direct else copyAssetToCache(context, asset)
+    // 解析为可读文件：已存在的绝对路径直接用，否则视为 assets 内资源并复制到缓存。
+    // 高考 60 篇：单篇 pN.pdf 已合并为完整 PDF，按篇目序号定位起始页
+    val pageNum = remember(asset) {
+        Regex("p(\\d+)").find(asset)?.groupValues?.get(1)?.toIntOrNull()
     }
+    val pdfFile = remember(asset, pageNum) {
+        val direct = File(asset)
+        if (direct.exists()) direct
+        else if (pageNum != null && pageNum in 1..GAOKAO_PAGE_START.size) {
+            copyAssetToCache(context, "gaokao/gaokao_full.pdf")
+        } else {
+            copyAssetToCache(context, asset)
+        }
+    }
+    // 篇目起始页（完整 PDF 模式）；单篇 PDF / 普通 PDF 为 0
+    val startPage = pageNum?.takeIf { it in 1..GAOKAO_PAGE_START.size }?.let { GAOKAO_PAGE_START[it - 1] } ?: 0
 
     // 配套文字版（如有）：Pair(标题, 正文）
     val textLoaded = remember(asset) {
@@ -142,10 +164,6 @@ fun PdfPreviewScreenOptimized(
     // 渲染模式：true = 纯文本排版，false = 原 PDF 图片渲染（记忆上次选择，跨篇目保持）
     var useVectorRendering by remember { mutableStateOf(AppPrefs.pdfViewMode() != "image") }
 
-    // 从 asset 解析篇目序号（如 gaokao/p5.pdf 或缓存绝对路径中的 p5）
-    val pageNum = remember(asset) {
-        Regex("p(\\d+)").find(asset)?.groupValues?.get(1)?.toIntOrNull()
-    }
     // 上一篇 / 下一篇的 asset 路径（保持与当前相同的路径格式）
     val prevAsset = pageNum?.takeIf { it > 1 }?.let { asset.replace(Regex("p\\d+"), "p${it - 1}") }
     val nextAsset = pageNum?.takeIf { it < 60 }?.let { asset.replace(Regex("p\\d+"), "p${it + 1}") }
@@ -258,9 +276,11 @@ fun PdfPreviewScreenOptimized(
                 )
             }
         } else {
-            // 图片模式：原 PDF 渲染
+            // 图片模式：原 PDF 渲染（完整 PDF 时定位到当前篇目起始页）
+            val listState = rememberLazyListState(initialFirstVisibleItemIndex = startPage)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     userScrollEnabled = !isZoomed
                 ) {
