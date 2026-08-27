@@ -144,7 +144,78 @@ object AiClozeGenerator {
     /** 每个 AI 字词空：句子编号 + 句内字符坐标 */
     data class WordRange(val sentence: Int, val start: Int, val end: Int)
 
-    /** 解析字词挖空响应 → WordRange 列表（按句分量保证不跨句）。 */
+    /**
+     * 为"反向默写"模式构建用户请求：AI 对每个从句返回恰好 1 个挖空坐标。
+     * 反向默写语义：每个从句都挖 1 处作为线索，难度控制挖空跨度（字数）。
+     */
+    fun buildDictationRequest(
+        content: String,
+        clauses: List<String>,
+        difficulty: String,
+        customInput: String
+    ): String {
+        val targetLen = dictationBlankLength(difficulty)
+
+        val sb = StringBuilder()
+        sb.append("难度：$difficulty（反向默写要点：每个从句恰好挖 1 处，挖掉 $targetLen 个中文字符，或一个英文单词）。\n")
+        if (customInput.isNotBlank()) {
+            // 仅把自定义范围/空数作为软提示；无关内容 AI 应自行忽略
+            sb.append("用户附加要求（可作为参考，若与本任务无关请忽略）：$customInput\n")
+        }
+        sb.append("请返回 JSON 数组，元素形如 {\"sentence\": 从句编号(从0开始), \"start\": 起始字符下标, \"end\": 结束下标(不含)}，start/end 是句内下标。每一个从句都要恰好有一个元素。不要重叠，只输出数组。从句清单如下：\n")
+        clauses.forEachIndexed { i, c ->
+            val clean = c.replace('\n', ' ')
+            sb.append("[$i] ").append(clean).append('\n')
+        }
+        return sb.toString()
+    }
+
+    /**
+     * 反向默写结果构造：按 AI 坐标在从句上挖空（无坐标的从句走本地兜底），
+     * 再打乱顺序作为默写线索——原文从句顺序与内容始终来自本地 [clauses]，AI 无法篡改。
+     */
+    fun buildDictationResult(
+        clauses: List<String>,
+        ranges: List<WordRange>
+    ): BlancallGenerator.DictationResult {
+        val bySentence = ranges
+            .filter { it.sentence in clauses.indices }
+            .groupBy { it.sentence }
+
+        val blanked = clauses.mapIndexed { i, c ->
+            val r = bySentence[i].orEmpty().firstOrNull {
+                it.start in 0..c.length && it.end in it.start..c.length
+            }
+            if (r != null && r.end > r.start) {
+                c.replaceRange(r.start, r.end, "___")
+            } else {
+                BlancallGenerator.blankOneWordInClause(c)
+            }
+        }
+
+        val indices = clauses.indices.toMutableList()
+        indices.shuffle()
+        val shuffled = indices.mapIndexed { order, origIdx ->
+            BlancallGenerator.ShuffledClause(
+                displayOrder = order,
+                originalIndex = origIdx,
+                originalText = clauses[origIdx],
+                displayText = blanked[origIdx]
+            )
+        }
+        return BlancallGenerator.DictationResult(clauses, shuffled)
+    }
+
+    /** 反向默写挖空跨度（字）：难 4 字 / 中等 3 字 / 合适 2 字 */
+    private fun dictationBlankLength(label: String): Int = when (normalizeDifficulty(label)) {
+        "难" -> 4
+        "中等" -> 3
+        else -> 2
+    }
+
+    /**
+     * 解析字词挖空响应 → WordRange 列表（按句分量保证不跨句）。
+     */
     fun decodeWordRanges(response: String): List<WordRange> {
         val raw = extractJson(response) ?: return emptyList()
         val result = mutableListOf<WordRange>()

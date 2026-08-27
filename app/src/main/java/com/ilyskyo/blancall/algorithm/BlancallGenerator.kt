@@ -567,9 +567,9 @@ object BlancallGenerator {
 
     /**
      * 在从句中挖 1 个空：优先挖难度最高的中文字符；无汉字时挖英文单词；
-     * 都没有则原样返回。挖掉的内容替换为 ___。
+     * 都没有则原样返回。挖掉的内容替换为 ___。供本地与 AI 挖空兜底共用。
      */
-    private fun blankOneWordInClause(clause: String): String {
+    internal fun blankOneWordInClause(clause: String): String {
         if (clause.isBlank()) return clause
         // 找难度最高的中文字符
         var bestIdx = -1

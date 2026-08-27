@@ -500,8 +500,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      */
     fun onModeChosen(newMode: BlancallMode) {
         setMode(newMode)
-        // 反向默写为本地打散，不参与 AI 难度采集；句子/字词挖空在 AI 开启时先采集难度
-        if (isAiAvailable() && newMode != BlancallMode.REVERSE) {
+        // AI 开启时先采集难度；反向默写同样支持 AI 生成（按难度返回每从句挖空坐标）
+        if (isAiAvailable()) {
             _showDifficultyInfo.value = true
             _aiError.value = null
             _isAiGenerating.value = false
@@ -566,12 +566,6 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             _isAiGenerating.value = true
             _aiError.value = null
             try {
-                // 反向默写不在 AI 难度优选范围内，走本地打散默写
-                if (mode == BlancallMode.REVERSE) {
-                    generateDictationLocal()
-                    _isAiGenerating.value = false
-                    return@launch
-                }
                 val profile = AiConfigStore.activeChatProfile ?: run {
                     _isAiGenerating.value = false
                     regenerateCloze()
@@ -593,6 +587,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 _isSubmitted.value = false
                 _dictationCheckResult.value = null
 
+                val dictationClauses = if (mode == BlancallMode.REVERSE) {
+                    BlancallGenerator.generateDictation(effectiveContent).clauses
+                } else emptyList()
+
                 val messages = when (mode) {
                     BlancallMode.SENTENCE -> listOf(
                         AiClient.ChatMessage("system", AiClozeGenerator.buildSystemPrompt()),
@@ -612,7 +610,15 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                             )
                         )
                     )
-                    BlancallMode.REVERSE -> emptyList()
+                    BlancallMode.REVERSE -> listOf(
+                        AiClient.ChatMessage("system", AiClozeGenerator.buildSystemPrompt()),
+                        AiClient.ChatMessage(
+                            "user",
+                            AiClozeGenerator.buildDictationRequest(
+                                effectiveContent, dictationClauses, _difficulty.value, _customRequest.value
+                            )
+                        )
+                    )
                 }
 
                 val sb = StringBuilder()
@@ -636,7 +642,14 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         _wordCloze.value = result
                         _totalBlanks.value = result.blanks.size
                     }
-                    BlancallMode.REVERSE -> {}
+                    BlancallMode.REVERSE -> {
+                        val result = AiClozeGenerator.buildDictationResult(
+                            dictationClauses,
+                            AiClozeGenerator.decodeWordRanges(sb.toString())
+                        )
+                        _dictationResult.value = result
+                        _totalBlanks.value = result.clauses.size
+                    }
                 }
                 _isAiGenerating.value = false
             } catch (e: Exception) {
