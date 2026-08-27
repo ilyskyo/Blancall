@@ -5,6 +5,7 @@ package com.ilyskyo.blancall
 
 import android.app.Application
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.data.ai.AiConfigStore
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.notification.NotificationHelper
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -52,6 +53,8 @@ class BlancallApp : Application() {
         } catch (_: Exception) { }
         // 应用偏好（predictiveBack / accentColor / emoji 等）
         AppPrefs.init(this)
+        // AI 对话 / 联网搜索 多配置存储（SharedPreferences + JSON，Key 以 SecurePrefs 密文落盘）
+        AiConfigStore.init(this)
         // FSRS 智能调度：按「复习频率」设置加载目标留存率（默认 90% 标准记忆）
         FsrsEngine.configure(
             FsrsEngine.DEFAULT_PARAMS,
