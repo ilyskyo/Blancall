@@ -34,11 +34,13 @@ import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.common.DailyTrendChart
 import com.ilyskyo.blancall.ui.common.GaugeProgress
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.StatItem
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import java.text.SimpleDateFormat
 import java.time.LocalDate
@@ -180,6 +182,9 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
         )
     }
 
+    // 该文章累计阅读时长（秒，沉浸阅读模式记录）
+    val readingSeconds = remember(articleId) { AppPrefs.getReadingSeconds(articleId) }
+
     // ── 记忆热力图（F5）──
     val articleRepo = remember { ArticleRepository(context.filesDir.resolve("articles.json").absolutePath) }
     var heatmapData by remember { mutableStateOf<MemoryHeatmap.HeatmapData?>(null) }
@@ -230,7 +235,8 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
         item {
             AnimatedStatCard {
                 GlassCard(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    // 清新马卡龙：薰衣草淡彩卡面
+                    containerColor = Macaron.lavender().fill
                 ) {
                     Column(Modifier.padding(18.dp)) {
                         Text("统计总览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
@@ -263,6 +269,12 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
                                 if (stats.totalDuration > 0) {
                                     val minutes = stats.totalDuration / 60_000L
                                     Text("累计练习 ${minutes}分${(stats.totalDuration / 1000L) % 60}秒",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (readingSeconds > 0) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text("累计阅读 ${readingSeconds / 60}分${readingSeconds % 60}秒",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -477,13 +489,13 @@ private fun RecordCard(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                    color = Macaron.info().accent.copy(alpha = 0.15f)
                 ) {
                     Text(
                         modeLabel,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = Macaron.info().accent,
                         fontWeight = FontWeight.Medium
                     )
                 }

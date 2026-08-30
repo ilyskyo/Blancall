@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- View.setTag(key) 的 key 必须是应用资源 id（框架校验 0x7f 段），
+     裸常量会抛 IllegalArgumentException。此处仅供阅读模式液态玻璃 bind 标记使用。 -->
+<resources>
+    <item name="lg_bound_tag" type="id" />
+</resources>

@@ -10,13 +10,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -35,15 +34,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
 /**
  * 毛玻璃下拉菜单容器：把 M3 `DropdownMenu` 当作定位/边界/滚动引擎，
- * 容器色设透明后内部套上 [GlassMenuCard]，复用 App 同款 4 层玻璃语言
- * （API31+ 真实 backdrop blur + 半透明染色 + 顶部高光 + 底部内阴影 + 1dp 细描边）。
+ * 容器色设透明后内部套上 [GlassMenuCard]
+ * （API31+ 真实 backdrop blur + 半透明染色 + 1dp 细描边，已移除顶部高光与底部内阴影两类渐变装饰）。
  * 圆角 18.dp。进出场动画交给 M3 `DropdownMenu` 内置的"按锚点计算 transformOrigin 的
  * 缩放 + 淡入"——右对齐菜单的原点即 (1,0) = 触发图标正下方，天然实现"从图标向下弹出"。
  * 不再叠加自定义 `AnimatedVisibility`：那层首帧 0 尺寸会让定位器先摆到锚点右侧再翻转
@@ -88,7 +86,7 @@ private fun GlassMenuCard(
     width: androidx.compose.ui.unit.Dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
     val outlineColor = MaterialTheme.colorScheme.outlineVariant
     val baseColor = if (isDark) {
         MaterialTheme.colorScheme.surfaceContainerHigh
@@ -99,11 +97,6 @@ private fun GlassMenuCard(
     // 与 GlassBlur.GLASS_MENU_ALPHA_LIGHT 对齐。卡片仍保留 GLASS_ALPHA_LIGHT = 0.72 的玻璃感。
     val bgAlpha = if (isDark) 0.95f else GLASS_MENU_ALPHA_LIGHT
     val stainColor = baseColor.copy(alpha = bgAlpha)
-    val highlightColor = if (isDark) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-    } else {
-        Color.White.copy(alpha = 0.20f)
-    }
     val shape = RoundedCornerShape(18.dp)
 
     Box(
@@ -123,21 +116,9 @@ private fun GlassMenuCard(
                     .glassSurface(radiusPx = 22f)
             ) { AmbientBackground() }
         }
-        // 2) 半透明染色层：让模糊光斑透出，同时保证文字对比。
+        // 2) 半透明染色层：让背后内容可见，同时保证文字对比。
         Box(Modifier.matchParentSize().background(stainColor))
-        // 3) 顶部高光：玻璃上缘反光。
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.5f)
-                .background(
-                    Brush.verticalGradient(
-                        0f to highlightColor,
-                        1f to Color.Transparent
-                    )
-                )
-        )
-        // 4) 内容：可滚动，保留竖向留白。
+        // 内容：可滚动，保留竖向留白。
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())

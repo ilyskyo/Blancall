@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Celebration
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
@@ -44,7 +45,7 @@ import androidx.compose.ui.unit.dp
  * 品牌 Logo 自绘 Canvas 矢量。
  */
 enum class AppIconKind {
-    Logo, Close, Edit, Inbox, Celebrate, ArrowForward, OpenInFull, Check,
+    Logo, Add, Close, Edit, Inbox, Celebrate, ArrowForward, OpenInFull, Check,
     Home, Articles, Insights, MoreVert, SwapHoriz, TrackChanges, ViewAgenda, Pdf, Share, Library, ChevronRight,
     SearchHint
 }
@@ -80,6 +81,7 @@ fun AppIcon(
     tint: Color = MaterialTheme.colorScheme.onSurface
 ) {
     val image = when (kind) {
+        AppIconKind.Add -> Icons.Outlined.Add
         AppIconKind.Close -> Icons.Outlined.Close
         AppIconKind.Edit -> Icons.Outlined.Edit
         AppIconKind.Inbox -> Icons.Outlined.Inbox

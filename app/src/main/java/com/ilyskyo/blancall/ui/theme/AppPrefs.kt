@@ -32,6 +32,10 @@ object AppPrefs {
     /** 响应式状态流，Compose 中通过 collectAsState() 订阅 */
     val predictiveBackFlow: StateFlow<Boolean> = _predictiveBackFlow.asStateFlow()
 
+    private val _autoIndentEnabledFlow = MutableStateFlow(true)
+    /** 段落首行自动缩进开关（导入时给未缩进段落补两格；关闭后不再新增缩进） */
+    val autoIndentEnabledFlow: StateFlow<Boolean> = _autoIndentEnabledFlow.asStateFlow()
+
     private val _homeBrandExpandedFlow = MutableStateFlow(false)
     /** 首页品牌栏(Blancall 栏)展开状态：拉下后跨页面(如前往设置再返回)保持，直到用户再次下拉/上滑手动收起 */
     val homeBrandExpandedFlow: StateFlow<Boolean> = _homeBrandExpandedFlow.asStateFlow()
@@ -85,6 +89,10 @@ object AppPrefs {
     /** 联网搜索（开启后提问自动联网搜索核验，需配置 Tavily Key） */
     val aiSearchEnabledFlow: StateFlow<Boolean> = _aiSearchEnabledFlow.asStateFlow()
 
+    private val _useAiClozeFlow = MutableStateFlow(true)
+    /** 使用AI挖空：关闭后挖空走本地算法，但进入练习仍弹采集页（只采集挖空策略与段落选择） */
+    val useAiClozeFlow: StateFlow<Boolean> = _useAiClozeFlow.asStateFlow()
+
     private val _useSimilarityRatingFlow = MutableStateFlow(true)
     /** 练习评级方式：true=默写相似度→四档（FSRS-6 默认）；false=旧正确率→四档（回退） */
     val useSimilarityRatingFlow: StateFlow<Boolean> = _useSimilarityRatingFlow.asStateFlow()
@@ -109,6 +117,7 @@ object AppPrefs {
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         _predictiveBackFlow.value = prefs.getBoolean("predictive_back", true)
+        _autoIndentEnabledFlow.value = prefs.getBoolean("auto_indent_enabled", true)
         _homeBrandExpandedFlow.value = prefs.getBoolean("home_brand_expanded", false)
         _accentColorFlow.value = prefs.getInt("accent_color", 0)
         _homeIconKeyFlow.value = prefs.getString("emoji_icon", "logo")?.takeIf { it in KNOWN_ICON_KEYS } ?: "logo"
@@ -123,11 +132,27 @@ object AppPrefs {
         _aiModelFlow.value = prefs.getString("ai_model", "") ?: ""
         _aiHistoryEnabledFlow.value = prefs.getBoolean("ai_history_enabled", false)
         _aiSearchEnabledFlow.value = prefs.getBoolean("ai_search_enabled", false)
+        _useAiClozeFlow.value = prefs.getBoolean("use_ai_cloze", true)
         _useSimilarityRatingFlow.value = prefs.getBoolean("use_similarity_rating", true)
         _builtInLibraryKeysFlow.value = prefs.getStringSet("built_in_library_keys", emptySet())?.toSet() ?: emptySet()
         _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
         _libraryDisclaimerSeenFlow.value = prefs.getStringSet("library_disclaimer_seen", emptySet())?.toSet() ?: emptySet()
         _pdfViewModeFlow.value = prefs.getString("pdf_view_mode", "text") ?: "text"
+        _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 24f)
+        _readingLineHeightFlow.value = prefs.getFloat("reading_line_height", 2.0f).coerceIn(1.4f, 2.4f)
+        _readingBgModeFlow.value = prefs.getInt("reading_bg_mode", 0)
+        _readingLayoutModeFlow.value = prefs.getInt("reading_layout_mode", 0).coerceIn(0, 1)
+        _readingFontFamilyFlow.value = prefs.getInt("reading_font_family", 0).coerceIn(0, 3)
+        // 阅读字体 id（"0".."3"=预设；绝对路径=系统字体；"imp:x"=导入字体）。
+        // 首次升级迁移：旧版仅有 reading_font_family，将其转换为等价 fontId 保留用户选择。
+        if (!prefs.contains("reading_font_id")) {
+            _readingFontIdFlow.value = prefs.getInt("reading_font_family", 0).coerceIn(0, 3).toString()
+        } else {
+            _readingFontIdFlow.value = prefs.getString("reading_font_id", "0") ?: "0"
+        }
+        _readingOcclusionEnabledFlow.value = prefs.getBoolean("reading_occlusion_enabled", false)
+        _readingOcclusionModeFlow.value =
+            prefs.getString("reading_occlusion_mode", "local")?.takeIf { it == "ai" || it == "local" } ?: "local"
     }
 
     var predictiveBackEnabled: Boolean
@@ -136,6 +161,16 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("predictive_back", value) }
                 _predictiveBackFlow.value = value
+            }
+        }
+
+    /** 段落首行自动缩进开关 */
+    var autoIndentEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("auto_indent_enabled", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("auto_indent_enabled", value) }
+                _autoIndentEnabledFlow.value = value
             }
         }
 
@@ -230,6 +265,15 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("ai_enabled", value) }
                 _aiEnabledFlow.value = value
+            }
+        }
+
+    var useAiCloze: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("use_ai_cloze", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("use_ai_cloze", value) }
+                _useAiClozeFlow.value = value
             }
         }
 
@@ -331,6 +375,89 @@ object AppPrefs {
     /** 当前 PDF 预览视图模式（text=纯文本排版 / image=原 PDF 图片渲染） */
     fun pdfViewMode(): String = _pdfViewModeFlow.value
 
+    // ── 沉浸阅读模式设置 ──
+
+    /** 阅读字号(px) */
+    var readingFont: Float
+        get() = if (::prefs.isInitialized) _readingFontFlow.value else 17f
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putFloat("reading_font", value.coerceIn(14f, 24f)) }
+                _readingFontFlow.value = value.coerceIn(14f, 24f)
+            }
+        }
+
+    /** 阅读行距（行高倍数） */
+    var readingLineHeight: Float
+        get() = if (::prefs.isInitialized) _readingLineHeightFlow.value else 2.0f
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putFloat("reading_line_height", value.coerceIn(1.4f, 2.4f)) }
+                _readingLineHeightFlow.value = value.coerceIn(1.4f, 2.4f)
+            }
+        }
+
+    /** 阅读背景模式：0=跟随主题 1=米白 2=纯白（深色模式永远纯黑） */
+    var readingBgMode: Int
+        get() = if (::prefs.isInitialized) _readingBgModeFlow.value else 0
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putInt("reading_bg_mode", value.coerceIn(0, 2)) }
+                _readingBgModeFlow.value = value.coerceIn(0, 2)
+            }
+        }
+
+    /** 阅读布局模式：0=整篇滚动 1=章节翻页 */
+    var readingLayoutMode: Int
+        get() = if (::prefs.isInitialized) _readingLayoutModeFlow.value else 0
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putInt("reading_layout_mode", value.coerceIn(0, 1)) }
+                _readingLayoutModeFlow.value = value.coerceIn(0, 1)
+            }
+        }
+
+    /** 阅读字体：0=系统默认 1=宋体(Serif) 2=黑体(SansSerif) 3=等宽(Monospace) */
+    var readingFontFamily: Int
+        get() = if (::prefs.isInitialized) _readingFontFamilyFlow.value else 0
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putInt("reading_font_family", value.coerceIn(0, 3)) }
+                _readingFontFamilyFlow.value = value.coerceIn(0, 3)
+            }
+        }
+
+    /** 阅读字体 id：预设("0".."3") / 系统字体绝对路径 / 导入字体("imp:文件名")，作为字体选择的唯一权威来源 */
+    var readingFontId: String
+        get() = if (::prefs.isInitialized) _readingFontIdFlow.value else "0"
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putString("reading_font_id", value) }
+                _readingFontIdFlow.value = value
+            }
+        }
+
+    /** 是否启用阅读背诵遮挡 */
+    var readingOcclusionEnabled: Boolean
+        get() = if (::prefs.isInitialized) _readingOcclusionEnabledFlow.value else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("reading_occlusion_enabled", value) }
+                _readingOcclusionEnabledFlow.value = value
+            }
+        }
+
+    /** 阅读遮挡算法：local=本地算法 / ai=AI 遮挡 */
+    var readingOcclusionMode: String
+        get() = if (::prefs.isInitialized) _readingOcclusionModeFlow.value else "local"
+        set(value) {
+            val v = if (value == "ai" || value == "local") value else "local"
+            if (::prefs.isInitialized) {
+                prefs.edit { putString("reading_occlusion_mode", v) }
+                _readingOcclusionModeFlow.value = v
+            }
+        }
+
     /**
      * 搜索服务 API Key（Tavily）：与 AI Key 相同，经 Keystore AES/GCM 加密存储，
      * 解密失败自动清空由用户重新配置。
@@ -359,6 +486,62 @@ object AppPrefs {
                 }
             }
         }
+
+    // ── 沉浸阅读模式 ──
+
+    private val _readingFontFlow = MutableStateFlow(17f)
+    /** 阅读字号(px)，14~24 可调 */
+    val readingFontFlow: StateFlow<Float> = _readingFontFlow.asStateFlow()
+
+    private val _readingLineHeightFlow = MutableStateFlow(2.0f)
+    /** 阅读行距（行高倍数，1.4~2.4） */
+    val readingLineHeightFlow: StateFlow<Float> = _readingLineHeightFlow.asStateFlow()
+
+    private val _readingBgModeFlow = MutableStateFlow(0)
+    /** 阅读背景模式：0=跟随主题 1=米白纸张 2=纯白（深色模式永远纯黑） */
+    val readingBgModeFlow: StateFlow<Int> = _readingBgModeFlow.asStateFlow()
+
+    private val _readingLayoutModeFlow = MutableStateFlow(0)
+    /** 阅读布局模式：0=整篇滚动 1=章节翻页 */
+    val readingLayoutModeFlow: StateFlow<Int> = _readingLayoutModeFlow.asStateFlow()
+
+    private val _readingFontFamilyFlow = MutableStateFlow(0)
+    /** 阅读字体：0=系统默认 1=宋体 2=黑体 3=等宽 */
+    val readingFontFamilyFlow: StateFlow<Int> = _readingFontFamilyFlow.asStateFlow()
+
+    private val _readingFontIdFlow = MutableStateFlow("0")
+    /** 阅读字体 id（预设/系统字体路径/导入字体），字体选择唯一权威来源 */
+    val readingFontIdFlow: StateFlow<String> = _readingFontIdFlow.asStateFlow()
+
+    private val _readingOcclusionEnabledFlow = MutableStateFlow(false)
+    /** 是否启用阅读背诵遮挡 */
+    val readingOcclusionEnabledFlow: StateFlow<Boolean> = _readingOcclusionEnabledFlow.asStateFlow()
+
+    private val _readingOcclusionModeFlow = MutableStateFlow("local")
+    /** 阅读遮挡算法：local=本地算法 / ai=AI 遮挡 */
+    val readingOcclusionModeFlow: StateFlow<String> = _readingOcclusionModeFlow.asStateFlow()
+
+    /** 文章阅读位置（0~1 全文进度），按字符比例存储，字号变化后仍可定位 */
+    fun getReadingPos(articleId: Long): Float =
+        if (::prefs.isInitialized) prefs.getFloat("reading_pos_$articleId", 0f) else 0f
+
+    /** 保存文章阅读位置（0~1 全文进度） */
+    fun setReadingPos(articleId: Long, fraction: Float) {
+        if (::prefs.isInitialized) {
+            prefs.edit { putFloat("reading_pos_$articleId", fraction.coerceIn(0f, 1f)) }
+        }
+    }
+
+    /** 文章累计阅读秒数（跨次进入累计） */
+    fun getReadingSeconds(articleId: Long): Long =
+        if (::prefs.isInitialized) prefs.getLong("reading_sec_$articleId", 0L) else 0L
+
+    /** 追加文章阅读秒数 */
+    fun addReadingSeconds(articleId: Long, seconds: Long) {
+        if (::prefs.isInitialized && seconds > 0) {
+            prefs.edit { putLong("reading_sec_$articleId", getReadingSeconds(articleId) + seconds) }
+        }
+    }
 
     /**
      * AI API Key：经 Android Keystore AES/GCM 加密后存储（只落密文，绝不落明文）。

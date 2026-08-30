@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ilyskyo
+﻿// Copyright (c) 2026 ilyskyo
 // SPDX-License-Identifier: MIT
 
 package com.ilyskyo.blancall.ui.search
@@ -6,7 +6,7 @@ package com.ilyskyo.blancall.ui.search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -164,7 +163,7 @@ private fun SearchField(
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
     val container = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
 
@@ -226,10 +225,9 @@ private fun SearchResultCard(
     dateFmt: SimpleDateFormat,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
     val bgColor = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
-    val highlight = if (isDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.18f)
     val shape = RoundedCornerShape(16.dp)
 
     Box(
@@ -241,12 +239,6 @@ private fun SearchResultCard(
             .background(bgColor)
             .clickable(onClick = onClick)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(90.dp)
-                .background(Brush.verticalGradient(0f to highlight, 1f to Color.Transparent))
-        )
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
         ) {

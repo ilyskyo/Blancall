@@ -34,7 +34,9 @@ object BlancallGenerator {
     data class ErrorProfile(
         val sentenceErrorRates: Map<Int, Float> = emptyMap(),  // 句子索引 → 错误率
         val charErrorRates: Map<Char, Float> = emptyMap(),     // 字符 → 错误率
-        val wordErrorRates: Map<String, Float> = emptyMap()    // 词 → 错误率（英文用小写）
+        val wordErrorRates: Map<String, Float> = emptyMap(),   // 词 → 错误率（英文用小写）
+        /** 记忆强度因子（由 FSRS 留存率导出）：1=记忆正常，>1=记忆偏弱 */
+        val memoryFactor: Float = 1f
     )
 
     data class SentenceClozeResult(
@@ -116,14 +118,16 @@ object BlancallGenerator {
             }
         }
 
-        // 确定挖几个空
+        // 确定挖几个空（自动档：记忆偏弱时适度加量，更充分复习易忘内容）
         val totalClauses = allClauses.size
-        val actualCount = when {
+        val baseCount = when {
             count > 0 -> count.coerceIn(1, totalClauses)
             totalClauses == 1 -> 1
             totalClauses <= 4 -> maxOf(1, totalClauses / 2)
             else -> maxOf(1, totalClauses / 3)
-        }.coerceIn(1, totalClauses)
+        }
+        val densityScale = if (count > 0) 1f else errorProfile.memoryFactor.coerceIn(1f, 1.6f)
+        val actualCount = (baseCount * densityScale).toInt().coerceIn(1, totalClauses)
 
         // 策略驱动选择要挖的从句
         val selectedClauseIndices = when (strategy) {
@@ -154,11 +158,12 @@ object BlancallGenerator {
                 indices.take(actualCount).toSet()
             }
             else -> {
-                // 均衡：随机但有微弱薄弱倾斜
+                // 均衡：随机但有微弱薄弱倾斜；记忆偏弱时倾斜更强（更偏向薄弱句）
+                val mf = errorProfile.memoryFactor.coerceIn(1f, 1.6f)
                 val weighted = allClauses.indices.map { idx ->
                     val sentIdx = allClauses[idx].sentenceIdx
                     val errorRate = errorProfile.sentenceErrorRates[sentIdx] ?: 0f
-                    idx to (0.5f + errorRate * 0.5f)
+                    idx to (0.5f + errorRate * 0.5f * mf)
                 }
                 // 加权随机采样（每次移除已选项后重新计算总权重）
                 val selected = mutableSetOf<Int>()
@@ -277,10 +282,11 @@ object BlancallGenerator {
                         for (len in 1..minOf(3, runEnd - start)) {
                             val word = sentence.substring(start, start + len)
                             val avgDiff = word.map { DifficultyCalculator.calculateCharDifficulty(it) }.average().toFloat()
-                            // 错误历史加权（字级别 + 词级别）
+                            // 错误历史加权（字级别 + 词级别）；记忆偏弱时错误历史权重更大
+                            val mf = errorProfile.memoryFactor.coerceIn(1f, 1.6f)
                             val charErrorBonus = word.maxOfOrNull { errorProfile.charErrorRates[it] ?: 0f } ?: 0f
                             val wordErrorBonus = errorProfile.wordErrorRates[word] ?: 0f
-                            val mistakeBonus = charErrorBonus * 0.3f + wordErrorBonus * 0.4f
+                            val mistakeBonus = (charErrorBonus * 0.3f + wordErrorBonus * 0.4f) * mf
                             // 古文模式：虚词降权
                             val functionWordPenalty = if (classicalMode && isFunctionWord(word)) -0.3f else 0f
                             val difficulty = (avgDiff + mistakeBonus + functionWordPenalty).coerceIn(0f, 1f)
@@ -292,7 +298,7 @@ object BlancallGenerator {
                     val runStart = i
                     while (i < sentence.length && sentence[i].isLetter()) i++
                     val word = sentence.substring(runStart, i)
-                    val wordErrorBonus = errorProfile.wordErrorRates[word.lowercase()] ?: 0f
+                    val wordErrorBonus = (errorProfile.wordErrorRates[word.lowercase()] ?: 0f) * errorProfile.memoryFactor.coerceIn(1f, 1.6f)
                     val difficulty = (0.5f + wordErrorBonus).coerceIn(0f, 1f)
                     candidates.add(Candidate(word, sIdx, runStart, i, difficulty))
                 } else {

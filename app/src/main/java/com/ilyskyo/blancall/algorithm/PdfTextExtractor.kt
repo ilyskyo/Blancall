@@ -100,8 +100,9 @@ class PdfTextExtractor {
                 
                 pages
             }
-        } catch (e: Exception) {
-            // 如果文本提取失败，返回空列表，使用原始 PDF 渲染
+        } catch (e: Throwable) {
+            // 文本提取失败（含大 PDF 解析时的 OutOfMemoryError）→ 返回空列表，
+            // 由调用方回退到原始 PDF 渲染，绝不把 OOM 抛到 UI 线程导致闪退。
             emptyList()
         }
     }

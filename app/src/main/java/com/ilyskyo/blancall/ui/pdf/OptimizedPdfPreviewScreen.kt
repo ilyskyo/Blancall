@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -62,7 +63,6 @@ import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
-import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.reader.TextContentReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -126,9 +126,6 @@ fun OptimizedPdfPreviewScreen(
 
     // 导入状态
     var showMenu by remember { mutableStateOf(false) }
-    var pendingTitle by remember { mutableStateOf("") }
-    var pendingText by remember { mutableStateOf("") }
-    var showPicker by remember { mutableStateOf(false) }
     
     // 渲染模式：true=矢量文本渲染，false=原始PDF渲染
     var useVectorRendering by remember { mutableStateOf(true) }
@@ -198,10 +195,19 @@ fun OptimizedPdfPreviewScreen(
                             label = { Text("导入到背诵挖空", fontWeight = FontWeight.Medium) },
                             onClick = {
                                 showMenu = false
-                                // 优先使用配套文字版；没有则用 PDF 提取的文本
-                                pendingTitle = textLoaded?.first ?: displayTitle
-                                pendingText = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
-                                showPicker = true
+                                // 点完即导入：不弹模式选择、不强制进入练习（之后可在背诵列表中自行开始）
+                                val finalTitle = textLoaded?.first ?: displayTitle
+                                val finalText = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
+                                if (finalText.isNotBlank()) {
+                                    scope.launch {
+                                        val articleId = importTextToBlancall(context, finalTitle, finalText)
+                                        Toast.makeText(
+                                            context,
+                                            if (articleId > 0) "已导入背诵列表" else "导入失败，请重试",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
                             }
                         )
                     }
@@ -253,28 +259,6 @@ fun OptimizedPdfPreviewScreen(
             }
         }
     }
-
-    // 导入：先选模式，选定后写入文章并进入练习
-    AdaptiveModePicker(
-        visible = showPicker,
-        anchorRect = null,
-        onDismiss = { showPicker = false },
-        onModeSelected = { mode ->
-            showPicker = false
-            // 先捕获值再启动协程：pendingText 随后会被重置，协程延迟执行时读取会拿到空串
-            val finalTitle = pendingTitle
-            val finalText = pendingText
-            if (finalText.isNotBlank()) {
-                scope.launch {
-                    val articleId = importTextToBlancall(context, finalTitle, finalText)
-                    if (articleId > 0) {
-                        navController.navigate("practice/${articleId}?mode=${mode.name}")
-                    }
-                }
-            }
-            pendingText = ""
-        }
-    )
 }
 
 /**

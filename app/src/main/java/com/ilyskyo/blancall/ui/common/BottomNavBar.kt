@@ -5,7 +5,7 @@ package com.ilyskyo.blancall.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,7 +43,7 @@ fun BottomNavBar(
         "数据" to AppIconKind.Insights,
     )
     val tabs = if (showLibraryTab) baseTabs + ("素材库" to AppIconKind.Library) else baseTabs
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
     val surfaceColor = MaterialTheme.colorScheme.surface
     // 半透明染色：深色下更实（毛玻璃感弱但对比足），浅色下更透，让氛围光斑微透
     val bgAlpha = if (isDark) 0.94f else 0.90f

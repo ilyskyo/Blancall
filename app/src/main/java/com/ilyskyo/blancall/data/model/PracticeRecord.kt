@@ -48,7 +48,10 @@ data class PracticeRecord(
     // 默写文本相似度（0..1），0 表示旧数据；供 FSRS 评级与未来连续 Grade 实验
     val similarity: Float = 0f,
     // 本次练习进入 FSRS 的评级（1=AGAIN 2=HARD 3=GOOD 4=EASY），0 表示旧数据
-    val rating: Int = 0
+    val rating: Int = 0,
+    // 本次练习的弱提示次数（淡显提示下一字）与强提示次数（自动帮填），0 表示未启用/旧数据
+    val weakHints: Int = 0,
+    val strongHints: Int = 0
 )
 
 data class MistakeDetail(

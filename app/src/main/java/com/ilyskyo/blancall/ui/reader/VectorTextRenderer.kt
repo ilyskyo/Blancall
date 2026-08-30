@@ -23,11 +23,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.PdfTextExtractor
 import kotlin.math.max
@@ -82,7 +80,7 @@ fun TextContentReader(
             )
         }
         Spacer(Modifier.height(14.dp))
-        // 正文：按空行分段落，每段首行缩进两个汉字（与原文段落一致）
+        // 正文：按空行分段落（PDF/Word 等富文档来源保持原文排版，不做首行缩进）
         val paragraphs = body.split(Regex("\\n\\s*\\n"))
         paragraphs.forEachIndexed { index, para ->
             if (para.isNotBlank()) {
@@ -90,8 +88,7 @@ fun TextContentReader(
                     text = para,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 18.sp,
-                        lineHeight = 30.sp,
-                        textIndent = TextIndent(firstLine = 2.em)
+                        lineHeight = 30.sp
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.fillMaxWidth()

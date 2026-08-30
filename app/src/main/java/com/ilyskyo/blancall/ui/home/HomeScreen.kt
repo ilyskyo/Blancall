@@ -9,7 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -43,8 +43,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -78,6 +76,7 @@ import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.common.listItemEnter
 import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.theme.AppPrefs
+import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import java.text.SimpleDateFormat
@@ -187,7 +186,12 @@ fun HomeScreen(
     val fsrsStore = remember {
         FsrsStateStore.getInstance(context.filesDir.resolve("fsrs_state.json").absolutePath)
     }
-    val fsrsStates = remember { fsrsStore.allStates() }
+    // FSRS 状态后台加载：首帧先渲染，加载完成后刷新，避免同步读文件卡顿
+    var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
+    LaunchedEffect(Unit) {
+        fsrsStore.awaitLoaded()
+        fsrsStates = fsrsStore.allStates()
+    }
     val dueArticles = remember(articles, allRecords, fsrsStates) {
         // 先一次性按文章分组建索引，避免对每篇文章重复 filter 全表（O(文章×记录) → O(文章+记录)）
         val recordsByArticle = allRecords.groupBy { it.articleId }
@@ -252,7 +256,6 @@ fun HomeScreen(
         BlancallAlertDialog(
             onDismissRequest = { showSaveSuccessDialog = false },
             shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -280,6 +283,28 @@ fun HomeScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    Spacer(Modifier.weight(1f))
+                    // 右上角：+ 新建（继续导入）
+                    IconButton(
+                        onClick = {
+                            showSaveSuccessDialog = false
+                            navController.navigate("import")
+                        }
+                    ) {
+                        AppIcon(
+                            kind = AppIconKind.Add,
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // 右上角：x 关闭
+                    IconButton(onClick = { showSaveSuccessDialog = false }) {
+                        AppIcon(
+                            kind = AppIconKind.Close,
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             },
             text = {
@@ -290,29 +315,34 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(20.dp))
-                    // 主操作：全宽开始练习
-                    Button(
-                        onClick = {
-                            showSaveSuccessDialog = false
-                            pendingPracticeArticleId = savedArticleId
-                            showModePicker = true
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        shape = RoundedCornerShape(14.dp)
+                    // 主操作 + 次操作：同一行并排
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("开始练习")
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    // 次操作：全宽继续导入
-                    OutlinedButton(
-                        onClick = {
-                            showSaveSuccessDialog = false
-                            navController.navigate("import")
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("继续导入")
+                        // 开始练习
+                        Button(
+                            onClick = {
+                                showSaveSuccessDialog = false
+                                pendingPracticeArticleId = savedArticleId
+                                showModePicker = true
+                            },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("开始练习")
+                        }
+                        // 继续导入
+                        OutlinedButton(
+                            onClick = {
+                                showSaveSuccessDialog = false
+                                navController.navigate("import")
+                            },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("继续导入")
+                        }
                     }
                 }
             },
@@ -379,7 +409,6 @@ fun HomeScreen(
         BlancallAlertDialog(
             onDismissRequest = { showSubtitleEditor = false },
             shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 编辑图标（与提取标题弹窗同规格）
@@ -571,18 +600,25 @@ fun HomeScreen(
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
-                    containerColor = MaterialTheme.colorScheme.errorContainer
+                    // 清新马卡龙：樱花粉淡彩卡面 + 同族柔和点缀
+                    containerColor = Macaron.review().fill
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .background(Macaron.review().accent, RoundedCornerShape(50))
+                            )
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 "要复习的任务（${dueArticles.size}篇）",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onErrorContainer
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         Spacer(Modifier.height(4.dp))
@@ -609,15 +645,15 @@ fun HomeScreen(
                                     article.title,
                                     // 与「继续练习」一致：文章名用楷体（Serif）
                                     style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    "开始复习 →",
+                                    "复习",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = Macaron.review().accent
                                 )
                             }
                         }
@@ -634,19 +670,28 @@ fun HomeScreen(
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    // 清新马卡龙：薄荷绿淡彩卡面 + 同族柔和点缀
+                    containerColor = Macaron.continueP().fill
                 ) {
                     Column(
                         Modifier
                             .fillMaxWidth()
-                            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp)
+                            .padding(16.dp)
                     ) {
-                        Text(
-                            "待继续完成（${resumables.size}）",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .background(Macaron.continueP().accent, RoundedCornerShape(50))
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "待继续完成（${resumables.size}）",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         Spacer(Modifier.height(2.dp))
                         // 全部未完成练习都展示（首页可滚动，不受篇幅限制）
                         resumables.forEach { item ->
@@ -671,7 +716,7 @@ fun HomeScreen(
                                         art.title,
                                         // 文章名用宋体（Serif），与全局标题风格一致；宽度超限时省略号截断
                                         style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.widthIn(max = maxTitleWidth)
@@ -679,17 +724,16 @@ fun HomeScreen(
                                     Text(
                                         "$modeLabel · 剩余 ${item.total - item.answered}/${item.total}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.78f)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
                                     )
                                 }
-                                // 可点击视觉提示：右缘留白避免贴边，轻微下移使视觉居中于两行之间
+                                // 右缘与「复习」对齐：去掉额外 end 留白与下移，使两卡右侧按钮同轴对称
                                 Text(
-                                    "继续 ›",
+                                    "继续",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = Macaron.continueP().accent,
                                     modifier = Modifier
-                                        .padding(start = 8.dp, end = 16.dp)
-                                        .offset(y = 2.dp)
+                                        .padding(start = 8.dp)
                                 )
                             }
                         }
@@ -961,7 +1005,7 @@ private fun HomeSearchBar(
     modifier: Modifier = Modifier,
     onAddWidthMeasured: (androidx.compose.ui.unit.Dp) -> Unit = {}
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
     val container = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
     val shape = RoundedCornerShape(14.dp)

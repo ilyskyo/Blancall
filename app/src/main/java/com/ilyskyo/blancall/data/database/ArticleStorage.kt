@@ -71,7 +71,8 @@ class ArticleStorage(private val filePath: String) {
                     title = title,
                     content = content,
                     createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
-                    updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                    updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
+                    autoIndent = obj.optBoolean("autoIndent", true)
                 )
                 loaded.add(article)
                 if (article.id > maxId) maxId = article.id
@@ -138,6 +139,7 @@ class ArticleStorage(private val filePath: String) {
                         obj.put("content", article.content)
                         obj.put("createdAt", article.createdAt)
                         obj.put("updatedAt", article.updatedAt)
+                        obj.put("autoIndent", article.autoIndent)
                         jsonArray.put(obj)
                     }
                     val tmpFile = File(filePath + ".tmp")

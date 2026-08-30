@@ -87,7 +87,9 @@ class RecordRepository(private val filePath: String) {
                     timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                     duration = obj.optLong("duration", 0L),
                     similarity = obj.optDouble("similarity", 0.0).toFloat(),
-                    rating = obj.optInt("rating", 0)
+                    rating = obj.optInt("rating", 0),
+                    weakHints = obj.optInt("weakHints", 0),
+                    strongHints = obj.optInt("strongHints", 0)
                 )
                 loaded.add(record)
                 if (record.id > maxId) maxId = record.id
@@ -149,6 +151,8 @@ class RecordRepository(private val filePath: String) {
                         obj.put("duration", record.duration)
                         obj.put("similarity", record.similarity.toDouble())
                         obj.put("rating", record.rating)
+                        obj.put("weakHints", record.weakHints)
+                        obj.put("strongHints", record.strongHints)
                         val mistakesArr = JSONArray()
                         for (m in record.mistakes) {
                             val mObj = JSONObject()

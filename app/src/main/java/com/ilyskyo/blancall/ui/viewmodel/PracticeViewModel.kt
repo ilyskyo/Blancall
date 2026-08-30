@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.viewmodel
 
 import android.app.Application
+import java.io.File
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ilyskyo.blancall.algorithm.AnswerChecker
@@ -28,6 +29,8 @@ import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,8 +40,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class BlancallMode { SENTENCE, WORD, REVERSE }
+
+/** AI 挖空生成总超时（毫秒）：超时自动回退本地算法，避免"一直加载" */
+private const val AI_GENERATE_TIMEOUT_MS = 40_000L
 
 /** 段落分层复习模式 */
 enum class SectionMode { FULL, SELECTED, WEAKNESS }
@@ -138,8 +145,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _wordBlankCount = MutableStateFlow(0)
     val wordBlankCount: StateFlow<Int> = _wordBlankCount.asStateFlow()
 
-    // 是否显示答案提示（首字+字数）
-    private val _showHint = MutableStateFlow(false)
+    // 是否启用默写提示（菜单"显示提示"开关，默认开启）：控制弱/强提示功能
+    private val _showHint = MutableStateFlow(true)
     val showHint: StateFlow<Boolean> = _showHint.asStateFlow()
 
     // 空数警告提示
@@ -170,6 +177,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     /** AI 生成中（显示挖空生成加载页） */
     private val _isAiGenerating = MutableStateFlow(false)
     val isAiGenerating: StateFlow<Boolean> = _isAiGenerating.asStateFlow()
+
+    /** AI 挖空已接收的内容字符数（用于生成页进度反馈，数字递增表明 AI 正在生成） */
+    private val _aiProgress = MutableStateFlow(0)
+    val aiProgress: StateFlow<Int> = _aiProgress.asStateFlow()
 
     /** AI 生成错误提示（失败时回退本地算法，仍可练习） */
     private val _aiError = MutableStateFlow<String?>(null)
@@ -230,18 +241,48 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _crossArticleTitles = MutableStateFlow<List<String>>(emptyList())
     val crossArticleTitles: StateFlow<List<String>> = _crossArticleTitles.asStateFlow()
 
-    // 当前文章的所有练习记录（用于构建错误画像）
+    // 当前已加载的文章 id（幂等保护：旋转重建不重复加载，避免清空答案/重生成题目）
+    private var loadedArticleId: Long? = null
+    private var loadedArticleIds: List<Long>? = null
+
+    /** 当前文章的所有练习记录（用于构建错误画像） */
     private var articleRecords: List<PracticeRecord> = emptyList()
 
     // 错误画像记忆化缓存：buildErrorProfile 为纯函数，仅在入参引用变化时重算，输出与原来完全一致
     private var errorProfileCache: BlancallGenerator.ErrorProfile? = null
     private var errorProfileCacheKey: List<PracticeRecord>? = null
     private fun errorProfileFor(records: List<PracticeRecord>): BlancallGenerator.ErrorProfile {
-        if (records === errorProfileCacheKey && errorProfileCache != null) return errorProfileCache!!
-        val p = buildErrorProfile(records)
+        // 缓存只缓存错误率统计；memoryFactor 依赖 FSRS 实时留存率（随时间衰减），须每次现算
+        if (records === errorProfileCacheKey && errorProfileCache != null) {
+            return errorProfileCache!!.copy(memoryFactor = currentMemoryFactor())
+        }
+        val p = buildErrorProfile(records).copy(memoryFactor = currentMemoryFactor())
         errorProfileCache = p
         errorProfileCacheKey = records
         return p
+    }
+
+    /**
+     * 当前文章的记忆强度因子（FSRS 导出），>1 表示记忆偏弱：
+     * - 未练习过（无 FSRS 状态）→ 1f（中性，按历史错误策略即可）
+     * - 留存率越低 → 因子越高（该多挖、更倾斜薄弱处）
+     * - 遗忘次数多再小幅加码
+     */
+    private fun currentMemoryFactor(): Float {
+        val articleId = _article.value?.id ?: return 1f
+        val state = FsrsStateStore.getInstance(
+            getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
+        ).get(articleId) ?: return 1f
+        if (state.reviewCount <= 0 || state.stability <= 0.0) return 1f
+        val retention = FsrsEngine.retentionRate(state) // 0..1
+        var factor = when {
+            retention < 0.5 -> 1.45f
+            retention < 0.7 -> 1.25f
+            retention < 0.85 -> 1.10f
+            else -> 1f
+        }
+        if (state.lapses >= 2) factor += 0.1f
+        return factor.coerceIn(1f, 1.6f)
     }
 
     // 用于取消上一次生成的协程，防止竞态条件（快速切换文章/模式/策略时避免旧结果覆盖新结果）
@@ -263,6 +304,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         }
 
     fun loadArticle(articleId: Long, resume: Boolean = false, initialSectionMode: SectionMode? = null) {
+        // 幂等：旋转横屏等配置变更导致 Activity 重建时 LaunchedEffect 会重跑，
+        // 同一篇文章直接跳过，避免清空已输入答案并重新生成题目。
+        if (loadedArticleId == articleId) return
+        loadedArticleId = articleId
         // 取消上一次加载，防止快速切换文章时旧结果覆盖新结果
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -311,6 +356,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             _isSubmitted.value = false
             _dictationInput.value = ""
             _dictationCheckResult.value = null
+            // 切换文章：停止提示计时并清零提示统计
+            stopAllBlankHints()
+            _weakHintCount.value = 0
+            _strongHintCount.value = 0
             // 重置挖空数量为自动
             _wordBlankCount.value = 0
             // 重置段落选择
@@ -327,6 +376,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         BlancallMode.REVERSE -> _dictationInput.value = savedState.dictationInput
                     }
                     _resumed.value = true
+                    // 恢复进度同样走统一入口：AI 开启且未确认难度时弹出采集页
+                    maybeCollectDifficultyIfNeeded()
                 } else {
                     _resumed.value = false
                 }
@@ -378,6 +429,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
 
     /** 跨文本联动：加载多篇文章混合练习 */
     fun loadArticles(articleIds: List<Long>) {
+        // 幂等：旋转重建重跑时跳过，保护跨文本练习已输入答案
+        if (loadedArticleIds == articleIds) return
+        loadedArticleIds = articleIds
         _isCrossMode.value = articleIds.size > 1
         // 取消上一次加载，防止竞态
         loadJob?.cancel()
@@ -482,6 +536,22 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         }
         // 选定模式即开始计时（重做时重置起点）
         practiceStartTime = System.currentTimeMillis()
+        maybeCollectDifficultyIfNeeded()
+    }
+
+    // ── AI 采集页统一入口 ──
+    // 无论从哪个路径进入练习（模式选择浮层 / 外部初始模式 / 恢复上次进度 / 标题滑动切换），
+    // 只要 AI 已开启且尚未确认过难度，都先弹出难度+策略采集页，避免"没有采集页"。
+    /** 是否已确认过难度（确认后不再重复弹出；模式切换沿用难度直接生成） */
+    private var difficultyConfirmed = false
+
+    /** AI 已开启且未确认难度时弹出采集页（幂等，重复调用无副作用） */
+    private fun maybeCollectDifficultyIfNeeded() {
+        if (isAiAvailable() && !difficultyConfirmed && !_showDifficultyInfo.value) {
+            _showDifficultyInfo.value = true
+            _aiError.value = null
+            _isAiGenerating.value = false
+        }
     }
 
     // ═══════════════════════════════════════════
@@ -494,33 +564,224 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     /** AI 引擎是否可用（设置里开启 AI 且已配置有效对话连接） */
     fun isAiAvailable(): Boolean = AppPrefs.aiEnabled && hasAiProfile()
 
+    /** 挖空是否走 AI：AI 引擎可用且开启「使用AI挖空」。关闭时挖空用本地算法，但采集页仍会弹出。 */
+    fun isAiClozeEnabled(): Boolean = isAiAvailable() && AppPrefs.useAiCloze
+
     /**
      * 用户从模式选择页点选一个模式。AI 开启时先进入难度采集页，
      * 待用户确认难度后再生成；本地模式下直接使用已预生成的内容。
      */
     fun onModeChosen(newMode: BlancallMode) {
+        // setMode 内已统一处理 AI 难度采集页（AI 开启且未确认过难度时弹出）
         setMode(newMode)
-        // AI 开启时先采集难度；反向默写同样支持 AI 生成（按难度返回每从句挖空坐标）
-        if (isAiAvailable()) {
-            _showDifficultyInfo.value = true
-            _aiError.value = null
-            _isAiGenerating.value = false
-        } else {
-            _showDifficultyInfo.value = false
-        }
     }
 
-    /** 难度采集页确认：记录难度与自定义需求，并按 AI 生成当前模式挖空。 */
-    fun confirmDifficultyAndGenerate(difficultyLabel: String, custom: String) {
+    /** 难度采集页确认：记录难度、挖空策略与自定义需求，并按 AI 生成当前模式挖空。 */
+    fun confirmDifficultyAndGenerate(
+        difficultyLabel: String,
+        custom: String,
+        strategy: BlancallGenerator.Strategy = _strategy.value
+    ) {
         _difficulty.value = AiClozeGenerator.normalizeDifficulty(difficultyLabel)
         _customRequest.value = custom.trim()
+        _strategy.value = strategy
+        difficultyConfirmed = true
         _showDifficultyInfo.value = false
         regenerateCurrentModeViaAi()
     }
 
-    /** 取消难度采集：回到模式选择。 */
+    /** 取消难度采集：回到进入采集页之前的地方（模式选择浮层重新出现）。 */
     fun cancelDifficultyCollection() {
         _showDifficultyInfo.value = false
+        _isAiGenerating.value = false
+        _aiError.value = null
+        // 清理当前模式的半成品，回到"未选模式"状态（Screen 侧恢复模式选择浮层）
+        when (_mode.value) {
+            BlancallMode.SENTENCE -> {
+                _sentenceCloze.value = null
+                _sentenceAnswers.value = emptyMap()
+            }
+            BlancallMode.WORD -> {
+                _wordCloze.value = null
+                _wordAnswers.value = emptyMap()
+            }
+            BlancallMode.REVERSE -> {
+                _dictationResult.value = null
+                _dictationInput.value = ""
+            }
+        }
+        _checkResults.value = emptyMap()
+        _isSubmitted.value = false
+        _dictationCheckResult.value = null
+        _totalBlanks.value = 0
+    }
+
+    /** 采集页"跳过 AI，用本地算法生成"：不采集难度，直接本地挖空。 */
+    fun skipAiAndGenerateLocal() {
+        _showDifficultyInfo.value = false
+        _isAiGenerating.value = false
+        _aiError.value = null
+        if (_mode.value == BlancallMode.REVERSE) generateDictationLocal() else regenerateCloze()
+    }
+
+    /** 本地采集页确认（「使用AI挖空」关闭时）：记录挖空策略与段落选择，按本地算法生成当前模式挖空。 */
+    fun confirmLocalClozeSettings(
+        strategy: BlancallGenerator.Strategy,
+        sectionMode: SectionMode,
+        selected: Set<Int>
+    ) {
+        _strategy.value = strategy
+        _sectionMode.value = sectionMode
+        _selectedSections.value = selected
+        difficultyConfirmed = true
+        _showDifficultyInfo.value = false
+        _isAiGenerating.value = false
+        _aiError.value = null
+        if (_mode.value == BlancallMode.REVERSE) generateDictationLocal() else regenerateCloze()
+    }
+
+    /** 取消当前 AI 生成并回退本地算法（生成页"本地生成"按钮）。 */
+    fun cancelAiGeneration() {
+        aiGenerateJob?.cancel()
+        _isAiGenerating.value = false
+        _aiError.value = null
+        if (_mode.value == BlancallMode.REVERSE) generateDictationLocal() else regenerateCloze()
+    }
+
+    // ═══════════════════════════════════════════
+    //  训练分析（Pro）：提交判分后由 AI 生成"本次训练分析"（Markdown）
+    // ═══════════════════════════════════════════
+    private val _trainingAnalysis = MutableStateFlow<String?>(null)
+    /** 本次训练分析（Markdown 文本）；null=尚未生成 */
+    val trainingAnalysis: StateFlow<String?> = _trainingAnalysis.asStateFlow()
+
+    private val _analysisLoading = MutableStateFlow(false)
+    val analysisLoading: StateFlow<Boolean> = _analysisLoading.asStateFlow()
+
+    private val _analysisError = MutableStateFlow(false)
+    val analysisError: StateFlow<Boolean> = _analysisError.asStateFlow()
+
+    private var analysisJob: Job? = null
+
+    /** 提交判分后调用：AI 开启时自动生成训练分析（失败可手动重试）。 */
+    fun generateTrainingAnalysis() {
+        if (!isAiAvailable()) return
+        if (_analysisLoading.value) return
+        analysisJob?.cancel()
+        _analysisLoading.value = true
+        _analysisError.value = false
+        viewModelScope.launch {
+            val profile = AiConfigStore.activeChatProfile
+            if (profile == null) {
+                _analysisLoading.value = false
+                _analysisError.value = true
+                return@launch
+            }
+            val messages = listOf(
+                AiClient.ChatMessage("system", AiClozeGenerator.buildAnalysisSystemPrompt()),
+                AiClient.ChatMessage(
+                    "user",
+                    AiClozeGenerator.buildAnalysisRequest(
+                        title = _article.value?.title.orEmpty(),
+                        modeLabel = when (_mode.value) {
+                            BlancallMode.SENTENCE -> "句子挖空"
+                            BlancallMode.WORD -> "字词挖空"
+                            BlancallMode.REVERSE -> "反向默写"
+                        },
+                        scoreLine = buildAnalysisScoreLine(),
+                        mistakeSummary = buildAnalysisMistakeSummary(),
+                        weakHints = _weakHintCount.value,
+                        strongHints = _strongHintCount.value
+                    )
+                )
+            )
+            val sb = StringBuilder()
+            try {
+                val apiKey = withContext(Dispatchers.IO) { profile.decryptApiKey() }
+                val completed = withTimeoutOrNull(AI_GENERATE_TIMEOUT_MS) {
+                    AiClient.streamChat(profile.baseUrl, apiKey, profile.model, messages)
+                        .collect { sb.append(it) }
+                    true
+                } ?: false
+                if (!completed || sb.isEmpty()) throw AiClient.AiException("分析生成超时或无内容")
+                val text = sb.toString().trim()
+                _trainingAnalysis.value = text
+                // 持久化训练分析：退出批改页后仍可在「AI 历史」/学习数据中查看
+                persistTrainingAnalysis(text)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _trainingAnalysis.value = null
+                _analysisError.value = true
+            } finally {
+                _analysisLoading.value = false
+            }
+        }
+    }
+
+    /** 把训练分析写入 ai_analysis/<timestamp>.json */
+    private fun persistTrainingAnalysis(text: String) {
+        try {
+            val app = getApplication<Application>()
+            val dir = File(app.filesDir, "ai_analysis").apply { mkdirs() }
+            val createdAt = System.currentTimeMillis()
+            val json = org.json.JSONObject().apply {
+                put("createdAt", createdAt)
+                put("articleId", _article.value?.id ?: 0L)
+                put("articleTitle", _article.value?.title.orEmpty())
+                put("modeLabel", when (_mode.value) {
+                    BlancallMode.SENTENCE -> "句子挖空"
+                    BlancallMode.WORD -> "字词挖空"
+                    BlancallMode.REVERSE -> "反向默写"
+                })
+                put("weakHints", _weakHintCount.value)
+                put("strongHints", _strongHintCount.value)
+                put("analysis", text)
+            }
+            File(dir, "$createdAt.json").writeText(json.toString())
+        } catch (_: Exception) { /* 分析持久化失败不影响主流程 */ }
+    }
+
+    private fun buildAnalysisScoreLine(): String {
+        val mode = _mode.value
+        if (mode == BlancallMode.REVERSE) {
+            val r = _dictationCheckResult.value
+            return if (r == null) "综合得分 0%" else "综合得分 ${(r.overallScore * 100).toInt()}%"
+        }
+        val res = _checkResults.value
+        val total = res.size
+        val correct = res.values.count { it.result == AnswerChecker.Result.CORRECT }
+        val sim = if (total > 0) res.values.map { it.similarity }.average().toFloat() else 0f
+        return "正确 $correct/$total，平均相似度 ${(sim * 100).toInt()}%，共 $total 个空"
+    }
+
+    private fun buildAnalysisMistakeSummary(): String {
+        val lines = mutableListOf<String>()
+        if (_mode.value == BlancallMode.REVERSE) {
+            _dictationCheckResult.value?.sentences?.forEachIndexed { i, s ->
+                if (s.result != AnswerChecker.Result.CORRECT) {
+                    if (s.matchIndex < 0) {
+                        lines.add("- 第${i + 1}处：未匹配到原文（可能漏背或张冠李戴）")
+                    } else {
+                        lines.add("- 第${i + 1}处：应为「${s.matchedOriginal?.take(20)}」实际「${s.userText.take(20)}」")
+                    }
+                }
+            }
+        } else {
+            _checkResults.value.entries.sortedBy { it.key }.forEach { (idx, d) ->
+                if (d.result != AnswerChecker.Result.CORRECT) {
+                    val typeName = when (d.result) {
+                        AnswerChecker.Result.TYPO -> "错别字（同音/形近误写）"
+                        AnswerChecker.Result.MISSING -> "漏字"
+                        AnswerChecker.Result.EXTRA -> "多字"
+                        AnswerChecker.Result.WRONG_ORDER -> "顺序颠倒"
+                        else -> "不正确"
+                    }
+                    lines.add("- 空${idx + 1}（$typeName）：应为「${d.correctAnswer}」实际「${d.userAnswer}」")
+                }
+            }
+        }
+        return if (lines.isEmpty()) "本次全部作答正确（或未发现错误）" else lines.joinToString("\n")
     }
 
     /**
@@ -529,7 +790,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      */
     fun switchMode(newMode: BlancallMode) {
         setMode(newMode)
-        if (isAiAvailable()) {
+        // 未确认过难度/设置时 setMode 已弹出采集页，等待确认，不立即生成
+        if (difficultyConfirmed) {
             regenerateCurrentModeViaAi()
         }
     }
@@ -551,7 +813,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      */
     private fun regenerateCurrentModeViaAi() {
         val mode = _mode.value
-        val useAi = isAiAvailable()
+        // 「使用AI挖空」关闭时同 AI 不可用：一律走本地算法
+        val useAi = isAiClozeEnabled()
         if (!useAi) {
             if (mode == BlancallMode.REVERSE) generateDictationLocal() else regenerateCloze()
             return
@@ -565,6 +828,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
 
             _isAiGenerating.value = true
             _aiError.value = null
+            _aiProgress.value = 0
             try {
                 val profile = AiConfigStore.activeChatProfile ?: run {
                     _isAiGenerating.value = false
@@ -591,13 +855,15 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     BlancallGenerator.generateDictation(effectiveContent).clauses
                 } else emptyList()
 
+                // 采集页确认过的策略（均衡/薄弱优先/全覆盖）随请求一起发给 AI
+                val strategyLabel = AiClozeGenerator.strategyLabel(_strategy.value)
                 val messages = when (mode) {
                     BlancallMode.SENTENCE -> listOf(
                         AiClient.ChatMessage("system", AiClozeGenerator.buildSystemPrompt()),
                         AiClient.ChatMessage(
                             "user",
                             AiClozeGenerator.buildSentenceRequest(
-                                effectiveContent, sentences, _difficulty.value, _customRequest.value
+                                effectiveContent, sentences, _difficulty.value, _customRequest.value, strategyLabel
                             )
                         )
                     )
@@ -606,7 +872,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         AiClient.ChatMessage(
                             "user",
                             AiClozeGenerator.buildWordRequest(
-                                effectiveContent, sentences, _difficulty.value, _customRequest.value
+                                effectiveContent, sentences, _difficulty.value, _customRequest.value, strategyLabel
                             )
                         )
                     )
@@ -615,15 +881,31 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         AiClient.ChatMessage(
                             "user",
                             AiClozeGenerator.buildDictationRequest(
-                                effectiveContent, dictationClauses, _difficulty.value, _customRequest.value
+                                effectiveContent, dictationClauses, _difficulty.value, _customRequest.value, strategyLabel
                             )
                         )
                     )
                 }
 
                 val sb = StringBuilder()
-                AiClient.streamChat(profile.baseUrl, profile.decryptApiKey(), profile.model, messages)
-                    .collect { sb.append(it) }
+                // Keystore 解密放 IO 线程（部分设备硬件安全模块在主线程调用会阻塞/异常）
+                val apiKey = withContext(Dispatchers.IO) { profile.decryptApiKey() }
+                // 总超时兜底：AI 服务端空流/极慢时（SSE 不结束），超时后视为失败回退本地，
+                // 避免"一直加载"。取消（用户点击本地生成 / 切换模式）不受影响。
+                val completed = withTimeoutOrNull(AI_GENERATE_TIMEOUT_MS) {
+                    AiClient.streamChat(profile.baseUrl, apiKey, profile.model, messages)
+                        .collect { sb.append(it); _aiProgress.value = sb.length }
+                    true
+                } ?: false
+                if (!completed) {
+                    throw AiClient.AiException(
+                        if (sb.isEmpty()) "AI 长时间无响应" else "AI 生成超时"
+                    )
+                }
+                // 快速返回但没有任何有效内容（部分中转服务返回了无法解析的格式）→ 回退本地
+                if (sb.isEmpty()) {
+                    throw AiClient.AiException("AI 未返回有效挖空结果")
+                }
 
                 when (mode) {
                     BlancallMode.SENTENCE -> {
@@ -631,6 +913,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                             sentences,
                             AiClozeGenerator.decodeSentenceIndices(sb.toString(), sentences.size)
                         )
+                        // 解码为空 → 同样视为失败，回退本地（避免"超快但没挖空"）
+                        if (result.blanks.isEmpty()) {
+                            throw AiClient.AiException("AI 未返回有效挖空结果")
+                        }
                         _sentenceCloze.value = result
                         _totalBlanks.value = result.blanks.size
                     }
@@ -639,6 +925,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                             sentences,
                             AiClozeGenerator.decodeWordRanges(sb.toString())
                         )
+                        // 解码为空 → 视为失败，回退本地（避免"超快但没挖空"）
+                        if (result.blanks.isEmpty()) {
+                            throw AiClient.AiException("AI 未返回有效挖空结果")
+                        }
                         _wordCloze.value = result
                         _totalBlanks.value = result.blanks.size
                     }
@@ -652,6 +942,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
                 _isAiGenerating.value = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 用户主动取消（生成页"本地生成"/切换模式）：向上传播，不吞取消
+                throw e
             } catch (e: Exception) {
                 _isAiGenerating.value = false
                 _aiError.value = "AI 挖空失败：${e.message}"
@@ -685,8 +978,12 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
 
     fun setStrategy(newStrategy: BlancallGenerator.Strategy) {
         _strategy.value = newStrategy
-        // 策略变更 → 重新生成（不清答案）
-        regenerateCloze()
+        // 策略变更 → 重新生成（AI 挖空开启时连同难度/需求一起发给 AI，否则本地重新挖空）
+        if (isAiClozeEnabled() && _showDifficultyInfo.value.not()) {
+            regenerateCurrentModeViaAi()
+        } else if (_showDifficultyInfo.value.not()) {
+            regenerateCloze()
+        }
     }
 
     fun setClassicalMode(enabled: Boolean) {
@@ -871,6 +1168,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleHint() {
         _showHint.value = !_showHint.value
+        // 关闭时立即停止所有提示计时与淡显
+        if (!_showHint.value) stopAllBlankHints()
     }
 
     fun dismissBlankCountWarning() {
@@ -883,18 +1182,203 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun updateAnswer(blankIndex: Int, answer: String) {
+        setAnswerText(blankIndex, answer)
+        // 提示联动：任何键入都会重置该空的提示计时（用户主动输入优先）
+        blankInputVersions[blankIndex] = (blankInputVersions[blankIndex] ?: 0) + 1
+        maybeStartBlankHint(blankIndex)
+    }
+
+    // ═══════════════════════════════════════════
+    //  填空辅助提示（弱提示淡显 / 强提示自动填入）
+    //  流程：某空 10s 无输入 → 淡显下一字（5s）→ 再 5s 无输入 → 自动填入 → 立刻淡显下一字循环
+    // 统计弱(淡显)/强(自动填入)次数并写入练习记录，AI 训练分析也会读取。
+    // ═══════════════════════════════════════════
+    private val _hintChars = MutableStateFlow<Map<Int, Char>>(emptyMap())
+    /** 每个空当前要淡显的下一个字符（key=blankIndex） */
+    val hintChars: StateFlow<Map<Int, Char>> = _hintChars.asStateFlow()
+
+    /** 反向默写（整段输入）当前要淡显的下一个字符；null=无提示 */
+    private val _dictationHint = MutableStateFlow<Char?>(null)
+    val dictationHint: StateFlow<Char?> = _dictationHint.asStateFlow()
+
+    private var dictationHintJob: Job? = null
+    private var dictationInputVersion = 0
+
+    private val _weakHintCount = MutableStateFlow(0)
+    /** 弱提示次数：淡显了下一个字 */
+    val weakHintCount: StateFlow<Int> = _weakHintCount.asStateFlow()
+
+    private val _strongHintCount = MutableStateFlow(0)
+    /** 强提示次数：自动帮填了一个字 */
+    val strongHintCount: StateFlow<Int> = _strongHintCount.asStateFlow()
+
+    private val blankHintJobs = mutableMapOf<Int, Job>()
+    private val blankInputVersions = mutableMapOf<Int, Int>()
+
+    private fun startBlankHint(blankIndex: Int, expected: String) {
+        blankHintJobs[blankIndex]?.cancel()
+        // 立即清掉该空残留的旧提示字：被 cancel 的协程不会执行末尾清理，不清会一直挂着旧提示
+        _hintChars.value = _hintChars.value - blankIndex
+        blankHintJobs[blankIndex] = viewModelScope.launch {
+            try {
+                var firstWait = true
+                while (isActive) {
+                    val cur = currentAnswerText(blankIndex)
+                    if (cur.length >= expected.length) break
+                    val ch = expected[cur.length]                       // 下一个应填的字
+                    val v0 = blankInputVersions[blankIndex] ?: 0
+                    delay(if (firstWait) HINT_FIRST_WAIT_MS else 0L)    // 首次 10s；强填后下一字立即淡显
+                    if (v0 != (blankInputVersions[blankIndex] ?: 0)) break  // 用户新输入打断（外层会重启）
+                    // 弱提示：淡显下一字（UI 端 5s 淡入动画）
+                    _weakHintCount.value += 1
+                    _hintChars.value = _hintChars.value + (blankIndex to ch)
+                    delay(HINT_FADE_MS)
+                    if (v0 != (blankInputVersions[blankIndex] ?: 0)) break
+                    delay(HINT_AFTER_WAIT_MS)
+                    if (v0 != (blankInputVersions[blankIndex] ?: 0)) break
+                    // 强提示：自动填入（不打断当前循环，继续提示下一个字）
+                    if (currentAnswerText(blankIndex).length < expected.length) {
+                        setAnswerText(blankIndex, currentAnswerText(blankIndex) + ch)
+                        _strongHintCount.value += 1
+                        firstWait = false
+                        continue
+                    }
+                    break
+                }
+            } finally {
+                // 正常结束或被取消都清理提示字，避免旧提示残留
+                _hintChars.value = _hintChars.value - blankIndex
+            }
+        }
+    }
+
+    private fun maybeStartBlankHint(blankIndex: Int) {
+        if (_isSubmitted.value || !_showHint.value) { blankHintJobs[blankIndex]?.cancel(); return }
+        val expected = expectedText(blankIndex) ?: return
+        if (expected.isBlank()) return
+        startBlankHint(blankIndex, expected)
+    }
+
+    /**
+     * 确保提示计时运行（进入作答界面 / 聚焦某空时调用）：
+     * 无论用户是否输入过，只要满足无操作时长就淡显 / 强填下一个字。
+     *
+     * @param blankIndex 字词/句子模式当前聚焦的空；反向默写传 null（整段输入计时）
+     */
+    fun ensureHintTimer(blankIndex: Int? = null) {
+        if (_isSubmitted.value || !_showHint.value) return
         when (_mode.value) {
-            BlancallMode.SENTENCE -> _sentenceAnswers.value = _sentenceAnswers.value + (blankIndex to answer)
-            BlancallMode.WORD -> _wordAnswers.value = _wordAnswers.value + (blankIndex to answer)
+            BlancallMode.SENTENCE, BlancallMode.WORD -> {
+                val idx = blankIndex ?: return
+                if (expectedText(idx) == null) return
+                // 聚焦切换：其余空的计时与淡显只保留当前空，避免后台提示串位
+                blankHintJobs.entries.forEach { (bid, job) -> if (bid != idx) job.cancel() }
+                blankHintJobs.keys.retainAll(setOf(idx))
+                if (_hintChars.value.size > 1 || _hintChars.value.keys.firstOrNull() != idx) {
+                    _hintChars.value = _hintChars.value.filterKeys { it == idx }
+                }
+                maybeStartBlankHint(idx)
+            }
+            BlancallMode.REVERSE -> {
+                // 计时已运行则不重置（仅输入变化时经 updateDictationInput 才重计）
+                if (dictationHintJob?.isActive == true) return
+                startDictationHint()
+            }
+        }
+    }
+
+    private fun expectedText(blankIndex: Int): String? = when (_mode.value) {
+        BlancallMode.SENTENCE -> _sentenceCloze.value?.blanks?.getOrNull(blankIndex)?.originalText
+        BlancallMode.WORD -> _wordCloze.value?.blanks?.getOrNull(blankIndex)?.originalChar
+        else -> null
+    }
+
+    private fun currentAnswerText(blankIndex: Int): String = when (_mode.value) {
+        BlancallMode.SENTENCE -> _sentenceAnswers.value[blankIndex].orEmpty()
+        BlancallMode.WORD -> _wordAnswers.value[blankIndex].orEmpty()
+        else -> ""
+    }
+
+    private fun setAnswerText(blankIndex: Int, text: String) {
+        when (_mode.value) {
+            BlancallMode.SENTENCE -> _sentenceAnswers.value = _sentenceAnswers.value + (blankIndex to text)
+            BlancallMode.WORD -> _wordAnswers.value = _wordAnswers.value + (blankIndex to text)
             // 反向默写使用独立的整段输入，不走按空作答路径
             BlancallMode.REVERSE -> {}
         }
+    }
+
+    private fun stopAllBlankHints() {
+        blankHintJobs.values.forEach { it.cancel() }
+        blankHintJobs.clear()
+        _hintChars.value = emptyMap()
+        dictationHintJob?.cancel()
+        _dictationHint.value = null
+    }
+
+    /**
+     * 反向默写（整段输入）弱/强提示：按原文顺序，无输入 10s 淡显下一字（5s）、
+     * 再 5s 无输入自动填入并循环；任何键入重新计时。
+     */
+    private fun startDictationHint() {
+        if (_isSubmitted.value || !_showHint.value) {
+            dictationHintJob?.cancel()
+            _dictationHint.value = null
+            return
+        }
+        val expected = _dictationResult.value?.clauses?.joinToString("") ?: return
+        if (expected.isBlank()) return
+        dictationHintJob?.cancel()
+        _dictationHint.value = null
+        dictationHintJob = viewModelScope.launch {
+            try {
+                var firstWait = true
+                while (isActive) {
+                    val cur = _dictationInput.value
+                    if (cur.length >= expected.length) break
+                    val ch = expected[cur.length]
+                    val v0 = dictationInputVersion
+                    delay(if (firstWait) HINT_FIRST_WAIT_MS else 0L)
+                    if (v0 != dictationInputVersion) break
+                    // 弱提示：淡显下一字（UI 端 5s 淡入动画）
+                    _weakHintCount.value += 1
+                    _dictationHint.value = ch
+                    delay(HINT_FADE_MS)
+                    if (v0 != dictationInputVersion) break
+                    delay(HINT_AFTER_WAIT_MS)
+                    if (v0 != dictationInputVersion) break
+                    // 强提示：自动填入（不打断循环，继续提示下一个字）
+                    if (_dictationInput.value.length < expected.length) {
+                        _dictationInput.value += ch
+                        _strongHintCount.value += 1
+                        firstWait = false
+                        continue
+                    }
+                    break
+                }
+            } finally {
+                // 正常结束或被取消都清理提示字，避免旧提示残留
+                _dictationHint.value = null
+            }
+        }
+    }
+
+    private companion object {
+        /** 首次无输入 10s 后淡显提示字；淡显完成后再等 5s 无输入则强填 */
+        const val HINT_FIRST_WAIT_MS = 10_000L
+        /** 提示字淡入时长（UI 动画同步 5s） */
+        const val HINT_FADE_MS = 5_000L
+        /** 淡显完成后再等待时长（到点未输入则自动填入） */
+        const val HINT_AFTER_WAIT_MS = 5_000L
     }
 
     /** 更新反向默写的整段输入文本 */
     fun updateDictationInput(text: String) {
         // 防御：超长输入截断（渲染与判分的双重保护，防止极端输入导致性能/内存问题）
         _dictationInput.value = if (text.length > 50_000) text.take(50_000) else text
+        // 提示联动：任何键入都会重置提示计时
+        dictationInputVersion++
+        startDictationHint()
     }
 
     fun submitAnswers() {
@@ -946,6 +1430,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             }
             _dictationCheckResult.value = checkResult
             _isSubmitted.value = true
+            // 提交完成：AI 开启时自动生成训练分析
+            generateTrainingAnalysis()
             // 记录今天已学习（用于连续天数统计 + 智能提醒）
             ReminderPrefs.recordStudyToday()
             // 保存练习记录：用综合得分换算"正确数"
@@ -965,7 +1451,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         mistakes = emptyList(),
                         duration = if (practiceStartTime > 0) System.currentTimeMillis() - practiceStartTime else 0L,
                         similarity = similarity,
-                        rating = rating.value
+                        rating = rating.value,
+                        weakHints = _weakHintCount.value,
+                        strongHints = _strongHintCount.value
                     )
                 )
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
@@ -979,6 +1467,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private fun submitInternal(partial: Boolean) {
         val articleId = _article.value?.id ?: return
         val mode = _mode.value
+        // 提交后停止所有填空提示（弱/强提示计时）
+        stopAllBlankHints()
         val answers = when (mode) {
             BlancallMode.SENTENCE -> _sentenceAnswers.value
             BlancallMode.WORD -> _wordAnswers.value
@@ -1017,6 +1507,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             }
             _checkResults.value = results
             _isSubmitted.value = true
+            // 提交完成：AI 开启时自动生成训练分析
+            generateTrainingAnalysis()
 
             // 记录今天已学习（用于连续天数统计 + 智能提醒）
             ReminderPrefs.recordStudyToday()
@@ -1043,7 +1535,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         mistakes = mistakes,
                         duration = if (practiceStartTime > 0) System.currentTimeMillis() - practiceStartTime else 0L,
                         similarity = similarity,
-                        rating = rating.value
+                        rating = rating.value,
+                        weakHints = _weakHintCount.value,
+                        strongHints = _strongHintCount.value
                     )
                 )
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
@@ -1141,6 +1635,14 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         if (content.isNullOrBlank()) return
         // 重做即重新计时，避免 duration 包含上次练习的停顿时间
         practiceStartTime = System.currentTimeMillis()
+        // 重做：清除提示计时与统计、训练分析
+        stopAllBlankHints()
+        _weakHintCount.value = 0
+        _strongHintCount.value = 0
+        analysisJob?.cancel()
+        _trainingAnalysis.value = null
+        _analysisLoading.value = false
+        _analysisError.value = false
         // AI 开启：按上次难度经 AI 重新挖空（反向默写仍在 AI 路径内走本地打散）
         if (isAiAvailable()) {
             _isSubmitted.value = false

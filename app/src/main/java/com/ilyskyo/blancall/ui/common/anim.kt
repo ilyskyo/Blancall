@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,7 +74,7 @@ fun BlancallAlertDialog(
     confirmButton: @Composable () -> Unit = {},
     dismissButton: @Composable (() -> Unit)? = null,
     shape: Shape = RoundedCornerShape(28.dp),
-    containerColor: Color = MaterialTheme.colorScheme.surface,
+    containerColor: Color? = null,
     tonalElevation: Dp = 0.dp,
     properties: DialogProperties? = null,
     content: @Composable (() -> Unit)? = null
@@ -91,10 +93,17 @@ fun BlancallAlertDialog(
             ) + fadeIn(tween(160)),
             exit = scaleOut(targetScale = 0.96f) + fadeOut(tween(120))
         ) {
+            // 玻璃面板：默认半透明染色（深色暖黑 0.94 / 浅色白 0.95）+ 1dp 高光描边，
+            // 在 Dialog 的暗色 scrim 上呈现毛玻璃质感；显式传 containerColor 时保留调用方语义（如错误色）
+            val glassColor = if (isBlancallDark()) Color(0xF01C1C1E) else Color(0xF2FFFFFF)
             Surface(
                 shape = shape,
-                color = containerColor,
+                color = containerColor ?: glassColor,
                 tonalElevation = tonalElevation,
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                ),
                 modifier = Modifier
                     .widthIn(min = 280.dp, max = 560.dp)
                     .fillMaxWidth()

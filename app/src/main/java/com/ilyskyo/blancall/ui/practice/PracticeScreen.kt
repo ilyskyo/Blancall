@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -41,15 +42,20 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.GlassMenuDivider
+import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.MarkdownText
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +65,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -116,15 +123,27 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     val fontScale by vm.fontScale.collectAsState()
     val showDifficultyInfo by vm.showDifficultyInfo.collectAsState()
     val isAiGenerating by vm.isAiGenerating.collectAsState()
+    val aiProgress by vm.aiProgress.collectAsState()
     val aiError by vm.aiError.collectAsState()
     val difficulty by vm.difficulty.collectAsState()
+    // 填空辅助提示（弱提示淡显 / 强提示统计）
+    val hintChars by vm.hintChars.collectAsState()
+    val weakHintCount by vm.weakHintCount.collectAsState()
+    val strongHintCount by vm.strongHintCount.collectAsState()
+    // 反向默写整段输入提示
+    val dictationHint by vm.dictationHint.collectAsState()
+    // 训练分析（Pro，Markdown）
+    val trainingAnalysis by vm.trainingAnalysis.collectAsState()
+    val analysisLoading by vm.analysisLoading.collectAsState()
+    val analysisError by vm.analysisError.collectAsState()
 
     // 挖空策略与古文模式
     val strategy by vm.strategy.collectAsState()
     val classicalMode by vm.classicalMode.collectAsState()
 
     // 三点菜单点位（必须在 LaunchedEffect 之前声明）
-    var modeSelected by remember { mutableStateOf(false) }
+    // rememberSaveable：旋转横屏重建后保持已选模式，避免答题界面退回"选择模式"
+    var modeSelected by rememberSaveable { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showModeSheet by remember { mutableStateOf(false) }
     var showStrategySheet by remember { mutableStateOf(false) }
@@ -527,14 +546,40 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 .pinchZoom { vm.adjustFontScale(it) }
         ) {
             when {
-                // 难度信息采集页（AI 开启选好句子/字词模式后出现）
-                showDifficultyInfo -> DifficultyInfoPage(
+                // 信息采集页：AI 挖空开启 → 难度 + 策略 + 自定义；关闭 → 只采集挖空策略 + 段落选择
+                showDifficultyInfo -> if (vm.isAiClozeEnabled()) {
+                    DifficultyInfoPage(
+                        mode = mode,
+                        initialStrategy = strategy,
+                        onConfirm = { d, c, s -> vm.confirmDifficultyAndGenerate(d, c, s) },
+                        onSkipToLocal = { vm.skipAiAndGenerateLocal() },
+                        onCancel = {
+                            // 取消采集 → 回到模式选择浮层（不直接本地生成）
+                            vm.cancelDifficultyCollection()
+                            modeSelected = false
+                        }
+                    )
+                } else {
+                    LocalClozeCollectPage(
+                        initialStrategy = strategy,
+                        initialSectionMode = sectionMode,
+                        initialSelected = selectedSections,
+                        sections = sections,
+                        rankedSections = rankedSections,
+                        onConfirm = { s, sm, sel -> vm.confirmLocalClozeSettings(s, sm, sel) },
+                        onCancel = {
+                            vm.cancelDifficultyCollection()
+                            modeSelected = false
+                        }
+                    )
+                }
+                // AI 挖空生成中（切换模式也需要重新生成 → 显示加载页，可随时回退本地）
+                isAiGenerating -> AiGeneratingPage(
                     mode = mode,
-                    onConfirm = { d, c -> vm.confirmDifficultyAndGenerate(d, c) },
-                    onCancel = { vm.cancelDifficultyCollection() }
+                    difficulty = difficulty,
+                    progress = aiProgress,
+                    onCancel = { vm.cancelAiGeneration() }
                 )
-                // AI 挖空生成中（切换模式也需要重新生成 → 显示加载页）
-                isAiGenerating -> AiGeneratingPage(mode = mode, difficulty = difficulty)
                 article == null || (modeSelected && (
                     (mode == BlancallMode.SENTENCE && sentenceCloze == null)
                     || (mode == BlancallMode.WORD && wordCloze == null)
@@ -585,8 +630,15 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                     userAnswers = userAnswers,
                                     checkResults = checkResults,
                                     isSubmitted = isSubmitted,
-                                    showHint = showHint,
+                                    hintChars = hintChars,
+                                    weakHints = weakHintCount,
+                                    strongHints = strongHintCount,
+                                    analysis = trainingAnalysis,
+                                    analysisLoading = analysisLoading,
+                                    analysisError = analysisError,
+                                    onRetryAnalysis = { vm.generateTrainingAnalysis() },
                                     onViewArticleData = viewArticleData,
+                                    onBlankFocus = { vm.ensureHintTimer(it) },
                                     onAnswerChange = { i, a -> vm.updateAnswer(i, a) }
                                 )
                                 BlancallMode.WORD -> WordClozeContent(
@@ -594,8 +646,15 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                     userAnswers = userAnswers,
                                     checkResults = checkResults,
                                     isSubmitted = isSubmitted,
-                                    showHint = showHint,
+                                    hintChars = hintChars,
+                                    weakHints = weakHintCount,
+                                    strongHints = strongHintCount,
+                                    analysis = trainingAnalysis,
+                                    analysisLoading = analysisLoading,
+                                    analysisError = analysisError,
+                                    onRetryAnalysis = { vm.generateTrainingAnalysis() },
                                     onViewArticleData = viewArticleData,
+                                    onBlankFocus = { vm.ensureHintTimer(it) },
                                     onAnswerChange = { i, a -> vm.updateAnswer(i, a) }
                                 )
                                 BlancallMode.REVERSE -> DictationContent(
@@ -603,8 +662,14 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                     userInput = dictationInput,
                                     checkResult = dictationCheckResult,
                                     isSubmitted = isSubmitted,
+                                    dictationHintChar = dictationHint,
+                                    analysis = trainingAnalysis,
+                                    analysisLoading = analysisLoading,
+                                    analysisError = analysisError,
+                                    onRetryAnalysis = { vm.generateTrainingAnalysis() },
                                     onViewArticleData = viewArticleData,
-                                    onInputChange = { vm.updateDictationInput(it) }
+                                    onInputChange = { vm.updateDictationInput(it) },
+                                    onEnterInput = { vm.ensureHintTimer() }
                                 )
                             }
                         }
@@ -649,12 +714,9 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 .clickable(enabled = false) { },
             contentAlignment = Alignment.Center
         ) {
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
@@ -731,9 +793,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
 
     // ── 二级：切换模式 BottomSheet ──
     if (showModeSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showModeSheet = false },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        GlassModalBottomSheet(
+            onDismissRequest = { showModeSheet = false }
         ) {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text("切换练习模式", style = MaterialTheme.typography.titleMedium,
@@ -767,9 +828,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
 
     // ── 二级：挖空策略 BottomSheet ──
     if (showStrategySheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showStrategySheet = false },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        GlassModalBottomSheet(
+            onDismissRequest = { showStrategySheet = false }
         ) {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text("选择挖空策略", style = MaterialTheme.typography.titleMedium,
@@ -800,9 +860,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
 
     // ── 二级：段落模式 BottomSheet ──
     if (showSectionSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSectionSheet = false },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        GlassModalBottomSheet(
+            onDismissRequest = { showSectionSheet = false }
         ) {
             SectionPickerContent(
                 sectionMode = sectionMode,
@@ -845,20 +904,13 @@ private fun ModeCard(
         ),
         label = "modeCardScale"
     )
-    Card(
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .scale(scale)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = ripple(),
-                onClick = onClick
-            ),
+            .scale(scale),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        ),
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+        interactionSource = interactionSource,
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -911,7 +963,6 @@ private fun IncompleteSubmitDialog(
     BlancallAlertDialog(
         onDismissRequest = onContinue,
         shape = RoundedCornerShape(20.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 4.dp,
         title = {
             Text(
@@ -984,14 +1035,25 @@ private fun SentenceClozeContent(
     userAnswers: Map<Int, String>,
     checkResults: Map<Int, AnswerChecker.CheckDetail>,
     isSubmitted: Boolean,
-    showHint: Boolean,
+    hintChars: Map<Int, Char> = emptyMap(),
+    weakHints: Int = 0,
+    strongHints: Int = 0,
+    analysis: String? = null,
+    analysisLoading: Boolean = false,
+    analysisError: Boolean = false,
+    onRetryAnalysis: () -> Unit = {},
     onViewArticleData: (() -> Unit)? = null,
+    onBlankFocus: (Int) -> Unit = {},
     onAnswerChange: (Int, String) -> Unit
 ) {
     blancall?.let { result ->
         var currentBlankIndex by remember { mutableIntStateOf(0) }
         val blanks = result.blanks
         val totalBlanks = blanks.size
+        // 进入/切换焦点即启动提示计时：满足无操作时长即提示，不受"是否输入过"影响
+        LaunchedEffect(currentBlankIndex, isSubmitted) {
+            if (!isSubmitted) onBlankFocus(currentBlankIndex)
+        }
         // 预计算按句分组的空位映射，避免在 LazyColumn 每个 item 里重复 filter（O(sentences*blanks)）
         val blanksBySentence = remember(blanks) {
             blanks.groupBy { it.sentenceIndex }
@@ -1037,7 +1099,8 @@ private fun SentenceClozeContent(
                                         blank = blank, isCurrent = blank.index == currentBlankIndex,
                                         answer = userAnswers[blank.index],
                                         checkResult = checkResults[blank.index],
-                                        isSubmitted = isSubmitted, showHint = showHint,
+                                        isSubmitted = isSubmitted,
+                                        hintChar = hintChars[blank.index],
                                         onClick = { currentBlankIndex = blank.index }
                                     )
                                     lastPos = blank.endInSentence
@@ -1057,25 +1120,15 @@ private fun SentenceClozeContent(
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
-                    OutlinedTextField(
+                    HintOutlinedField(
                         value = userAnswers[currentBlankIndex] ?: "",
                         onValueChange = { onAnswerChange(currentBlankIndex, it) },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("请输入被挖掉的内容") },
-                        minLines = 2, maxLines = 3
+                        placeholder = "请输入被挖掉的内容",
+                        hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
+                        maxLines = 3,
+                        minHeight = 74.dp
                     )
-                    // 提示文字
-                    if (showHint) {
-                        val hintBlank = blanks.getOrNull(currentBlankIndex)
-                        if (hintBlank != null) {
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                buildHintText(hintBlank.originalText),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                     Spacer(Modifier.height(4.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         TextButton(
@@ -1098,7 +1151,10 @@ private fun SentenceClozeContent(
                 ) {
                     // 提交后顶部展示评分卡
                     if (isSubmitted) {
-                        item(key = "score") { BlancallScoreCard(checkResults, onViewArticleData) }
+                        item(key = "score") { BlancallScoreCard(checkResults, onViewArticleData, weakHints, strongHints) }
+                        item(key = "analysis") {
+                            TrainingAnalysisCard(analysisLoading, analysis, analysisError, onRetryAnalysis)
+                        }
                     }
                     itemsIndexed(result.sentences, key = { idx, _ -> "s_$idx" }) { sIdx, sentence ->
                         val sentenceBlanks = blanksBySentence[sIdx].orEmpty()
@@ -1119,7 +1175,8 @@ private fun SentenceClozeContent(
                                         blank = blank, isCurrent = blank.index == currentBlankIndex,
                                         answer = userAnswers[blank.index],
                                         checkResult = checkResults[blank.index],
-                                        isSubmitted = isSubmitted, showHint = showHint,
+                                        isSubmitted = isSubmitted,
+                                        hintChar = hintChars[blank.index],
                                         onClick = { currentBlankIndex = blank.index }
                                     )
                                     lastPos = blank.endInSentence
@@ -1135,25 +1192,15 @@ private fun SentenceClozeContent(
 
                 if (!isSubmitted) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    OutlinedTextField(
+                    HintOutlinedField(
                         value = userAnswers[currentBlankIndex] ?: "",
                         onValueChange = { onAnswerChange(currentBlankIndex, it) },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("请输入被挖掉的内容") },
-                        minLines = 2, maxLines = 3
+                        placeholder = "请输入被挖掉的内容",
+                        hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
+                        maxLines = 3,
+                        minHeight = 74.dp
                     )
-                    // 提示文字
-                    if (showHint) {
-                        val hintBlank = blanks.getOrNull(currentBlankIndex)
-                        if (hintBlank != null) {
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                buildHintText(hintBlank.originalText),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                     Spacer(Modifier.height(4.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         TextButton(
@@ -1179,7 +1226,7 @@ private fun SentenceBlankInline(
     answer: String?,
     checkResult: AnswerChecker.CheckDetail?,
     isSubmitted: Boolean,
-    showHint: Boolean,
+    hintChar: Char? = null,
     onClick: () -> Unit
 ) {
     Row(
@@ -1243,31 +1290,104 @@ private fun SentenceBlankInline(
                 }
             }
         } else if (!answer.isNullOrBlank()) {
-            Text(answer, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(answer, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary)
+                // 弱提示下一字：显示在空内已填文字之后（淡显）
+                HintGhost(if (isSubmitted) null else hintChar)
+            }
         } else {
-            Text("＿＿＿＿",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-
-        // 提示文字（未提交 + 开启提示 + 未填写时显示）
-        if (showHint && !isSubmitted && answer.isNullOrBlank()) {
-            Spacer(Modifier.width(6.dp))
-            Text(
-                buildHintText(blank.originalText),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("＿＿＿＿",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HintGhost(if (isSubmitted) null else hintChar)
+            }
         }
     }
 }
 
-/** 生成提示文字：首字 + ... + 字数 */
-private fun buildHintText(original: String): String {
-    if (original.isEmpty()) return ""
-    if (original.length == 1) return "（共1字）"
-    return "首字：${original.first()}...（共${original.length}字）"
+/** 淡显提示字（弱提示）：5s 淡入到浅灰。用于输入框内部 overlay 与句内空位。 */
+@Composable
+private fun HintGhost(hintChar: Char?, show: Boolean = true, modifier: Modifier = Modifier) {
+    val alpha = remember(hintChar, show) { Animatable(0f) }
+    LaunchedEffect(hintChar, show) {
+        if (hintChar != null && show) alpha.animateTo(0.38f, animationSpec = tween(5000))
+        else alpha.snapTo(0f)
+    }
+    if (hintChar != null && alpha.value > 0.01f) {
+        Text(
+            hintChar.toString(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha.value),
+            modifier = modifier
+        )
+    }
+}
+
+/**
+ * 带弱提示字的输入框（与 OutlinedTextField 同外观）。
+ * 用 BasicTextField 的 decorationBox 把提示字放在已输入文字之后（紧跟光标位），
+ * 而非输入框右端 overlay，满足"提示字紧贴已输入文字"的体验。
+ */
+@Composable
+private fun HintOutlinedField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    hintChar: Char? = null,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    singleLine: Boolean = false,
+    maxLines: Int = Int.MAX_VALUE,
+    minHeight: Dp = 56.dp,
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
+    imeAction: ImeAction = ImeAction.Default
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = if (isError) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+        else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            1.dp,
+            if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+        )
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+            singleLine = singleLine,
+            maxLines = maxLines,
+            keyboardOptions = KeyboardOptions(imeAction = imeAction),
+            decorationBox = { innerTextField ->
+                Row(
+                    modifier = Modifier.heightIn(min = minHeight).padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.weight(1f, fill = false)) {
+                        if (value.isEmpty()) {
+                            Text(
+                                placeholder,
+                                style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            )
+                        }
+                        innerTextField()
+                    }
+                    // 提示字紧跟已输入文字（与 inner 同一行）；动画常驻，仅由 show 控制淡入
+                    HintGhost(
+                        hintChar,
+                        show = hintChar != null,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+            }
+        )
+    }
 }
 
 // ========== 字词挖空 UI ==========
@@ -1278,22 +1398,38 @@ private fun WordClozeContent(
     userAnswers: Map<Int, String>,
     checkResults: Map<Int, AnswerChecker.CheckDetail>,
     isSubmitted: Boolean,
-    showHint: Boolean = false,
+    hintChars: Map<Int, Char> = emptyMap(),
+    weakHints: Int = 0,
+    strongHints: Int = 0,
+    analysis: String? = null,
+    analysisLoading: Boolean = false,
+    analysisError: Boolean = false,
+    onRetryAnalysis: () -> Unit = {},
     onViewArticleData: (() -> Unit)? = null,
+    onBlankFocus: (Int) -> Unit = {},
     onAnswerChange: (Int, String) -> Unit
 ) {
     blancall?.let {
+        // 提示计时目标 = 第一个未填完的空：即使从未输入，满足无操作时长也提示
+        LaunchedEffect(userAnswers, isSubmitted) {
+            if (isSubmitted) return@LaunchedEffect
+            val firstUnfinished = blancall.blanks.indexOfFirst { userAnswers[it.index].isNullOrEmpty() }
+            if (firstUnfinished >= 0) onBlankFocus(firstUnfinished)
+        }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // 提交后顶部展示评分卡
             if (isSubmitted) {
-                item(key = "score") { BlancallScoreCard(checkResults, onViewArticleData) }
+                item(key = "score") { BlancallScoreCard(checkResults, onViewArticleData, weakHints, strongHints) }
+                item(key = "analysis") {
+                    TrainingAnalysisCard(analysisLoading, analysis, analysisError, onRetryAnalysis)
+                }
             }
             itemsIndexed(blancall.sentences, key = { idx, _ -> "s_$idx" }) { _, sentence ->
                 if (sentence.blanks.isEmpty()) {
                     Text(sentence.text, style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onBackground)
                 } else {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    GlassCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                         Column(Modifier.padding(12.dp)) {
                             Text(sentence.text, style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onBackground)
@@ -1306,8 +1442,7 @@ private fun WordClozeContent(
                                     checkDetail = checkResults[blankIdx],
                                     isSubmitted = isSubmitted,
                                     multiline = false,
-                                    showHint = showHint,
-                                    originalText = blank.originalChar,
+                                    hintChar = hintChars[blankIdx],
                                     onValueChange = { onAnswerChange(blankIdx, it) }
                                 )
                                 Spacer(Modifier.height(4.dp))
@@ -1329,8 +1464,7 @@ private fun BlankCard(
     checkDetail: AnswerChecker.CheckDetail?,
     isSubmitted: Boolean,
     multiline: Boolean,
-    showHint: Boolean = false,
-    originalText: String = "",
+    hintChar: Char? = null,
     onValueChange: (String) -> Unit
 ) {
     Card(
@@ -1350,27 +1484,18 @@ private fun BlankCard(
                     fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(4.dp))
-            OutlinedTextField(
+            HintOutlinedField(
                 value = value,
                 onValueChange = onValueChange,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isSubmitted,
-                placeholder = { Text("请输入答案") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                placeholder = "请输入答案",
+                hintChar = if (!isSubmitted) hintChar else null,
+                isError = isSubmitted && checkDetail?.result != AnswerChecker.Result.CORRECT,
                 singleLine = !multiline,
                 maxLines = if (multiline) 3 else 1,
-                isError = isSubmitted && checkDetail?.result != AnswerChecker.Result.CORRECT,
-                shape = RoundedCornerShape(8.dp)
+                imeAction = ImeAction.Next
             )
-            // 提示文字
-            if (showHint && !isSubmitted && value.isBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    buildHintText(originalText),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
             if (isSubmitted && checkDetail != null) {
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1416,12 +1541,11 @@ private fun BlankCountWarningBanner(
     onDismiss: () -> Unit,
     onUseSuggested: () -> Unit
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
-        )
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        containerAlpha = 0.7f
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -1548,8 +1672,14 @@ private fun DictationContent(
     userInput: String,
     checkResult: AnswerChecker.DictationCheckResult?,
     isSubmitted: Boolean,
+    dictationHintChar: Char? = null,
+    analysis: String? = null,
+    analysisLoading: Boolean = false,
+    analysisError: Boolean = false,
+    onRetryAnalysis: () -> Unit = {},
     onViewArticleData: (() -> Unit)? = null,
-    onInputChange: (String) -> Unit
+    onInputChange: (String) -> Unit,
+    onEnterInput: () -> Unit = {}
 ) {
     val dictation = dictationResult
     if (dictation == null) {
@@ -1560,6 +1690,10 @@ private fun DictationContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
+    }
+    // 进入作答界面即启动提示计时：即使从未输入，满足无操作时长也提示（VM 内已有运行中的计时则不重置）
+    LaunchedEffect(isSubmitted) {
+        if (!isSubmitted) onEnterInput()
     }
     val context = LocalContext.current
     LazyColumn(
@@ -1584,25 +1718,25 @@ private fun DictationContent(
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
-                OutlinedTextField(
+                // 反向默写弱提示：提示字紧跟已输入文字的下一字位（5s 淡入浅灰）
+                HintOutlinedField(
                     value = userInput,
                     onValueChange = onInputChange,
-                    // 注意：TextField 自带内部滚动，禁止再套 verticalScroll，
-                    // 双重滚动容器会在 IME 提交文本（英文/标点即时 commit）时
-                    // 触发测量冲突崩溃（中文走候选框流程不触发）
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 160.dp, max = 320.dp),
-                    placeholder = { Text("按原文顺序默写整段，可把复制下来的从句拼回去…") },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    shape = RoundedCornerShape(10.dp)
+                    placeholder = "按原文顺序默写整段，可把复制下来的从句拼回去…",
+                    hintChar = if (!isSubmitted) dictationHintChar else null,
+                    maxLines = Int.MAX_VALUE,
+                    minHeight = 100.dp
                 )
             }
         } else if (checkResult != null) {
             // 评分卡：综合得分 + 覆盖率/准确率/顺序正确率 + 查看本篇文章数据
             item(key = "scoreCard") { DictationScoreCard(checkResult, onViewArticleData) }
+            item(key = "analysis") {
+                TrainingAnalysisCard(analysisLoading, analysis, analysisError, onRetryAnalysis)
+            }
         }
     }
 }
@@ -1654,7 +1788,9 @@ private fun DictationClauseCard(
 @Composable
 private fun BlancallScoreCard(
     checkResults: Map<Int, AnswerChecker.CheckDetail>,
-    onViewArticleData: (() -> Unit)? = null
+    onViewArticleData: (() -> Unit)? = null,
+    weakHints: Int = 0,
+    strongHints: Int = 0
 ) {
     if (checkResults.isEmpty()) return
     // 入场动画：淡入 + 从下方滑入，让评分卡出现更生动
@@ -1732,6 +1868,55 @@ private fun BlancallScoreCard(
                 Text("平均相似度 ${(avgSim * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.tertiary)
+            }
+            // 提示统计（弱提示淡显 / 强提示自动填入）
+            if (weakHints > 0 || strongHints > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "记忆提示：弱提示 $weakHints 次 · 强提示 $strongHints 次",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** 提交后的 AI 训练分析卡片（Markdown 渲染；加载失败可重试）。 */
+@Composable
+private fun TrainingAnalysisCard(
+    loading: Boolean,
+    text: String?,
+    error: Boolean,
+    onRetry: () -> Unit
+) {
+    if (!loading && text == null && !error) return
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("本次训练分析", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            when {
+                loading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("AI 正在分析本次训练…", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                error -> {
+                    Text("训练分析生成失败", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(2.dp))
+                    TextButton(onClick = onRetry) { Text("重试", style = MaterialTheme.typography.labelMedium) }
+                }
+                text != null -> MarkdownText(text, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -2213,15 +2398,18 @@ private fun scaledTypography(base: Typography, scale: Float): Typography {
 
 // ========== AI 难度信息采集页（Pro）==========
 
-/** 难度信息采集页：用户选择 难/中等/合适 + 可选的自定义范围/空数需求。 */
+/** 难度信息采集页：难度（难/中等/合适）+ 挖空策略（均衡/薄弱优先/全覆盖）+ 可选自定义需求。 */
 @Composable
 private fun DifficultyInfoPage(
     mode: BlancallMode,
-    onConfirm: (String, String) -> Unit,
+    initialStrategy: BlancallGenerator.Strategy,
+    onConfirm: (String, String, BlancallGenerator.Strategy) -> Unit,
+    onSkipToLocal: () -> Unit,
     onCancel: () -> Unit
 ) {
     var selected by remember { mutableStateOf("合适") }
     var custom by remember { mutableStateOf("") }
+    var strategy by remember { mutableStateOf(initialStrategy) }
 
     data class DiffOption(val label: String, val desc: String)
     val options = remember {
@@ -2229,6 +2417,14 @@ private fun DifficultyInfoPage(
             DiffOption("难", "挖空密度高，空多，挑战更大"),
             DiffOption("中等", "挖空密度适中，均衡练习"),
             DiffOption("合适", "按内容难度自动挑选重点")
+        )
+    }
+    data class StrategyOption(val value: BlancallGenerator.Strategy, val label: String, val desc: String)
+    val strategyOptions = remember {
+        listOf(
+            StrategyOption(BlancallGenerator.Strategy.BALANCED, "均衡", "兼顾重点与覆盖面"),
+            StrategyOption(BlancallGenerator.Strategy.WEAKNESS_FOCUS, "薄弱优先", "优先挖易错内容"),
+            StrategyOption(BlancallGenerator.Strategy.FULL_COVERAGE, "全覆盖", "均匀覆盖全文")
         )
     }
 
@@ -2249,7 +2445,7 @@ private fun DifficultyInfoPage(
                 fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "AI 将按你选定的难度为「${modeLabel(mode)}」生成挖空",
+                text = "AI 将按你选定的难度与策略为「${modeLabel(mode)}」生成挖空",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2284,6 +2480,40 @@ private fun DifficultyInfoPage(
                 }
             }
 
+            Spacer(Modifier.height(20.dp))
+            // ── 挖空策略（与练习页 ⋮ 菜单共用同一状态，所选会同步过去） ──
+            Text("挖空策略", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(10.dp))
+            strategyOptions.forEach { opt ->
+                val isSel = strategy == opt.value
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable { strategy = opt.value },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isSel)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = isSel, onClick = { strategy = opt.value })
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(opt.label, style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text(opt.desc, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(18.dp))
             OutlinedTextField(
                 value = custom,
@@ -2301,6 +2531,14 @@ private fun DifficultyInfoPage(
             )
 
             Spacer(Modifier.height(24.dp))
+            // 跳过 AI：直接用本地算法生成（不联网，立即开始练习）
+            OutlinedButton(
+                onClick = onSkipToLocal,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("跳过 AI，用本地算法生成", style = MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.height(10.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick = onCancel,
@@ -2308,7 +2546,7 @@ private fun DifficultyInfoPage(
                 ) { Text("取消") }
                 Spacer(Modifier.width(12.dp))
                 Button(
-                    onClick = { onConfirm(selected, custom) },
+                    onClick = { onConfirm(selected, custom, strategy) },
                     modifier = Modifier.weight(1.6f)
                 ) { Text("开始生成") }
             }
@@ -2316,9 +2554,194 @@ private fun DifficultyInfoPage(
     }
 }
 
-/** AI 生成挖空加载页：模式切换 / 首次生成时展示。 */
+/**
+ * 本地挖空信息采集页（「使用AI挖空」关闭时）：只采集挖空策略与段落选择，
+ * 确认后由本地算法生成，不涉及 AI 难度与自定义需求。
+ */
 @Composable
-private fun AiGeneratingPage(mode: BlancallMode, difficulty: String) {
+private fun LocalClozeCollectPage(
+    initialStrategy: BlancallGenerator.Strategy,
+    initialSectionMode: SectionMode,
+    initialSelected: Set<Int>,
+    sections: List<SectionSplitter.Section>,
+    rankedSections: List<SectionSplitter.RankedSection>,
+    onConfirm: (BlancallGenerator.Strategy, SectionMode, Set<Int>) -> Unit,
+    onCancel: () -> Unit
+) {
+    var strategy by remember { mutableStateOf(initialStrategy) }
+    var sectionMode by remember { mutableStateOf(initialSectionMode) }
+    var selected by remember { mutableStateOf(initialSelected) }
+
+    data class StrategyOption(val value: BlancallGenerator.Strategy, val label: String, val desc: String)
+    val strategyOptions = remember {
+        listOf(
+            StrategyOption(BlancallGenerator.Strategy.BALANCED, "均衡", "兼顾重点与覆盖面"),
+            StrategyOption(BlancallGenerator.Strategy.WEAKNESS_FOCUS, "薄弱优先", "优先挖易错内容"),
+            StrategyOption(BlancallGenerator.Strategy.FULL_COVERAGE, "全覆盖", "均匀覆盖全文")
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 480.dp)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("选择挖空设置", style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "本地算法生成挖空",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(20.dp))
+
+            // ── 挖空策略（与练习页 ⋮ 菜单共用同一语义） ──
+            Text("挖空策略", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(10.dp))
+            strategyOptions.forEach { opt ->
+                val isSel = strategy == opt.value
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable { strategy = opt.value },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isSel)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = isSel, onClick = { strategy = opt.value })
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(opt.label, style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text(opt.desc, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            // ── 段落选择（与练习页 ⋮ 菜单「段落分层」同一语义） ──
+            Text("段落选择", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(10.dp))
+            SectionModeItem(
+                emoji = "📖", label = "全文连贯",
+                desc = "按原文顺序，覆盖所有段落",
+                selected = sectionMode == SectionMode.FULL,
+                onClick = {
+                    sectionMode = SectionMode.FULL
+                    selected = sections.map { it.index }.toSet()
+                }
+            )
+            SectionModeItem(
+                emoji = "🎯", label = "薄弱集训",
+                desc = "只练错题集中的段落",
+                selected = sectionMode == SectionMode.WEAKNESS,
+                onClick = {
+                    sectionMode = SectionMode.WEAKNESS
+                    val weak = rankedSections.filter { it.errorRate > 0f }.map { it.section.index }.toSet()
+                    selected = if (weak.isEmpty()) sections.map { it.index }.toSet() else weak
+                }
+            )
+            SectionModeItem(
+                emoji = "✂️", label = "自选段落",
+                desc = "手动勾选要复习的段落",
+                selected = sectionMode == SectionMode.SELECTED,
+                onClick = { sectionMode = SectionMode.SELECTED }
+            )
+
+            // 自选模式 → 段落勾选列表
+            if (sectionMode == SectionMode.SELECTED) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "已选 ${selected.size}/${sections.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    TextButton(onClick = {
+                        selected = if (selected.size == sections.size) {
+                            sections.firstOrNull()?.let { setOf(it.index) } ?: emptySet()
+                        } else {
+                            sections.map { it.index }.toSet()
+                        }
+                    }) {
+                        Text(if (selected.size == sections.size) "取消全选" else "全选",
+                            style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                sections.forEach { section ->
+                    val isSel = section.index in selected
+                    val errorRate = rankedSections
+                        .find { it.section.index == section.index }?.errorRate ?: 0f
+                    val heatColor = when {
+                        errorRate >= 0.5f -> Color(0xFFE53935)
+                        errorRate >= 0.3f -> Color(0xFFFB8C00)
+                        errorRate >= 0.1f -> Color(0xFFFDD835)
+                        errorRate > 0f -> Color(0xFF66BB6A)
+                        else -> Color.Unspecified
+                    }
+                    SectionCheckItem(
+                        label = section.heading ?: section.contentOnly.take(30),
+                        index = section.index,
+                        isSelected = isSel,
+                        heatColor = heatColor,
+                        hasError = errorRate > 0f,
+                        onClick = {
+                            selected = if (isSel) {
+                                if (selected.size > 1) selected - section.index else selected
+                            } else {
+                                selected + section.index
+                            }
+                        }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f)
+                ) { Text("取消") }
+                Spacer(Modifier.width(12.dp))
+                Button(
+                    onClick = { onConfirm(strategy, sectionMode, selected) },
+                    modifier = Modifier.weight(1.6f)
+                ) { Text("开始") }
+            }
+        }
+    }
+}
+
+/** AI 生成挖空加载页：显示实时进度（已接收字符数递增=AI 在生成），可随时用本地算法兜底。 */
+@Composable
+private fun AiGeneratingPage(mode: BlancallMode, difficulty: String, progress: Int, onCancel: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(modifier = Modifier.size(48.dp))
@@ -2331,12 +2754,33 @@ private fun AiGeneratingPage(mode: BlancallMode, difficulty: String) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(Modifier.height(16.dp))
+            // 进度条：已接收字符数递增表明 AI 确实在生成；停滞不增则说明卡住
+            LinearProgressIndicator(
+                progress = { (progress.toFloat() / 8000f).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 48.dp)
+                    .height(6.dp),
+                strokeCap = StrokeCap.Round
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = if (progress <= 0) "正在连接 AI…" else "已返回 $progress 字",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "AI 只返回挖空坐标，原文不会被改动",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
+            Spacer(Modifier.height(24.dp))
+            // 兜底：超过 40 秒无响应会自动回退本地；这里允许用户主动结束等待
+            OutlinedButton(onClick = onCancel) {
+                Text("等太久？用本地算法生成", style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }

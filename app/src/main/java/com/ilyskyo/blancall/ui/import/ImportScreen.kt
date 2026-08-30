@@ -46,6 +46,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
+import com.ilyskyo.blancall.algorithm.applyFirstLineIndent
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.ilyskyo.blancall.util.FileTextExtractor
@@ -85,14 +87,22 @@ fun ImportScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     val titleFocusRequester = remember { FocusRequester() }
     val contentFocusRequester = remember { FocusRequester() }
+    // 当前导入来源的段落是否允许自动首行缩进：粘贴/纯文本=true，PDF/Word 等文档=false。
+    // 文件加载时按文件名判定；粘贴模式下恒为 true。
+    var lastFileAutoIndent by remember { mutableStateOf(true) }
 
     /**
      * 统一的保存并退出流程：写入文章 → 通知上一页 → 返回。
+     * 对允许缩进的来源（且全局缩进开关开启）在入库前给段落首行补两格缩进，
+     * 使阅读与背诵显示一致；PDF/Word 等来源保持原文不动。
      * 包裹 try/catch/finally，失败时回写错误信息并复位 isSaving，避免卡在保存中。
      */
     suspend fun saveAndExit(saveTitle: String, saveContent: String) {
+        val autoIndent = if (useFileImport) lastFileAutoIndent else true
+        val contentOut =
+            if (autoIndent && AppPrefs.autoIndentEnabled) applyFirstLineIndent(saveContent) else saveContent
         try {
-            val articleId = articleViewModel.insertArticleBlocking(saveTitle, saveContent)
+            val articleId = articleViewModel.insertArticleBlocking(saveTitle, contentOut, autoIndent)
             showLargeFileWarning = false
             errorMessage = null
             navController.previousBackStackEntry?.savedStateHandle?.apply {
@@ -133,6 +143,8 @@ fun ImportScreen(navController: NavController) {
                     }
                     // 记录是否为 PDF —— 导入 PDF 时提供「预览 PDF」
                     val pickedName = withContext(Dispatchers.IO) { FileTextExtractor.getFileName(context, it) }
+                    // 依据文件名判断来源是否允许自动首行缩进（PDF/Word 等文档保持原文不动）
+                    lastFileAutoIndent = isAutoIndentFile(pickedName)
                     if (pickedName?.lowercase()?.endsWith(".pdf") == true) {
                         lastPdfUri = it
                         hasPdf = true
@@ -193,7 +205,7 @@ fun ImportScreen(navController: NavController) {
         ) {
             FilterChip(
                 selected = !useFileImport,
-                onClick = { useFileImport = false; fileLoaded = false },
+                onClick = { useFileImport = false; fileLoaded = false; lastFileAutoIndent = true },
                 label = { Text("粘贴文本") },
                 shape = RoundedCornerShape(8.dp),
                 colors = FilterChipDefaults.filterChipColors(
@@ -416,7 +428,6 @@ fun ImportScreen(navController: NavController) {
                 titleSuggestionDismissed = true
             },
             shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 标题图标
@@ -572,6 +583,16 @@ fun ImportScreen(navController: NavController) {
             }
         }
     }
+}
+
+/** PDF/Word 等富文档扩展名（导入后保持原文，不做首行缩进） */
+private val NO_AUTO_INDENT_EXT = setOf("pdf", "doc", "docx", "epub", "rtf", "html", "htm")
+
+/** 根据文件名判断导入来源是否允许自动首行缩进（仅 txt/纯文本/未知 允许） */
+private fun isAutoIndentFile(fileName: String?): Boolean {
+    if (fileName == null) return true
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    return ext !in NO_AUTO_INDENT_EXT
 }
 
 /** 把用户选择的 PDF（content URI）复制到缓存目录，供 PdfPreviewScreen 在 app 内预览 */

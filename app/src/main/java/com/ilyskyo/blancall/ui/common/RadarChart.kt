@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
@@ -123,14 +122,10 @@ fun RadarChart(
                     if (i == 0) dataPath.moveTo(x, y) else dataPath.lineTo(x, y)
                 }
                 dataPath.close()
-                // 渐变填充：中心强 → 边缘透明
+                // 多边形填充：纯色填充（已移除 radialGradient）
                 drawPath(
                     dataPath,
-                    brush = Brush.radialGradient(
-                        colors = listOf(strokeColor.copy(alpha = 0.35f), Color.Transparent),
-                        center = Offset(cx, cy),
-                        radius = radius
-                    )
+                    color = strokeColor.copy(alpha = 0.22f)
                 )
                 drawPath(
                     dataPath,

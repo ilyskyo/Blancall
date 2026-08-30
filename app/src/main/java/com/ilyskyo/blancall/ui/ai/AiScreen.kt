@@ -7,17 +7,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,10 +76,11 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .imePadding()
-            .background(MaterialTheme.colorScheme.background),
+            .imePadding(),
         contentAlignment = Alignment.TopCenter
     ) {
+        // 氛围光斑背景：让气泡/输入框透出层次（与首页/统计页统一玻璃语言）
+        AmbientBackground()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -100,7 +103,12 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                // 复制对话（整段带角色前缀）
+                // 复制对话（整段带角色前缀）与历史记录入口
+                TextButton(
+                    onClick = { navController.navigate("ai_history") }
+                ) {
+                    Text("历史", style = MaterialTheme.typography.labelMedium)
+                }
                 TextButton(
                     onClick = copyAll,
                     enabled = messages.isNotEmpty()
@@ -111,7 +119,18 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
             HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
             // ── 对话消息列表 ──
+            val listState = rememberLazyListState()
+            // 新消息/流式回答增长时自动滚动到底（用户手动上翻时不抢滚）
+            LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
+                if (messages.isEmpty()) return@LaunchedEffect
+                val last = messages.lastIndex
+                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                if (lastVisible >= last - 1) {
+                    listState.animateScrollToItem(last)
+                }
+            }
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
@@ -128,7 +147,8 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                             clipboard?.setPrimaryClip(ClipData.newPlainText("AI 消息", msg.content))
                             Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
-                        }
+                        },
+                        onRetry = if (msg.role == "error" && !isSending) ({ vm.retryLast() }) else null
                     )
                 }
             }
@@ -153,10 +173,18 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                     value = input,
                     onValueChange = { if (it.length <= 2000) input = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("输入问题…") },
-                    enabled = !isSending,
+                    placeholder = {
+                        Text(if (isSending) "AI 正在回答…（可先输入下一条）" else "输入问题…")
+                    },
                     shape = RoundedCornerShape(16.dp),
                     maxLines = 3,
+                    // 透明容器：玻璃输入框（氛围底透出）
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    ),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = {
                         if (input.isNotBlank() && !isSending) {

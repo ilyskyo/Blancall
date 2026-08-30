@@ -18,12 +18,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowInsetsControllerCompat
+import com.ilyskyo.blancall.ui.common.SystemBarState
 
 /**
  * 全局大圆角体系（Material 3 自定义 Shapes）：
@@ -103,6 +106,7 @@ private fun buildDarkColorScheme(accent: AccentPreset): ColorScheme {
         surface = SurfaceDark,
         onSurface = OnSurfaceDark,
         surfaceVariant = SurfaceVariantDark,
+        surfaceContainerHigh = SurfaceContainerHighDark,
         onSurfaceVariant = OnSurfaceVariantDark,
         outline = OutlineDark,
         outlineVariant = OutlineVariantDark,
@@ -116,6 +120,15 @@ private fun buildDarkColorScheme(accent: AccentPreset): ColorScheme {
         scrim = ScrimDark,
     )
 }
+
+/**
+ * 单一明暗真理源：综合用户手动主题（SYSTEM / DARK / LIGHT）与系统夜间模式，
+ * 供所有组件取代 isSystemInDarkTheme() 使用，保证手动深色 / 浅色选择完整生效。
+ */
+val LocalIsDark = compositionLocalOf { false }
+
+@Composable
+fun isBlancallDark(): Boolean = LocalIsDark.current
 
 @Composable
 fun BlancallTheme(
@@ -143,25 +156,27 @@ fun BlancallTheme(
         else -> buildLightColorScheme(accent, useBeige)
     }
 
-    // 系统状态栏/导航栏颜色跟随主题（XML 主题是静态色，无法跟随米黄开关）
+    // 系统栏图标深浅色跟随主题（edge-to-edge 下系统栏透明，由页面背景延伸衬托；
+    // Android 15+ 已忽略 deprecated 的 statusBarColor/navigationBarColor 写回，故不再涂色）。
+    // 沉浸式期间（阅读模式等全屏界面）跳过，避免影响隐藏态。
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as? Activity)?.window ?: return@SideEffect
-            val barColor = when {
-                darkTheme -> Color(0xFF000000)
-                useBeige -> BackgroundLight
-                else -> Color(0xFFFFFFFF)
+            if (!SystemBarState.immersive) {
+                val window = (view.context as? Activity)?.window ?: return@SideEffect
+                val insets = WindowInsetsControllerCompat(window, view)
+                insets.isAppearanceLightStatusBars = !darkTheme
+                insets.isAppearanceLightNavigationBars = !darkTheme
             }
-            window.statusBarColor = barColor.toArgb()
-            window.navigationBarColor = barColor.toArgb()
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        shapes = BlancallShapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalIsDark provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            shapes = BlancallShapes,
+            content = content
+        )
+    }
 }

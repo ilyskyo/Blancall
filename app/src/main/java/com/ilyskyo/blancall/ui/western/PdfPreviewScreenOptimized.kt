@@ -68,7 +68,6 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
-import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.reader.TextContentReader
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.Dispatchers
@@ -145,9 +144,11 @@ fun PdfPreviewScreenOptimized(
     val textExtractor = remember { PdfTextExtractor() }
     var textPages by remember { mutableStateOf<List<PdfTextExtractor.TextPage>>(emptyList()) }
     
-    // 提取文本（异步）
+    // 提取文本（异步）：仅在无配套纯文字版时才用 PDFBox 从 PDF 提取。
+    // 高考 60 篇已全部配置 pN.txt，且 gaokao_full.pdf 共 88 页、PDFBox 全文提取
+    // 会耗尽 256MB 堆导致 OOM 闪退——有 txt 时必须直接跳过提取。
     LaunchedEffect(pdfFile) {
-        if (pdfFile != null) {
+        if (pdfFile != null && textLoaded == null) {
             val extracted = withContext(Dispatchers.IO) {
                 textExtractor.extractText(context, pdfFile)
             }
@@ -157,9 +158,6 @@ fun PdfPreviewScreenOptimized(
 
     // 导入状态
     var showMenu by remember { mutableStateOf(false) }
-    var pendingTitle by remember { mutableStateOf("") }
-    var pendingText by remember { mutableStateOf("") }
-    var showPicker by remember { mutableStateOf(false) }
     // 缩放状态：放大时禁用列表滚动，双指缩放 / 单指拖动
     var isZoomed by remember { mutableStateOf(false) }
     // 渲染模式：true = 纯文本排版，false = 原 PDF 图片渲染（记忆上次选择，跨篇目保持）
@@ -243,10 +241,21 @@ fun PdfPreviewScreenOptimized(
                             label = { Text("导入到背诵挖空", fontWeight = FontWeight.Medium) },
                             onClick = {
                                 showMenu = false
-                                // 优先使用配套文字版；没有则用 PDF 提取的文本
-                                pendingTitle = textLoaded?.first ?: displayTitle
-                                pendingText = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
-                                showPicker = true
+                                // 点完即导入：不弹模式选择、不强制进入练习（之后可在背诵列表中自行开始）
+                                val finalTitle = textLoaded?.first ?: displayTitle
+                                val finalText = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
+                                if (finalText.isNotBlank()) {
+                                    scope.launch {
+                                        val articleId = importTextToBlancall(context, finalTitle, finalText)
+                                        Toast.makeText(
+                                            context,
+                                            if (articleId > 0) "已导入背诵列表" else "导入失败，请重试",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "内容为空，无法导入", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         )
                     }
@@ -321,31 +330,4 @@ fun PdfPreviewScreenOptimized(
             }
         }
     }
-
-    // 导入：先选模式，选定后写入文章并进入练习
-    AdaptiveModePicker(
-        visible = showPicker,
-        anchorRect = null,
-        onDismiss = { showPicker = false },
-        onModeSelected = { mode ->
-            showPicker = false
-            // 先捕获值再启动协程：pendingText 随后会被重置，协程延迟执行时读取会拿到空串
-            val finalTitle = pendingTitle
-            val finalText = pendingText
-            if (finalText.isNotBlank()) {
-                scope.launch {
-                    val articleId = importTextToBlancall(context, finalTitle, finalText)
-                    if (articleId > 0) {
-                        Toast.makeText(context, "已导入", Toast.LENGTH_SHORT).show()
-                        navController.navigate("practice/${articleId}?mode=${mode.name}")
-                    } else {
-                        Toast.makeText(context, "导入失败，请重试", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } else {
-                Toast.makeText(context, "内容为空，无法导入", Toast.LENGTH_SHORT).show()
-            }
-            pendingText = ""
-        }
-    )
 }

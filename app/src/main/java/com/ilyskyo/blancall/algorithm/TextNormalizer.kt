@@ -72,3 +72,27 @@ object TextNormalizer {
         return sb.toString()
     }
 }
+
+/** 判断一行是否已有首行缩进（任意空白开头即视为已缩进，避免重复叠加） */
+fun isLineIndented(line: String): Boolean =
+    line.isNotEmpty() && line[0].isWhitespace()
+
+/**
+ * 幂等地为每段首行补全缩进（两个全角空格）。
+ * 以空行划分段落，仅缩进每个段落的起始行；已缩进的段落原样保留，重复调用结果不变。
+ * 用于导入粘贴/纯文本时写入存储数据，使阅读与背诵显示一致。
+ */
+fun applyFirstLineIndent(text: String): String {
+    val paragraphs = text.split("\n\n")
+    return paragraphs.joinToString("\n\n") { para ->
+        val lines = para.split("\n", limit = 2)
+        val first = lines[0]
+        if (first.isEmpty() || isLineIndented(first)) {
+            para
+        } else if (lines.size == 1) {
+            "\u3000\u3000$first"
+        } else {
+            "\u3000\u3000$first\n${lines[1]}"
+        }
+    }
+}

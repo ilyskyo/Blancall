@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ilyskyo
+﻿// Copyright (c) 2026 ilyskyo
 // SPDX-License-Identifier: MIT
 
 package com.ilyskyo.blancall.ui.onboarding
@@ -7,7 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +33,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -258,14 +257,13 @@ private fun OnboardingPageCard(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
     val bgColor = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
-    val highlight = if (isDark) accent.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.18f)
     val shape = RoundedCornerShape(28.dp)
 
     Box(modifier = modifier) {
-        // 磨砂卡片底
+        // 磨砂卡片底（已移除顶部高光 verticalGradient 装饰层）
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -273,13 +271,6 @@ private fun OnboardingPageCard(
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
                 .background(bgColor)
         ) {
-            // 顶部高光
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .background(Brush.verticalGradient(0f to highlight, 1f to Color.Transparent))
-            )
             Column(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 30.dp),
                 verticalArrangement = Arrangement.Center,

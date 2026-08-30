@@ -7,6 +7,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ilyskyo.blancall.data.ai.AiClient
+import com.ilyskyo.blancall.data.ai.AiConfigStore
+import com.ilyskyo.blancall.data.ai.AiStreamer
 import com.ilyskyo.blancall.data.ai.SearchClient
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.PracticeRecord
@@ -15,6 +17,7 @@ import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.ai.loadAiSessionData
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,6 +56,12 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
     private val _statusText = MutableStateFlow<String?>(null)
     val statusText: StateFlow<String?> = _statusText.asStateFlow()
 
+    /** 订阅 AiStreamer 增量的协程（页面退出自动取消，流本身在应用级不中断） */
+    private var streamerJob: Job? = null
+
+    /** 流代次：每次发送新消息 +1，旧订阅者据此忽略新流的状态（防止覆盖上一轮回复） */
+    private var streamGeneration = 0L
+
     private val _title = MutableStateFlow("AI 助手")
     val title: StateFlow<String> = _title.asStateFlow()
 
@@ -62,6 +71,55 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
     // 当前会话持久化信息（开启「保存与 AI 的对话」时使用）
     private var sessionId: Long = 0L
     private var sessionArticleIds: List<Long> = emptyList()
+
+    /** 最近一次失败的 user 文本（供错误气泡"重发"）；成功或新输入时清空 */
+    private var lastFailedUserText: String? = null
+
+    companion object {
+        /** 搜索上下文注入前缀（N3 据此去重，只保留最新一条） */
+        private const val SEARCH_CONTEXT_PREFIX = "以下是针对用户当前问题的最新网络搜索"
+
+        /** system 提示截断上限（字符） */
+        private const val SYSTEM_PROMPT_CHAR_LIMIT = 8000
+
+        /** 发送给 API 的历史总字符预算（含 system） */
+        private const val REQUEST_HISTORY_CHAR_BUDGET = 14000
+    }
+
+    /**
+     * 上下文裁剪：发送给 API 的消息按"最近优先"保留到预算内，最早的轮次成对丢弃（user/assistant 对称），
+     * 避免多轮对话（尤其联网搜索）后 token 超出上下文窗口导致 400 / 费用暴涨。
+     * 不影响落盘的完整镜像 [history]。
+     */
+    private fun trimHistoryForRequest(full: List<AiClient.ChatMessage>): List<AiClient.ChatMessage> {
+        if (full.size <= 1) return full
+
+        // 首条（system）始终保留，超长截断
+        val system = full.first()
+        val systemContent = system.content.take(SYSTEM_PROMPT_CHAR_LIMIT)
+        var budget = REQUEST_HISTORY_CHAR_BUDGET - systemContent.length
+
+        // 其余消息从最近一条倒序收集，预算不足即停（丢弃最早的整轮）
+        val tail = full.drop(1)
+        val kept = mutableListOf<AiClient.ChatMessage>()
+        for (i in tail.indices.reversed()) {
+            val msg = tail[i]
+            if (budget - msg.content.length < 0) break
+            kept.add(msg)
+            budget -= msg.content.length
+        }
+        // 还原正序
+        kept.reverse()
+        // 对称保证：最旧保留的消息应以 user 开头（丢弃孤立的 assistant 开头轮次）
+        while (kept.isNotEmpty() && kept.first().role != "user") {
+            kept.removeAt(0)
+        }
+
+        return buildList {
+            add(AiClient.ChatMessage(system.role, systemContent))
+            addAll(kept)
+        }
+    }
 
     /**
      * 初始化上下文：加载文章并构造 system 提示词（幂等，重复进入时重建）。
@@ -92,7 +150,8 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
             history.clear()
             val systemPrompt = withContext(Dispatchers.Default) { buildSystemPrompt(articles, records) }
             history.add(AiClient.ChatMessage("system", systemPrompt))
-            // 新会话标识（保存历史用）
+
+            // 每次进入都是全新会话（进行中的回答会后台完成并存档，从历史页查看）
             sessionId = System.currentTimeMillis()
             sessionArticleIds = articleIds
             _messages.value = listOf(
@@ -155,15 +214,39 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             _messages.value = savedMessages.map { UiMessage(idCounter.incrementAndGet(), it.role, it.content) }
+
+            // ── 进行中会话实时续订：若 AiStreamer 里该会话仍在生成，订阅增量并打标 ──
+            val streamFlow = AiStreamer.stateOf(this@AiViewModel.sessionId)
+            if (streamFlow != null && !streamFlow.value.complete) {
+                val pendingId = idCounter.incrementAndGet()
+                _messages.value = _messages.value + UiMessage(pendingId, "assistant", streamFlow.value.text, isStreaming = true)
+                _title.value = "${_title.value}（生成中…）"
+                _isSending.value = true
+                val gen = ++streamGeneration
+                streamerJob = viewModelScope.launch {
+                    streamFlow.collect { st ->
+                        if (gen != streamGeneration) return@collect
+                        updateMessage(pendingId) { it.copy(content = st.text, isStreaming = !st.complete) }
+                        if (st.complete) {
+                            finishStream(pendingId, st)
+                        }
+                    }
+                }
+            }
         }
     }
 
     /**
      * 发送消息并流式接收回复。
+     * 流式收集运行在应用级 [AiStreamer] 中：退出对话页后回答仍继续，
+     * 重新进入时会恢复展示未完成的回答。
      */
     fun send(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || _isSending.value) return
+
+        // 每次新发送：清除上次失败记录（重发即新发送）
+        lastFailedUserText = null
 
         val userMsg = UiMessage(idCounter.incrementAndGet(), "user", trimmed)
         val pendingId = idCounter.incrementAndGet()
@@ -174,26 +257,29 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
         saveSession()
 
         viewModelScope.launch {
-            val sb = StringBuilder()
             try {
+                // 统一走 AiConfigStore 的当前生效对话配置（与练习 AI 挖空同一套配置）
+                val profile = AiConfigStore.activeChatProfile
                 // Keystore 解密放 IO 线程，避免主线程阻塞（部分设备硬件安全模块较慢）
-                val apiKey = withContext(Dispatchers.IO) { AppPrefs.aiApiKey }
+                val apiKey = profile?.let { withContext(Dispatchers.IO) { it.decryptApiKey() } }.orEmpty()
                 if (apiKey.isBlank()) {
-                    throw AiClient.AiException("尚未配置 API Key，请到「设置 → 启用 AI 功能」中填写")
+                    throw AiClient.AiException("尚未配置有效的 API Key，请到「设置 → AI 配置」中创建并启用对话配置")
                 }
-                val baseUrl = AppPrefs.aiBaseUrl
+                val baseUrl = profile?.baseUrl.orEmpty()
                 if (baseUrl.isBlank()) {
-                    throw AiClient.AiException("尚未配置 API 地址，请到「设置 → 启用 AI 功能」中填写")
+                    throw AiClient.AiException("尚未配置 API 地址，请到「设置 → AI 配置」中创建并启用对话配置")
                 }
-                val model = AppPrefs.aiModel
+                val model = profile?.model.orEmpty()
                 if (model.isBlank()) {
-                    throw AiClient.AiException("尚未配置模型名，请到「设置 → 启用 AI 功能」中填写")
+                    throw AiClient.AiException("尚未配置模型名，请到「设置 → AI 配置」中创建并启用对话配置")
                 }
 
                 // ── 联网搜索核验（开启且配置了搜索 Key 时）──
                 var searchFailed: String? = null
                 if (AppPrefs.aiSearchEnabled) {
-                    val searchKey = withContext(Dispatchers.IO) { AppPrefs.aiSearchApiKey }
+                    val searchKey = AiConfigStore.activeSearchProfile?.let {
+                        withContext(Dispatchers.IO) { it.decryptApiKey() }
+                    }.orEmpty()
                     if (searchKey.isBlank()) {
                         _statusText.value = "⚠️ 未配置搜索 Key，已跳过联网搜索"
                     } else {
@@ -203,6 +289,8 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                                 SearchClient.search(searchKey, trimmed)
                             }
                             if (results.isNotEmpty()) {
+                                // 只保留最新一条搜索上下文，避免历史里累积过期搜索结果
+                                history.removeAll { it.role == "system" && it.content.startsWith(SEARCH_CONTEXT_PREFIX) }
                                 history.add(AiClient.ChatMessage("system", buildSearchContext(results)))
                             }
                         } catch (e: SearchClient.SearchException) {
@@ -217,35 +305,92 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                     "💬 AI 正在回答…"
                 }
 
-                AiClient.streamChat(baseUrl, apiKey, model, history.toList()).collect { delta ->
-                    sb.append(delta)
-                    updateMessage(pendingId) { it.copy(content = sb.toString(), isStreaming = true) }
-                }
-                history.add(AiClient.ChatMessage("assistant", sb.toString()))
-                updateMessage(pendingId) { it.copy(isStreaming = false) }
-                // AI 回复完成：持久化最终内容
-                saveSession()
+                // 启动本会话的应用级流式回答（页面销毁后依然继续，结束自动落盘历史）
+                val sessionIdNow = sessionId
+                val gen = ++streamGeneration
+                val historySnapshot = history.toList()
+                // 发送给 API 的历史做上下文裁剪（多轮后 token 不超限）；落盘仍用完整镜像
+                val requestMessages = trimHistoryForRequest(historySnapshot)
+                val streamFlow = AiStreamer.start(
+                    sessionIdNow,
+                    getApplication<Application>(),
+                    baseUrl,
+                    apiKey,
+                    model,
+                    requestMessages,
+                    AiStreamer.SessionMeta(
+                        sessionIdNow,
+                        sessionArticleIds,
+                        _title.value,
+                        trimmed,
+                        historySnapshot
+                    )
+                )
+                observeAiStream(pendingId, gen, streamFlow)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // 协程取消（如退出页面）必须向上传播，不能当作业务错误处理
                 throw e
-            } catch (e: AiClient.AiException) {
-                // 移除已加入历史但未获回复的用户消息，避免重发时重复
+            } catch (e: Exception) {
+                // 移除已加入历史但未获回复的用户消息，避免重发时重复；记录文本供"重发"
                 if (history.isNotEmpty() && history.last().role == "user") {
+                    lastFailedUserText = history.last().content
                     history.removeAt(history.lastIndex)
                 }
                 replaceMessage(pendingId, UiMessage(pendingId, "error", e.message ?: "请求失败"))
-                saveSession()
-            } catch (e: Exception) {
-                if (history.isNotEmpty() && history.last().role == "user") {
-                    history.removeAt(history.lastIndex)
-                }
-                replaceMessage(pendingId, UiMessage(pendingId, "error", "请求失败：${e.message}"))
-                saveSession()
-            } finally {
                 _isSending.value = false
                 _statusText.value = null
+                saveSession()
             }
         }
+    }
+
+    /** 订阅本会话的流式回答：把增量推到界面；完成/出错后收尾并停止订阅。 */
+    private fun observeAiStream(
+        pendingId: Long,
+        gen: Long,
+        flow: kotlinx.coroutines.flow.StateFlow<AiStreamer.StreamState>
+    ) {
+        streamerJob?.cancel()
+        streamerJob = viewModelScope.launch {
+            flow.collect { st ->
+                // 新消息已发出（代次变化）：本订阅属于旧轮，忽略其状态，绝不覆盖上轮回复
+                if (gen != streamGeneration) return@collect
+                updateMessage(pendingId) { it.copy(content = st.text, isStreaming = !st.complete) }
+                if (st.complete) {
+                    finishStream(pendingId, st)
+                }
+            }
+        }
+    }
+
+    /** 流结束统一收尾：去标题"（生成中…）"后缀、落盘、结束发送态并停止订阅。 */
+    private fun finishStream(pendingId: Long, st: AiStreamer.StreamState) {
+        _title.value = _title.value.removeSuffix("（生成中…）")
+        if (st.error != null) {
+            // 移除未获回复的用户消息并记录其文本，供错误气泡"重发"
+            if (history.isNotEmpty() && history.last().role == "user") {
+                lastFailedUserText = history.last().content
+                history.removeAt(history.lastIndex)
+            }
+            replaceMessage(pendingId, UiMessage(pendingId, "error", st.error))
+            saveSession()
+        } else {
+            history.add(AiClient.ChatMessage("assistant", st.text))
+            updateMessage(pendingId) { it.copy(content = st.text, isStreaming = false) }
+            saveSession()
+        }
+        _isSending.value = false
+        _statusText.value = null
+        // 本轮完成：停止订阅（防止误覆盖已完成回复）
+        streamerJob?.cancel()
+    }
+
+    /** 重发最近一次失败的 user 消息（错误气泡"重发"按钮调用）。 */
+    fun retryLast() {
+        val text = lastFailedUserText ?: return
+        if (_isSending.value) return
+        // 直接复用 send：内部会清空 lastFailedUserText 并重新入列
+        send(text)
     }
 
     /** 更新指定 id 的消息（流式增量）：定位下标后就地替换，避免每次全量重建 */
@@ -268,7 +413,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
      * 构建搜索结果注入文本：供 AI 优先参考核验（标注来源）。
      */
     private fun buildSearchContext(results: List<SearchClient.SearchResult>): String {
-        val sb = StringBuilder("以下是针对用户当前问题的最新网络搜索结果（请优先参考核验，并标注来源）：\n")
+        val sb = StringBuilder("$SEARCH_CONTEXT_PREFIX 结果（请优先参考核验，并标注来源）：\n")
         results.take(5).forEachIndexed { i, r ->
             sb.append("${i + 1}. ").append(r.title).append("\n")
             sb.append(r.content.take(500)).append("\n")
@@ -287,25 +432,28 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
         if (!AppPrefs.aiHistoryEnabled) return
         if (sessionId <= 0L) return
         val title = _title.value
-        val msgs = _messages.value.filter { it.content.isNotBlank() }
+        // 与 AiStreamer 落盘一致：只持久化 user/assistant（error 仅展示不落盘）
+        val msgs = _messages.value.filter { it.content.isNotBlank() && (it.role == "user" || it.role == "assistant") }
         if (msgs.isEmpty()) return
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                try {
-                    val dir = File(getApplication<Application>().filesDir, "ai_history").apply { mkdirs() }
-                    val json = JSONObject().apply {
-                        put("id", sessionId)
-                        put("title", title)
-                        put("createdAt", sessionId)
-                        put("articleIds", JSONArray().apply { sessionArticleIds.forEach { put(it) } })
-                        put("messages", JSONArray().apply {
-                            msgs.forEach { m ->
-                                put(JSONObject().put("role", m.role).put("content", m.content))
-                            }
-                        })
-                    }
-                    File(dir, "$sessionId.json").writeText(json.toString())
-                } catch (_: Exception) { /* 保存失败不影响对话 */ }
+                AiStreamer.writeSessionFileLock(sessionId) {
+                    try {
+                        val dir = File(getApplication<Application>().filesDir, "ai_history").apply { mkdirs() }
+                        val json = JSONObject().apply {
+                            put("id", sessionId)
+                            put("title", title)
+                            put("createdAt", sessionId)
+                            put("articleIds", JSONArray().apply { sessionArticleIds.forEach { put(it) } })
+                            put("messages", JSONArray().apply {
+                                msgs.forEach { m ->
+                                    put(JSONObject().put("role", m.role).put("content", m.content))
+                                }
+                            })
+                        }
+                        File(dir, "$sessionId.json").writeText(json.toString())
+                    } catch (_: Exception) { /* 保存失败不影响对话 */ }
+                }
             }
         }
     }

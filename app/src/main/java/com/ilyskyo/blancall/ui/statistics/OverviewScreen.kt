@@ -26,6 +26,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.MarkdownText
+import com.ilyskyo.blancall.ui.ai.AiAnalysisItem
+import com.ilyskyo.blancall.ui.ai.loadAiAnalyses
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +56,7 @@ import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
@@ -70,7 +74,9 @@ import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.util.Date
 import java.util.Locale
 
 /**
@@ -128,6 +134,14 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     val dailyGoal by ReminderPrefs.dailyPracticeGoalFlow.collectAsState()
     val templateId by AppPrefs.reviewTemplateFlow.collectAsState()
     val scope = rememberCoroutineScope()
+
+    // 最近一条训练分析（Pro：退出批改页后仍可回看）
+    var latestAnalysis by remember { mutableStateOf<AiAnalysisItem?>(null) }
+    var showLatestAnalysis by remember { mutableStateOf(false) }
+    val analysisDateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
+    LaunchedEffect(Unit) {
+        latestAnalysis = withContext(Dispatchers.IO) { loadAiAnalyses(context).firstOrNull() }
+    }
 
     // 模式选择弹窗（即将遗忘 → 去练习）
     var showModePicker by remember { mutableStateOf(false) }
@@ -245,12 +259,23 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         )
     }
 
+    // 累计阅读时长（秒）：跨所有文章汇总沉浸阅读模式记录
+    val totalReadingSeconds = remember(articles) {
+        articles.sumOf { AppPrefs.getReadingSeconds(it.id) }
+    }
+
     // ── 遗忘曲线预测：FSRS 自适应调度（无 FSRS 状态的文章回退模板）──
     val fsrsStore = remember {
         FsrsStateStore.getInstance(context.filesDir.resolve("fsrs_state.json").absolutePath)
     }
-    val predictions = remember(articles, allRecords, template) {
-        ForgettingPredictor.predict(articles, allRecords, template, fsrsStore.allStates())
+    // FSRS 状态后台加载：首帧先渲染，加载完成后刷新，避免同步读文件卡顿导致预测短暂失真
+    var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
+    LaunchedEffect(Unit) {
+        fsrsStore.awaitLoaded()
+        fsrsStates = fsrsStore.allStates()
+    }
+    val predictions = remember(articles, allRecords, template, fsrsStates) {
+        ForgettingPredictor.predict(articles, allRecords, template, fsrsStates)
     }
     val dueSoon = remember(predictions) { ForgettingPredictor.dueSoon(predictions).take(5) }
 
@@ -420,11 +445,69 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // ── 最近训练分析（有则显示） ──
+            latestAnalysis?.let { item ->
+                item(key = "latestAnalysis") {
+                    GlassCard(
+                        // 清新马卡龙：天空蓝淡彩卡面
+                        containerColor = Macaron.info().fill,
+                        onClick = { showLatestAnalysis = true }
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier
+                                        .size(8.dp)
+                                        .background(Macaron.info().accent, RoundedCornerShape(50))
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("最近训练分析",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    "${item.modeLabel} · ${analysisDateFormat.format(Date(item.createdAt))}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                item.articleTitle,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Macaron.info().accent,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                item.preview.ifBlank { "（点击查看全文）" },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                TextButton(
+                                    onClick = { navController.navigate("ai_history?section=analysis") },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Text("查看全部", style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.tertiary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             // ── 总览卡片（仪表盘 + 连续天数 + 时长） ──
             item {
                 AnimatedOverviewCard {
                     GlassCard(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        // 清新马卡龙：薰衣草淡彩卡面
+                        containerColor = Macaron.lavender().fill
                     ) {
                         Column(Modifier.padding(18.dp)) {
                             Text("数据总览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
@@ -459,7 +542,15 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                         Text("累计练习 ${hours}时${mins}分",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Spacer(Modifier.height(6.dp))
+                                        Spacer(Modifier.height(4.dp))
+                                    }
+                                    if (totalReadingSeconds > 0) {
+                                        val rHours = totalReadingSeconds / 3600
+                                        val rMins = (totalReadingSeconds / 60) % 60
+                                        Text("累计阅读 ${rHours}时${rMins}分",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Spacer(Modifier.height(4.dp))
                                     }
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         StatItem("练习次数", "${stats.totalPractices}")
@@ -647,7 +738,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                             for ((articleId, rate, count) in stats.weakestArticles) {
                                 GlassCard(
                                     modifier = Modifier.weight(1f),
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    containerColor = Macaron.neutral().fill,
                                     onClick = { navController.navigate("statistics/$articleId") }
                                 ) {
                                     Row(
@@ -676,7 +767,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     items(stats.weakestArticles, key = { it.first }) { (articleId, rate, count) ->
                         GlassCard(
                             modifier = Modifier.fillMaxWidth(),
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            containerColor = Macaron.neutral().fill,
                             onClick = { navController.navigate("statistics/$articleId") }
                         ) {
                             Row(
@@ -718,6 +809,30 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             }
         }
     )
+
+    // 最近训练分析详情
+    latestAnalysis?.let { item ->
+        if (showLatestAnalysis) {
+            BlancallAlertDialog(
+                onDismissRequest = { showLatestAnalysis = false },
+                shape = RoundedCornerShape(20.dp),
+                title = { Text("训练分析 · ${item.articleTitle}") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "${item.modeLabel} · 弱提示 ${item.weakHints} / 强提示 ${item.strongHints}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        MarkdownText(item.analysis)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showLatestAnalysis = false }) { Text("关闭") }
+                }
+            )
+        }
+    }
 }
 
 // ── 卡片入场动画包装 ──
@@ -898,7 +1013,8 @@ private fun ForgettingPredictionCard(
 
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+        // 清新马卡龙：蜜桃淡彩卡面
+        containerColor = Macaron.warn().fill
     ) {
         Column(Modifier.padding(16.dp)) {
             Text("⏰ 即将遗忘", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,

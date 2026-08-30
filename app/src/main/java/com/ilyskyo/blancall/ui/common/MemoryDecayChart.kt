@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -64,11 +63,8 @@ fun MemoryDecayChart(
         retentionRate >= threshold -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.error
     }
-    // 曲线下方渐变填充：顶部主色 25% → 底部透明
-    val fillBrush = Brush.verticalGradient(
-        0f to curveColor.copy(alpha = 0.25f),
-        1f to Color.Transparent
-    )
+    // 曲线下方纯色填充（已移除 verticalGradient）
+    val fillColor = curveColor.copy(alpha = 0.15f)
     val thresholdColor = MaterialTheme.colorScheme.outlineVariant
     val axisColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -138,7 +134,7 @@ fun MemoryDecayChart(
                 fillPath.lineTo(lastX, topPad + h)
                 fillPath.close()
 
-                drawPath(fillPath, brush = fillBrush)
+                drawPath(fillPath, color = fillColor)
                 drawPath(
                     linePath,
                     color = curveColor,

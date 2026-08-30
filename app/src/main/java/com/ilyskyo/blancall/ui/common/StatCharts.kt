@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -59,15 +58,6 @@ fun GaugeProgress(
         progress >= 0.6f -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.error
     }
-    // 进度弧渐变（Composable 层创建，Canvas 内仅引用）
-    val progressBrush = Brush.sweepGradient(
-        colorStops = arrayOf(
-            0f to MaterialTheme.colorScheme.primary,
-            0.55f to MaterialTheme.colorScheme.tertiary,
-            1f to MaterialTheme.colorScheme.primary
-        )
-    )
-
     Box(
         modifier = modifier
             .size(120.dp)
@@ -101,10 +91,10 @@ fun GaugeProgress(
                 size = arcSize,
                 style = Stroke(width = innerStroke, cap = StrokeCap.Round)
             )
-            // 进度（渐变弧：主色 → 辅色 → 主色，沿圆周过渡）
+            // 进度（已移除 sweepGradient，纯色绘制）
             if (animated > 0f) {
                 drawArc(
-                    brush = progressBrush,
+                    color = progressColor,
                     startAngle = 135f,
                     sweepAngle = 270f * animated,
                     useCenter = false,
@@ -165,16 +155,9 @@ fun DailyTrendChart(
                         .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                         .background(
                             if (isToday) {
-                                // 今天柱：辅色渐变 + 高亮描边
-                                Brush.verticalGradient(
-                                    0f to todayColor,
-                                    1f to todayColor.copy(alpha = 0.4f)
-                                )
+                                todayColor.copy(alpha = 0.7f)
                             } else {
-                                Brush.verticalGradient(
-                                    0f to barColor,
-                                    1f to barColor.copy(alpha = 0.35f)
-                                )
+                                barColor.copy(alpha = 0.7f)
                             }
                         )
                         .then(

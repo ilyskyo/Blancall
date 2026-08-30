@@ -5,9 +5,12 @@ package com.ilyskyo.blancall.data.repository
 
 import android.util.Log
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 
 /**
  * FSRS 记忆状态持久化存储（fsrs_state.json）。
@@ -18,6 +21,8 @@ import java.util.concurrent.ConcurrentHashMap
 class FsrsStateStore private constructor(private val file: File) {
 
     private val states = ConcurrentHashMap<Long, FsrsEngine.CardState>()
+    // 加载完成门闩：后台加载完成后 countDown；save/remove 前需等加载完成，避免 persist 覆盖丢旧状态
+    private val loadLatch = CountDownLatch(1)
 
     companion object {
         @Volatile
@@ -26,8 +31,24 @@ class FsrsStateStore private constructor(private val file: File) {
         @JvmStatic
         fun getInstance(path: String): FsrsStateStore =
             instance ?: synchronized(this) {
-                instance ?: FsrsStateStore(File(path)).also { it.load() }
+                instance ?: FsrsStateStore(File(path)).also { it.startLoad() }
             }
+    }
+
+    /** 后台线程加载，避免首次访问（常在 UI 线程）同步读文件+解析 JSON 造成卡顿 */
+    private fun startLoad() {
+        Thread {
+            try {
+                load()
+            } finally {
+                loadLatch.countDown()
+            }
+        }.start()
+    }
+
+    /** 挂起直至初始加载完成（列表/统计页首帧后刷新状态用） */
+    suspend fun awaitLoaded() {
+        withContext(Dispatchers.IO) { loadLatch.await() }
     }
 
     private fun load() {
@@ -81,14 +102,16 @@ class FsrsStateStore private constructor(private val file: File) {
     /** 获取某文章的记忆状态；未练习过返回 null */
     fun get(articleId: Long): FsrsEngine.CardState? = states[articleId]
 
-    /** 保存（更新）某文章的记忆状态 */
+    /** 保存（更新）某文章的记忆状态；先等初始加载完成，避免写入时覆盖未加载的旧状态 */
     fun save(articleId: Long, state: FsrsEngine.CardState) {
+        loadLatch.await()
         states[articleId] = state
         persist()
     }
 
     /** 删除某文章的记忆状态（文章删除时连带清理，避免孤儿状态） */
     fun remove(articleId: Long) {
+        loadLatch.await()
         if (states.remove(articleId) != null) persist()
     }
 

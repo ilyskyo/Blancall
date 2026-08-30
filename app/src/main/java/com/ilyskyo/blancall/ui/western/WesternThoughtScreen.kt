@@ -20,7 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.IconButton
@@ -110,7 +110,8 @@ fun WesternThoughtScreen(navController: NavController) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
+                // 顶部 25dp 与「我的文章/全局统计」标题对齐（那两页标题行高 40dp 内含 5dp 垂直居中）
+                .padding(start = 20.dp, top = 25.dp, end = 20.dp, bottom = 15.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -147,7 +148,7 @@ private fun LibraryCard(
     lib: BuiltInLibrary,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
     val accent = Color(lib.accentColor)
 
     // 毛玻璃底（与顶栏 / 菜单 0.72 一致）
@@ -489,7 +490,6 @@ fun LibraryContentPage(
                                 }
                             }
                         )
-                        GlassMenuDivider()
                         // （练习当前页的功能已并入顶栏「练习 · 第X节」按钮，菜单不再重复放，避免同一功能多入口）
                     } else {
                         // index / concept-map 页提示：按库类型给对应的引导文案

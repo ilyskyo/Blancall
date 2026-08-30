@@ -15,7 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,7 +29,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,6 +42,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import kotlin.math.max
 
@@ -118,7 +118,7 @@ fun AdaptiveModePicker(
     val popupWidthPx = with(density) { PopupWidthDp.toPx() }
     val arrowGapPx = with(density) { PopupArrowGapDp.toPx() }
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = isBlancallDark()
 
     val effectiveAnchor = anchorRect ?: Rect(Offset.Zero, Offset(screenHeightPx / 2, screenHeightPx / 2))
     val spaceAbove = effectiveAnchor.top
@@ -206,20 +206,12 @@ fun AdaptiveModePicker(
 
     val cp = containerProgress.value
 
-    // 底部淡淡阴影：仅底边下方的线性渐变（不模糊、不环绕），
-    // 与卡片共用同一 graphicsLayer，随形变动画同步缩放与淡入
+    // 底部淡淡阴影：卡片底边下方的固定半透明单色阴影条
+    // （已移除 verticalGradient，统一使用纯色填充）
     val bottomShadowColor = if (isDark) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
     } else {
-        Color.Black.copy(alpha = 0.32f)
-    }
-    val bottomShadowBrush = remember(bottomShadowColor) {
-        Brush.verticalGradient(
-            colorStops = arrayOf(
-                0f to bottomShadowColor,
-                1f to bottomShadowColor.copy(alpha = 0f)
-            )
-        )
+        Color.Black.copy(alpha = 0.20f)
     }
 
     // 页面内覆盖层渲染：不创建独立窗口。
@@ -268,9 +260,9 @@ fun AdaptiveModePicker(
                             }
                         }
                         .drawBehind {
-                            // 仅底部阴影：从卡片底边向下 18dp 线性渐隐
+                            // 仅底部阴影：固定半透明单色阴影条
                             drawRect(
-                                brush = bottomShadowBrush,
+                                color = bottomShadowColor,
                                 topLeft = Offset(0f, size.height),
                                 size = Size(size.width, 18.dp.toPx())
                             )
@@ -297,9 +289,8 @@ private fun AdaptiveBottomSheetPicker(
     onDismiss: () -> Unit,
     onModeSelected: (BlancallMode) -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    GlassModalBottomSheet(
+        onDismissRequest = onDismiss
     ) {
         ModeListContent(
             expandDirection = ExpandDirection.BOTTOM_SHEET,

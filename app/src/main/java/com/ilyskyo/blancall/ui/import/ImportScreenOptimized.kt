@@ -442,7 +442,6 @@ fun ImportScreenOptimized(navController: NavController) {
                 titleSuggestionDismissed = true
             },
             shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 标题图标

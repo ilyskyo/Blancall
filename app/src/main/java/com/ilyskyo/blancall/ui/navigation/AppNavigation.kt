@@ -402,15 +402,24 @@ fun AppNavigation() {
             }
         }
 
-        // AI 历史对话列表
+        // AI 历史对话列表（?section=analysis 时只显示训练分析）
         composable(
-            "ai_history",
+            "ai_history?section={section}",
+            arguments = listOf(
+                navArgument("section") {
+                    type = NavType.StringType
+                    defaultValue = "all"
+                }
+            ),
             enterTransition = enterSlide,
             exitTransition = exitSlide,
             popExitTransition = popExitSlide,
             popEnterTransition = popEnterSlide
-        ) {
-            AiHistoryScreen(navController)
+        ) { entry ->
+            AiHistoryScreen(
+                navController,
+                initialSection = entry.arguments?.getString("section") ?: "all"
+            )
         }
 
         // AI 历史对话详情（继续对话）

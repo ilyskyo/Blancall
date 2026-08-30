@@ -25,11 +25,11 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
     val articles: StateFlow<List<Article>> = repository.allArticles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun insertArticle(title: String, content: String) {
+    fun insertArticle(title: String, content: String, autoIndent: Boolean = true) {
         viewModelScope.launch {
             try {
                 repository.insert(
-                    Article(title = title, content = content)
+                    Article(title = title, content = content, autoIndent = autoIndent)
                 )
             } catch (e: Exception) {
                 Log.e("ArticleViewModel", "insertArticle failed", e)
@@ -37,8 +37,8 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    suspend fun insertArticleBlocking(title: String, content: String): Long {
-        return repository.insert(Article(title = title, content = content))
+    suspend fun insertArticleBlocking(title: String, content: String, autoIndent: Boolean = true): Long {
+        return repository.insert(Article(title = title, content = content, autoIndent = autoIndent))
     }
 
     fun deleteArticle(article: Article) {
