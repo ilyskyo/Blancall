@@ -35,22 +35,25 @@ data class OcclusionSpan(val start: Int, val end: Int)
 data class OcclusionParams(
     val enabled: Boolean,
     /**
-     * 遮挡强度（三种均为本地算法，仅控制"遮多遮少"）：
-     * - "short"=短遮挡：每从句仅遮最难的单字（高阈值），遮得最少
-     * - "long" =长遮挡：每从句最多遮 3 个难字（低阈值），遮得最多
-     * - "mixed"=混合长短遮挡：按从句序号交替长/短，长短不一的观感
+     * 遮挡粒度（三种均为本地算法，控制"遮成什么大小"而非"遮多遮少"）：
+     * - "short"=短遮挡：字词级，每从句只遮最难的一两个汉字（独立小遮块）
+     * - "long" =长遮挡：整句级，把每个从句/整句作为一整块遮住（句子与其中很多字都被盖住）
+     * - "mixed"=混合遮挡：逐句用稳定的伪随机在「整句长遮」与「字词短遮」之间二选一（一会长一会短）
      */
     val mode: String = "long",
     val onToggleControls: () -> Unit = {}
 )
 
 /**
- * 本地遮挡算法（双版本可用，无联网）：按逗号/句号切从句，在每个从句里挑
- * 最高难度的 1-2 个汉字作为遮挡空。返回在 [text] 上的区间。
+ * 本地遮挡算法（双版本可用，无联网）：
+ * - 短遮挡：按逗号/句号切从句，在每个从句里挑最难的一两个汉字作为小遮块。
+ * - 长遮挡：把每个从句整段作为一整块遮住（盖住句子及其中很多字）。
+ * - 混合遮挡：逐句用稳定的伪随机在「整句长遮」与「字词短遮」之间二选一。
+ * 返回在 [text] 上的半开区间 [start, end)。
  */
 object ReaderOcclusion {
 
-    private val CLAUSE_PUNCT = setOf('，', ',', '；', ';', '、', '。', '.', '！', '！', '?', '？', '\n', ' ')
+    private val CLAUSE_PUNCT = setOf('，', ',', '；', ';', '、', '。', '.', '！', '！', '?', '？', '\n')
 
     /** 段落（trim 后的文本与其在原文中的起止） */
     data class Para(val start: Int, val end: Int, val text: String)
@@ -87,50 +90,74 @@ object ReaderOcclusion {
         return res
     }
 
+    /** 短遮挡（字词级）每从句选取的最难字数量上限与难度阈值 */
+    private const val SHORT_MAX_CHARS = 3
+    private const val SHORT_THRESHOLD = 0.35f
+
+    /** [s, e) 内是否包含至少一个汉字 */
+    private fun hasChineseInRange(text: String, s: Int, e: Int): Boolean {
+        for (i in s until e) if (isChinese(text[i])) return true
+        return false
+    }
+
     /**
-     * 在一个从句内挑遮挡字，返回【多个独立遮块】（每个最难字 1 个遮块）。
-     * [density] 决定遮多遮少：
-     * - "short"：高阈值，仅遮最难的单字（[maxChars]=1）→ 遮得最少
-     * - "long" ：低阈值，最多遮 [maxChars]=3 个难字 → 遮得最多
-     * - 其它（兜底）：中等阈值，单字
+     * 短遮挡（字词级）：在 [s, e) 内挑最难的一至 [SHORT_MAX_CHARS] 个汉字，
+     * 每个字各成一个独立小遮块（字词遮挡）。
      */
-    private fun pickInRange(text: String, s: Int, e: Int, density: String): List<OcclusionSpan> {
+    private fun pickHardChars(text: String, s: Int, e: Int): List<OcclusionSpan> {
         if (e - s < 2) return emptyList()
-        val (threshold, maxChars) = when (density) {
-            "long" -> 0.25f to 3   // 长遮挡：低阈值 + 多字 → 遮得多
-            "short" -> 0.55f to 1  // 短遮挡：高阈值 + 单字 → 遮得少
-            else -> 0.32f to 1     // 兜底（理论上不会命中）
-        }
         val hard = mutableListOf<Int>()
         for (i in s until e) {
             if (isChinese(text[i])) {
                 val d = DifficultyCalculator.calculateCharDifficulty(text[i])
-                if (d >= threshold) hard.add(i)
+                if (d >= SHORT_THRESHOLD) hard.add(i)
             }
         }
         if (hard.isEmpty()) return emptyList()
-        // 按难度降序，取最难的若干字各自成块
         hard.sortByDescending { DifficultyCalculator.calculateCharDifficulty(text[it]) }
-        return hard.take(maxChars).map { OcclusionSpan(it, it + 1) }
+        return hard.take(SHORT_MAX_CHARS).map { OcclusionSpan(it, it + 1) }
     }
 
-    /** 混合模式：按从句序号交替长/短，形成长短不一的观感 */
-    private fun clauseDensity(mode: String, clauseIdx: Int): String =
-        if (mode == "mixed") (if (clauseIdx % 2 == 0) "long" else "short") else mode
+    /**
+     * 混合遮挡的稳定伪随机：基于从句起点与全文长度得出，重组不变，
+     * 但长短交错自然（不严格按序号交替），约 50/50。
+     */
+    private fun mixedUseLong(clauseStart: Int, textLen: Int): Boolean {
+        var h = (clauseStart.toLong() * 374761393L + textLen.toLong() * 668265263L) and 0x7FFFFFFFFFFFFFFFL
+        h = (h * 2654435761L) and 0x7FFFFFFFFFFFFFFFL
+        return (h and 1L) == 0L
+    }
+
+    /** 将段落切成若干「从句 [s, e)」（e 含句末标点），三种模式复用 */
+    private fun clausesOf(para: String): List<Pair<Int, Int>> {
+        val res = mutableListOf<Pair<Int, Int>>()
+        var start = 0
+        for (i in para.indices) {
+            if (para[i] in CLAUSE_PUNCT) {
+                res.add(start to i + 1) // 含句末标点：长遮时盖成干净整条，不露标点
+                start = i + 1
+            }
+        }
+        if (start < para.length) res.add(start to para.length)
+        return res
+    }
 
     /** 段落级本地遮挡（返回段内区间） */
     fun localRangesInPara(para: String, mode: String): List<OcclusionSpan> {
         val out = mutableListOf<OcclusionSpan>()
-        var start = 0
-        var clauseIdx = 0
-        for (i in para.indices) {
-            if (para[i] in CLAUSE_PUNCT) {
-                out += pickInRange(para, start, i + 1, clauseDensity(mode, clauseIdx))
-                start = i + 1
-                clauseIdx++
+        for ((s, e) in clausesOf(para)) {
+            if (e - s <= 0) continue
+            when (mode) {
+                "long" -> if (hasChineseInRange(para, s, e)) out += OcclusionSpan(s, e)
+                "short" -> out += pickHardChars(para, s, e)
+                "mixed" -> if (mixedUseLong(s, para.length)) {
+                    if (hasChineseInRange(para, s, e)) out += OcclusionSpan(s, e)
+                } else {
+                    out += pickHardChars(para, s, e)
+                }
+                else -> out += pickHardChars(para, s, e)
             }
         }
-        if (start < para.length) out += pickInRange(para, start, para.length, clauseDensity(mode, clauseIdx))
         return out.distinctBy { it.start }
     }
 

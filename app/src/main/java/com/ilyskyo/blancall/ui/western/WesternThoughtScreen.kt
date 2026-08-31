@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,6 +101,11 @@ import java.io.File
  */
 @Composable
 fun WesternThoughtScreen(navController: NavController) {
+    // 根 tab 页面（素材库）：返回键 = 退出应用（与「我的文章」「数据」tab 平级语义一致，绝不 pop 回上一 tab/首页）
+    val libBackContext = LocalContext.current
+    BackHandler {
+        (libBackContext as? android.app.Activity)?.finish()
+    }
     // 仅展示已启用的内置素材库（设置 → 拓展功能 中勾选）
     val enabledLibraries by AppPrefs.builtInLibraryKeysFlow.collectAsState()
     Column(

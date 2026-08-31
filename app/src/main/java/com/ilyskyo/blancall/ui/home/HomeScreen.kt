@@ -633,23 +633,25 @@ fun HomeScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    article.title,
-                                    // 与「继续练习」一致：文章名用楷体（Serif）
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                if (article.author.isNotBlank()) {
+                                Column(Modifier.weight(1f)) {
                                     Text(
-                                        article.author.trim(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        article.title,
+                                        // 与「继续练习」一致：文章名用楷体（Serif）
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
-                                        modifier = Modifier.padding(start = 8.dp)
+                                        overflow = TextOverflow.Ellipsis
                                     )
+                                    // 作者放标题下方的副行，避免与右侧「复习」动作挤成一行（曾误读成"苏洵复习"）
+                                    if (article.author.isNotBlank()) {
+                                        Text(
+                                            article.author.trim(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                                 Text(
                                     "复习",
@@ -1040,11 +1042,12 @@ private fun HomeSearchBar(
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(4.dp))
+                // 提示字：紧贴搜索符号（点击整框进入搜索页）
                 Text(
-                    text = "搜索标题 / 正文 / 添加日期",
+                    text = "搜索",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

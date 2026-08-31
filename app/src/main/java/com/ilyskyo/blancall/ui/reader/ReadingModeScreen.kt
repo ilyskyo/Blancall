@@ -853,7 +853,7 @@ private fun OccludedReadingContent(
     ) {
         paragraphs.forEachIndexed { index, para ->
             if (index > 0) Spacer(Modifier.height((fontPx * 0.9f).dp))
-            // 每段的遮挡空：按当前强度（short/long/mixed，均为本地算法）在段内挑选难字
+            // 每段的遮挡空：按当前粒度（short=字词 / long=整句 / mixed=逐句随机长或短，均为本地算法）在段内生成
             val ranges = remember(para, occlusion) {
                 ReaderOcclusion.localRangesInPara(para, mode)
             }
@@ -1212,7 +1212,7 @@ private fun ReadingSettingsSheet(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .clickable { fontsExpanded = !fontsExpanded }
-                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                    .padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -1465,14 +1465,14 @@ private fun ReadingSettingsSheet(
                     accent = accent
                 )
             }
-            // 开启后浮现遮挡强度子项（短/长/混合，均为本地算法，仅控制遮多遮少）
+            // 开启后浮现遮挡粒度子项（短=字词 / 长=整句 / 混合=逐句随机长或短，均为本地算法）
             AnimatedVisibility(visible = occlusionEnabled) {
                 Column(Modifier.padding(top = 10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         val options = listOf(
                             "short" to "短遮挡",
                             "long" to "长遮挡",
-                            "mixed" to "混合长短遮挡"
+                            "mixed" to "混合（长/短随机）"
                         )
                         options.forEach { (m, label) ->
                             val selected = occlusionMode == m

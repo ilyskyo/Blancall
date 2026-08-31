@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.list
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 
 import android.util.Log
@@ -66,6 +67,11 @@ import java.util.Locale
 
 @Composable
 fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
+    // 根 tab 页面：返回键 = 退出应用（与「数据」「素材库」tab 平级语义一致，绝不 pop 回上一 tab/首页）
+    val rootBackContext = LocalContext.current
+    BackHandler {
+        (rootBackContext as? android.app.Activity)?.finish()
+    }
     val articleViewModel: ArticleViewModel = viewModel()
     // AI 功能开关（关闭时隐藏 AI 入口）
     val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()

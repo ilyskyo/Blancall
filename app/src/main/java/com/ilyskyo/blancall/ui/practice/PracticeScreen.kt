@@ -82,6 +82,7 @@ import com.ilyskyo.blancall.algorithm.ShareImageGenerator
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import com.ilyskyo.blancall.ui.viewmodel.BlankCountWarning
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
@@ -535,6 +536,31 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer,
                         maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // AI 已开启但未配置有效对话密钥：明确提示，避免"开启 AI 挖空却仍是本地"的困惑
+        if (AppPrefs.aiEnabled && !vm.isAiAvailable()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("ℹ️", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "AI 挖空已开启，但尚未在「设置 → AI 配置」中添加并启用有效的对话配置，当前使用本地算法。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
                 }

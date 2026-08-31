@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 ilyskyo
+// Copyright (c) 2026 ilyskyo
 // SPDX-License-Identifier: MIT
 
 package com.ilyskyo.blancall.ui.onboarding
@@ -130,13 +130,12 @@ fun OnboardingScreen(
         AppPrefs.onboardingSeen = true
         if (onFinish != null) {
             onFinish()
-        } else if (navController.previousBackStackEntry != null) {
-            navController.popBackStack()
         } else {
-            // 首次启动时引导页为 startDestination（无返回栈），完成即进入首页
-            navController.navigate("home") {
-                popUpTo("home") { inclusive = true }
-            }
+            // 引导页恒为压入 home 之上的子页（AppNavigation 恒以 home 为 startDestination），
+            // 完成即弹栈归位到 home；栈底 home 不被触碰，锚点永不漂移。
+            // 注意：这里绝不使用 popUpTo("home"){inclusive=true}——若 home 已不在栈中
+            // 会 no-op 把引导页变成僵尸栈底，导致点「首页」tab 失效。
+            navController.popBackStack()
         }
     }
 

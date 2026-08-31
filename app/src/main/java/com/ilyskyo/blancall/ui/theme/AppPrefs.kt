@@ -448,7 +448,7 @@ object AppPrefs {
             }
         }
 
-    /** 阅读遮挡强度：long=长遮挡（遮多）/ short=短遮挡（遮少）/ mixed=混合长短遮挡 */
+    /** 阅读遮挡粒度：long=长遮挡（整句一整块遮住）/ short=短遮挡（字词级遮难字）/ mixed=混合（逐句随机长/短） */
     var readingOcclusionMode: String
         get() = if (::prefs.isInitialized) _readingOcclusionModeFlow.value else "long"
         set(value) {
@@ -530,7 +530,7 @@ object AppPrefs {
     val readingOcclusionEnabledFlow: StateFlow<Boolean> = _readingOcclusionEnabledFlow.asStateFlow()
 
     private val _readingOcclusionModeFlow = MutableStateFlow("long")
-    /** 阅读遮挡强度：long=长遮挡（遮多）/ short=短遮挡（遮少）/ mixed=混合长短遮挡 */
+    /** 阅读遮挡粒度：long=长遮挡（整句一整块遮住）/ short=短遮挡（字词级遮难字）/ mixed=混合（逐句随机长/短） */
     val readingOcclusionModeFlow: StateFlow<String> = _readingOcclusionModeFlow.asStateFlow()
 
     private val _readingOcclusionColorFlow = MutableStateFlow(0)

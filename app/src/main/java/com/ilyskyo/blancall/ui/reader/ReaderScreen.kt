@@ -12,15 +12,23 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import android.os.Build
+import android.widget.FrameLayout
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.LiquidGlassPageBar
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -28,6 +36,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextIndent
@@ -50,7 +60,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReaderScreen(navController: NavController, articleId: Long) {
+fun ReaderScreen(navController: NavController, articleId: Long, pageHost: FrameLayout? = null) {
     val articleViewModel: ArticleViewModel = viewModel()
     val context = LocalContext.current
     // AI 功能开关（关闭时隐藏 AI 入口）
@@ -185,6 +195,38 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
+                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是删除/编辑
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = art.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(verticalArrangement = Arrangement.Center) {
+                            if (art.author.isNotBlank()) {
+                                Text(
+                                    text = art.author.trim(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "${art.content.length} 字符",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         GlassButton(
                             onClick = { showDeleteDialog = true },
@@ -226,24 +268,6 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             alpha = if (isEditing) editBackProgress else 1f
                         }
                 ) {
-                    Text(
-                        text = art.title,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = buildString {
-                            if (art.author.isNotBlank()) append(art.author.trim()).append("  ·  ")
-                            append(art.content.length.toString()).append(" 字符")
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
                     Spacer(modifier = Modifier.height(16.dp))
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -259,7 +283,9 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                         art.content.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
                     }
                     Surface(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
                         color = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(12.dp),
                         tonalElevation = 1.dp
@@ -362,41 +388,62 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (!isEditing && !readingMode) {
+            // 液态玻璃操作栏：学习统计 / 阅读模式 / AI / 开始练习
+            // 玻璃 = LiquidGlassPageBar（直接 bind pageHost 折射真实页面内容，无彩色光斑底色）
+            // 参数对齐导航栏基准（blur 6 / dispersion 0.5 / 折射 20·70 / 染色 0.25·0.12）
+            // 注意：LiquidGlassView 不能条件移除（detach 必崩），故整条**常驻组合**，
+            // 编辑/阅读模式下仅 alpha 归零并禁用点击。
+            val barVisible = !isEditing && !readingMode
+            val barAlpha by animateFloatAsState(
+                targetValue = if (barVisible) 1f else 0f,
+                animationSpec = tween(200),
+                label = "actionBarAlpha"
+            )
+            val barCornerPx = with(LocalDensity.current) { 24.dp.toPx() }
+            val barShape = RoundedCornerShape(barCornerPx)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = barAlpha }
+                    .shadow(
+                        elevation = 10.dp,
+                        shape = barShape,
+                        ambientColor = Color.Black.copy(alpha = 0.15f),
+                        spotColor = Color.Black.copy(alpha = 0.20f),
+                        clip = false
+                    )
+            ) {
+                LiquidGlassPageBar(
+                    host = pageHost,
+                    cornerDp = 24,
+                    // 纯透明无色玻璃：关闭色散（消除彩色边缘）、染色压到极低（接近导航栏般通透）
+                    dispersion = 0f,
+                    tintAlphaLight = 0.04f,
+                    tintAlphaDark = 0.06f,
+                    modifier = Modifier.matchParentSize()
+                )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(
-                        onClick = { navController.navigate("statistics/${art.id}") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
-                    ) {
-                        AdaptiveButtonLabel("学习统计")
+                    GlassActionItem("学习统计", Modifier.weight(1f), enabled = barVisible) {
+                        navController.navigate("statistics/${art.id}")
                     }
-                    OutlinedButton(
-                        onClick = { readingMode = true },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
-                    ) {
-                        AdaptiveButtonLabel("阅读模式")
+                    GlassActionItem("阅读模式", Modifier.weight(1f), enabled = barVisible) {
+                        readingMode = true
                     }
                     // AI 对话入口（设置中启用 AI 功能后才显示）
                     if (aiEnabled) {
-                        OutlinedButton(
-                            onClick = { navController.navigate("ai?ids=${art.id}") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
-                        ) {
-                            AdaptiveButtonLabel("AI")
+                        GlassActionItem("AI", Modifier.weight(1f), enabled = barVisible) {
+                            navController.navigate("ai?ids=${art.id}")
                         }
                     }
-                    Button(
-                        onClick = { showModePicker = true },
-                        modifier = Modifier
+                    GlassActionItem(
+                        "开始练习",
+                        Modifier
                             .weight(1f)
                             .onGloballyPositioned { coords ->
                                 val pos = coords.positionInWindow()
@@ -406,10 +453,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                     pos.y + coords.size.height
                                 )
                             },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        enabled = barVisible,
+                        emphasized = true
                     ) {
-                        AdaptiveButtonLabel("开始练习")
+                        showModePicker = true
                     }
                 }
             }
@@ -542,6 +589,36 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
             }
         }
     }
+    }
+}
+
+/**
+ * 玻璃操作栏内的单个操作项：透明底、无涟漪克制反馈，文字居中自适应缩放。
+ * @param emphasized true 时文字用主色（「开始练习」主 CTA）。
+ */
+@Composable
+private fun GlassActionItem(
+    text: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    emphasized: Boolean = false,
+    onClick: () -> Unit
+) {
+    val contentColor = if (emphasized) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            AdaptiveButtonLabel(text)
+        }
     }
 }
 

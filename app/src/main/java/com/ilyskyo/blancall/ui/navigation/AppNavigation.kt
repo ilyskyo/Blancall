@@ -38,7 +38,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -78,12 +77,15 @@ fun AppNavigation() {
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
 
-    // 首次使用引导页：首次启动展示一次，设置里也可重看
+    // 首次使用引导页：首次启动展示一次，设置里也可重看。
+    // 引导页是"压入 home 之上的子页面"，完成后 popBackStack() 归位——
+    // 不能把它当作 startDestination，否则 findStartDestination() 锚点漂移，
+    // 会导致点「首页」tab 时 home 不在返回栈里、被当子页压到当前页之上。
     val onboardingSeen by AppPrefs.onboardingSeenFlow.collectAsState()
-    var onboardingRedirected by remember { mutableStateOf(!onboardingSeen) }
-    LaunchedEffect(onboardingSeen) {
-        if (!onboardingSeen && !onboardingRedirected) {
-            onboardingRedirected = true
+    var onboardingLaunched by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!onboardingSeen && !onboardingLaunched) {
+            onboardingLaunched = true
             navController.navigate("onboarding")
         }
     }
@@ -109,7 +111,8 @@ fun AppNavigation() {
     fun selectTab(index: Int) {
         // 不做 route==currentRoute 判断：navigateToTab 幂等（同页也安全），
         // 避免 currentRoute 匹配异常时误拦「点回当前 tab / 首页」
-        navController.navigateToTab(rootRoutes[index])
+        val route = rootRoutes.getOrNull(index) ?: return
+        navController.navigateToTab(route)
     }
 
     // tab 根页返回＝退出应用：4 个根页面真正平级，返回键不退回上一 tab、也不回启动页
@@ -196,8 +199,11 @@ fun AppNavigation() {
                             CompositionLocalProvider(LocalSaveableStateRegistry provides outerRegistry) {
                             NavHost(
         navController = navController,
-        // 首次启动：以引导页为启动首屏（启动页 → 引导 → 主页），非首启直接进主页
-        startDestination = if (onboardingSeen) "home" else "onboarding"
+        // 恒以 home 为导航栈底（四个根 tab 平级、无上下级）：首启引导页是
+        // 压入 home 之上的子页（见上方 LaunchedEffect），完成后 popBackStack 归位。
+        // 若以 onboarding 为 startDestination，findStartDestination/popUpTo 锚点
+        // 会永久漂移成 onboarding，导致「点首页 tab 回不去/出现预测性返回手势」。
+        startDestination = "home"
     ) {
         composable(
             "home",
@@ -240,7 +246,7 @@ fun AppNavigation() {
             popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            ReaderScreen(navController, articleId)
+            ReaderScreen(navController, articleId, pageHost)
         }
 
         composable(
@@ -536,15 +542,18 @@ fun AppNavigation() {
 }
 
 /**
- * 底部导航根页面【平级切换】：弹出当前 tab（目标 tab 之上的所有页面），
- * 保留 startDestination 在栈底——这是 Navigation 最稳妥的 tab 切换方式，
- * 既不把平级根页面压成上下级，也避免弹出 startDestination 后无法恢复的异常。
+ * 底部导航根页面【平级切换】：四个 tab 都以「home」为唯一锚点（不依赖
+ * findStartDestination——start 恒定是 home，物理上也就是栈底）。
+ * - popUpTo("home") 先把当前页上方的一切弹回 home（saveState 保留子页状态），
+ *   保证栈底唯一、home 永不重复入栈；
+ * - 点「首页」时 home 一定是当前栈顶 ⇒ launchSingleTop 命中（同页不重入），
+ *   直接把用户带回栈底本身——不会产生可返回的子页，也就没有预测性返回手势。
  *
  * 返回键的"平级＝退出"语义由 [BackHandler] 在根页拦截实现（见 AppNavigation）。
  */
 fun NavController.navigateToTab(route: String) {
     navigate(route) {
-        popUpTo(graph.findStartDestination().id) {
+        popUpTo("home") {
             saveState = true
             inclusive = false
         }

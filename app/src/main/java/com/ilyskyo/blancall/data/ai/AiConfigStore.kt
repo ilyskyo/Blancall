@@ -115,12 +115,17 @@ object AiConfigStore {
 
     // ── AI 对话配置 ──
 
-    fun addChatProfile(name: String, baseUrl: String, apiKey: String, model: String): AiChatProfile {
+    /**
+     * 新增对话配置。加密失败（如系统密钥库不可用）时返回 null，
+     * 调用方应提示用户重试——绝不写入空密文（否则表现为"已保存却永久不可用"）。
+     */
+    fun addChatProfile(name: String, baseUrl: String, apiKey: String, model: String): AiChatProfile? {
+        val apiKeyEnc = SecurePrefs.encrypt(apiKey) ?: return null
         val profile = AiChatProfile(
             id = UUID.randomUUID().toString(),
             name = name.trim().ifBlank { "未命名配置" },
             baseUrl = baseUrl.trim(),
-            apiKeyEnc = SecurePrefs.encrypt(apiKey) ?: "",
+            apiKeyEnc = apiKeyEnc,
             model = model.trim()
         )
         _chatProfilesFlow.value = _chatProfilesFlow.value + profile
@@ -133,19 +138,26 @@ object AiConfigStore {
         return profile
     }
 
-    fun updateChatProfile(id: String, name: String, baseUrl: String, apiKey: String, model: String) {
+    /**
+     * 更新对话配置。返回 false 表示填写了新 Key 但加密失败（密钥库不可用），
+     * 调用方应提示用户重试（原密文保持不变）。
+     */
+    fun updateChatProfile(id: String, name: String, baseUrl: String, apiKey: String, model: String): Boolean {
+        // 仅当填写了新 Key 时才重新加密；加密失败（密钥库不可用）返回 false，提示用户重试
+        val newApiKeyEnc = if (apiKey.isBlank()) null else (SecurePrefs.encrypt(apiKey) ?: return false)
         _chatProfilesFlow.value = _chatProfilesFlow.value.map { p ->
             if (p.id == id) {
                 p.copy(
                     name = name.trim().ifBlank { "未命名配置" },
                     baseUrl = baseUrl.trim(),
                     // Key 留空表示不修改（沿用原密文）
-                    apiKeyEnc = if (apiKey.isBlank()) p.apiKeyEnc else (SecurePrefs.encrypt(apiKey) ?: p.apiKeyEnc),
+                    apiKeyEnc = newApiKeyEnc ?: p.apiKeyEnc,
                     model = model.trim()
                 )
             } else p
         }
         persistChatProfiles()
+        return true
     }
 
     /** 重命名配置（仅改昵称，不动 API 信息） */
@@ -179,14 +191,16 @@ object AiConfigStore {
         baseUrl: String,
         authStyle: String,
         apiKey: String
-    ): AiSearchProfile {
+    ): AiSearchProfile? {
+        // 加密失败（如系统密钥库不可用）时返回 null，绝不写入空密文
+        val apiKeyEnc = SecurePrefs.encrypt(apiKey) ?: return null
         val profile = AiSearchProfile(
             id = UUID.randomUUID().toString(),
             name = name.trim().ifBlank { "未命名配置" },
             provider = provider,
             baseUrl = baseUrl.trim(),
             authStyle = authStyle,
-            apiKeyEnc = SecurePrefs.encrypt(apiKey) ?: ""
+            apiKeyEnc = apiKeyEnc
         )
         _searchProfilesFlow.value = _searchProfilesFlow.value + profile
         persistSearchProfiles()
@@ -197,7 +211,11 @@ object AiConfigStore {
         return profile
     }
 
-    fun updateSearchProfile(id: String, name: String, provider: String, baseUrl: String, authStyle: String, apiKey: String) {
+    /**
+     * 更新搜索配置。返回 false 表示填写了新 Key 但加密失败（密钥库不可用）。
+     */
+    fun updateSearchProfile(id: String, name: String, provider: String, baseUrl: String, authStyle: String, apiKey: String): Boolean {
+        val newApiKeyEnc = if (apiKey.isBlank()) null else (SecurePrefs.encrypt(apiKey) ?: return false)
         _searchProfilesFlow.value = _searchProfilesFlow.value.map { p ->
             if (p.id == id) {
                 p.copy(
@@ -205,11 +223,12 @@ object AiConfigStore {
                     provider = provider,
                     baseUrl = baseUrl.trim(),
                     authStyle = authStyle,
-                    apiKeyEnc = if (apiKey.isBlank()) p.apiKeyEnc else (SecurePrefs.encrypt(apiKey) ?: p.apiKeyEnc)
+                    apiKeyEnc = newApiKeyEnc ?: p.apiKeyEnc
                 )
             } else p
         }
         persistSearchProfiles()
+        return true
     }
 
     fun renameSearchProfile(id: String, newName: String) {

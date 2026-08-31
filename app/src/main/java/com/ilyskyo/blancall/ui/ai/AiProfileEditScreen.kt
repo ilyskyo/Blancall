@@ -52,6 +52,7 @@ fun AiProfileEditScreen(
     var provider by remember { mutableStateOf(existingSearch?.provider ?: "tavily") }
     var authStyle by remember { mutableStateOf(existingSearch?.authStyle ?: "body") }
     var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf(false) }
 
     val isEditing = profileId != null
     val scope = rememberCoroutineScope()
@@ -201,29 +202,36 @@ fun AiProfileEditScreen(
                 )
             }
 
-            // ── 保存 ──
+                // ── 保存 ──
             Button(
                 onClick = {
                     if (saving) return@Button
                     saving = true
+                    saveError = false
                     // Keystore 加解密放 IO 线程
                     scope.launch {
-                        withContext(Dispatchers.IO) {
+                        val ok = withContext(Dispatchers.IO) {
                             if (isChat) {
                                 if (isEditing) {
-                                    AiConfigStore.updateChatProfile(profileId, name, baseUrl, apiKey, model)
+                                    AiConfigStore.updateChatProfile(profileId!!, name, baseUrl, apiKey, model)
                                 } else {
-                                    AiConfigStore.addChatProfile(name, baseUrl, apiKey, model)
+                                    AiConfigStore.addChatProfile(name, baseUrl, apiKey, model) != null
                                 }
                             } else {
                                 if (isEditing) {
-                                    AiConfigStore.updateSearchProfile(profileId, name, provider, baseUrl, authStyle, apiKey)
+                                    AiConfigStore.updateSearchProfile(profileId!!, name, provider, baseUrl, authStyle, apiKey)
                                 } else {
-                                    AiConfigStore.addSearchProfile(name, provider, baseUrl, authStyle, apiKey)
+                                    AiConfigStore.addSearchProfile(name, provider, baseUrl, authStyle, apiKey) != null
                                 }
                             }
                         }
-                        navController.popBackStack()
+                        if (ok) {
+                            navController.popBackStack()
+                        } else {
+                            // 加密保存失败（密钥库不可用等）：留在当前页提示，绝不静默丢失配置
+                            saving = false
+                            saveError = true
+                        }
                     }
                 },
                 enabled = name.isNotBlank() &&
@@ -236,6 +244,16 @@ fun AiProfileEditScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text(if (isEditing) "保存修改" else "创建配置")
+            }
+
+            if (saveError) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "⚠️ 密钥加密保存失败（可能是系统密钥库不可用）。配置未保存，请重试或重启应用后再试。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
             }
         }
     }

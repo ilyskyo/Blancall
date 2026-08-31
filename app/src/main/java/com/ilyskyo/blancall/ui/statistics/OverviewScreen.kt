@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.statistics
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -124,6 +125,10 @@ private data class WeaknessProfile(
 @Composable
 fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
+    // 根 tab 页面：返回键 = 退出应用（与「我的文章」「素材库」tab 平级语义一致，绝不 pop 回上一 tab/首页）
+    BackHandler {
+        (context as? android.app.Activity)?.finish()
+    }
     val recordRepo = remember {
         RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath)
     }
