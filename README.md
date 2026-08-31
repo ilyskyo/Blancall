@@ -1,3 +1,7 @@
+> **暂停更新公告**  
+> 本仓库即日起停止一切更新活动。  
+> **恢复更新日期：不早于 2027 年 6 月 10 日。**
+
 **Blancall**
 
 **Not “blank all”, but “recall”**.Blancall helps you turn any article into fill-in-the-blank exercises. It offers a modern, efficient, and trustworthy way to master the content you need to memorize.
@@ -42,14 +46,19 @@ PDF 导出练习卷可打印，CSV 导出练习记录让数据自由，分享图
 - （其他依赖由 Gradle 自动管理）
 
 克隆与编译
+
+```bash
 # 克隆仓库
 git clone https://github.com/ilyskyo/Blancall.git
 
 # 用 Android Studio 打开项目
 # 等待 Gradle 同步完成
 # 点击 Run 按钮编译安装
+```
 
 ## 开源许可
+
+本项目源代码以 **MIT 许可证** 发布（见仓库根目录 LICENSE 文件）。
 
 ### 字体
 
