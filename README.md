@@ -58,7 +58,7 @@ git clone https://github.com/ilyskyo/Blancall.git
 - 字体主页：https://fonts.google.com/noto
 - 开源仓库：https://github.com/notofonts/noto-cjk
 
-应用图标上的品牌文字 **Blancall** 使用 **霞鹜新晰黑（LXGW Neo XiHei）** 字体进行渲染，该字体衍生于「IPAex 黑体」，遵循 **SIL Open Font License 1.1** 与 **IPA Font License 1.0** 协议，可免费商用、可随应用捆绑分发。
+应用图标左上角的圆形标识图形使用 **霞鹜新晰黑（LXGW Neo XiHei）** 字体中的字形进行渲染，该字体衍生于「IPAex 黑体」，遵循 **SIL Open Font License 1.1** 与 **IPA Font License 1.0** 协议，可免费商用、可随应用捆绑分发。
 
 - 开源仓库：https://github.com/lxgw/LxgwNeoXiHei
 

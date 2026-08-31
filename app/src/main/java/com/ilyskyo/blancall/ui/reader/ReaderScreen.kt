@@ -282,7 +282,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     // 正文蓝色卡片与分割线之间的间距（略大，让内容区往下沉一点）
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(40.dp))
                 }
 
                 // ── 阅读内容（可滚动）：编辑模式下供预测性返回手势渐现露出 ──
