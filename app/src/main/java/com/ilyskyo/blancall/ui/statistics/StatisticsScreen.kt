@@ -229,7 +229,9 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                // 底部留白：悬浮导航栏覆盖屏幕底部约 100dp，避免最后内容被遮挡
+                contentPadding = PaddingValues(bottom = 120.dp)
             ) {
         // ═══════ 统计总览卡片（仪表盘 + 连续天数 + 趋势） ═══════
         item {

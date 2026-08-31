@@ -57,15 +57,7 @@ fun GlassCard(
     val isDark = isBlancallDark()
     val surfaceColor = MaterialTheme.colorScheme.surface
     val outlineColor = MaterialTheme.colorScheme.outlineVariant
-    // 玻璃不透明度下调（深色 0.68 / 浅色 0.66，见 GlassBlur.kt）：保留半透明层次。
-    val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
-    // 染色层颜色：自定义容器色保持原色相；未提供时用 surface 按玻璃不透明度染色。
-    // containerAlpha 允许调用方保留自己的透明度语义（如选择态 primaryContainer 0.3）。
-    val stainColor = if (containerColor != null) {
-        containerColor.copy(alpha = containerAlpha ?: (if (isDark) 0.88f else 0.80f))
-    } else {
-        surfaceColor.copy(alpha = bgAlpha)
-    }
+    // 底色：直接用容器色（不透明）或主题 surface——不透明纯色，干净均匀无断层
 
     // 点击修饰符：仅 onClick → clickable；onClick + onLongClick → combinedClickable（如文章卡片）
     // interactionSource 可外部传入（调用方需要自绘按压反馈时，如 ModeCard 的按压缩放）
@@ -92,19 +84,8 @@ fun GlassCard(
             .clip(shape)
             .border(1.dp, (borderColor ?: outlineColor).copy(alpha = 0.5f), shape)
     ) {
-        // 1) backdrop 真实模糊层（API31+）：克隆氛围背景并裁剪到卡片形状后施加玻璃模糊；
-        //    AmbientBackground 已退化为纯色容器，模糊出的仍是纯色面但保留 GPU blur 的层次。
-        //    backdrop=false 时长列表场景跳过本层，仅保留下方半透明染色。
-        if (backdrop && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .glassSurface(radiusPx = 18f)
-            ) { AmbientBackground() }
-        }
-        // 2) 半透明染色层：保证文字与卡片背景的对比
-        Box(Modifier.matchParentSize().background(stainColor))
+        // 纯色底：干净均匀——直接用容器色/主题 surface（不透明），无透出/模糊/渐变/叠加
+        Box(Modifier.matchParentSize().background(containerColor ?: surfaceColor))
         Column(
             modifier = Modifier.fillMaxWidth(),
             content = content

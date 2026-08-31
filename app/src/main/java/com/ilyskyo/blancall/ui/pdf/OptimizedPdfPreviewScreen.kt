@@ -58,6 +58,7 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.PdfTextExtractor
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
+import com.ilyskyo.blancall.ui.western.splitArticleText
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -197,10 +198,11 @@ fun OptimizedPdfPreviewScreen(
                                 showMenu = false
                                 // 点完即导入：不弹模式选择、不强制进入练习（之后可在背诵列表中自行开始）
                                 val finalTitle = textLoaded?.first ?: displayTitle
-                                val finalText = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
+                                val finalAuthor = textLoaded?.second ?: ""
+                                val finalText = textLoaded?.third ?: textPages.joinToString("\n\n") { it.text }
                                 if (finalText.isNotBlank()) {
                                     scope.launch {
-                                        val articleId = importTextToBlancall(context, finalTitle, finalText)
+                                        val articleId = importTextToBlancall(context, finalTitle, finalText, finalAuthor)
                                         Toast.makeText(
                                             context,
                                             if (articleId > 0) "已导入背诵列表" else "导入失败，请重试",
@@ -231,10 +233,11 @@ fun OptimizedPdfPreviewScreen(
             // 根据渲染模式选择不同的显示方式
             if (useVectorRendering && (textLoaded != null || textPages.isNotEmpty())) {
                 // 矢量模式：优先用配套纯文字版（排版最干净），否则用 PDF 提取文本
-                val content = textLoaded?.second ?: textPages.joinToString("\n\n") { it.text }
+                val content = textLoaded?.third ?: textPages.joinToString("\n\n") { it.text }
                 TextContentReader(
                     title = displayTitle,
                     content = content,
+                    author = textLoaded?.second ?: "",
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -407,15 +410,16 @@ private fun copyAssetToCache(context: android.content.Context, asset: String): F
 }
 
 /**
- * 读取配套文字版：首行为标题，其余为正文。不存在返回 null
+ * 读取配套文字版：Triple(标题, 作者, 正文)。不存在或正文为空返回 null。
+ *
+ * 排版固定为「第 1 行标题 / 第 2 行作者（可缺）/ 其后正文」，
+ * 拆分逻辑复用 [splitArticleText]（作者行不再被吞进正文）。
  */
-private fun readAssetTxt(context: android.content.Context, asset: String): Pair<String, String>? {
+private fun readAssetTxt(context: android.content.Context, asset: String): Triple<String, String, String>? {
     return try {
         val raw = context.assets.open(asset).bufferedReader().use { it.readText() }
-        val nl = raw.indexOf('\n')
-        val title = if (nl >= 0) raw.substring(0, nl).trim() else raw.trim()
-        val body = if (nl >= 0) raw.substring(nl + 1).trim() else ""
-        if (body.isBlank()) null else title to body
+        val (title, author, body) = splitArticleText(raw)
+        if (body.isBlank()) null else Triple(title, author, body)
     } catch (_: Exception) { null }
 }
 
@@ -425,12 +429,19 @@ private fun readAssetTxt(context: android.content.Context, asset: String): Pair<
 private suspend fun importTextToBlancall(
     context: android.content.Context,
     title: String,
-    content: String
+    content: String,
+    author: String = ""
 ): Long = withContext(Dispatchers.IO) {
     try {
         val repo = ArticleRepository.getInstance(
             context.filesDir.resolve("articles.json").absolutePath
         )
-        repo.insert(Article(title = title.ifBlank { "未命名" }, content = content))
+        repo.insert(
+            Article(
+                title = title.ifBlank { "未命名" },
+                content = content,
+                author = author
+            )
+        )
     } catch (_: Exception) { -1L }
 }

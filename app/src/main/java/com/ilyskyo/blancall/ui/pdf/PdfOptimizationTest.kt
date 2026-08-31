@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.GaokaoTextCleaner
 import com.ilyskyo.blancall.algorithm.PdfTextExtractor
+import com.ilyskyo.blancall.ui.common.AppIcon
+import com.ilyskyo.blancall.ui.common.AppIconKind
 import kotlinx.coroutines.launch
 
 /**
@@ -60,35 +62,83 @@ fun PdfOptimizationTestScreen() {
                     fontWeight = FontWeight.SemiBold
                 )
                 
-                Text(
-                    text = "✓ 高性能PDF文本提取器",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(
+                        kind = AppIconKind.Check,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "高性能PDF文本提取器",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 
-                Text(
-                    text = "✓ 矢量文本渲染组件",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(
+                        kind = AppIconKind.Check,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "矢量文本渲染组件",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 
-                Text(
-                    text = "✓ 无损放大和自适应布局",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(
+                        kind = AppIconKind.Check,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "无损放大和自适应布局",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 
-                Text(
-                    text = "✓ 高考必背篇目专用优化",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(
+                        kind = AppIconKind.Check,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "高考必背篇目专用优化",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 
-                Text(
-                    text = "✓ 智能注释处理",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(
+                        kind = AppIconKind.Check,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "智能注释处理",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 
-                Text(
-                    text = "✓ 导入页面状态保持",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(
+                        kind = AppIconKind.Check,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "导入页面状态保持",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
         }
         

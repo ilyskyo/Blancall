@@ -18,8 +18,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.ilyskyo.blancall.ui.common.AppIcon
+import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.GlassSwitch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -49,6 +52,9 @@ import com.ilyskyo.blancall.ui.theme.ThemeMode
 @Composable
 fun SettingsScreen(navController: NavController) {
     val themeMode by ThemeManager.themeMode.collectAsState()
+    // 首页副标题编辑弹窗（首页品牌栏收起时也可从这里修改）
+    var showSubtitleDialog by remember { mutableStateOf(false) }
+    val homeSubtitle by AppPrefs.subtitleFlow.collectAsState()
 
     Box(
         modifier = Modifier
@@ -127,10 +133,32 @@ fun SettingsScreen(navController: NavController) {
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(
+                        GlassSwitch(
                             checked = lightBeige,
                             onCheckedChange = { AppPrefs.lightBeigeBackgroundEnabled = it }
                         )
+                    }
+
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    // ── 首页副标题（点击编辑；首页品牌栏收起时也能从这里修改）──
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { showSubtitleDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("首页副标题", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("首页品牌栏下方的标语，点击编辑",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("编辑 ›", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
                     }
 
                     // 内置素材库已移至下方「拓展功能」分组
@@ -182,10 +210,11 @@ fun SettingsScreen(navController: NavController) {
                                     content = {}
                                 )
                                 if (isSelected) {
-                                    Text("✓",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = accentColor,
-                                        fontWeight = FontWeight.Bold)
+                                    AppIcon(
+                                        kind = AppIconKind.Check,
+                                        tint = accentColor,
+                                        modifier = Modifier.size(14.dp)
+                                    )
                                 }
                             }
                         }
@@ -214,11 +243,11 @@ fun SettingsScreen(navController: NavController) {
                     Column(Modifier.weight(1f)) {
                         Text("预测性返回手势", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("返回时有滑动缩放动画，关闭后使用淡入淡出",
+                        Text("启用后，可在确认返回前预览目标界面",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(
+                    GlassSwitch(
                         checked = predictiveBack,
                         onCheckedChange = { AppPrefs.predictiveBackEnabled = it }
                     )
@@ -237,13 +266,13 @@ fun SettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("首页显示表情图标", style = MaterialTheme.typography.bodyLarge,
+                        Text("顶栏显示图标", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("开启该功能后，首页左上角显示表情图标",
+                        Text("开启该功能后，首页左上角显示图标",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(
+                    GlassSwitch(
                         checked = showHomeEmoji,
                         onCheckedChange = { AppPrefs.showHomeEmoji = it }
                     )
@@ -264,23 +293,31 @@ fun SettingsScreen(navController: NavController) {
                     Column(Modifier.weight(1f)) {
                         Text("段落首行缩进", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("开启后，导入纯文本/粘贴文章时自动为每段首行补两个空格；PDF、Word 等文档保持原文不动",
+                        Text("开启后，导入纯文本/粘贴文章时自动为每段首行自动缩进；PDF、Word 等文档保持原样",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = 16.dp))
                     }
-                    Switch(
+                    GlassSwitch(
                         checked = autoIndentEnabled,
                         onCheckedChange = { AppPrefs.autoIndentEnabled = it }
                     )
                 }
 
-                HorizontalDivider(
-                    Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                )
+            }
 
-                // ── AI 学习助手开关（关闭后所有 AI 入口隐藏） ──
+            Spacer(Modifier.height(8.dp))
+
+            // ── AI（独立分组：母项开关 + 子项设置，层级一目了然） ──
+            Text("AI", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary)
+
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                // AI 开关（关闭后所有 AI 入口隐藏）
                 val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
@@ -290,11 +327,8 @@ fun SettingsScreen(navController: NavController) {
                     Column(Modifier.weight(1f)) {
                         Text("启用 AI 功能", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("开启后可在阅读页与文章列表中与 AI 对话",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(
+                    GlassSwitch(
                         checked = aiEnabled,
                         onCheckedChange = { AppPrefs.aiEnabled = it }
                     )
@@ -308,139 +342,158 @@ fun SettingsScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                         )
 
-                        // ── 使用AI挖空（关闭后挖空走本地算法，采集页只采策略与段落）──
-                        val useAiCloze by AppPrefs.useAiClozeFlow.collectAsState()
-                        Row(
-                            Modifier.padding(vertical = 8.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        // 子项统一收纳进嵌套玻璃面板（backdrop=false 避免双重模糊）：
+                        // 半透明染色 + 1dp 细描边延续全 App 的 Apple 玻璃语言，与「启用 AI 功能」母项形成从属层次
+                        val isDark = isBlancallDark()
+                        GlassCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            containerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
+                            else MaterialTheme.colorScheme.surface,
+                            containerAlpha = if (isDark) 0.90f else 0.85f,
+                            backdrop = false
                         ) {
-                            Text("使用AI挖空", style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface)
-                            Switch(
-                                checked = useAiCloze,
-                                onCheckedChange = { AppPrefs.useAiCloze = it }
-                            )
-                        }
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                                Text("AI 功能设置", style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 6.dp))
 
-                        // ── AI 对话配置入口（点击进入配置管理页） ──
-                        val chatProfiles by AiConfigStore.chatProfilesFlow.collectAsState()
-                        val activeChatId by AiConfigStore.activeChatIdFlow.collectAsState()
-                        val activeChat = chatProfiles.find { it.id == activeChatId }
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { navController.navigate("ai_config") }
-                                .padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("对话配置", style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface)
-                                Text(
-                                    if (activeChat != null) "已开启「${activeChat.name}」" else "当前还未选择",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (activeChat != null) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                // ── 使用AI挖空（关闭后挖空走本地算法，采集页只采策略与段落）──
+                                val useAiCloze by AppPrefs.useAiClozeFlow.collectAsState()
+                                Row(
+                                    Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("使用AI挖空", style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                    GlassSwitch(
+                                        checked = useAiCloze,
+                                        onCheckedChange = { AppPrefs.useAiCloze = it }
+                                    )
+                                }
+
+                                // ── AI 对话配置入口（点击进入配置管理页） ──
+                                val chatProfiles by AiConfigStore.chatProfilesFlow.collectAsState()
+                                val activeChatId by AiConfigStore.activeChatIdFlow.collectAsState()
+                                val activeChat = chatProfiles.find { it.id == activeChatId }
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { navController.navigate("ai_config") }
+                                        .padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("对话配置", style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                        Text(
+                                            if (activeChat != null) "已开启「${activeChat.name}」" else "当前还未选择",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (activeChat != null) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text("管理 ›", style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                                if (chatProfiles.isEmpty()) {
+                                    OutlinedButton(
+                                        onClick = { navController.navigate("ai_profile_edit/chat") },
+                                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("点击创建配置信息", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                                 )
-                            }
-                            Text("管理 ›", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                        if (chatProfiles.isEmpty()) {
-                            OutlinedButton(
-                                onClick = { navController.navigate("ai_profile_edit/chat") },
-                                modifier = Modifier.fillMaxWidth().height(40.dp),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Text("点击创建配置信息", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-
-                        Spacer(Modifier.height(8.dp))
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
-                        // 保存与 AI 的对话开关（开启后首页出现 AI 历史入口）
-                        val aiHistoryEnabled by AppPrefs.aiHistoryEnabledFlow.collectAsState()
-                        Row(
-                            Modifier.padding(vertical = 8.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("保存与 AI 的对话", style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface)
-                                Text("开启后对话自动保存在本机，首页左下角出现「AI」入口可查看历史",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(end = 16.dp))
-                            }
-                            Switch(
-                                checked = aiHistoryEnabled,
-                                onCheckedChange = { AppPrefs.aiHistoryEnabled = it }
-                            )
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
-                        // 联网搜索开关（开启后提问自动联网搜索核验）
-                        val aiSearchEnabled by AppPrefs.aiSearchEnabledFlow.collectAsState()
-                        Row(
-                            Modifier.padding(vertical = 8.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("联网搜索", style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface)
-                                Text("提问时自动联网搜索核验知识",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = aiSearchEnabled,
-                                onCheckedChange = { AppPrefs.aiSearchEnabled = it }
-                            )
-                        }
-
-                        // ── 联网搜索配置入口（点击进入配置管理页） ──
-                        val searchProfiles by AiConfigStore.searchProfilesFlow.collectAsState()
-                        val activeSearchId by AiConfigStore.activeSearchIdFlow.collectAsState()
-                        val activeSearch = searchProfiles.find { it.id == activeSearchId }
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { navController.navigate("ai_config") }
-                                .padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("搜索配置", style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface)
-                                Text(
-                                    if (activeSearch != null) "已开启「${activeSearch.name}」" else "当前还未选择",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (activeSearch != null) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                // 保存与 AI 的对话开关（开启后在「我的文章」页显示历史入口）
+                                val aiHistoryEnabled by AppPrefs.aiHistoryEnabledFlow.collectAsState()
+                                Row(
+                                    Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("保存与 AI 的对话", style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                        Text("开启后对话自动保存在本机，在「我的文章」页可查看历史对话",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(end = 16.dp))
+                                    }
+                                    GlassSwitch(
+                                        checked = aiHistoryEnabled,
+                                        onCheckedChange = { AppPrefs.aiHistoryEnabled = it }
+                                    )
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                                 )
+                                // 联网搜索开关（开启后提问自动联网搜索核验）
+                                val aiSearchEnabled by AppPrefs.aiSearchEnabledFlow.collectAsState()
+                                Row(
+                                    Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("联网搜索", style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                        Text("开启后，在对话时AI可以联网搜索信息",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    GlassSwitch(
+                                        checked = aiSearchEnabled,
+                                        onCheckedChange = { AppPrefs.aiSearchEnabled = it }
+                                    )
+                                }
+
+                                // ── 联网搜索配置入口（点击进入配置管理页） ──
+                                val searchProfiles by AiConfigStore.searchProfilesFlow.collectAsState()
+                                val activeSearchId by AiConfigStore.activeSearchIdFlow.collectAsState()
+                                val activeSearch = searchProfiles.find { it.id == activeSearchId }
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { navController.navigate("ai_config") }
+                                        .padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("搜索配置", style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                        Text(
+                                            if (activeSearch != null) "已开启「${activeSearch.name}」" else "当前还未选择",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (activeSearch != null) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text("管理 ›", style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                                if (searchProfiles.isEmpty()) {
+                                    OutlinedButton(
+                                        onClick = { navController.navigate("ai_profile_edit/search") },
+                                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("点击创建配置信息", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
                             }
-                            Text("管理 ›", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary)
                         }
-                        if (searchProfiles.isEmpty()) {
-                            OutlinedButton(
-                                onClick = { navController.navigate("ai_profile_edit/search") },
-                                modifier = Modifier.fillMaxWidth().height(40.dp),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Text("点击创建配置信息", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
                     }
                 }
             }
@@ -448,7 +501,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 复习 ──
-            Text("复习", style = MaterialTheme.typography.titleSmall,
+            Text("记忆方案", style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -464,9 +517,9 @@ fun SettingsScreen(navController: NavController) {
                         OptionRow(
                             label = template.name,
                             description = when (template.id) {
-                                "sprint" -> "目标留存率 85% · 复习更勤快"
-                                "deep" -> "目标留存率 95% · 间隔更长更省"
-                                else -> "目标留存率 90% · 均衡节奏（默认）"
+                                "sprint" -> "复习更勤快"
+                                "deep" -> "间隔更长"
+                                else -> "均衡节奏"
                             },
                             selected = isSelected,
                             onClick = { AppPrefs.reviewTemplateId = template.id }
@@ -571,7 +624,7 @@ fun SettingsScreen(navController: NavController) {
                         Text("西方思想", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                     }
-                    Switch(
+                    GlassSwitch(
                         checked = "western" in enabledSet,
                         onCheckedChange = { AppPrefs.setLibraryEnabled("western", it) }
                     )
@@ -585,7 +638,7 @@ fun SettingsScreen(navController: NavController) {
                         Text("高考必背篇目", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                     }
-                    Switch(
+                    GlassSwitch(
                         checked = "gaokao" in enabledSet,
                         onCheckedChange = { AppPrefs.setLibraryEnabled("gaokao", it) }
                     )
@@ -612,7 +665,7 @@ fun SettingsScreen(navController: NavController) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(6.dp))
-                    Text("智能挖空记忆助手 · by ilyskyo",
+                    Text("挖空记忆助手 · by ilyskyo",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
@@ -676,6 +729,41 @@ fun SettingsScreen(navController: NavController) {
             )
         }
     }
+
+    // ── 首页副标题编辑弹窗 ──
+    if (showSubtitleDialog) {
+        var editText by remember(homeSubtitle) { mutableStateOf(homeSubtitle) }
+        BlancallAlertDialog(
+            onDismissRequest = { showSubtitleDialog = false },
+            title = { Text("编辑首页副标题") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editText,
+                        // 默认副标题 38 字 > 旧 30 字限制，编辑会被拦截；取消限制
+                        onValueChange = { editText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("自定义副标题") },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        // 直接保存（允许清空：清空即移除副标题）
+                        AppPrefs.subtitle = editText
+                        showSubtitleDialog = false
+                    },
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSubtitleDialog = false }) { Text("取消") }
+            }
+        )
+    }
     }
 }
 
@@ -710,9 +798,11 @@ private fun OptionRow(
                 }
             }
             if (selected) {
-                Text("✓", style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold)
+                AppIcon(
+                    kind = AppIconKind.Check,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -755,7 +845,7 @@ private fun ReminderSettingsCard() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
+                GlassSwitch(
                     checked = enabled,
                     onCheckedChange = { newEnabled ->
                         ReminderPrefs.enabled = newEnabled

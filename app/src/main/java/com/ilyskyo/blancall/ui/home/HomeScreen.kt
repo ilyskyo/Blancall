@@ -73,6 +73,7 @@ import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
+import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.common.listItemEnter
 import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -439,21 +440,12 @@ fun HomeScreen(
                 Column {
                     OutlinedTextField(
                         value = editText,
-                        onValueChange = { if (it.length <= 30) editText = it },
+                        // 默认副标题 38 字 > 旧 30 字限制，编辑会被拦截；取消限制
+                        onValueChange = { editText = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text("自定义副标题") },
                         shape = RoundedCornerShape(12.dp)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${editText.length}/30",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (editText.length >= 30)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.End)
                     )
                 }
             },
@@ -501,7 +493,7 @@ fun HomeScreen(
                     .verticalScroll(homeScrollState)
                     .padding(horizontal = 20.dp)
             ) {
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(4.dp))
 
             // ── 品牌栏：logo + 设置，默认收起；下拉(滚到顶再拉)时滑出。
             //    此处不再放「添加」按钮（搜索栏右侧已有），避免重复 ──
@@ -650,6 +642,15 @@ fun HomeScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
+                                if (article.author.isNotBlank()) {
+                                    Text(
+                                        article.author.trim(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
                                 Text(
                                     "复习",
                                     style = MaterialTheme.typography.labelSmall,
@@ -722,7 +723,11 @@ fun HomeScreen(
                                         modifier = Modifier.widthIn(max = maxTitleWidth)
                                     )
                                     Text(
-                                        "$modeLabel · 剩余 ${item.total - item.answered}/${item.total}",
+                                        buildString {
+                                            if (art.author.isNotBlank()) append(art.author.trim()).append(" · ")
+                                            append(modeLabel).append(" · 剩余 ")
+                                            append(item.total - item.answered).append("/").append(item.total)
+                                        },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
                                     )
@@ -757,10 +762,10 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    onClick = { navController.navigate("overview") }
+                    onClick = { navController.navigateToTab("overview") }
                 ) {
                     Row(
-                        Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp).fillMaxWidth(),
+                        Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -898,7 +903,7 @@ fun HomeScreen(
                         }
                         if (recentArticles.size > maxRecentItems) {
                             TextButton(
-                                onClick = { navController.navigate("list") },
+                                onClick = { navController.navigateToTab("list") },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text("查看全部 (${recentArticles.size} 篇)")
@@ -937,7 +942,7 @@ fun HomeScreen(
                         }
                         if (recentArticles.size > maxRecentItems) {
                             TextButton(
-                                onClick = { navController.navigate("list") },
+                                onClick = { navController.navigateToTab("list") },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text("查看全部 (${recentArticles.size} 篇)")
@@ -1099,9 +1104,13 @@ private fun HomeArticleCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "${article.content.length} 字符",
+                    text = buildString {
+                        if (article.author.isNotBlank()) append(article.author.trim()).append("  ·  ")
+                        append(article.content.length.toString()).append(" 字符")
+                    },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
                 )
             }
 

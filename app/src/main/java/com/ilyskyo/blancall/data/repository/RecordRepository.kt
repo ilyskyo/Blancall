@@ -89,7 +89,13 @@ class RecordRepository(private val filePath: String) {
                     similarity = obj.optDouble("similarity", 0.0).toFloat(),
                     rating = obj.optInt("rating", 0),
                     weakHints = obj.optInt("weakHints", 0),
-                    strongHints = obj.optInt("strongHints", 0)
+                    strongHints = obj.optInt("strongHints", 0),
+                    // 旧记录无此字段 → 空列表（热力图回退整篇统计）。
+                    // 注意：废弃字段 answeredSentences（句子索引语义，段落模式下与全文错位）
+                    // 在此刻意不读取，确保旧数据走回退分支而不被误判为字符位置。
+                    answeredSentenceStarts = obj.optJSONArray("answeredSentenceStarts")
+                        ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
+                        ?: emptyList()
                 )
                 loaded.add(record)
                 if (record.id > maxId) maxId = record.id
@@ -153,6 +159,7 @@ class RecordRepository(private val filePath: String) {
                         obj.put("rating", record.rating)
                         obj.put("weakHints", record.weakHints)
                         obj.put("strongHints", record.strongHints)
+                        obj.put("answeredSentenceStarts", JSONArray(record.answeredSentenceStarts))
                         val mistakesArr = JSONArray()
                         for (m in record.mistakes) {
                             val mObj = JSONObject()

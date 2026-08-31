@@ -182,15 +182,10 @@ object ShareImageGenerator {
                     canvas.drawText("📊  " + config.stats, PADDING + 20f, y + statsPaint.textSize, statsPaint)
                 }
 
-                // ── 品牌底栏 ──
+                // ── 品牌底栏（已移除 LinearGradient，统一使用 BRAND_BG 单色填充）──
                 val brandTop = imageHeight - BRAND_HEIGHT.toFloat()
-                val brandGrad = LinearGradient(
-                    0f, brandTop, IMAGE_WIDTH.toFloat(), imageHeight.toFloat(),
-                    intArrayOf(0xFF2C2416.toInt(), 0xFF1A1108.toInt()),
-                    floatArrayOf(0f, 1f), Shader.TileMode.CLAMP
-                )
                 canvas.drawRect(0f, brandTop, IMAGE_WIDTH.toFloat(), imageHeight.toFloat(),
-                    Paint().apply { shader = brandGrad })
+                    Paint().apply { color = BRAND_BG })
 
                 canvas.drawText(
                     "Blancall",

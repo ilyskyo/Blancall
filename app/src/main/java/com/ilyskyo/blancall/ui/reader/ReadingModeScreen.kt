@@ -12,7 +12,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -22,6 +24,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -55,15 +59,19 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.ImmersiveSystemBarsEffect
 import com.ilyskyo.blancall.ui.theme.AppPrefs
+import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.theme.ThemeManager
 import com.ilyskyo.blancall.ui.theme.ThemeMode
 import com.qmdeve.liquidglass.widget.LiquidGlassView
@@ -90,12 +98,14 @@ private val DarkBg = Color(0xFF000000)
 private val DarkText = Color(0xFFE8E6E1)
 private val DarkSub = Color(0xFF8F8D88)
 
-// 液态玻璃参数（参考 iOS 26 Liquid Glass 观感 + AndroidLiquidGlassView 官方区间调校：
-// 中强模糊撑起毛玻璃质感、轻微色散、宽采样折射；配合高光描边 + 柔和投影）
-private const val LgBlurRadius = 24f         // 0-50dp：模糊半径，苹果毛玻璃观感需要明显模糊
-private const val LgDispersion = 0.45f       // 0-1：色散，轻微即可，过重显脏
-private const val LgRefractionHeightDp = 26f // 12-50dp：折射采样高度
-private const val LgRefractionOffsetDp = 90f // 20-120dp：采样偏移，越大折射过渡越自然
+// 液态玻璃参数 —— 与底部导航栏（BottomNavBar 的 LgBar*）保持同一套调校，
+// 保证全 App 玻璃质感统一；本组数值即取自导航栏的实机观感。
+// 要点：模糊要轻（重模糊会把内容糊成一团、显脏），折射真实采样即可撑起玻璃感；
+// 配合 FallbackGlassPlate 的高光描边 + 柔和投影完成"离地感"。
+private const val LgBlurRadius = 6f          // 0-50dp：轻模糊，与导航栏 LgBarBlur 一致
+private const val LgDispersion = 0.3f        // 0-1：色散，降低避免边缘彩边过重
+private const val LgRefractionHeightDp = 20f // 12-50dp：折射采样高度（对齐导航栏 20dp）
+private const val LgRefractionOffsetDp = 70f // 20-120dp：采样偏移（对齐导航栏 70dp）
 
 /**
  * 沉浸阅读模式。
@@ -109,7 +119,7 @@ private const val LgRefractionOffsetDp = 90f // 20-120dp：采样偏移，越大
  * - 进度记忆：按整篇比例保存断点，退出时累计阅读时长
  */
 @Composable
-fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclusionBridge? = null) {
+fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -123,9 +133,6 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
         ThemeMode.LIGHT -> false
     }
     val appBeige by AppPrefs.lightBeigeBackgroundFlow.collectAsState()
-    // 段落首行缩进：全局开关 && 该文章来源允许缩进（PDF/Word 等不动）
-    val autoIndentEnabled by AppPrefs.autoIndentEnabledFlow.collectAsState()
-    val autoIndent = autoIndentEnabled && article.autoIndent
 
     // ── 排版设置 ──
     val fontPx by AppPrefs.readingFontFlow.collectAsState()
@@ -135,25 +142,12 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
     val layoutMode by AppPrefs.readingLayoutModeFlow.collectAsState()
     // ── 阅读字体：预设 / 系统字体 / 导入字体（按 id 解析，见 ReaderFonts）──
     val readingFontId by AppPrefs.readingFontIdFlow.collectAsState()
-    val readingFontFamily = remember(context, readingFontId) {
-        ReaderFonts.resolveFontFamily(context, readingFontId) ?: FontFamily.Default
-    }
 
     // ── 背诵遮挡（物理遮挡背诵）设置 ──
     val occlusionEnabled by AppPrefs.readingOcclusionEnabledFlow.collectAsState()
     val occlusionMode by AppPrefs.readingOcclusionModeFlow.collectAsState()
-    // AI 遮挡仅在 Pro（注入了 [AiOcclusionBridge] 实现）且已配置 AI 时可用
-    val aiOcclusionAvailable = aiOcclusion?.available == true
-    // AI 遮挡区间（在整篇原文上的全局空；AI 模式且未返回时回退本地算法）
-    var aiOcclusionRanges by remember { mutableStateOf<List<OcclusionSpan>?>(emptyList()) }
-    LaunchedEffect(occlusionEnabled, occlusionMode, aiOcclusionAvailable, article.content) {
-        if (!occlusionEnabled || occlusionMode != "ai" || !aiOcclusionAvailable) {
-            aiOcclusionRanges = emptyList()
-            return@LaunchedEffect
-        }
-        val res = runCatching { aiOcclusion?.generate(article.content) }.getOrNull()
-        aiOcclusionRanges = res ?: emptyList()
-    }
+    // 挡片颜色索引（正文体在独立 ComposeView 中自行订阅计算，见 body 内 bodyMaskColor）
+    val occlusionColorIndex by AppPrefs.readingOcclusionColorFlow.collectAsState()
 
     // 阅读背景：深色永远纯黑；浅色按 跟随主题/米白/纯白 三选
     val bgColor = when {
@@ -193,16 +187,6 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
 
     var controlsVisible by remember { mutableStateOf(true) }
     var settingsVisible by remember { mutableStateOf(false) }
-    // 组装遮挡渲染参数：AI 不可用/未返回时降级本地算法
-    val occlusionParams = OcclusionParams(
-        enabled = occlusionEnabled,
-        mode = if (occlusionEnabled && occlusionMode == "ai" && aiOcclusionAvailable) "ai" else "local",
-        aiRanges = aiOcclusionRanges ?: emptyList(),
-        articleContent = article.content,
-        onToggleControls = { controlsVisible = !controlsVisible }
-    )
-    // 遮挡模式下由正文段落接管「点空白切换悬浮控件」，避免与容器手势双触发
-    val occlusionActive = occlusionEnabled
     // 当前节内的滚动比例（0~1），由每页回调上报，用于更细的进度条
     var inPageFraction by remember { mutableFloatStateOf(0f) }
     // 最近一次落盘的整篇进度（dispose 时回写，避免快照丢失）
@@ -311,22 +295,72 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
+            .graphicsLayer {
+                shape = RoundedCornerShape(16.dp)
+                clip = true
+            }
     ) {
         // ── 正文层：包装成真实 ViewGroup 供液态玻璃采样 ──
         AndroidView(
             factory = { ctx ->
                 FrameLayout(ctx).also { frame -> sourceRef.value = frame }.apply {
+                    clipChildren = true
+                    clipToPadding = true
                     addView(
                         ComposeView(ctx).apply {
                             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
                             setContent {
+                                // ── 正文组合直接订阅阅读设置流 ──
+                                // ComposeView 内部是独立组合，不随外层重组重跑；
+                                // 这里直接订阅 AppPrefs 流，任何设置变更（含遮挡开关）都即时驱动正文重组
+                                val bodyThemeMode by ThemeManager.themeMode.collectAsState()
+                                val bodySystemDark = isSystemInDarkTheme()
+                                val bodyIsDark = when (bodyThemeMode) {
+                                    ThemeMode.SYSTEM -> bodySystemDark
+                                    ThemeMode.DARK -> true
+                                    ThemeMode.LIGHT -> false
+                                }
+                                val bodyAppBeige by AppPrefs.lightBeigeBackgroundFlow.collectAsState()
+                                val bodyFontPx by AppPrefs.readingFontFlow.collectAsState()
+                                val bodyLineHeight by AppPrefs.readingLineHeightFlow.collectAsState()
+                                val bodyBgMode by AppPrefs.readingBgModeFlow.collectAsState()
+                                val bodyAutoIndentEnabled by AppPrefs.autoIndentEnabledFlow.collectAsState()
+                                val bodyLayoutMode by AppPrefs.readingLayoutModeFlow.collectAsState()
+                                val bodyFontId by AppPrefs.readingFontIdFlow.collectAsState()
+                                val bodyOcclusionEnabled by AppPrefs.readingOcclusionEnabledFlow.collectAsState()
+                                val bodyOcclusionMode by AppPrefs.readingOcclusionModeFlow.collectAsState()
+                                // 挡片颜色：正文组合内订阅，切换即时生效（ComposeView 不随外层重组）
+                                val bodyOcclusionColorIndex by AppPrefs.readingOcclusionColorFlow.collectAsState()
+                                val bodyMaskColor = when (bodyOcclusionColorIndex) {
+                                    1 -> Macaron.continueP().fill
+                                    2 -> Macaron.info().fill
+                                    3 -> Macaron.warn().fill
+                                    4 -> Macaron.lavender().fill
+                                    5 -> Macaron.neutral().fill
+                                    else -> Macaron.review().fill
+                                }
+                                val bodyFontFamily = remember(context, bodyFontId) {
+                                    ReaderFonts.resolveFontFamily(context, bodyFontId) ?: FontFamily.Default
+                                }
+                                val bodyTextColor = when {
+                                    bodyIsDark -> DarkText
+                                    bodyBgMode == 1 || (bodyBgMode == 0 && bodyAppBeige) -> PaperBeigeText
+                                    else -> PaperWhiteText
+                                }
+                                val bodyIndent = bodyAutoIndentEnabled && article.autoIndent
+                                val bodyOcclusionActive = bodyOcclusionEnabled
+                                val bodyOcclusion = OcclusionParams(
+                                    enabled = bodyOcclusionEnabled,
+                                    mode = bodyOcclusionMode,
+                                    onToggleControls = { controlsVisible = !controlsVisible }
+                                )
                                 if (sections.isEmpty()) {
                                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                         CircularProgressIndicator(color = accentColor)
                                     }
                                     return@setContent
                                 }
-                                if (layoutMode == 0) {
+                                if (bodyLayoutMode == 0) {
                                     // 整篇滚动：一屏滚到底，全文完整可达（默认模式）。
                                     // 遮挡模式下正文段落接管点按（揭示遮块/切换控件），容器不再抢手势
                                     Column(
@@ -334,30 +368,32 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                                             .fillMaxSize()
                                             .verticalScroll(scrollState)
                                             .then(
-                                                if (!occlusionActive) Modifier.pointerInput(Unit) {
+                                                if (!bodyOcclusionActive) Modifier.pointerInput(Unit) {
                                                     detectTapGestures { controlsVisible = !controlsVisible }
                                                 } else Modifier
                                             )
                                     ) {
-                                        if (occlusionActive) {
+                                        // 文章标题、作者统一显示在顶部液态玻璃控件（LiquidGlassPill 内），
+                                        // 正文里不再单独放作者，避免作者信息挤在正文最上方。
+                                        if (bodyOcclusionActive) {
                                             OccludedReadingContent(
                                                 text = article.content,
-                                                fontPx = fontPx,
-                                                lineHeight = lineHeight,
-                                                textColor = textColor,
-                                                fontFamily = readingFontFamily,
-                                                indent = autoIndent,
-                                                isDark = isDark,
-                                                occlusion = occlusionParams
+                                                fontPx = bodyFontPx,
+                                                lineHeight = bodyLineHeight,
+                                                textColor = bodyTextColor,
+                                                fontFamily = bodyFontFamily,
+                                                indent = bodyIndent,
+                                                maskColor = bodyMaskColor,
+                                                occlusion = bodyOcclusion
                                             )
                                         } else {
                                             ReadingTextContent(
                                                 text = article.content,
-                                                fontPx = fontPx,
-                                                lineHeight = lineHeight,
-                                                textColor = textColor,
-                                                fontFamily = readingFontFamily,
-                                                indent = autoIndent
+                                                fontPx = bodyFontPx,
+                                                lineHeight = bodyLineHeight,
+                                                textColor = bodyTextColor,
+                                                fontFamily = bodyFontFamily,
+                                                indent = bodyIndent
                                             )
                                         }
                                     }
@@ -369,21 +405,36 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .then(
-                                                if (!occlusionActive) Modifier.pointerInput(Unit) {
+                                                if (!bodyOcclusionActive) Modifier.pointerInput(Unit) {
                                                     detectTapGestures { controlsVisible = !controlsVisible }
                                                 } else Modifier
                                             )
                                     ) { page ->
                                         ReadingSectionPage(
                                             text = sections[page],
-                                            fontPx = fontPx,
-                                            lineHeight = lineHeight,
-                                            textColor = textColor,
-                                            fontFamily = readingFontFamily,
+                                            fontPx = bodyFontPx,
+                                            lineHeight = bodyLineHeight,
+                                            textColor = bodyTextColor,
+                                            fontFamily = bodyFontFamily,
                                             onScrollFraction = { inPageFraction = it },
-                                            indent = autoIndent,
-                                            occlusion = occlusionParams,
-                                            isDark = isDark
+                                            indent = bodyIndent,
+                                            maskColor = bodyMaskColor,
+                                            occlusion = bodyOcclusion,
+                                            header = if (page == 0 && article.author.isNotBlank()) {
+                                                {
+                                                    Text(
+                                                        text = article.author.trim(),
+                                                        fontSize = (bodyFontPx * 0.9f).sp,
+                                                        lineHeight = (bodyLineHeight * 0.95f).sp,
+                                                        color = bodyTextColor.copy(alpha = 0.62f),
+                                                        fontFamily = bodyFontFamily,
+                                                        textAlign = TextAlign.Center,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(bottom = 10.dp)
+                                                    )
+                                                }
+                                            } else null
                                         )
                                     }
                                 }
@@ -433,11 +484,13 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
             .graphicsLayer { alpha = controlsAlpha }
     ) {
         // 顶部：单条玻璃胶囊栏（返回 + 标题 + 设置）——控件聚合为一条，iOS 风格
+        // 外层 Box 负责横屏时水平居中定位；内层胶囊约束最大宽度
         LiquidGlassPill(
             sourceRef = sourceRef,
             isDark = isDark,
             cornerPx = LgCornerPx(23f),
             modifier = Modifier
+                .widthIn(max = 540.dp)
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 14.dp)
                 .height(46.dp)
@@ -449,7 +502,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (controlsVisible) {
-                    IconButton(onClick = onExit, modifier = Modifier.size(38.dp)) {
+                    GlassIconButton(onClick = onExit, buttonSize = 38.dp) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBackIos,
                             contentDescription = "退出阅读",
@@ -461,7 +514,11 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                     Spacer(Modifier.width(38.dp))
                 }
                 Text(
-                    text = article.title,
+                    text = if (article.author.isNotBlank()) {
+                        "${article.title} · ${article.author.trim()}"
+                    } else {
+                        article.title
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     color = textColor,
                     maxLines = 1,
@@ -469,7 +526,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                     modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                 )
                 if (controlsVisible) {
-                    IconButton(onClick = { settingsVisible = true }, modifier = Modifier.size(38.dp)) {
+                    GlassIconButton(onClick = { settingsVisible = true }, buttonSize = 38.dp) {
                         Icon(
                             imageVector = Icons.Outlined.FormatSize,
                             contentDescription = "阅读设置",
@@ -484,14 +541,15 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
         }
 
         // 底部：单条玻璃胶囊栏（章节导航[仅翻页] / 进度 / 预计剩余阅读时间）
+        // 外层 Box 负责横屏时水平居中定位；内层胶囊约束最大宽度
         LiquidGlassPill(
             sourceRef = sourceRef,
             isDark = isDark,
             cornerPx = LgCornerPx(22f),
             modifier = Modifier
+                .widthIn(max = 540.dp)
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
-                // 上浮：让开底部细进度条（位于 bottom 14dp），避免重叠/贴屏底
                 .padding(bottom = 34.dp)
                 .height(46.dp)
                 .align(Alignment.BottomCenter)
@@ -502,7 +560,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (controlsVisible && layoutMode == 1) {
-                    IconButton(
+                    GlassIconButton(
                         onClick = {
                             if (pagerState.currentPage > 0) {
                                 scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
@@ -510,7 +568,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                             }
                         },
                         enabled = pagerState.currentPage > 0,
-                        modifier = Modifier.size(36.dp)
+                        buttonSize = 36.dp
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBackIos,
@@ -540,18 +598,18 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                     modifier = Modifier.padding(horizontal = 6.dp)
                 ) {
                     Text(
-                        text = elapsedMinText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = subColor
-                    )
-                    Text(
                         text = estimatedRemainingText,
                         style = MaterialTheme.typography.labelSmall,
                         color = textColor
                     )
+                    Text(
+                        text = elapsedMinText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = subColor
+                    )
                 }
                 if (controlsVisible && layoutMode == 1) {
-                    IconButton(
+                    GlassIconButton(
                         onClick = {
                             if (pagerState.currentPage < sections.size - 1) {
                                 scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
@@ -559,7 +617,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                             }
                         },
                         enabled = pagerState.currentPage < sections.size - 1,
-                        modifier = Modifier.size(36.dp)
+                        buttonSize = 36.dp
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
@@ -571,8 +629,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
                 } else {
                     Spacer(Modifier.width(36.dp))
                 }
-            }
-        }
+            }  // close LiquidGlassPill content
     }
 
     // ── 阅读设置面板（液态玻璃底部面板）──
@@ -593,10 +650,13 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit, aiOcclusion: AiOcclu
         onOcclusionEnabledChange = { AppPrefs.readingOcclusionEnabled = it },
         occlusionMode = occlusionMode,
         onOcclusionModeChange = { AppPrefs.readingOcclusionMode = it },
-        occlusionAiAvailable = aiOcclusionAvailable,
+        occlusionColorIndex = occlusionColorIndex,
+        onOcclusionColorChange = { AppPrefs.readingOcclusionColor = it },
         isDark = isDark,
         accent = accentColor
     )
+}
+
 }
 
 // ========== 章节分页与进度辅助 ==========
@@ -723,8 +783,9 @@ private fun ReadingSectionPage(
     fontFamily: FontFamily,
     onScrollFraction: (Float) -> Unit,
     indent: Boolean = true,
+    maskColor: Color,
     occlusion: OcclusionParams = OcclusionParams(enabled = false),
-    isDark: Boolean = false
+    header: (@Composable () -> Unit)? = null
 ) {
     val scrollState = rememberScrollState()
     // 页内滚动比例上报（maxValue 变化时自动重算；无需滚动 → 视为已读完，直接 1f）
@@ -740,6 +801,7 @@ private fun ReadingSectionPage(
             .fillMaxSize()
             .verticalScroll(scrollState)
     ) {
+        header?.invoke()
         if (occlusion.enabled) {
             OccludedReadingContent(
                 text = text,
@@ -748,7 +810,7 @@ private fun ReadingSectionPage(
                 textColor = textColor,
                 fontFamily = fontFamily,
                 indent = indent,
-                isDark = isDark,
+                maskColor = maskColor,
                 occlusion = occlusion
             )
         } else {
@@ -779,11 +841,11 @@ private fun OccludedReadingContent(
     textColor: Color,
     fontFamily: FontFamily,
     indent: Boolean,
-    isDark: Boolean,
+    maskColor: Color,
     occlusion: OcclusionParams
 ) {
     val paragraphs = remember(text) { text.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() } }
-    val isAi = occlusion.mode == "ai"
+    val mode = occlusion.mode
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -791,9 +853,9 @@ private fun OccludedReadingContent(
     ) {
         paragraphs.forEachIndexed { index, para ->
             if (index > 0) Spacer(Modifier.height((fontPx * 0.9f).dp))
-            // 每段的遮挡空：AI 模式按整篇坐标映射到本段，否则（或映射失败）走本地算法
+            // 每段的遮挡空：按当前强度（short/long/mixed，均为本地算法）在段内挑选难字
             val ranges = remember(para, occlusion) {
-                ReaderOcclusion.rangesForPara(para, occlusion.articleContent, isAi, occlusion.aiRanges)
+                ReaderOcclusion.localRangesInPara(para, mode)
             }
             OccludedParagraph(
                 text = para,
@@ -803,7 +865,7 @@ private fun OccludedReadingContent(
                 textColor = textColor,
                 fontFamily = fontFamily,
                 indent = indent,
-                isDark = isDark,
+                maskColor = maskColor,
                 onToggleControls = occlusion.onToggleControls
             )
         }
@@ -812,6 +874,48 @@ private fun OccludedReadingContent(
 }
 
 // ========== 液态玻璃组件 ==========
+
+/**
+ * 玻璃胶囊内的图标按钮：学 Kyant0 LiquidButton 的按压反馈——
+ * 按下时微缩 + 变淡，spring 回弹（iOS "液态"手感），保留系统 ripple。
+ */
+@Composable
+private fun GlassIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    buttonSize: Dp,
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (enabled && pressed) 0.84f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "glassIconScale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (enabled && pressed) 0.66f else 1f,
+        animationSpec = tween(110),
+        label = "glassIconAlpha"
+    )
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        interactionSource = interactionSource,
+        modifier = Modifier
+            .size(buttonSize)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            }
+    ) {
+        content()
+    }
+}
 
 /**
  * 单颗液态玻璃胶囊：底层半透明玻璃兜底（低版本），中层真实液态折射玻璃
@@ -851,19 +955,25 @@ private fun LiquidGlassPill(
             AndroidView(
                 factory = { ctx ->
                     LiquidGlassView(ctx).apply {
+                        // bind 前兜底背景：液态层尚未采样到内容时先给玻璃底色，
+                        // 否则首帧只剩高光辉光块（与导航栏同一处理）
+                        setBackgroundColor(
+                            if (isDark) android.graphics.Color.argb(230, 26, 26, 26)
+                            else android.graphics.Color.argb(230, 255, 255, 255)
+                        )
                         setCornerRadius(cornerPx)
                         setRefractionHeight(refractPx)
                         setRefractionOffset(offsetPx)
                         setBlurRadius(LgBlurRadius)
                         setDispersion(LgDispersion)
                         if (isDark) {
-                            // 深色：暖黑玻璃，略微提透明度撑起质感
+                            // 深色：暖黑玻璃，与导航栏 tint 一致
                             setTintColorRed(0f); setTintColorGreen(0f); setTintColorBlue(0f)
-                            setTintAlpha(0.30f)
+                            setTintAlpha(0.25f)
                         } else {
-                            // 浅色：白玻璃轻染，让"玻璃"本身可见而不喧宾夺主
+                            // 浅色：白玻璃轻染，与导航栏 tint 一致
                             setTintColorRed(1f); setTintColorGreen(1f); setTintColorBlue(1f)
-                            setTintAlpha(0.14f)
+                            setTintAlpha(0.12f)
                         }
                         setDraggableEnabled(false)
                         setElasticEnabled(false)
@@ -983,7 +1093,8 @@ private fun ReadingSettingsSheet(
     onOcclusionEnabledChange: (Boolean) -> Unit,
     occlusionMode: String,
     onOcclusionModeChange: (String) -> Unit,
-    occlusionAiAvailable: Boolean,
+    occlusionColorIndex: Int,
+    onOcclusionColorChange: (Int) -> Unit,
     isDark: Boolean,
     accent: Color
 ) {
@@ -1157,26 +1268,7 @@ private fun ReadingSettingsSheet(
                             )
                         }
                     }
-                    // 系统字体
-                    if (sysFonts.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "系统字体（${sysFonts.size}）",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isDark) DarkSub else PaperWhiteSub
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        sysFonts.forEach { f ->
-                            FontPickerRow(
-                                name = f.name,
-                                selected = fontId == f.id,
-                                isDark = isDark,
-                                accent = accent,
-                                onClick = { onFontIdChange(f.id) }
-                            )
-                        }
-                    }
-                    // 导入字体（可删除）
+                    // 导入字体（可删除）——置于系统字体上方（用户自定义字体优先展示）
                     if (imported.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -1212,6 +1304,25 @@ private fun ReadingSettingsSheet(
                                         }
                                     }
                                 }
+                            )
+                        }
+                    }
+                    // 系统字体
+                    if (sysFonts.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "系统字体（${sysFonts.size}）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDark) DarkSub else PaperWhiteSub
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        sysFonts.forEach { f ->
+                            FontPickerRow(
+                                name = f.name,
+                                selected = fontId == f.id,
+                                isDark = isDark,
+                                accent = accent,
+                                onClick = { onFontIdChange(f.id) }
                             )
                         }
                     }
@@ -1348,49 +1459,27 @@ private fun ReadingSettingsSheet(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Switch(
+                GlassSwitch(
                     checked = occlusionEnabled,
                     onCheckedChange = { v -> onOcclusionEnabledChange(v) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = accent,
-                        uncheckedThumbColor = if (isDark) Color(0xFFB4B4B4) else Color(0xFFE9E9E9),
-                        uncheckedTrackColor = if (isDark) Color(0x33FFFFFF) else Color(0x1F000000)
-                    )
+                    accent = accent
                 )
             }
-            // 开启后浮现两个算法子项
+            // 开启后浮现遮挡强度子项（短/长/混合，均为本地算法，仅控制遮多遮少）
             AnimatedVisibility(visible = occlusionEnabled) {
                 Column(Modifier.padding(top = 10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        val options = buildList {
-                            if (occlusionAiAvailable) add("ai" to "AI 遮挡")
-                            add("local" to "本地算法遮挡")
-                        }
+                        val options = listOf(
+                            "short" to "短遮挡",
+                            "long" to "长遮挡",
+                            "mixed" to "混合长短遮挡"
+                        )
                         options.forEach { (m, label) ->
                             val selected = occlusionMode == m
                             FilterChip(
                                 selected = selected,
                                 onClick = { onOcclusionModeChange(m) },
-                                label = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (m == "ai") {
-                                            Text(label)
-                                            Spacer(Modifier.width(6.dp))
-                                            Text(
-                                                "Pro",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = accent,
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(accent.copy(alpha = 0.14f))
-                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                                            )
-                                        } else {
-                                            Text(label)
-                                        }
-                                    }
-                                },
+                                label = { Text(label) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = when {
                                         selected && isDark -> Color(0x334B5563)
@@ -1408,13 +1497,32 @@ private fun ReadingSettingsSheet(
                             )
                         }
                     }
-                    if (!occlusionAiAvailable) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "AI 遮挡需在 AI 设置中配置并开启后可用",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isDark) DarkSub else PaperWhiteSub
+                    // ── 挡片颜色：马卡龙淡色可选（不透明真正遮住，高度与字形一致）──
+                    Spacer(Modifier.height(12.dp))
+                    Text("挡片颜色", style = MaterialTheme.typography.labelMedium,
+                        color = if (isDark) DarkText else PaperWhiteText)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val maskColors = listOf(
+                            Macaron.review().fill, Macaron.continueP().fill, Macaron.info().fill,
+                            Macaron.warn().fill, Macaron.lavender().fill, Macaron.neutral().fill
                         )
+                        maskColors.forEachIndexed { idx, c ->
+                            val sel = occlusionColorIndex == idx
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(c)
+                                    .border(
+                                        width = if (sel) 2.dp else 1.dp,
+                                        color = if (sel) accent else (if (isDark) Color(0x59FFFFFF) else Color(0x33000000)),
+                                        shape = RoundedCornerShape(50)
+                                    )
+                                    .clickable { onOcclusionColorChange(idx) },
+                                contentAlignment = Alignment.Center
+                            ) {}
+                        }
                     }
                 }
             }

@@ -23,9 +23,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.PdfTextExtractor
 import kotlin.math.max
@@ -35,17 +37,22 @@ import kotlin.math.max
  * 用于 PDF 预览的矢量模式，替代复杂的自适应缩放渲染，保证阅读体验正常。
  *
  * @param title 篇目标题
- * @param content 正文（首行若为作者则自动居中展示，如“魏征”）
+ * @param content 正文（未传 [author] 时，首行若为作者则自动居中展示，如“魏征”）
+ * @param author 作者（选填）。素材库文本版已单独解析出作者行，直接传入即可；
+ *                传空则回退到从正文首行嗅探的旧逻辑（PDF 提取文本走这条路）。
  */
 @Composable
 fun TextContentReader(
     title: String,
     content: String,
+    author: String = "",
     modifier: Modifier = Modifier
 ) {
     val trimmed = content.trim()
     val firstLine = trimmed.substringBefore("\n")
-    val (author, body) = if (
+    // 显式作者优先；未传入时才从正文首行嗅探（PDF 提取文本仍靠嗅探）
+    val explicitAuthor = author.trim()
+    val (sniffedAuthor, sniffedBody) = if (
         firstLine.length <= 12 &&
         !firstLine.contains(Regex("[，。！？；：、]")) &&
         trimmed.contains("\n")
@@ -54,6 +61,8 @@ fun TextContentReader(
     } else {
         null to trimmed
     }
+    val authorText = explicitAuthor.ifEmpty { sniffedAuthor ?: "" }
+    val body = if (explicitAuthor.isEmpty()) sniffedBody else trimmed
 
     Column(
         modifier = modifier
@@ -69,10 +78,10 @@ fun TextContentReader(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
-        if (author != null) {
+        if (authorText.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(
-                text = author,
+                text = authorText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -80,7 +89,7 @@ fun TextContentReader(
             )
         }
         Spacer(Modifier.height(14.dp))
-        // 正文：按空行分段落（PDF/Word 等富文档来源保持原文排版，不做首行缩进）
+        // 正文：按空行分段落，段落首行缩进 2 字（与「段落首行缩进」阅读规范一致）
         val paragraphs = body.split(Regex("\\n\\s*\\n"))
         paragraphs.forEachIndexed { index, para ->
             if (para.isNotBlank()) {
@@ -88,7 +97,8 @@ fun TextContentReader(
                     text = para,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 18.sp,
-                        lineHeight = 30.sp
+                        lineHeight = 30.sp,
+                        textIndent = TextIndent(firstLine = 2.em)
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.fillMaxWidth()

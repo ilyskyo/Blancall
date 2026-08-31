@@ -329,13 +329,13 @@ fun HelpScreen(navController: NavController) {
                     }
                 )
 
-                // ── 8. AI 学习助手使用说明 ──
+                // ── 8. AI 使用说明 ──
                 HelpSection(
                     emoji = "🤖",
-                    title = "AI 学习助手",
+                    title = "AI",
                     expandedContent = {
                         Text(
-                            "AI 学习助手可以把你的文章交给 AI，帮助你解释难点、出练习题、分析易错内容。",
+                            "启用 AI 后，可以把你的文章交给 AI，帮助你解释难点、出练习题、分析易错内容。",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -348,7 +348,7 @@ fun HelpScreen(navController: NavController) {
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "在「设置 → 特性 → 启用 AI 功能」中开启，并填写 API 地址、API Key 与模型名。支持 OpenAI 兼容接口（DeepSeek / 通义 / GLM / Kimi 等）。",
+                            "在「设置 → AI → 启用 AI 功能」中开启，并填写 API 地址、API Key 与模型名。支持 OpenAI 兼容接口（DeepSeek / 通义 / GLM / Kimi 等）。",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -379,8 +379,8 @@ fun HelpScreen(navController: NavController) {
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
-                            emoji = "🕘",
-                            title = "首页左下角「AI」",
+                            emoji = "📋",
+                            title = "我的文章页「AI对话记录」",
                             desc = "开启「保存与 AI 的对话」后出现，查看历史对话并继续聊"
                         )
                         Spacer(Modifier.height(12.dp))
@@ -398,7 +398,7 @@ fun HelpScreen(navController: NavController) {
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "在设置中开启「保存与 AI 的对话」后，每次对话自动保存在本机，可从首页左下角「AI」入口随时查看历史，点击任意历史会话即可继续对话。关闭后不再保存。",
+                            "在设置中开启「保存与 AI 的对话」后，每次对话自动保存在本机，可从「我的文章」页的「AI对话记录」入口随时查看历史，点击任意历史会话即可继续对话。关闭后不再保存。",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

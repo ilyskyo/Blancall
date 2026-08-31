@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,7 +123,8 @@ fun WesternThoughtScreen(navController: NavController) {
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(1),  // 单列：每张卡片横跨整行，与其它根页标题/排版一致
-            contentPadding = PaddingValues(16.dp),
+            // 底部留白：悬浮导航栏覆盖屏幕底部约 100dp，避免最后卡片被遮挡
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 140.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.fillMaxSize()
         ) {
@@ -285,6 +287,8 @@ fun LibraryContentPage(
     val lib = BUILT_IN_LIBRARIES.firstOrNull { it.id == libraryId } ?: BUILT_IN_LIBRARIES.first()
     val context = LocalContext.current
     var webView by remember { mutableStateOf<WebView?>(null) }
+    // 组合层取 WebView 背景色（factory 非 Composable，不能直接读 MaterialTheme）
+    val webViewBg = MaterialTheme.colorScheme.background.toArgb()
 
     // 非官方第三方素材免责提示：每个库首次进入弹一次（gaokao / western 各自记忆）
     var showDisclaimer by remember { mutableStateOf(
@@ -526,6 +530,9 @@ fun LibraryContentPage(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).apply {
+                        // 背景用主题背景色（非透明）：素材库 HTML 依赖不透明底色，
+                        // 透明化会破坏其渲染导致内容模糊/闪烁
+                        setBackgroundColor(webViewBg)
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
@@ -582,6 +589,15 @@ fun LibraryContentPage(
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 url ?: return
+                                // 注入 CSS：正文段落首行缩进 2 字（与「段落首行缩进」阅读规范一致）
+                                view?.evaluateJavascript(
+                                    "(function(){" +
+                                        "var s=document.createElement('style');" +
+                                        "s.textContent='p{text-indent:2em;}';" +
+                                        "document.head.appendChild(s);" +
+                                        "})()",
+                                    null
+                                )
                                 // 返回本页时恢复目录滚动位置（从篇目预览返回后仍在原处）
                                 if (savedScrollY > 0) view?.scrollTo(0, savedScrollY)
                                 // 从 URL 中提取文件名（如 weber.html / arendt.html）
@@ -793,7 +809,7 @@ private suspend fun importPhiloToBlancall(
         val repo = ArticleRepository.getInstance(
             context.filesDir.resolve("articles.json").absolutePath
         )
-        val article = Article(title = title, content = content)
+        val article = Article(title = title, content = content, author = personName)
         repo.insert(article)
     } catch (e: Exception) {
         e.printStackTrace()

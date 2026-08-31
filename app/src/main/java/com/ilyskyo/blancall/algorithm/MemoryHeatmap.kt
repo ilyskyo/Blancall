@@ -67,10 +67,15 @@ object MemoryHeatmap {
         records: List<PracticeRecord>,
         sentenceIndexProvider: (MistakeDetail) -> Int?
     ): HeatmapData {
-        val allSentences = SentenceSplitter.split(content)
+        // 用带位置的切句作为唯一锚点：字符起始位置 → 句索引。
+        // 练习记录存的是"句子在全文中的字符起始位置"（见 PracticeRecord.answeredSentenceStarts），
+        // 这样不受"全文切句 vs 各段分别切句"口径差异影响（标题行/段落拼接都不会错位）。
+        val positioned = SentenceSplitter.splitWithPositions(content)
+        val allSentences = positioned.map { it.text }
         if (allSentences.isEmpty()) {
             return HeatmapData(emptyList(), 0f, 0)
         }
+        val startToIndex = positioned.withIndex().associate { it.value.startIndex to it.index }
 
         // 统计每句的错误次数和总练习次数
         // sentenceErrors[sIdx] = errorCount
@@ -85,11 +90,19 @@ object MemoryHeatmap {
                     ?: estimateSentenceIndex(mistake.blankIndex, allSentences.size, record.totalBlanks)
                 sentenceErrors[sentIdx] = (sentenceErrors[sentIdx] ?: 0) + 1
             }
-            // 每条记录计数练习次数（近似：整篇练习时每句都被练到）
-            val blanksPerSentence = if (allSentences.size > 0)
-                record.totalBlanks / allSentences.size.coerceAtLeast(1) else 1
-            for (sIdx in allSentences.indices) {
-                sentenceTotal[sIdx] = (sentenceTotal[sIdx] ?: 0) + blanksPerSentence.coerceAtLeast(1)
+            // 本次实际作答的句子：新记录按字符位置锚定（未完成提交被跳过的空不计入，
+            // 避免未作答题被当成"答对/0错"）；旧记录无该字段 → 回退整篇都练到。
+            if (record.answeredSentenceStarts.isNotEmpty()) {
+                for (start in record.answeredSentenceStarts) {
+                    val sIdx = startToIndex[start] ?: continue
+                    sentenceTotal[sIdx] = (sentenceTotal[sIdx] ?: 0) + 1
+                }
+            } else {
+                val blanksPerSentence = if (allSentences.size > 0)
+                    record.totalBlanks / allSentences.size.coerceAtLeast(1) else 1
+                for (sIdx in allSentences.indices) {
+                    sentenceTotal[sIdx] = (sentenceTotal[sIdx] ?: 0) + blanksPerSentence.coerceAtLeast(1)
+                }
             }
         }
 
@@ -101,9 +114,11 @@ object MemoryHeatmap {
         // 若将来支持按句/按段练习且记录可区分覆盖范围，应改为按句精确统计。
         val sentences = allSentences.mapIndexed { idx, text ->
             val errors = sentenceErrors[idx] ?: 0
-            val total = sentenceTotal[idx] ?: 1
-            val errorRate = (errors.toFloat() / total.coerceAtLeast(1)).coerceIn(0f, 1f)
-            val heatColor = errorRateToColor(errorRate, totalPractices > 0)
+            val total = sentenceTotal[idx] ?: 0
+            // 未作答句（从未被练到）→ 未练习：无色，不再显示“错 0%”
+            val heatColor = if (total <= 0) Color.Unspecified
+                            else errorRateToColor((errors.toFloat() / total).coerceIn(0f, 1f), totalPractices > 0)
+            val errorRate = if (total > 0) errors.toFloat() / total.coerceAtLeast(1) else 0f
             SentenceHeat(idx, text, errorRate, totalPractices, heatColor)
         }
 

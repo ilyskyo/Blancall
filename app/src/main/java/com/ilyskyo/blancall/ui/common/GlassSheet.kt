@@ -8,11 +8,13 @@ import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +55,8 @@ fun GlassModalBottomSheet(
         containerColor = stain,
         scrimColor = scrimColor,
         dragHandle = dragHandle,
+        // 直接展开到内容高度；避免部分展开（半屏）时出现大片留白
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         content = {
             Box(modifier = Modifier.fillMaxWidth()) {
                 // backdrop 真实模糊层（API31+）：内嵌氛围空容器并施加玻璃模糊，低版本跳过。
@@ -65,8 +69,13 @@ fun GlassModalBottomSheet(
                             .glassSurface(radiusPx = 18f)
                     ) { AmbientBackground() }
                 }
-                // 内容（绘制在最上层）
-                Column(modifier = Modifier.fillMaxSize(), content = content)
+                // 内容（绘制在最上层）：wrap 高度 + 可滚动，让面板高度恰好包住内容（不出现大块留白）
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    content = content
+                )
             }
         }
     )

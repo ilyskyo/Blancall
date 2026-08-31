@@ -52,7 +52,7 @@ object AnswerChecker {
 
         // ── 完全一致 ──
         if (correctTrimmed == userTrimmed) {
-            return CheckDetail(Result.CORRECT, correctTrimmed, userTrimmed, "正确 ✓", 1f)
+            return CheckDetail(Result.CORRECT, correctTrimmed, userTrimmed, "正确", 1f)
         }
 
         // ── 标点/空白归一化后比对（含全半角 + 大小写归一化，英文容错，中文不受影响） ──
@@ -60,7 +60,7 @@ object AnswerChecker {
         val userCore = toHalfWidth(stripPunctAndSpace(userTrimmed)).lowercase()
 
         if (correctCore.isEmpty() && userCore.isEmpty()) {
-            return CheckDetail(Result.CORRECT, correctTrimmed, userTrimmed, "正确 ✓", 1f)
+            return CheckDetail(Result.CORRECT, correctTrimmed, userTrimmed, "正确", 1f)
         }
 
         if (correctCore == userCore) {

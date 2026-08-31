@@ -3,33 +3,19 @@
 
 package com.ilyskyo.blancall.ui.reader
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material3.Text
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -37,12 +23,10 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextIndent
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.DifficultyCalculator
-import kotlin.math.roundToInt
 
 /** 阅读背诵遮挡的一个空（原文 [start, end) 区间，半开区间） */
 data class OcclusionSpan(val start: Int, val end: Int)
@@ -50,12 +34,13 @@ data class OcclusionSpan(val start: Int, val end: Int)
 /** 遮挡渲染参数：由 [ReadingModeScreen] 组装后下发给正文渲染器 */
 data class OcclusionParams(
     val enabled: Boolean,
-    /** "local"=本地算法；"ai"=AI 遮挡（仅 Pro 提供） */
-    val mode: String = "local",
-    /** AI 遮挡在 [articleContent] 上的全局空（仅 ai 模式使用，local 忽略） */
-    val aiRanges: List<OcclusionSpan> = emptyList(),
-    /** 用于 AI 空→当前展示文本映射时的源文本 */
-    val articleContent: String = "",
+    /**
+     * 遮挡强度（三种均为本地算法，仅控制"遮多遮少"）：
+     * - "short"=短遮挡：每从句仅遮最难的单字（高阈值），遮得最少
+     * - "long" =长遮挡：每从句最多遮 3 个难字（低阈值），遮得最多
+     * - "mixed"=混合长短遮挡：按从句序号交替长/短，长短不一的观感
+     */
+    val mode: String = "long",
     val onToggleControls: () -> Unit = {}
 )
 
@@ -102,79 +87,60 @@ object ReaderOcclusion {
         return res
     }
 
-    /** 在一个从句内挑最高难度 1-2 汉字作为遮挡，返回段内区间 */
-    private fun pickInRange(text: String, s: Int, e: Int): OcclusionSpan? {
-        if (e - s < 2) return null
-        var best = -1
-        var bd = -1f
+    /**
+     * 在一个从句内挑遮挡字，返回【多个独立遮块】（每个最难字 1 个遮块）。
+     * [density] 决定遮多遮少：
+     * - "short"：高阈值，仅遮最难的单字（[maxChars]=1）→ 遮得最少
+     * - "long" ：低阈值，最多遮 [maxChars]=3 个难字 → 遮得最多
+     * - 其它（兜底）：中等阈值，单字
+     */
+    private fun pickInRange(text: String, s: Int, e: Int, density: String): List<OcclusionSpan> {
+        if (e - s < 2) return emptyList()
+        val (threshold, maxChars) = when (density) {
+            "long" -> 0.25f to 3   // 长遮挡：低阈值 + 多字 → 遮得多
+            "short" -> 0.55f to 1  // 短遮挡：高阈值 + 单字 → 遮得少
+            else -> 0.32f to 1     // 兜底（理论上不会命中）
+        }
+        val hard = mutableListOf<Int>()
         for (i in s until e) {
             if (isChinese(text[i])) {
                 val d = DifficultyCalculator.calculateCharDifficulty(text[i])
-                if (d > bd) { bd = d; best = i }
+                if (d >= threshold) hard.add(i)
             }
         }
-        if (best < 0 || bd < 0.32f) return null
-        var ee = best + 1
-        if (ee < e && isChinese(text[ee]) && DifficultyCalculator.calculateCharDifficulty(text[ee]) >= bd * 0.8f) ee++
-        return OcclusionSpan(best, ee)
+        if (hard.isEmpty()) return emptyList()
+        // 按难度降序，取最难的若干字各自成块
+        hard.sortByDescending { DifficultyCalculator.calculateCharDifficulty(text[it]) }
+        return hard.take(maxChars).map { OcclusionSpan(it, it + 1) }
     }
 
+    /** 混合模式：按从句序号交替长/短，形成长短不一的观感 */
+    private fun clauseDensity(mode: String, clauseIdx: Int): String =
+        if (mode == "mixed") (if (clauseIdx % 2 == 0) "long" else "short") else mode
+
     /** 段落级本地遮挡（返回段内区间） */
-    fun localRangesInPara(para: String): List<OcclusionSpan> {
+    fun localRangesInPara(para: String, mode: String): List<OcclusionSpan> {
         val out = mutableListOf<OcclusionSpan>()
         var start = 0
+        var clauseIdx = 0
         for (i in para.indices) {
             if (para[i] in CLAUSE_PUNCT) {
-                pickInRange(para, start, i + 1)?.let { out.add(it) }
+                out += pickInRange(para, start, i + 1, clauseDensity(mode, clauseIdx))
                 start = i + 1
+                clauseIdx++
             }
         }
-        if (start < para.length) pickInRange(para, start, para.length)?.let { out.add(it) }
+        if (start < para.length) out += pickInRange(para, start, para.length, clauseDensity(mode, clauseIdx))
         return out.distinctBy { it.start }
     }
 
     /** 整篇本地遮挡（返回在 [text] 上的全局区间） */
-    fun localRanges(text: String): List<OcclusionSpan> {
+    fun localRanges(text: String, mode: String): List<OcclusionSpan> {
         val out = mutableListOf<OcclusionSpan>()
         for (p in splitParagraphs(text)) {
-            for (sp in localRangesInPara(p.text)) out.add(OcclusionSpan(p.start + sp.start, p.start + sp.end))
+            for (sp in localRangesInPara(p.text, mode)) out.add(OcclusionSpan(p.start + sp.start, p.start + sp.end))
         }
         return out
-    }
-
-    /**
-     * 将 [sourceText] 上的遮挡区间映射到 [targetText]（按子串查找）。
-     * 用于把 AI 在整篇上算出的空，映射到章节页/预览等重建文本上。
-     */
-    fun mapRangesToText(targetText: String, sourceText: String, ranges: List<OcclusionSpan>): List<OcclusionSpan> {
-        val out = mutableListOf<OcclusionSpan>()
-        for (r in ranges) {
-            if (r.start !in 0..sourceText.length || r.end !in r.start..sourceText.length) continue
-            val sub = sourceText.substring(r.start, r.end)
-            if (sub.isEmpty()) continue
-            val k = targetText.indexOf(sub)
-            if (k >= 0) out.add(OcclusionSpan(k, k + sub.length))
-        }
-        return out.distinctBy { it.start }
-    }
-
-    /**
-     * 段落级遮挡区间：
-     * - AI 模式：把整篇 [aiRanges] 映射到本段；映射失败（AI 未返回/坐标失效）则回退本地算法
-     * - 本地模式：直接用 [ReaderOcclusion.localRangesInPara]
-     * @return 段内 [start,end) 区间列表
-     */
-    fun rangesForPara(
-        para: String,
-        fullContent: String,
-        isAi: Boolean,
-        aiRanges: List<OcclusionSpan>
-    ): List<OcclusionSpan> {
-        if (isAi && aiRanges.isNotEmpty() && fullContent.isNotEmpty()) {
-            val mapped = mapRangesToText(para, fullContent, aiRanges)
-            if (mapped.isNotEmpty()) return mapped
-        }
-        return localRangesInPara(para)
     }
 
     private fun isChinese(ch: Char): Boolean =
@@ -196,9 +162,18 @@ private fun rangeRects(layout: TextLayoutResult, start: Int, end: Int): List<Rec
         if (ce >= cs) {
             val left = layout.getBoundingBox(cs).left
             val right = layout.getBoundingBox(ce).right
-            val top = layout.getLineTop(line)
-            val bottom = layout.getLineBottom(line)
-            res.add(Rect(left, top, right, bottom))
+            // 遮块高度与字形同高：取该段字符的实际包围盒（min top / max bottom），
+            // 而不是整行高（行高含行距，会让遮块比字高出一截）
+            var top = layout.getBoundingBox(cs).top
+            var bottom = layout.getBoundingBox(cs).bottom
+            for (i in cs + 1..ce) {
+                val bbox = layout.getBoundingBox(i)
+                if (bbox.top < top) top = bbox.top
+                if (bbox.bottom > bottom) bottom = bbox.bottom
+            }
+            // 贴合字形墨迹：上下各内缩一点（字符包围盒含 ascent/descent 余量，比可见字形略高）
+            val visualInset = (bottom - top) * 0.10f
+            res.add(Rect(left, top + visualInset, right, bottom - visualInset))
         }
         line++
         if (line > lastLine) break
@@ -209,8 +184,10 @@ private fun rangeRects(layout: TextLayoutResult, start: Int, end: Int): List<Rec
 /**
  * 单段落背诵遮挡渲染：
  * - 底层面板【原文完整渲染】保证换行/缩进与正常阅读完全一致
- * - 上方按遮挡区间画"圆角遮块"（黑/灰块，自带柔和投影）
- * - 点一下遮块 → 像揭开挡卡一样缩放淡出，露出被盖住的原文
+ * - 遮块在 Text 的 drawBehind 中与文字【同一绘制阶段】同步绘制——字号/字体/行距/
+ *   缩进/换行任何变化，遮块与文字永远同帧更新，零时延、不分离
+ * - 遮块为文字色高不透明覆盖：真正遮住原文（不是半透明）
+ * - 点一下遮块 → 立即露出原文；再点同一位置 → 重新遮上
  * - 点段落空白处 → 交给上层切换悬浮控件显隐（不与点块冲突）
  */
 @Composable
@@ -222,70 +199,70 @@ fun OccludedParagraph(
     textColor: Color,
     fontFamily: FontFamily,
     indent: Boolean,
-    isDark: Boolean,
+    maskColor: Color,
     onToggleControls: () -> Unit
 ) {
-    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val revealedStarts = remember { mutableStateOf(setOf<Int>()) }
-
-    // 需要绘制遮块的区间（未揭示的）+ 各自矩形
-    val blocks = remember(layout, hidden) {
-        val l = layout ?: return@remember emptyList()
-        hidden
-            .filter { it.start !in revealedStarts.value && it.end > it.start }
-            .map { it to rangeRects(l, it.start, it.end) }
-            .filter { it.second.isNotEmpty() }
-    }
-    val blocksState = rememberUpdatedState(blocks)
-
-    val fillColor = if (isDark) Color(0x3AFFFFFF) else Color(0x24000000)
-    val borderColor = if (isDark) Color(0x59FFFFFF) else Color(0x2E000000)
+    // 挡片颜色用 State 包裹：drawWithContent 在绘制阶段读取 .value，
+    // 切换颜色时 State 变化触发 invalidate → 实时重绘（普通闭包变量不会触发重绘）
+    val maskColorState = rememberUpdatedState(maskColor)
+    // 普通可变容器（非 State）：onTextLayout 布局回调中同步填充，
+    // 同一帧的绘制阶段（drawBehind）即可读取——避免 State 写入导致的下一帧重组时延
+    val blockRects = remember { mutableListOf<Pair<OcclusionSpan, List<Rect>>>() }
     val density = LocalDensity.current
+    // 圆角更大（8dp）：遮块呈圆润胶囊感，贴合字形（高度已按字形 top/bottom 对齐）
+    val cornerRadiusPx = with(density) { 8.dp.toPx() }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                detectTapGestures { pos ->
-                    val hitBlock = blocksState.value.any { (_, rects) -> rects.any { it.contains(pos) } }
-                    if (!hitBlock) onToggleControls()
-                }
-            }
-    ) {
-        Text(
-            text = text,
-            fontSize = fontPx.sp,
-            lineHeight = (fontPx * lineHeight).sp,
-            color = textColor,
-            fontFamily = fontFamily,
-            style = TextStyle(textIndent = if (indent) TextIndent(firstLine = 2.em) else TextIndent()),
-            modifier = Modifier.fillMaxWidth(),
-            onTextLayout = { layout = it }
-        )
-        blocks.forEach { (span, rects) ->
-            rects.forEach { r ->
-                AnimatedVisibility(
-                    visible = span.start !in revealedStarts.value,
-                    enter = fadeIn(tween(160)) + scaleIn(initialScale = 0.9f, animationSpec = tween(160)),
-                    exit = fadeOut(tween(200)) + scaleOut(targetScale = 1.12f, animationSpec = tween(200)),
-                    modifier = Modifier
-                        .offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
-                        .size(with(density) { r.width.dp }, with(density) { r.height.dp })
-                ) {
-                    val shape = RoundedCornerShape(6.dp)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .shadow(elevation = 3.dp, shape = shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.22f))
-                            .clip(shape)
-                            .background(fillColor)
-                            .border(BorderStroke(1.dp, borderColor), shape)
-                            .pointerInput(span) {
-                                detectTapGestures { revealedStarts.value = revealedStarts.value + span.start }
-                            }
-                    )
-                }
-            }
+    // 按当前 layout 计算全部遮块矩形（含已揭示的——已揭示位置再点一下可重新遮上）
+    fun computeBlocks(l: TextLayoutResult) {
+        blockRects.clear()
+        for (sp in hidden) {
+            if (sp.end <= sp.start) continue
+            val rects = rangeRects(l, sp.start, sp.end)
+            if (rects.isNotEmpty()) blockRects.add(sp to rects)
         }
     }
+
+    Text(
+        text = text,
+        fontSize = fontPx.sp,
+        lineHeight = (fontPx * lineHeight).sp,
+        color = textColor,
+        fontFamily = fontFamily,
+        style = TextStyle(textIndent = if (indent) TextIndent(firstLine = 2.em) else TextIndent()),
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawWithContent {
+                // 先画原文，再在其上画遮块——遮块在文字之上，才能真正不透明盖住内容
+                drawContent()
+                blockRects.forEach { (span, rects) ->
+                    if (span.start !in revealedStarts.value) {
+                        rects.forEach { r ->
+                            drawRoundRect(
+                                color = maskColorState.value,
+                                topLeft = Offset(r.left, r.top),
+                                size = Size(r.width, r.height),
+                                cornerRadius = CornerRadius(cornerRadiusPx)
+                            )
+                        }
+                    }
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures { pos ->
+                    val hit = blockRects.firstOrNull { (_, rects) -> rects.any { it.contains(pos) } }
+                    when {
+                        hit == null -> onToggleControls()
+                        hit.first.start in revealedStarts.value ->
+                            revealedStarts.value = revealedStarts.value - hit.first.start // 再点一下遮回去
+                        else ->
+                            revealedStarts.value = revealedStarts.value + hit.first.start // 点开揭示
+                    }
+                }
+            },
+        onTextLayout = { l ->
+            // 布局回调：同步计算遮块矩形，同一帧绘制即可用（零时延）
+            computeBlocks(l)
+        }
+    )
 }

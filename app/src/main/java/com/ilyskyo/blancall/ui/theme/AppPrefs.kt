@@ -152,7 +152,8 @@ object AppPrefs {
         }
         _readingOcclusionEnabledFlow.value = prefs.getBoolean("reading_occlusion_enabled", false)
         _readingOcclusionModeFlow.value =
-            prefs.getString("reading_occlusion_mode", "local")?.takeIf { it == "ai" || it == "local" } ?: "local"
+            prefs.getString("reading_occlusion_mode", "long")?.takeIf { it in setOf("long", "short", "mixed") } ?: "long"
+        _readingOcclusionColorFlow.value = prefs.getInt("reading_occlusion_color", 0).coerceIn(0, 5)
     }
 
     var predictiveBackEnabled: Boolean
@@ -447,14 +448,25 @@ object AppPrefs {
             }
         }
 
-    /** 阅读遮挡算法：local=本地算法 / ai=AI 遮挡 */
+    /** 阅读遮挡强度：long=长遮挡（遮多）/ short=短遮挡（遮少）/ mixed=混合长短遮挡 */
     var readingOcclusionMode: String
-        get() = if (::prefs.isInitialized) _readingOcclusionModeFlow.value else "local"
+        get() = if (::prefs.isInitialized) _readingOcclusionModeFlow.value else "long"
         set(value) {
-            val v = if (value == "ai" || value == "local") value else "local"
+            val v = if (value in setOf("long", "short", "mixed")) value else "long"
             if (::prefs.isInitialized) {
                 prefs.edit { putString("reading_occlusion_mode", v) }
                 _readingOcclusionModeFlow.value = v
+            }
+        }
+
+    /** 阅读遮挡挡片颜色索引（0-5 马卡龙淡色，默认 0=樱花粉） */
+    var readingOcclusionColor: Int
+        get() = if (::prefs.isInitialized) prefs.getInt("reading_occlusion_color", 0) else 0
+        set(value) {
+            val v = value.coerceIn(0, 5)
+            if (::prefs.isInitialized) {
+                prefs.edit { putInt("reading_occlusion_color", v) }
+                _readingOcclusionColorFlow.value = v
             }
         }
 
@@ -517,9 +529,13 @@ object AppPrefs {
     /** 是否启用阅读背诵遮挡 */
     val readingOcclusionEnabledFlow: StateFlow<Boolean> = _readingOcclusionEnabledFlow.asStateFlow()
 
-    private val _readingOcclusionModeFlow = MutableStateFlow("local")
-    /** 阅读遮挡算法：local=本地算法 / ai=AI 遮挡 */
+    private val _readingOcclusionModeFlow = MutableStateFlow("long")
+    /** 阅读遮挡强度：long=长遮挡（遮多）/ short=短遮挡（遮少）/ mixed=混合长短遮挡 */
     val readingOcclusionModeFlow: StateFlow<String> = _readingOcclusionModeFlow.asStateFlow()
+
+    private val _readingOcclusionColorFlow = MutableStateFlow(0)
+    /** 阅读遮挡挡片颜色索引（0-5 马卡龙淡色） */
+    val readingOcclusionColorFlow: StateFlow<Int> = _readingOcclusionColorFlow.asStateFlow()
 
     /** 文章阅读位置（0~1 全文进度），按字符比例存储，字号变化后仍可定位 */
     fun getReadingPos(articleId: Long): Float =

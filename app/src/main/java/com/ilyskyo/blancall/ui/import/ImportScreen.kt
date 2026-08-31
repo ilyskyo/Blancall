@@ -70,6 +70,8 @@ fun ImportScreen(navController: NavController) {
     val context = LocalContext.current
 
     var title by remember { mutableStateOf("") }
+    // 作者（选填）：与标题一并保存，列表/详情页展示
+    var author by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
     var fileLoaded by remember { mutableStateOf(false) }
     var useFileImport by remember { mutableStateOf(false) }
@@ -86,6 +88,7 @@ fun ImportScreen(navController: NavController) {
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val titleFocusRequester = remember { FocusRequester() }
+    val authorFocusRequester = remember { FocusRequester() }
     val contentFocusRequester = remember { FocusRequester() }
     // 当前导入来源的段落是否允许自动首行缩进：粘贴/纯文本=true，PDF/Word 等文档=false。
     // 文件加载时按文件名判定；粘贴模式下恒为 true。
@@ -97,12 +100,12 @@ fun ImportScreen(navController: NavController) {
      * 使阅读与背诵显示一致；PDF/Word 等来源保持原文不动。
      * 包裹 try/catch/finally，失败时回写错误信息并复位 isSaving，避免卡在保存中。
      */
-    suspend fun saveAndExit(saveTitle: String, saveContent: String) {
+    suspend fun saveAndExit(saveTitle: String, saveContent: String, saveAuthor: String) {
         val autoIndent = if (useFileImport) lastFileAutoIndent else true
         val contentOut =
             if (autoIndent && AppPrefs.autoIndentEnabled) applyFirstLineIndent(saveContent) else saveContent
         try {
-            val articleId = articleViewModel.insertArticleBlocking(saveTitle, contentOut, autoIndent)
+            val articleId = articleViewModel.insertArticleBlocking(saveTitle, contentOut, autoIndent, saveAuthor)
             showLargeFileWarning = false
             errorMessage = null
             navController.previousBackStackEntry?.savedStateHandle?.apply {
@@ -269,24 +272,44 @@ fun ImportScreen(navController: NavController) {
             animationSpec = tween(600)
         )
 
-        OutlinedTextField(
-            value = title,
-            onValueChange = { title = it },
-            label = { Text("文章标题") },
-            modifier = Modifier.fillMaxWidth().focusRequester(titleFocusRequester),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            keyboardActions = KeyboardActions(onNext = {
-                // 粘贴文本模式下聚焦内容框；文件导入模式下无内容框，忽略
-                if (!useFileImport) contentFocusRequester.requestFocus()
-            }),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = highlightFocusedBorderColor,
-                unfocusedBorderColor = highlightBorderColor,
-                focusedContainerColor = highlightContainerColor,
-                unfocusedContainerColor = highlightContainerColor
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("文章标题") },
+                modifier = Modifier
+                    .weight(1.6f)
+                    .focusRequester(titleFocusRequester),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { authorFocusRequester.requestFocus() }),
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = highlightFocusedBorderColor,
+                    unfocusedBorderColor = highlightBorderColor,
+                    focusedContainerColor = highlightContainerColor,
+                    unfocusedContainerColor = highlightContainerColor
+                )
             )
-        )
+            OutlinedTextField(
+                value = author,
+                onValueChange = { author = it },
+                label = { Text("作者（选填）") },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(authorFocusRequester),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = {
+                    // 粘贴文本模式下跳到内容框；文件导入模式下无内容框，忽略
+                    if (!useFileImport) contentFocusRequester.requestFocus()
+                }),
+                shape = RoundedCornerShape(10.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -387,7 +410,7 @@ fun ImportScreen(navController: NavController) {
                         else -> {
                             if (isSaving) return@Button
                             isSaving = true
-                            scope.launch { saveAndExit(title.trim(), content.trim()) }
+                            scope.launch { saveAndExit(title.trim(), content.trim(), author.trim()) }
                         }
                     }
                 },
@@ -479,7 +502,7 @@ fun ImportScreen(navController: NavController) {
                         showTitleSuggestionDialog = false
                         titleSuggestionDismissed = true
                         isSaving = true
-                        scope.launch { saveAndExit(firstLine, content.trim()) }
+                        scope.launch { saveAndExit(firstLine, content.trim(), author.trim()) }
                     },
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -511,7 +534,7 @@ fun ImportScreen(navController: NavController) {
                     onClick = {
                         showLargeFileWarning = false
                         isSaving = true
-                        scope.launch { saveAndExit(title.trim(), content.trim()) }
+                        scope.launch { saveAndExit(title.trim(), content.trim(), author.trim()) }
                     }
                 ) {
                     Text("仍然保存")

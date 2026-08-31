@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.practice
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -11,7 +12,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -25,11 +26,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -43,6 +41,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.LiquidGlassPopupBackdrop
+import com.ilyskyo.blancall.ui.common.PopupGlassPlate
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import kotlin.math.max
 
@@ -206,14 +206,6 @@ fun AdaptiveModePicker(
 
     val cp = containerProgress.value
 
-    // 底部淡淡阴影：卡片底边下方的固定半透明单色阴影条
-    // （已移除 verticalGradient，统一使用纯色填充）
-    val bottomShadowColor = if (isDark) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-    } else {
-        Color.Black.copy(alpha = 0.20f)
-    }
-
     // 页面内覆盖层渲染：不创建独立窗口。
     // 点击卡片外部区域 → 关闭选项卡；卡片自身交互正常
     Box(
@@ -224,32 +216,26 @@ fun AdaptiveModePicker(
                 interactionSource = remember { MutableInteractionSource() }
             ) { onDismiss() }
     ) {
-        // 卡片容器：底部预留 18dp 给阴影渐变
+        // 卡片容器（液态玻璃，无额外阴影预留）
         Box(
             modifier = Modifier
                 .widthIn(max = PopupWidthDp)
                 .offset { IntOffset(popupX.toInt(), max(0, popupY.toInt())) }
-                .padding(bottom = 18.dp)
         ) {
-        // 弹窗卡片：用 Box + clip 提前裁切圆角，避开 graphicsLayer 缩放时
-        // Surface.tonalElevation 在圆角外露出矩形色调块的问题
+        // 弹窗卡片：圆角裁切 + 液态玻璃背景
+        // 形变动画由外层 graphicsLayer 完成
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .graphicsLayer {
-                        // 平滑切换：宽、高独立插值（按钮扁形 → 面板高形），
-                        // 锚点 = 按钮中心，视觉上按钮平滑"长成"面板
                         scaleX = morph.startScaleX + (1f - morph.startScaleX) * cp
                         scaleY = morph.startScaleY + (1f - morph.startScaleY) * cp
-                        // 内容未完成首帧布局前保持完全透明，杜绝空矩形闪烁；
-                        // 退出末段（cp < 0.35）快速淡出，避免缩回按钮时产生残影
                         alpha = if (contentReady) {
                             if (isExiting && cp < 0.35f) (cp / 0.35f).coerceIn(0f, 1f) else cp
                         } else 0f
                         transformOrigin = TransformOrigin(morph.originX, morph.originY)
                     }
             ) {
-                // 外层：圆角裁切（无阴影），形变动画由外层 graphicsLayer 完成
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -259,17 +245,24 @@ fun AdaptiveModePicker(
                                 if (!contentReady) contentReady = true
                             }
                         }
-                        .drawBehind {
-                            // 仅底部阴影：固定半透明单色阴影条
-                            drawRect(
-                                color = bottomShadowColor,
-                                topLeft = Offset(0f, size.height),
-                                size = Size(size.width, 18.dp.toPx())
-                            )
-                        }
                         .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surface)
                 ) {
+                    // ── 1) 玻璃底：液态玻璃（API33+）或兜底玻璃板（低版本）──
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        LiquidGlassPopupBackdrop(
+                            isDark = isDark,
+                            cornerPx = with(density) { 20.dp.toPx() },
+                            modifier = Modifier.matchParentSize()
+                        )
+                    } else {
+                        PopupGlassPlate(
+                            isDark = isDark,
+                            glassActive = false,
+                            modifier = Modifier.matchParentSize()
+                        )
+                    }
+
+                    // ── 2) 控件内容：绘于玻璃之上（保证文字清晰不被折射模糊）──
                     ModeListContent(
                         expandDirection = expandDirection,
                         containerProgress = cp,
@@ -408,6 +401,8 @@ private fun PressableModeItem(
         label = "pressScale"
     )
 
+    val itemShape = RoundedCornerShape(14.dp)
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -421,15 +416,24 @@ private fun PressableModeItem(
                 translationY = itemSlideY
                 alpha = progress
             }
+            // 描边：极淡的轮廓线，只做边界暗示，不抢视线
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = if (isBlancallDark()) 0.10f else 0.06f
+                ),
+                shape = itemShape
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = itemShape,
         color = if (isPressed)
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
         else
+        // 不透明实色：与半透明玻璃背景形成明暗层次（不能改成半透明，否则又糊在一起）
             MaterialTheme.colorScheme.surface,
         tonalElevation = if (isPressed) 2.dp else 0.dp
     ) {

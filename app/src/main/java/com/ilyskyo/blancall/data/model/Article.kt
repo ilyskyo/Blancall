@@ -16,5 +16,7 @@ data class Article(
     val updatedAt: Long = System.currentTimeMillis(),
     // 段落首行是否允许自动缩进：true=粘贴/纯文本等排版自由文本（导入时补两格缩进）；
     // false=PDF/Word 等保持原文不动。阅读/背诵据此统一决定是否缩进。
-    val autoIndent: Boolean = true
+    val autoIndent: Boolean = true,
+    // 作者（选填）：导入时填写 / 详情页可改；列表、详情、搜索结果展示
+    val author: String = ""
 )

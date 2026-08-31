@@ -308,7 +308,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 12.dp)
+                    // 底部留白：悬浮导航栏覆盖屏幕底部约 100dp，避免最后内容被遮挡
+                    contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
                 items(sortedArticles, key = { it.id }, contentType = { "article" }) { article ->
                     ArticleCard(
@@ -617,7 +618,11 @@ private fun ArticleCard(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "${article.content.length} 字符  ·  ${dateFormat.format(Date(article.createdAt))}",
+                        text = buildString {
+                            if (article.author.isNotBlank()) append(article.author.trim()).append("  ·  ")
+                            append(article.content.length.toString()).append(" 字符  ·  ")
+                            append(dateFormat.format(Date(article.createdAt)))
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -131,8 +131,8 @@ fun DailyTrendChart(
 ) {
     if (dailyCounts.isEmpty()) return
     val maxCount = (dailyCounts.maxOrNull() ?: 0).coerceAtLeast(1)
+    // 柱色：同一蓝紫色相，按数值深浅渐变（今天最深，其余按占比），与学习日历图例同色系连续
     val barColor = MaterialTheme.colorScheme.primary
-    val todayColor = MaterialTheme.colorScheme.tertiary
     val axisColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -154,15 +154,11 @@ fun DailyTrendChart(
                         .fillMaxHeight(fraction.coerceAtLeast(0.02f))
                         .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                         .background(
-                            if (isToday) {
-                                todayColor.copy(alpha = 0.7f)
-                            } else {
-                                barColor.copy(alpha = 0.7f)
-                            }
+                            barColor.copy(alpha = if (isToday) 0.85f else (0.30f + fraction * 0.5f))
                         )
                         .then(
                             if (isToday) Modifier.border(
-                                1.dp, todayColor.copy(alpha = 0.7f),
+                                1.dp, barColor.copy(alpha = 0.85f),
                                 RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
                             ) else Modifier
                         )
@@ -181,7 +177,7 @@ fun DailyTrendChart(
             Text(today.minusDays((total - 1).toLong()).format(fmt),
                 style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
             Text("今天", style = MaterialTheme.typography.labelSmall,
-                color = if (dailyCounts.lastOrNull()?.let { it > 0 } == true) todayColor else labelColor,
+                color = if (dailyCounts.lastOrNull()?.let { it > 0 } == true) barColor else labelColor,
                 fontSize = 9.sp)
         }
     }
@@ -201,14 +197,14 @@ fun CalendarHeatmap(
 ) {
     if (dailyCounts.isEmpty()) return
     val maxCount = (dailyCounts.maxOrNull()?.coerceAtLeast(1)) ?: 1
-    val baseColor = MaterialTheme.colorScheme.surfaceVariant
-    // 色阶：主色 → 辅色渐变 5 级，今天/高活跃单元格用 tertiary 提亮
+    // 色阶：同一主色相的连续渐变（极浅→深），保证「少→多」颜色平滑连续、无跳变
+    val primary = MaterialTheme.colorScheme.primary
     val levels = listOf(
-        baseColor,
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.55f),
-        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f)
+        primary.copy(alpha = 0.10f),
+        primary.copy(alpha = 0.25f),
+        primary.copy(alpha = 0.45f),
+        primary.copy(alpha = 0.65f),
+        primary.copy(alpha = 0.85f)
     )
 
     fun colorFor(count: Int): Color {

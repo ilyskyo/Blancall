@@ -197,29 +197,65 @@ internal fun copyAssetToCache(context: android.content.Context, asset: String): 
     } catch (_: Exception) { null }
 }
 
-/** 读取配套文字版：首行为标题，其余为正文。不存在返回 null */
-internal fun readAssetTxt(context: android.content.Context, asset: String): Pair<String, String>? {
+/**
+ * 读取配套文字版：Triple(标题, 作者, 正文)。不存在或正文为空返回 null。
+ *
+ * 素材库文本版排版固定为「第 1 行标题 / 第 2 行作者（可缺）/ 其后正文」。
+ * 旧实现只取首行当标题、其余全当正文，导致作者行被吞进正文
+ * （如《师说》的"韩愈"进了正文），故改按行拆分并用 [isAuthorLine] 判定作者行。
+ */
+internal fun readAssetTxt(context: android.content.Context, asset: String): Triple<String, String, String>? {
     return try {
         val raw = context.assets.open(asset).bufferedReader().use { it.readText() }
-        val nl = raw.indexOf('\n')
-        val title = if (nl >= 0) raw.substring(0, nl).trim() else raw.trim()
-        val body = if (nl >= 0) raw.substring(nl + 1).trim() else ""
-        if (body.isBlank()) null else title to body
+        val (title, author, body) = splitArticleText(raw)
+        if (body.isBlank()) null else Triple(title, author, body)
     } catch (_: Exception) { null }
+}
+
+/**
+ * 按「首行标题 / 次行作者（可缺）/ 其余正文」拆分整篇文本。
+ * 只有第 2 行参与作者判定，正文不会被误伤。
+ */
+internal fun splitArticleText(raw: String): Triple<String, String, String> {
+    val lines = raw.split('\n')
+    val title = lines.getOrNull(0)?.trim().orEmpty()
+    val second = lines.getOrNull(1)?.trim().orEmpty()
+    val author = if (isAuthorLine(second)) second else ""
+    val body = lines.drop(if (author.isEmpty()) 1 else 2)
+        .joinToString("\n")
+        .trim()
+    return Triple(title, author, body)
+}
+
+/**
+ * 作者行特征：非空、不超过 20 字、且不含句读标点。
+ * 素材库里的形态如「韩愈」「《荀子》」「[唐]王维」「《古诗十九首》」；
+ * 正文句子必然更长且带标点，不会被判成作者。
+ */
+private fun isAuthorLine(line: String): Boolean {
+    if (line.isBlank() || line.length > 20) return false
+    return line.none { it in "。！？；，、：,.!?;:" }
 }
 
 /** 导入文字版为 Article（到背诵列表），返回 Article id */
 internal suspend fun importTextToBlancall(
     context: android.content.Context,
     title: String,
-    content: String
+    content: String,
+    author: String = ""
 ): Long = withContext(Dispatchers.IO) {
     try {
         val repo = ArticleRepository.getInstance(
             context.filesDir.resolve("articles.json").absolutePath
         )
         android.util.Log.d("BlancallImport", "导入 title=$title content长度=${content.length}")
-        repo.insert(Article(title = title.ifBlank { "未命名" }, content = content))
+        repo.insert(
+            Article(
+                title = title.ifBlank { "未命名" },
+                content = content,
+                author = author
+            )
+        )
     } catch (e: Exception) {
         android.util.Log.e("BlancallImport", "导入失败", e)
         -1L

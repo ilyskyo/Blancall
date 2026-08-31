@@ -4,6 +4,8 @@
 package com.ilyskyo.blancall.algorithm
 
 import kotlin.random.Random
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 挖空生成器：支持句子挖空和字词挖空两种模式
@@ -607,4 +609,91 @@ object BlancallGenerator {
         // 都没有：原样返回
         return clause
     }
+
+    // ── 挖空结果 JSON 序列化：供「继续练习」恢复上次挖好的空 ──
+    fun sentenceClozeToJson(r: SentenceClozeResult): String {
+        val o = JSONObject()
+        o.put("sentences", JSONArray(r.sentences))
+        val blanksArr = JSONArray()
+        r.blanks.forEach { b ->
+            blanksArr.put(JSONObject().apply {
+                put("index", b.index); put("originalText", b.originalText)
+                put("sentenceIndex", b.sentenceIndex); put("startInSentence", b.startInSentence)
+                put("endInSentence", b.endInSentence)
+            })
+        }
+        o.put("blanks", blanksArr)
+        o.put("displayText", r.displayText)
+        return o.toString()
+    }
+
+    fun sentenceClozeFromJson(json: String): SentenceClozeResult? = runCatching {
+        val o = JSONObject(json)
+        val sArr = o.getJSONArray("sentences")
+        val sentences = List(sArr.length()) { sArr.getString(it) }
+        val bArr = o.getJSONArray("blanks")
+        val blanks = List(bArr.length()) { i ->
+            val b = bArr.getJSONObject(i)
+            SentenceBlankInfo(b.getInt("index"), b.getString("originalText"), b.getInt("sentenceIndex"), b.getInt("startInSentence"), b.getInt("endInSentence"))
+        }
+        SentenceClozeResult(sentences, blanks, o.getString("displayText"))
+    }.getOrNull()
+
+    fun wordClozeToJson(r: WordClozeResult): String {
+        val o = JSONObject()
+        val sArr = JSONArray()
+        r.sentences.forEach { s ->
+            sArr.put(JSONObject().apply { put("text", s.text); put("blanks", JSONArray(s.blanks)) })
+        }
+        o.put("sentences", sArr)
+        val bArr = JSONArray()
+        r.blanks.forEach { b ->
+            bArr.put(JSONObject().apply { put("index", b.index); put("originalChar", b.originalChar); put("position", b.position) })
+        }
+        o.put("blanks", bArr)
+        o.put("displayText", r.displayText); o.put("maxBlanks", r.maxBlanks); o.put("suggestedBlanks", r.suggestedBlanks)
+        return o.toString()
+    }
+
+    fun wordClozeFromJson(json: String): WordClozeResult? = runCatching {
+        val o = JSONObject(json)
+        val sArr = o.getJSONArray("sentences")
+        val sentences = List(sArr.length()) { i ->
+            val s = sArr.getJSONObject(i)
+            val bl = s.getJSONArray("blanks")
+            WordClozeSentence(s.getString("text"), List(bl.length()) { bl.getInt(it) })
+        }
+        val bArr = o.getJSONArray("blanks")
+        val blanks = List(bArr.length()) { i ->
+            val b = bArr.getJSONObject(i)
+            WordBlankInfo(b.getInt("index"), b.getString("originalChar"), b.getInt("position"))
+        }
+        WordClozeResult(sentences, blanks, o.getString("displayText"), o.getInt("maxBlanks"), o.getInt("suggestedBlanks"))
+    }.getOrNull()
+
+    fun dictationToJson(r: DictationResult): String {
+        val o = JSONObject()
+        o.put("clauses", JSONArray(r.clauses))
+        val shArr = JSONArray()
+        r.shuffledClauses.forEach { s ->
+            shArr.put(JSONObject().apply {
+                put("displayOrder", s.displayOrder); put("originalIndex", s.originalIndex)
+                put("originalText", s.originalText); put("displayText", s.displayText)
+            })
+        }
+        o.put("shuffledClauses", shArr)
+        return o.toString()
+    }
+
+    fun dictationFromJson(json: String): DictationResult? = runCatching {
+        val o = JSONObject(json)
+        val cArr = o.getJSONArray("clauses")
+        val clauses = List(cArr.length()) { cArr.getString(it) }
+        val shArr = o.getJSONArray("shuffledClauses")
+        val shuffled = List(shArr.length()) { i ->
+            val s = shArr.getJSONObject(i)
+            ShuffledClause(s.getInt("displayOrder"), s.getInt("originalIndex"), s.getString("originalText"), s.getString("displayText"))
+        }
+        DictationResult(clauses, shuffled)
+    }.getOrNull()
 }

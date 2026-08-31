@@ -51,7 +51,16 @@ data class PracticeRecord(
     val rating: Int = 0,
     // 本次练习的弱提示次数（淡显提示下一字）与强提示次数（自动帮填），0 表示未启用/旧数据
     val weakHints: Int = 0,
-    val strongHints: Int = 0
+    val strongHints: Int = 0,
+    // 本次判分【实际作答】的句子在【文章全文】中的字符起始位置（用于记忆热力图区分
+    // "答对"与"未作答"；未完成提交时被跳过的空不会计入）。
+    //
+    // 为什么存字符位置而不是句子索引：全文切句与各段落分别切句的口径不同（标题行在全文
+    // 中会被算作独立句子，而段落 contentOnly 不含标题），段落（Section）模式下"子集内
+    // 句子索引"与"全文句子索引"整体错位。字符位置是唯一跨口径稳定的锚点。
+    //
+    // 兼容：旧记录的 answeredSentences（索引语义）字段已废弃，本字段缺失时热力图回退整篇统计。
+    val answeredSentenceStarts: List<Int> = emptyList()
 )
 
 data class MistakeDetail(

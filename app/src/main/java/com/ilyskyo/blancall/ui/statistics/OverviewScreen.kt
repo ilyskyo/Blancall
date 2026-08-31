@@ -58,6 +58,7 @@ import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.CalendarHeatmap
@@ -430,7 +431,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center)
                 Spacer(Modifier.height(20.dp))
-                Button(onClick = { navController.navigate("list") }) {
+                Button(onClick = { navController.navigateToTab("list") }) {
                     Text("去练习")
                 }
             }
@@ -443,7 +444,9 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            // 底部留白：悬浮导航栏会覆盖屏幕底部约 100dp，避免最后内容被遮挡
+            contentPadding = PaddingValues(bottom = 120.dp)
         ) {
             // ── 最近训练分析（有则显示） ──
             latestAnalysis?.let { item ->

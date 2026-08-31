@@ -26,6 +26,7 @@ import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.GlassSwitch
 
 /**
  * AI 配置管理页：
@@ -211,7 +212,7 @@ private fun ChatProfileCard(
             }
             Spacer(Modifier.width(8.dp))
             // 开关形式：开 = 选中该配置（单选，互斥）
-            Switch(checked = active, onCheckedChange = { onToggle() })
+            GlassSwitch(checked = active, onCheckedChange = { onToggle() })
         }
     }
     ProfileActions(
@@ -266,7 +267,7 @@ private fun SearchProfileCard(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Switch(checked = active, onCheckedChange = { onToggle() })
+            GlassSwitch(checked = active, onCheckedChange = { onToggle() })
         }
     }
     ProfileActions(

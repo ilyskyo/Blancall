@@ -3,25 +3,42 @@
 
 package com.ilyskyo.blancall.ui.navigation
 
+import android.app.Activity
+import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -80,27 +97,27 @@ fun AppNavigation() {
         currentRoute == "home" || currentRoute?.startsWith("home/") == true -> 0
         currentRoute == "list" || currentRoute?.startsWith("list/") == true -> 1
         currentRoute == "overview" || currentRoute?.startsWith("statistics/") == true -> 2
-        currentRoute == "philo" || currentRoute?.startsWith("philo_content/") == true -> 3
+        // 仅素材库卡片页（philo，纯 Compose）显示底部导航栏；
+        // WebView 内容页（philo_content）不归 tab——隐藏玻璃条，避免液态玻璃
+        // 持续折射 WebView 导致的闪烁（与 settings/reader 子页同策略）
+        currentRoute == "philo" -> 3
         else -> -1
     }
     // 首页不再显示左下角入口按钮（入口已迁移到底部导航栏，导航栏固定启用）
 
     // tab 切换：回到根页面栈，避免子页面残留
     fun selectTab(index: Int) {
-        val route = rootRoutes[index]
-        if (route == currentRoute) return
-        // 用目标 route 自身做 popUpTo（而非 startDestinationId）：
-        // 1) 兼容「从子页面/统计页等任意深度返回根 tab」——把目标 tab 之上的所有页面弹出；
-        // 2) 关键：去掉 restoreState，避免回到 startDestination(home) 时状态被恢复、
-        //    NavHost 不再重组该 destination 导致的「点了首页无反应」问题。
-        navController.navigate(route) {
-            popUpTo(route) {
-                saveState = true
-                inclusive = false
-            }
-            launchSingleTop = true
-            restoreState = false
-        }
+        // 不做 route==currentRoute 判断：navigateToTab 幂等（同页也安全），
+        // 避免 currentRoute 匹配异常时误拦「点回当前 tab / 首页」
+        navController.navigateToTab(rootRoutes[index])
+    }
+
+    // tab 根页返回＝退出应用：4 个根页面真正平级，返回键不退回上一 tab、也不回启动页
+    val navContext = LocalContext.current
+    BackHandler(enabled = currentRoute in rootRoutes) {
+        val activity = navContext as? Activity
+        if (activity != null) activity.finish()
+        else navController.popBackStack()
     }
 
     // ── 处理通知点击跳转 ──
@@ -160,9 +177,24 @@ fun AppNavigation() {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(1f)) {
-    NavHost(
+    // 页面容器：专用 FrameLayout（内含 ComposeView 渲染 NavHost）。
+    // 作为液态玻璃导航栏的采样源——玻璃悬浮其上、非其子视图，
+    // 因此能实时折射页面内容且不会形成折射自身的反馈循环
+    // （与阅读模式「玻璃 bind 正文容器」同一架构，两者均已真机验证）。
+    // 嵌套 ComposeView 组合没有默认 SaveableStateRegistry，透传外层以保证旋转后导航栈可恢复。
+    val outerRegistry = LocalSaveableStateRegistry.current
+    var pageHost by remember { mutableStateOf<FrameLayout?>(null) }
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { ctx ->
+            FrameLayout(ctx).also { fl ->
+                pageHost = fl
+                fl.addView(
+                    ComposeView(ctx).apply {
+                        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+                        setContent {
+                            CompositionLocalProvider(LocalSaveableStateRegistry provides outerRegistry) {
+                            NavHost(
         navController = navController,
         // 首次启动：以引导页为启动首屏（启动页 → 引导 → 主页），非首启直接进主页
         startDestination = if (onboardingSeen) "home" else "onboarding"
@@ -465,17 +497,58 @@ fun AppNavigation() {
             val id = backStackEntry.arguments?.getString("id")?.ifBlank { null }
             AiProfileEditScreen(navController, type = type, profileId = id)
         }
-    }
-        } // close weight Box
+    } // close NavHost
+    } // close CompositionLocalProvider
+    } // close setContent（NavHost 渲染进页面容器）
+    } // close ComposeView.apply
+    ) // close fl.addView
+    } // close FrameLayout.also
+    } // close factory
+    ) // close AndroidView（页面容器，玻璃采样源）
 
         // ── 底部导航栏（设置中开启后显示，仅在三个根页面） ──
-        if (currentTab >= 0) {
+        // 悬浮于页面容器之上（Box z 上层），玻璃折射采样「页面实时内容」。
+        // 进入/离开根 tab 页面时使用下滑+淡出动画（避免闪现消失）。
+        AnimatedVisibility(
+            visible = currentTab >= 0,
+            enter = slideInVertically(
+                animationSpec = tween(320, easing = LinearOutSlowInEasing),
+                initialOffsetY = { fullHeight -> fullHeight }
+            ) + fadeIn(
+                animationSpec = tween(250, delayMillis = 80)
+            ),
+            exit = slideOutVertically(
+                animationSpec = tween(300, easing = FastOutSlowInEasing),
+                targetOffsetY = { fullHeight -> fullHeight }
+            ) + fadeOut(
+                animationSpec = tween(220)
+            ),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
             BottomNavBar(
                 currentTab = currentTab,
                 onSelect = { selectTab(it) },
-                showLibraryTab = enabledLibraries.isNotEmpty()
+                showLibraryTab = enabledLibraries.isNotEmpty(),
+                host = pageHost
             )
         }
-    } // close Column
     } // close Box
+}
+
+/**
+ * 底部导航根页面【平级切换】：弹出当前 tab（目标 tab 之上的所有页面），
+ * 保留 startDestination 在栈底——这是 Navigation 最稳妥的 tab 切换方式，
+ * 既不把平级根页面压成上下级，也避免弹出 startDestination 后无法恢复的异常。
+ *
+ * 返回键的"平级＝退出"语义由 [BackHandler] 在根页拦截实现（见 AppNavigation）。
+ */
+fun NavController.navigateToTab(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) {
+            saveState = true
+            inclusive = false
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
 }

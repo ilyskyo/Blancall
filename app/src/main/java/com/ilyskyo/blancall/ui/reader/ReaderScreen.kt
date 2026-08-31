@@ -62,12 +62,15 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     var readingMode by remember { mutableStateOf(false) }
     var editTitle by remember { mutableStateOf("") }
     var editContent by remember { mutableStateOf("") }
+    var editAuthor by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showModePicker by remember { mutableStateOf(false) }
     var showFullscreenEdit by remember { mutableStateOf(false) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     // 预测性返回跟手进度：编辑模式下侧滑返回时驱动编辑界面缩放/淡出动画
     var editBackProgress by remember { mutableStateOf(0f) }
+    // 阅读模式返回跟手进度：侧滑返回时驱动阅读界面缩退淡出
+    var readingBackProgress by remember { mutableStateOf(0f) }
     val scope = rememberCoroutineScope()
 
     // 兜底（先注册、优先级低）：PredictiveBackHandler 在个别系统/场景下可能不拦截，
@@ -92,13 +95,15 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
         }
     }
 
-    // 沉浸阅读模式：拦截返回手势退出（回到常规详情页）
+    // 沉浸阅读模式：拦截返回手势退出（回到常规详情页）。
+    // 用 progressFlow 驱动阅读界面缩退，让「返回」有预测性跟手动画（ReadingModeScreen 内部响应）
     PredictiveBackHandler(enabled = readingMode) { progressFlow ->
         try {
-            progressFlow.collect { }
+            progressFlow.collect { readingBackProgress = it.progress }
             readingMode = false
+            readingBackProgress = 0f
         } catch (e: CancellationException) {
-            // 手势取消 → 保持阅读模式
+            readingBackProgress = 0f
         }
     }
 
@@ -109,6 +114,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
         loaded?.let {
             editTitle = it.title
             editContent = it.content
+            editAuthor = it.author
         }
     }
 
@@ -156,9 +162,19 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     GlassButton(
                         onClick = {
                             if (editTitle.isNotBlank()) {
-                                articleViewModel.updateArticle(art.copy(title = editTitle.trim(), content = editContent.trim()))
+                                articleViewModel.updateArticle(
+                                    art.copy(
+                                        title = editTitle.trim(),
+                                        content = editContent.trim(),
+                                        author = editAuthor.trim()
+                                    )
+                                )
                                 // 本地立即赋值以即时反映编辑结果（VM 未暴露当前文章 Flow，故保留本地同步赋值，避免与异步更新竞态时回显旧值）
-                                article = art.copy(title = editTitle.trim(), content = editContent.trim())
+                                article = art.copy(
+                                    title = editTitle.trim(),
+                                    content = editContent.trim(),
+                                    author = editAuthor.trim()
+                                )
                                 isEditing = false
                             }
                         },
@@ -220,7 +236,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "${art.content.length} 字符",
+                        text = buildString {
+                            if (art.author.isNotBlank()) append(art.author.trim()).append("  ·  ")
+                            append(art.content.length.toString()).append(" 字符")
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -288,6 +307,15 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 onValueChange = { editTitle = it },
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text("标题") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+
+                            OutlinedTextField(
+                                value = editAuthor,
+                                onValueChange = { editAuthor = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("作者（选填）") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(10.dp)
                             )
@@ -403,12 +431,20 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     // ── 沉浸阅读模式：全屏沉浸 + 章节翻页 + 断点续读 ──
     if (readingMode) {
         article?.let { art ->
-            ReadingModeScreen(
-                article = art,
-                onExit = { readingMode = false },
-                // AI 遮挡：仅在 AI 开关开启时注入桥接实现（未开启/未配置时阅读页自动隐藏 AI 选项）
-                aiOcclusion = if (aiEnabled) remember { ProAiOcclusionBridge() } else null
-            )
+            // 预测性返回跟手：阅读界面随返回进度缩退（用户偏好的外层缩退效果）
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationY = readingBackProgress * 24f
+                        alpha = 1f - readingBackProgress
+                    }
+            ) {
+                ReadingModeScreen(
+                    article = art,
+                    onExit = { readingMode = false }
+                )
+            }
         }
     }
 

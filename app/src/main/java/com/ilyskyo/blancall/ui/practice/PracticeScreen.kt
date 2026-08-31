@@ -50,6 +50,7 @@ import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.GlassMenuDivider
+import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.MarkdownText
 import androidx.compose.ui.platform.LocalConfiguration
@@ -59,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -67,7 +69,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.AnswerChecker
@@ -76,6 +80,9 @@ import com.ilyskyo.blancall.algorithm.PdfExporter
 import com.ilyskyo.blancall.algorithm.SectionSplitter
 import com.ilyskyo.blancall.algorithm.ShareImageGenerator
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
+import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import com.ilyskyo.blancall.ui.viewmodel.BlankCountWarning
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.ilyskyo.blancall.ui.viewmodel.PracticeViewModel
@@ -209,17 +216,21 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             // 顶部标题：左右滑动可快速切换三种练习模式（AI 开启时按已选难度重新生成）
             val latestMode by rememberUpdatedState(mode)
             val titleSwipeEnabled by rememberUpdatedState(modeSelected && !isSubmitted)
+            // 标题拖拽跟手：滑动时标题随手指平移（有拖拽动画，而非静止检测后跳切）
+            // 标题拖拽跟手：Animatable 支持拖拽时即时 snapTo、松手 animateTo 平滑回弹
+            val titleDrag = remember { Animatable(0f) }
             Text(
                 text = article?.title ?: "",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .weight(1f)
+                    .offset { IntOffset(titleDrag.value.roundToInt(), 0) }
                     .pointerInput(Unit) {
                         var accumulated = 0f
                         detectHorizontalDragGestures(
-                            onDragStart = { accumulated = 0f },
-                            onDragCancel = { accumulated = 0f },
+                            onDragStart = { accumulated = 0f; scope.launch { titleDrag.snapTo(0f) } },
+                            onDragCancel = { accumulated = 0f; scope.launch { titleDrag.animateTo(0f, tween(240)) } },
                             onDragEnd = {
                                 if (titleSwipeEnabled) {
                                     when {
@@ -228,8 +239,17 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                     }
                                 }
                                 accumulated = 0f
+                                // 松手平滑回弹，不做快速跳回
+                                scope.launch { titleDrag.animateTo(0f, tween(240)) }
                             }
-                        ) { _, dragAmount -> accumulated += dragAmount }
+                        ) { _, dragAmount ->
+                            accumulated += dragAmount
+                            if (titleSwipeEnabled) {
+                                // 限制可拉范围（跟手上限），避免越拉越远
+                                val clamped = accumulated.coerceIn(-MaxTitleDrag, MaxTitleDrag)
+                                scope.launch { titleDrag.snapTo(clamped) }
+                            }
+                        }
                     },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -238,8 +258,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             if (isSubmitted && modeSelected) {
                 TextButton(onClick = { vm.reset() }) { Text("重做") }
             }
-            // 未提交：提交按钮
-            if (!isSubmitted && modeSelected && totalBlanks > 0) {
+            // 未提交：提交按钮（选好模式、难度采集页关闭时才显示）
+            if (!isSubmitted && modeSelected && !showDifficultyInfo && totalBlanks > 0) {
                 // 反向默写是整段输入，判分逻辑与按空作答不同，单独处理
                 if (mode == BlancallMode.REVERSE) {
                     TextButton(
@@ -343,7 +363,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         onClick = { vm.toggleHint() },
                         label = { Text("显示提示", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) },
                         trailing = {
-                            Switch(
+                            GlassSwitch(
                                 checked = showHint,
                                 onCheckedChange = { vm.toggleHint() }
                             )
@@ -355,7 +375,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             onClick = { vm.setClassicalMode(!classicalMode) },
                             label = { Text("古文模式", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) },
                             trailing = {
-                                Switch(
+                                GlassSwitch(
                                     checked = classicalMode,
                                     onCheckedChange = { vm.setClassicalMode(it) }
                                 )
@@ -474,8 +494,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             Spacer(Modifier.height(10.dp))
         }
 
-        // ── 进度条（沉浸模式下隐藏）──
-        if (!immersiveMode && !isSubmitted && totalBlanks > 0) {
+        // ── 进度条（沉浸模式下隐藏；未选好模式 / 难度采集页不显示，避免提前出现填空进度）──
+        if (!immersiveMode && !isSubmitted && modeSelected && !showDifficultyInfo && totalBlanks > 0) {
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 LinearProgressIndicator(
                     progress = { filledCount.toFloat() / totalBlanks },
@@ -711,12 +731,21 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(enabled = false) { },
+                // 模态遮罩：压暗底层页面，毛玻璃叠在内容页上不会显得"透穿破图"
+                .background(Color.Black.copy(alpha = 0.32f))
+                // 消费点击：浮层显示时阻断底层页面交互
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { },
             contentAlignment = Alignment.Center
         ) {
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(24.dp),
+                // 浮层叠在内容页上，用菜单级不透明度，避免底层文字透出影响可读性
+                containerColor = MaterialTheme.colorScheme.surface,
+                containerAlpha = if (isBlancallDark()) GLASS_ALPHA_DARK else GLASS_MENU_ALPHA_LIGHT
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
@@ -794,12 +823,15 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // ── 二级：切换模式 BottomSheet ──
     if (showModeSheet) {
         GlassModalBottomSheet(
-            onDismissRequest = { showModeSheet = false }
+            onDismissRequest = { showModeSheet = false },
+            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
+            } }
         ) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 36.dp)) {
                 Text("切换练习模式", style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
                 // 句子挖空
                 RadioListItem(
                     emoji = "📝", label = "句子挖空",
@@ -829,12 +861,15 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // ── 二级：挖空策略 BottomSheet ──
     if (showStrategySheet) {
         GlassModalBottomSheet(
-            onDismissRequest = { showStrategySheet = false }
+            onDismissRequest = { showStrategySheet = false },
+            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
+            } }
         ) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 36.dp)) {
                 Text("选择挖空策略", style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
                 RadioListItem(
                     emoji = "⚖️", label = "均衡挖空",
                     desc = "全覆盖 + 轻度薄弱倾斜",
@@ -861,7 +896,10 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // ── 二级：段落模式 BottomSheet ──
     if (showSectionSheet) {
         GlassModalBottomSheet(
-            onDismissRequest = { showSectionSheet = false }
+            onDismissRequest = { showSectionSheet = false },
+            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
+            } }
         ) {
             SectionPickerContent(
                 sectionMode = sectionMode,
@@ -991,11 +1029,11 @@ private fun IncompleteSubmitDialog(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        HintRow("✓ 只批改已完成的部分")
+                        HintRow("只批改已完成的部分")
                         Spacer(Modifier.height(4.dp))
-                        HintRow("✓ 未填写内容不会计入错误统计")
+                        HintRow("未填写内容不会计入错误统计")
                         Spacer(Modifier.height(4.dp))
-                        HintRow("✓ 当前练习进度会被保存，下次可以继续")
+                        HintRow("当前练习进度会被保存，下次可以继续")
                     }
                 }
             }
@@ -1021,11 +1059,19 @@ private fun IncompleteSubmitDialog(
 
 @Composable
 private fun HintRow(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        AppIcon(
+            kind = AppIconKind.Check,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1499,6 +1545,14 @@ private fun BlankCard(
             if (isSubmitted && checkDetail != null) {
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (checkDetail.result == AnswerChecker.Result.CORRECT) {
+                        AppIcon(
+                            kind = AppIconKind.Check,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
                     Text(
                         checkDetail.message,
                         color = if (checkDetail.result == AnswerChecker.Result.CORRECT)
@@ -1853,9 +1907,17 @@ private fun BlancallScoreCard(
             if (wrongOrder > 0) parts.add("顺序错 $wrongOrder")
             if (incorrect > 0) parts.add("不正确 $incorrect")
             if (parts.isEmpty()) {
-                Text("全部正确 ✓",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("全部正确",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(4.dp))
+                    AppIcon(
+                        kind = AppIconKind.Check,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             } else {
                 Text(parts.joinToString("  ·  "),
                     style = MaterialTheme.typography.bodySmall,
@@ -2154,14 +2216,14 @@ private fun SectionPickerContent(
             .fillMaxWidth()
             .heightIn(max = 480.dp)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .padding(start = 24.dp, end = 24.dp, bottom = 36.dp)
     ) {
         Text("段落复习模式", style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         Text("${sections.size} 个段落", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
 
         // 模式选项（Radio 风格）
         SectionModeItem(
@@ -2334,6 +2396,8 @@ private fun SectionCheckItem(
 // ========== 顶部标题滑动切换模式 ==========
 
 private const val TitleSwipeThreshold = 80f
+// 标题拖拽跟手上限（px）：限制可拉范围，避免越拉越远
+private const val MaxTitleDrag = 96f
 
 /** 三种模式的有序列表（用于标题左右滑动循环切换） */
 private val MODE_ORDER = listOf(BlancallMode.SENTENCE, BlancallMode.WORD, BlancallMode.REVERSE)
@@ -2441,6 +2505,14 @@ private fun DifficultyInfoPage(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 跳过 AI：直接用本地算法生成（不联网，立即开始练习）——置于「选择挖空难度」上方
+            OutlinedButton(
+                onClick = onSkipToLocal,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("使用本地算法", style = MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.height(10.dp))
             Text("选择挖空难度", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
@@ -2531,14 +2603,7 @@ private fun DifficultyInfoPage(
             )
 
             Spacer(Modifier.height(24.dp))
-            // 跳过 AI：直接用本地算法生成（不联网，立即开始练习）
-            OutlinedButton(
-                onClick = onSkipToLocal,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("跳过 AI，用本地算法生成", style = MaterialTheme.typography.labelMedium)
-            }
-            Spacer(Modifier.height(10.dp))
+
             Row(modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick = onCancel,

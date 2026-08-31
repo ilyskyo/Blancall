@@ -62,7 +62,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 搜索页：在全部文章中检索【标题 / 正文 / 添加日期】。
+ * 搜索页：在全部文章中检索【标题 / 作者 / 正文 / 添加日期】。
  *
  * - 实时过滤：输入即搜
  * - 命中样式：标题命中高亮；正文命中显示含关键词的上下文片段
@@ -85,12 +85,13 @@ fun SearchScreen(navController: NavController) {
             emptyList()
         } else {
             articles.filter { art ->
+                val authorHit = art.author.contains(trimmed, ignoreCase = true)
                 val titleHit = art.title.contains(trimmed, ignoreCase = true)
                 val bodyHit = art.content.contains(trimmed, ignoreCase = true)
                 val dateDash = dateFmtDash.format(Date(art.createdAt)).lowercase()
                 val dateSlash = dateFmtSlash.format(Date(art.createdAt)).lowercase()
                 val dateHit = dateDash.contains(trimmed) || dateSlash.contains(trimmed)
-                titleHit || bodyHit || dateHit
+                titleHit || authorHit || bodyHit || dateHit
             }.sortedByDescending { it.updatedAt }
         }
     }
@@ -126,7 +127,7 @@ fun SearchScreen(navController: NavController) {
 
             // ── 结果区 ──
             when {
-                trimmed.isEmpty() -> EmptyHint("搜索标题、正文或添加日期")
+                trimmed.isEmpty() -> EmptyHint("搜索标题、作者、正文或添加日期")
                 results.isEmpty() -> EmptyHint("没有找到与「$query」相关的内容")
                 else -> {
                     Text(
@@ -177,7 +178,7 @@ private fun SearchField(
         modifier = modifier
             .focusRequester(focusRequester),
         singleLine = true,
-        placeholder = { Text("搜索标题 / 正文 / 添加日期", fontSize = 14.sp) },
+        placeholder = { Text("搜索标题 / 作者 / 正文 / 添加日期", fontSize = 14.sp) },
         leadingIcon = {
             AppIcon(
                 kind = AppIconKind.SearchHint,
@@ -265,7 +266,10 @@ private fun SearchResultCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "添加于 ${dateFmt.format(Date(article.createdAt))}",
+                    text = buildString {
+                        if (article.author.isNotBlank()) append(article.author.trim()).append("  ·  ")
+                        append("添加于 ").append(dateFmt.format(Date(article.createdAt)))
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                 )
