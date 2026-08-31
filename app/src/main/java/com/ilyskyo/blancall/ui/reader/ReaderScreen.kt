@@ -271,6 +271,20 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     .fillMaxWidth()
                     .weight(1f)
             ) {
+                // 固定分割线：位于滚动区之外，标题下方，不随正文上下滚动
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = if (isEditing) editBackProgress else 1f
+                        }
+                ) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    // 正文蓝色卡片与分割线之间的间距（略大，让内容区往下沉一点）
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
                 // ── 阅读内容（可滚动）：编辑模式下供预测性返回手势渐现露出 ──
                 Column(
                     modifier = Modifier
@@ -282,12 +296,6 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             alpha = if (isEditing) editBackProgress else 1f
                         }
                 ) {
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
                     val readingFontId by com.ilyskyo.blancall.ui.theme.AppPrefs.readingFontIdFlow.collectAsState()
                     val readingFontFamily = remember(readingFontId) {
                         com.ilyskyo.blancall.ui.reader.ReaderFonts.resolveFontFamily(context, readingFontId) ?: FontFamily.Default
