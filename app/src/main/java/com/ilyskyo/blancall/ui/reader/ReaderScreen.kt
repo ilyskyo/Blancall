@@ -296,6 +296,9 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             alpha = if (isEditing) editBackProgress else 1f
                         }
                 ) {
+                    // 正文区顶部留白：让正文蓝色卡片从分割线下方开始（适度下移，避免整屏空洞）
+                    Spacer(modifier = Modifier.height(32.dp))
+
                     val readingFontId by com.ilyskyo.blancall.ui.theme.AppPrefs.readingFontIdFlow.collectAsState()
                     val readingFontFamily = remember(readingFontId) {
                         com.ilyskyo.blancall.ui.reader.ReaderFonts.resolveFontFamily(context, readingFontId) ?: FontFamily.Default
