@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.ui.reader
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
@@ -48,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
@@ -477,11 +479,25 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
         animationSpec = tween(180),
         label = "ctrlAlpha"
     )
+    // 胶囊触摸拦截：玻璃显示时其区域点击 = 隐藏控件（且下层正文不可点，保持现状）；
+    // 玻璃消失后 modifier 退化为空 → 胶囊区域完全穿透，正文可点。
+    // 不用 indication（无涟漪），不改玻璃样貌。
+    val pillTouchInteraction = remember { MutableInteractionSource() }
+    val pillTouchModifier = if (controlsVisible) {
+        Modifier.clickable(
+            interactionSource = pillTouchInteraction,
+            indication = null
+        ) { controlsVisible = false }
+    } else Modifier
+    // 控件层整体 z 序随显隐切换：显示时悬浮在正文之上（拦截其区域点击）；
+    // 隐藏时 zIndex=-1 垫到正文之下——正文层先命中，玻璃区域的挡块/翻页/滚动
+    // 全部恢复可点（仅靠 INVISIBLE 玻璃不足以穿透，真机复现）。
     Box(
         Modifier
             .fillMaxSize()
             .safeDrawingPadding()
             .graphicsLayer { alpha = controlsAlpha }
+            .zIndex(if (controlsVisible) 0f else -1f)
     ) {
         // 顶部：单条玻璃胶囊栏（返回 + 标题 + 设置）——控件聚合为一条，iOS 风格
         // 外层 Box 负责横屏时水平居中定位；内层胶囊约束最大宽度
@@ -489,12 +505,14 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
             sourceRef = sourceRef,
             isDark = isDark,
             cornerPx = LgCornerPx(23f),
+            touchAlpha = controlsAlpha,
             modifier = Modifier
                 .widthIn(max = 540.dp)
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 14.dp)
                 .height(46.dp)
                 .align(Alignment.TopCenter)
+                .then(pillTouchModifier)
         ) {
             Row(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
@@ -546,6 +564,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
             sourceRef = sourceRef,
             isDark = isDark,
             cornerPx = LgCornerPx(22f),
+            touchAlpha = controlsAlpha,
             modifier = Modifier
                 .widthIn(max = 540.dp)
                 .fillMaxWidth()
@@ -553,6 +572,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                 .padding(bottom = 34.dp)
                 .height(46.dp)
                 .align(Alignment.BottomCenter)
+                .then(pillTouchModifier)
         ) {
             Row(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
@@ -922,6 +942,10 @@ private fun GlassIconButton(
  * （仅 API 33+ 渲染，采样 [sourceRef] 指向的正文容器），最上层绘制控件内容。
  *
  * 顺序关键：玻璃效果绘制在「控件内容」之下，保证图标/文字清晰不被折射模糊。
+ *
+ * @param touchAlpha 外层控件层的淡入淡出透明度：接近 0（完全消失）时玻璃退出
+ *   绘制与触摸命中（INVISIBLE），让下层正文可点——否则 alpha 归零的玻璃 View
+ *   仍在 View 体系参与命中，其区域下方内容点不了（真机复现）。
  */
 @Composable
 private fun LiquidGlassPill(
@@ -929,6 +953,7 @@ private fun LiquidGlassPill(
     isDark: Boolean,
     cornerPx: Float,
     modifier: Modifier = Modifier,
+    touchAlpha: Float = 1f,
     content: @Composable () -> Unit
 ) {
     // 持有真实 LiquidGlassView 引用：退出组合时 bind(null) 释放采样跟踪器（库内部 recycle），
@@ -991,6 +1016,9 @@ private fun LiquidGlassPill(
                     }
                 },
                 update = { view ->
+                    // 淡出完成后 INVISIBLE：退出命中测试与绘制（样貌不变，本就不可见），
+                    // 否则消失的玻璃仍拦截其区域点击，下层正文点不了
+                    view.visibility = if (touchAlpha > 0.05f) View.VISIBLE else View.INVISIBLE
                     if (view.getTag(com.ilyskyo.blancall.R.id.lg_bound_tag) == null) {
                         view.post {
                             if (view.isAttachedToWindow && view.getTag(com.ilyskyo.blancall.R.id.lg_bound_tag) == null) {

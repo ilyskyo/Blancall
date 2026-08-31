@@ -4,7 +4,6 @@
 package com.ilyskyo.blancall.ui.common
 
 import android.os.Build
-import android.widget.FrameLayout
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -190,18 +189,22 @@ fun LiquidGlassPopupBackdrop(
 }
 
 /**
- * 页面内液态玻璃条（直接 bind 页面宿主，无光斑采样源，纯透明折射）。
+ * 页面内液态玻璃条：自绘极淡中性光斑为采样源，纯透明无色折射。
  *
  * 用于文章详情页操作栏等场景——需要液态玻璃质感但不想要 `LiquidGlassPopupBackdrop`
- * 的自绘彩色光斑底色。架构与导航栏一致：直接 bind 页面 FrameLayout，折射真实页面内容。
+ * 的自绘彩色光斑底色。
  *
- * @param host 页面宿主 FrameLayout（AppNavigation 维护的 pageHost）
+ * **为什么不能 bind 页面宿主**：本组件位于 NavHost 的 ComposeView 内，页面宿主
+ * （AppNavigation 的 pageHost）是它的祖先容器。bind 祖先会在每帧绘制时经
+ * ViewTreeObserver 的 PreDraw 监听形成「祖先绘制 → 玻璃 invalidate → 祖先重绘」的
+ * 反馈循环，RenderThread 栈溢出闪退（真机复现）。故与弹窗/阅读模式同架构：采样源
+ * 必须是玻璃的兄弟节点——这里用组件内自绘的中性光斑画布。
+ *
  * @param cornerDp 圆角大小（dp）
  * @param modifier 外部修饰符
  */
 @Composable
 fun LiquidGlassPageBar(
-    host: FrameLayout?,
     cornerDp: Int = 24,
     dispersion: Float = 0.5f,
     tintAlphaLight: Float = 0.12f,
@@ -212,54 +215,86 @@ fun LiquidGlassPageBar(
     val cornerPx = with(density) { cornerDp.dp.toPx() }
     val isDark = isBlancallDark()
     val glassRef = remember { AtomicReference<LiquidGlassView?>(null) }
+    val sourceRef = remember { AtomicReference<LiquidBackdropCanvas?>(null) }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        AndroidView(
-            factory = { ctx ->
-                LiquidGlassView(ctx).apply {
-                    // bind 前兜底背景：液态层未采样前给玻璃条底色
-                    setBackgroundColor(
-                        if (isDark) android.graphics.Color.argb(230, 26, 26, 26)
-                        else android.graphics.Color.argb(230, 255, 255, 255)
-                    )
-                    setCornerRadius(cornerPx)
-                    // 折射参数对齐导航栏基准
-                    setRefractionHeight(with(density) { 20.dp.toPx() })
-                    setRefractionOffset(with(density) { 70.dp.toPx() })
-                    setBlurRadius(6f)
-                    setDispersion(dispersion)
-                    if (isDark) {
-                        setTintColorRed(0f); setTintColorGreen(0f); setTintColorBlue(0f)
-                        setTintAlpha(tintAlphaDark)
-                    } else {
-                        setTintColorRed(1f); setTintColorGreen(1f); setTintColorBlue(1f)
-                        setTintAlpha(tintAlphaLight)
+        Box(modifier) {
+            // ── a) 采样源：自绘中性光斑（无色相，仅供玻璃折射，不产生彩色底色）──
+            AndroidView(
+                factory = { ctx ->
+                    LiquidBackdropCanvas(ctx).apply {
+                        sourceRef.set(this)
+                        // 白色低透明度光斑：浅色背景下几乎不可见（纯透明观感），
+                        // 深色背景下呈现柔和环境光，玻璃折射后保持无色透明
+                        setSpots(
+                            if (isDark) listOf(
+                                LiquidBackdropCanvas.Spot(0x1AFFFFFF, 0.15f, 0.30f, 0.60f),
+                                LiquidBackdropCanvas.Spot(0x12FFFFFF, 0.50f, 0.55f, 0.45f),
+                                LiquidBackdropCanvas.Spot(0x14FFFFFF, 0.85f, 0.80f, 0.50f)
+                            ) else listOf(
+                                LiquidBackdropCanvas.Spot(0x10FFFFFF, 0.15f, 0.30f, 0.60f),
+                                LiquidBackdropCanvas.Spot(0x0CFFFFFF, 0.50f, 0.55f, 0.45f),
+                                LiquidBackdropCanvas.Spot(0x0EFFFFFF, 0.85f, 0.80f, 0.50f)
+                            )
+                        )
                     }
-                    setDraggableEnabled(false)
-                    setElasticEnabled(false)
-                    setTouchEffectEnabled(false)
-                    glassRef.set(this)
-                    // 延迟 bind：等挂载完成后再绑定页面宿主
-                    post {
-                        if (isAttachedToWindow && host != null && getTag(R.id.lg_bound_tag) == null) {
-                            bind(host)
-                            setTag(R.id.lg_bound_tag, true)
+                },
+                modifier = Modifier.matchParentSize()
+            )
+
+            // ── b) 真实液态玻璃：折射 + 色散 + 模糊（bind 兄弟画布，非祖先）──
+            AndroidView(
+                factory = { ctx ->
+                    LiquidGlassView(ctx).apply {
+                        // bind 前兜底背景：液态层未采样前给玻璃条底色
+                        setBackgroundColor(
+                            if (isDark) android.graphics.Color.argb(230, 26, 26, 26)
+                            else android.graphics.Color.argb(230, 255, 255, 255)
+                        )
+                        setCornerRadius(cornerPx)
+                        // 折射参数对齐导航栏基准
+                        setRefractionHeight(with(density) { 20.dp.toPx() })
+                        setRefractionOffset(with(density) { 70.dp.toPx() })
+                        setBlurRadius(6f)
+                        setDispersion(dispersion)
+                        if (isDark) {
+                            setTintColorRed(0f); setTintColorGreen(0f); setTintColorBlue(0f)
+                            setTintAlpha(tintAlphaDark)
+                        } else {
+                            setTintColorRed(1f); setTintColorGreen(1f); setTintColorBlue(1f)
+                            setTintAlpha(tintAlphaLight)
+                        }
+                        setDraggableEnabled(false)
+                        setElasticEnabled(false)
+                        setTouchEffectEnabled(false)
+                        glassRef.set(this)
+                        // 延迟 bind：等挂载完成后再绑定采样画布
+                        post {
+                            if (isAttachedToWindow && getTag(R.id.lg_bound_tag) == null) {
+                                sourceRef.get()?.let { bind(it) }
+                                setTag(R.id.lg_bound_tag, true)
+                                // bind 成功即清除兜底背景：玻璃已开始折射采样画布，
+                                // 保留 90% 不透明底色会透出成「矩形框」（用户要求无框）
+                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.matchParentSize(),
+                update = { view ->
+                    if (view.getTag(R.id.lg_bound_tag) == null) {
+                        view.post {
+                            if (view.isAttachedToWindow && view.getTag(R.id.lg_bound_tag) == null) {
+                                sourceRef.get()?.let { view.bind(it) }
+                                view.setTag(R.id.lg_bound_tag, true)
+                                // 同上：bind 后清掉兜底底色，只留圆角玻璃与阴影
+                                view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            }
                         }
                     }
                 }
-            },
-            modifier = modifier,
-            update = { view ->
-                if (view.getTag(R.id.lg_bound_tag) == null && host != null) {
-                    view.post {
-                        if (view.isAttachedToWindow && view.getTag(R.id.lg_bound_tag) == null) {
-                            view.bind(host)
-                            view.setTag(R.id.lg_bound_tag, true)
-                        }
-                    }
-                }
-            }
-        )
+            )
+        }
     } else {
         // API<33 降级：实底玻璃板
         Box(

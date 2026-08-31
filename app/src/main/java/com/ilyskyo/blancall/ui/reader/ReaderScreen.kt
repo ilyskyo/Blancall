@@ -20,8 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import android.os.Build
-import android.widget.FrameLayout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
@@ -60,7 +58,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReaderScreen(navController: NavController, articleId: Long, pageHost: FrameLayout? = null) {
+fun ReaderScreen(navController: NavController, articleId: Long) {
     val articleViewModel: ArticleViewModel = viewModel()
     val context = LocalContext.current
     // AI 功能开关（关闭时隐藏 AI 入口）
@@ -195,7 +193,17 @@ fun ReaderScreen(navController: NavController, articleId: Long, pageHost: FrameL
                             color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
-                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是删除/编辑
+                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是删除/编辑。
+                    // 标题字号 = 右侧两行总高度（上下边缘与作者/字符数对齐）
+                    var metaHeightPx by remember { mutableStateOf(0) }
+                    val titleFontSize = if (metaHeightPx > 0) {
+                        // 标题字号 ≈ 右侧两行总高的 80%：视觉上与两行高度接近但不过大，
+                        // 且不把顶栏 Row 撑高（保证作者/字符数与按钮中心线对齐）
+                        val d = LocalDensity.current
+                        (metaHeightPx / (d.density * d.fontScale) * 0.8f).sp
+                    } else {
+                        MaterialTheme.typography.titleLarge.fontSize
+                    }
                     Row(
                         modifier = Modifier
                             .weight(1f)
@@ -204,7 +212,10 @@ fun ReaderScreen(navController: NavController, articleId: Long, pageHost: FrameL
                     ) {
                         Text(
                             text = art.title,
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = titleFontSize,
+                                lineHeight = titleFontSize
+                            ),
                             color = MaterialTheme.colorScheme.onBackground,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -212,7 +223,10 @@ fun ReaderScreen(navController: NavController, articleId: Long, pageHost: FrameL
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
-                        Column(verticalArrangement = Arrangement.Center) {
+                        Column(
+                            modifier = Modifier.onGloballyPositioned { metaHeightPx = it.size.height },
+                            verticalArrangement = Arrangement.Center
+                        ) {
                             if (art.author.isNotBlank()) {
                                 Text(
                                     text = art.author.trim(),
@@ -389,8 +403,9 @@ fun ReaderScreen(navController: NavController, articleId: Long, pageHost: FrameL
             Spacer(modifier = Modifier.height(16.dp))
 
             // 液态玻璃操作栏：学习统计 / 阅读模式 / AI / 开始练习
-            // 玻璃 = LiquidGlassPageBar（直接 bind pageHost 折射真实页面内容，无彩色光斑底色）
-            // 参数对齐导航栏基准（blur 6 / dispersion 0.5 / 折射 20·70 / 染色 0.25·0.12）
+            // 玻璃 = LiquidGlassPageBar（自绘中性光斑采样源，bind 兄弟画布——
+            // 不能 bind 页面宿主 pageHost：宿主是玻璃的祖先，PreDraw 反馈循环会致
+            // RenderThread 栈溢出闪退；参数对齐导航栏基准（blur 6 / dispersion 0 / 折射 20·70 / 染色 0.04·0.06）
             // 注意：LiquidGlassView 不能条件移除（detach 必崩），故整条**常驻组合**，
             // 编辑/阅读模式下仅 alpha 归零并禁用点击。
             val barVisible = !isEditing && !readingMode
@@ -414,7 +429,6 @@ fun ReaderScreen(navController: NavController, articleId: Long, pageHost: FrameL
                     )
             ) {
                 LiquidGlassPageBar(
-                    host = pageHost,
                     cornerDp = 24,
                     // 纯透明无色玻璃：关闭色散（消除彩色边缘）、染色压到极低（接近导航栏般通透）
                     dispersion = 0f,

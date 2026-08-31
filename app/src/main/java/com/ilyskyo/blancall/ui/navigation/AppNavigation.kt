@@ -171,9 +171,11 @@ fun AppNavigation() {
         { EnterTransition.None }
     }
 
-    // 底部导航模式：根页面 tab 切换无动画（点哪页立即显示哪页，如普通 App 底部导航）
-    val noneTransition: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = { EnterTransition.None }
-    val noneExitTransition: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = { ExitTransition.None }
+    // 底部导航模式：根页面 tab 切换用极短渐隐（crossfade）。
+    // 原本 EnterTransition.None 会让 AnimatedContent 在切换瞬间新旧两页同帧叠加残留（首页⇄我的文章时最易
+    // 看出“Blancall”标题残影）；极短淡入淡出让旧页明确淡出、新页淡入，杜绝同帧残影且观感依旧利索。
+    val noneTransition: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = { fadeIn(tween(100)) }
+    val noneExitTransition: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = { fadeOut(tween(100)) }
 
     Box(
         modifier = Modifier
@@ -246,7 +248,7 @@ fun AppNavigation() {
             popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            ReaderScreen(navController, articleId, pageHost)
+            ReaderScreen(navController, articleId)
         }
 
         composable(
@@ -553,11 +555,14 @@ fun AppNavigation() {
  */
 fun NavController.navigateToTab(route: String) {
     navigate(route) {
+        // 根 tab 平级切换：不保存/恢复页面状态。
+        // saveState/restoreState 会让上一页（如首页品牌栏）在状态恢复后残留子组合，
+        // 造成“首页⇄我的文章”切换时标题残影重叠；去掉后切走即彻底销毁页面，无残留。
         popUpTo("home") {
-            saveState = true
             inclusive = false
+            saveState = false
         }
         launchSingleTop = true
-        restoreState = true
+        restoreState = false
     }
 }
