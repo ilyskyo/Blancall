@@ -988,7 +988,7 @@ fun HomeScreen(
                     is PickerSelection.Base ->
                         navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
                     PickerSelection.Custom ->
-                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}")
+                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}?pick=true")
                 }
             }
         }

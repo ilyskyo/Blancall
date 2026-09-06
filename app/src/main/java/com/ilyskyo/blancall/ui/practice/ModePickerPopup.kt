@@ -45,6 +45,7 @@ import com.ilyskyo.blancall.ui.common.LiquidGlassPopupBackdrop
 import com.ilyskyo.blancall.ui.common.PopupGlassPlate
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * 模式选择结果：基础三模式，或「自定义挖空」（不带 BlancallMode，由调用方导航到
@@ -56,7 +57,12 @@ sealed interface PickerSelection {
 }
 
 // ── 弹窗尺寸常量 ──
-private val PopupEstimateDp = 310.dp
+// 高度估算按内容动态计算：标题区 + 每个模式项（当前 4 项 ≈ 376dp）。
+// 估算宁可偏大不可偏小：偏小会导致 DOWN 方向弹出后底部越过屏幕（真机翻车点）。
+private val PopupHeaderEstimateDp = 64.dp
+private val PopupItemEstimateDp = 78.dp
+private val PopupItemCount = 4
+private val PopupEstimateDp get() = PopupHeaderEstimateDp + PopupItemEstimateDp * PopupItemCount
 private val PopupWidthDp = 320.dp
 private val PopupMinMarginDp = 16.dp
 private val PopupArrowGapDp = 4.dp
@@ -158,8 +164,12 @@ fun AdaptiveModePicker(
     }
 
     val popupY = when (expandDirection) {
-        ExpandDirection.DOWN -> effectiveAnchor.bottom + arrowGapPx
-        ExpandDirection.UP -> effectiveAnchor.top - popupEstimatePx - arrowGapPx
+        // DOWN 也要钳制下界：防止估算偏小时卡片底部越过屏幕下缘
+        ExpandDirection.DOWN -> min(
+            effectiveAnchor.bottom + arrowGapPx,
+            screenHeightPx - popupEstimatePx - minMarginPx
+        )
+        ExpandDirection.UP -> max(minMarginPx, effectiveAnchor.top - popupEstimatePx - arrowGapPx)
         else -> effectiveAnchor.bottom
     }
 

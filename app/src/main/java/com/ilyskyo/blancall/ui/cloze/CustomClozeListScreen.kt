@@ -60,7 +60,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CustomClozeListScreen(
     navController: NavController,
-    articleId: Long
+    articleId: Long,
+    pick: Boolean = false
 ) {
     val context = LocalContext.current
     val store = remember { CustomClozeStore.getInstance(context.filesDir) }
@@ -118,7 +119,14 @@ fun CustomClozeListScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Button(
-                    onClick = { navController.navigate("custom_cloze_edit/$articleId") },
+                    onClick = {
+                        if (pick) {
+                            // 练一把流程：新建后进编辑页（带 pick，保存即开练）
+                            navController.navigate("custom_cloze_edit/$articleId?pick=true")
+                        } else {
+                            navController.navigate("custom_cloze_edit/$articleId")
+                        }
+                    },
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Text("新建")
@@ -133,7 +141,8 @@ fun CustomClozeListScreen(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "点按配置进入编辑 · 长按开始练习 / 重命名 / 删除",
+                if (pick) "点按配置直接开始练习 · 长按重命名 / 删除"
+                else "点按配置进入编辑 · 长按开始练习 / 重命名 / 删除",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -163,7 +172,12 @@ fun CustomClozeListScreen(
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                                     .combinedClickable(
                                         onClick = {
-                                            navController.navigate("custom_cloze_edit/$articleId?configId=${cfg.id}")
+                                            if (pick) {
+                                                // 练一把流程：点配置直接开始练习
+                                                navController.navigate("practice/$articleId?configId=${cfg.id}")
+                                            } else {
+                                                navController.navigate("custom_cloze_edit/$articleId?configId=${cfg.id}")
+                                            }
                                         },
                                         onLongClick = { menuForId = cfg.id }
                                     )

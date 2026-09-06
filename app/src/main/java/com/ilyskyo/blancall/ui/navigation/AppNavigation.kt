@@ -246,11 +246,16 @@ fun AppNavigation() {
             ReaderScreen(navController, articleId)
         }
 
-        // 自定义挖空配置列表页（新建 / 点击编辑 / 长按开始练习·重命名·删除）
+        // 自定义挖空配置列表页（新建 / 点击编辑或直接开练 / 长按开始练习·重命名·删除）
+        // pick=true：来自模式选择「练一把」流程，点配置直接开始练习
         composable(
-            route = "custom_cloze_list/{articleId}",
+            route = "custom_cloze_list/{articleId}?pick={pick}",
             arguments = listOf(
-                navArgument("articleId") { type = NavType.LongType }
+                navArgument("articleId") { type = NavType.LongType },
+                navArgument("pick") {
+                    type = NavType.StringType
+                    defaultValue = "false"
+                }
             ),
             enterTransition = enterSlide,
             exitTransition = exitSlide,
@@ -258,17 +263,22 @@ fun AppNavigation() {
             popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            CustomClozeListScreen(navController, articleId)
+            val pick = backStackEntry.arguments?.getString("pick") == "true"
+            CustomClozeListScreen(navController, articleId, pick)
         }
 
-        // 自定义挖空模板编辑页（按文章保存多套配置）
+        // 自定义挖空模板编辑页（按文章保存多套配置）；pick=true：保存后直接开始练习
         composable(
-            route = "custom_cloze_edit/{articleId}?configId={configId}",
+            route = "custom_cloze_edit/{articleId}?configId={configId}&pick={pick}",
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType },
                 navArgument("configId") {
                     type = NavType.LongType
                     defaultValue = -1L
+                },
+                navArgument("pick") {
+                    type = NavType.StringType
+                    defaultValue = "false"
                 }
             ),
             enterTransition = enterSlide,
@@ -278,7 +288,8 @@ fun AppNavigation() {
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
             val configId = backStackEntry.arguments?.getLong("configId") ?: -1L
-            CustomClozeEditScreen(navController, articleId, configId)
+            val pick = backStackEntry.arguments?.getString("pick") == "true"
+            CustomClozeEditScreen(navController, articleId, configId, pick)
         }
 
         composable(

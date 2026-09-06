@@ -77,7 +77,8 @@ import kotlinx.coroutines.withContext
 fun CustomClozeEditScreen(
     navController: NavController,
     articleId: Long,
-    configId: Long = -1L
+    configId: Long = -1L,
+    pick: Boolean = false
 ) {
     val context = LocalContext.current
     var article by remember { mutableStateOf<Article?>(null) }
@@ -240,6 +241,12 @@ fun CustomClozeEditScreen(
                     onClick = {
                         if (editingConfig != null) {
                             doSave()
+                            if (pick) {
+                                // 来自模式选择的「练一把」流程：保存即开始练习
+                                navController.navigate("practice/$articleId?configId=${editingConfig?.id ?: -1L}") {
+                                    popUpTo("custom_cloze_list/$articleId") { inclusive = true }
+                                }
+                            }
                         } else {
                             saveName = "自定义 " + (CustomClozeStore.getInstance(context.filesDir)
                                 .getConfigs(articleId).size + 1)
@@ -374,7 +381,14 @@ fun CustomClozeEditScreen(
                 androidx.compose.material3.TextButton(onClick = {
                     showSaveDialog = false
                     doSave()
-                    navController.popBackStack()
+                    if (pick) {
+                        // 来自模式选择的「练一把」流程：保存即开始练习
+                        navController.navigate("practice/$articleId?configId=${editingConfig?.id ?: -1L}") {
+                            popUpTo("custom_cloze_list/$articleId") { inclusive = true }
+                        }
+                    } else {
+                        navController.popBackStack()
+                    }
                 }) { Text("保存") }
             },
             dismissButton = {
