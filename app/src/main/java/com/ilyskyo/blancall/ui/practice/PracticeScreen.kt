@@ -164,6 +164,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var customConfigs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
     var showBackWarning by remember { mutableStateOf(false) }
     var backWarningNoMore by remember { mutableStateOf(false) }
+    // 本次进入练习已提示过一次：点「返回作答」回练习后，再按返回直接退出（不重复弹窗）
+    var backWarnedThisSession by remember { mutableStateOf(false) }
     LaunchedEffect(openCustomPicker, article?.id) {
         if (openCustomPicker && article != null && articleIds.size == 1) {
             customConfigs = CustomClozeStore.getInstance(context.filesDir)
@@ -229,7 +231,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             BackButton(onClick = {
                 val hasUnsaved = modeSelected && !isSubmitted &&
                     (userAnswers.values.any { it.isNotBlank() } || dictationInput.isNotBlank())
-                if (hasUnsaved && !AppPrefs.practiceBackWarningDisabled) {
+                if (hasUnsaved && !AppPrefs.practiceBackWarningDisabled && !backWarnedThisSession) {
+                    backWarnedThisSession = true
                     showBackWarning = true
                 } else {
                     navController.popBackStack()
@@ -1007,7 +1010,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             text = {
                 Column {
                     Text(
-                        "在练习页点右上角「提交」可以保存本次练习记录；直接返回不会保存。",
+                        "请在练习页点右上角「提交」保存本次作答情况；点返回键不会保存当前的作答。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -1018,7 +1021,11 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     ) {
                         androidx.compose.material3.Checkbox(
                             checked = backWarningNoMore,
-                            onCheckedChange = { backWarningNoMore = it }
+                            onCheckedChange = {
+                                backWarningNoMore = it
+                                // 勾选即持久化：之后点返回键直接退出，不再弹窗
+                                AppPrefs.practiceBackWarningDisabled = it
+                            }
                         )
                         Text(
                             "以后不再提示，直接返回",
@@ -1029,11 +1036,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    if (backWarningNoMore) AppPrefs.practiceBackWarningDisabled = true
-                    showBackWarning = false
-                    navController.popBackStack()
-                }) { Text("点此返回") }
+                TextButton(onClick = { showBackWarning = false }) { Text("返回作答") }
             }
         )
     }
@@ -1209,11 +1212,11 @@ private fun IncompleteSubmitDialog(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        HintRow("✓ 只批改已完成的部分")
+                        HintRow("只批改已完成的部分")
                         Spacer(Modifier.height(4.dp))
-                        HintRow("✓ 未填写内容不会计入错误统计")
+                        HintRow("未填写内容不会计入错误统计")
                         Spacer(Modifier.height(4.dp))
-                        HintRow("✓ 当前练习进度会被保存，下次可以继续")
+                        HintRow("当前练习进度会被保存，下次可以继续")
                     }
                 }
             }
