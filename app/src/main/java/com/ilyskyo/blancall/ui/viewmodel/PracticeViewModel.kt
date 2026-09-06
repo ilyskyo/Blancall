@@ -1192,6 +1192,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private fun regenerateCloze() {
         val content = _article.value?.content
         if (content.isNullOrBlank()) return
+        // 自定义挖空练习进行中：禁止常规重生成覆盖自定义挖空
+        // （进入练习时 loadArticle 完成阶段会调用本函数，与 startCustomPractice 存在时序竞态）
+        if (activeCustomConfig != null) return
         val secs = _sections.value
         // 选中段落快照：effectiveContent 与锚点表必须基于同一次选择，否则会错位
         val selected = _selectedSections.value
@@ -1222,7 +1225,12 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     dictationResult = BlancallGenerator.generateDictation(effectiveContent)
                     anchors = buildSentenceAnchors(content, effectiveContent, secs, selected)
                 }
-            } catch (_: Exception) { /* 保持旧值，避免崩溃 */ }
+            } catch (e: Exception) {
+                // 协程被取消（如自定义配置应用后取消本任务）时必须继续上抛，
+                // 否则取消后会执行下方赋值，把刚应用的自定义挖空覆盖为 null/旧值
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                /* 保持旧值，避免崩溃 */
+            }
             _sentenceCloze.value = sentenceResult
             _wordCloze.value = wordResult
             _dictationResult.value = dictationResult

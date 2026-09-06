@@ -80,6 +80,15 @@ git clone https://github.com/ilyskyo/Blancall.git
 - fsrs-rs 开源仓库（FSRS-6 提供方）：https://github.com/open-spaced-repetition/fsrs-rs
 - fsrs-kotlin 开源仓库：https://github.com/open-spaced-repetition/FSRS-Kotlin
 
+### 液态玻璃渲染
+
+应用的液态玻璃（Liquid Glass）视觉效果基于以下开源项目实现：
+
+- **AndroidLiquidGlass**（作者 Kyant0），遵循 **Apache License 2.0** 协议
+  开源仓库：https://github.com/Kyant0/AndroidLiquidGlass
+- **AndroidLiquidGlassView**（QmDeve），遵循 **MIT License** 协议
+  开源仓库：https://github.com/QmDeve/AndroidLiquidGlassView
+
 ## 免责声明
 
 本软件按“现状”提供，不提供任何明示或暗示的担保。作者不对使用本代码造成的任何数据丢失或业务中断承担责任。
