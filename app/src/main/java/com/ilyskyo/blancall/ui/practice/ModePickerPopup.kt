@@ -48,7 +48,7 @@ import kotlin.math.max
 
 /**
  * 模式选择结果：基础三模式，或「自定义挖空」（不带 BlancallMode，由调用方导航到
- * practice?custom=true 走配置选择流程）。
+ * 配置列表页 custom_cloze_list 走配置选择流程）。
  */
 sealed interface PickerSelection {
     data class Base(val mode: BlancallMode) : PickerSelection
