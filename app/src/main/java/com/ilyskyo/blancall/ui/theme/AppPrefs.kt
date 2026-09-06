@@ -60,6 +60,10 @@ object AppPrefs {
     /** 底部导航栏液态玻璃开关：关闭后玻璃层隐藏，回退纯色底（性能/功耗优先） */
     val navLiquidGlassFlow: StateFlow<Boolean> = _navLiquidGlassFlow.asStateFlow()
 
+    private val _practiceBackWarningDisabledFlow = MutableStateFlow(false)
+    /** 练习页返回未保存提示：勾选「不再提示」后置 true，返回直接退出不弹窗 */
+    val practiceBackWarningDisabledFlow: StateFlow<Boolean> = _practiceBackWarningDisabledFlow.asStateFlow()
+
     private val _reviewTemplateFlow = MutableStateFlow("standard")
     /** 复习模板 ID（sprint / standard / deep） */
     val reviewTemplateFlow: StateFlow<String> = _reviewTemplateFlow.asStateFlow()
@@ -124,6 +128,7 @@ object AppPrefs {
         _showHomeEmojiFlow.value = prefs.getBoolean("show_home_emoji", false)
         _lightBeigeBackgroundFlow.value = prefs.getBoolean("light_beige_background", false)
         _navLiquidGlassFlow.value = prefs.getBoolean("nav_liquid_glass", true)
+        _practiceBackWarningDisabledFlow.value = prefs.getBoolean("practice_back_warning_disabled", false)
         _reviewTemplateFlow.value = prefs.getString("review_template", "standard") ?: "standard"
         _hiddenArticleIdsFlow.value = prefs.getStringSet("hidden_articles", emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
@@ -233,6 +238,16 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("nav_liquid_glass", value) }
                 _navLiquidGlassFlow.value = value
+            }
+        }
+
+    /** 练习页返回未保存提示开关（勾选「不再提示」后 true：返回直接退出） */
+    var practiceBackWarningDisabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("practice_back_warning_disabled", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("practice_back_warning_disabled", value) }
+                _practiceBackWarningDisabledFlow.value = value
             }
         }
 

@@ -79,6 +79,7 @@ import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.algorithm.PdfExporter
 import com.ilyskyo.blancall.algorithm.SectionSplitter
 import com.ilyskyo.blancall.algorithm.ShareImageGenerator
+import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
@@ -157,6 +158,11 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var showStrategySheet by remember { mutableStateOf(false) }
     var showSectionSheet by remember { mutableStateOf(false) }
     var showIncompleteDialog by remember { mutableStateOf(false) }
+    // 自定义挖空：配置选择浮层 + 返回未保存提示弹窗
+    var showCustomPicker by remember { mutableStateOf(false) }
+    var customConfigs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
+    var showBackWarning by remember { mutableStateOf(false) }
+    var backWarningNoMore by remember { mutableStateOf(false) }
 
     LaunchedEffect(articleIds) {
         if (articleIds.size > 1) {
@@ -212,7 +218,16 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BackButton(onClick = { navController.popBackStack() })
+            // 返回：有未提交作答时先弹提示（返回本身不承担保存，保存用右上角提交）
+            BackButton(onClick = {
+                val hasUnsaved = modeSelected && !isSubmitted &&
+                    (userAnswers.values.any { it.isNotBlank() } || dictationInput.isNotBlank())
+                if (hasUnsaved && !AppPrefs.practiceBackWarningDisabled) {
+                    showBackWarning = true
+                } else {
+                    navController.popBackStack()
+                }
+            })
             Spacer(Modifier.width(8.dp))
             // 顶部标题：左右滑动可快速切换三种练习模式（AI 开启时按已选难度重新生成）
             val latestMode by rememberUpdatedState(mode)
@@ -827,6 +842,21 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             modeSelected = true
                         }
                     )
+
+                    // 自定义挖空（仅单篇文章练习时提供；跨文复习不适用）
+                    if (articleIds.size == 1) {
+                        Spacer(Modifier.height(10.dp))
+                        ModeCard(
+                            emoji = "🎯",
+                            title = "自定义挖空",
+                            desc = "使用自己点选的挖空配置练题",
+                            onClick = {
+                                customConfigs = CustomClozeStore.getInstance(context.filesDir)
+                                    .getConfigs(articleIds.first())
+                                showCustomPicker = true
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -882,6 +912,127 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+
+    // ── 自定义挖空：配置选择浮层 ──
+    if (showCustomPicker) {
+        GlassModalBottomSheet(
+            onDismissRequest = { showCustomPicker = false },
+            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
+            } }
+        ) {
+            Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 36.dp)) {
+                Text("使用自定义挖空", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "选择这篇文章保存的一套挖空配置，直接开始练习",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                if (customConfigs.isEmpty()) {
+                    Text(
+                        "这篇文章还没有自定义配置",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                } else {
+                    customConfigs.forEach { cfg ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    showCustomPicker = false
+                                    vm.startCustomPractice(cfg.blanks)
+                                    modeSelected = true
+                                }
+                                .padding(horizontal = 4.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🎯", fontSize = 18.sp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(cfg.name, style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("${cfg.blanks.size} 个空", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = {
+                                showCustomPicker = false
+                                vm.startCustomPractice(cfg.blanks)
+                                modeSelected = true
+                            }) { Text("开始", style = MaterialTheme.typography.labelLarge) }
+                            IconButton(onClick = {
+                                CustomClozeStore.getInstance(context.filesDir)
+                                    .deleteConfig(articleIds.first(), cfg.id)
+                                customConfigs = CustomClozeStore.getInstance(context.filesDir)
+                                    .getConfigs(articleIds.first())
+                            }) {
+                                AppIcon(
+                                    kind = AppIconKind.Close,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        showCustomPicker = false
+                        navController.navigate("custom_cloze_edit/${articleIds.first()}")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(if (customConfigs.isEmpty()) "去创建自定义配置" else "新建 / 编辑配置")
+                }
+            }
+        }
+    }
+
+    // ── 返回未保存提示弹窗（返回本身不承担保存；要保存请点右上角提交）──
+    if (showBackWarning) {
+        BlancallAlertDialog(
+            onDismissRequest = { showBackWarning = false },
+            title = { Text("还有未提交的作答", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column {
+                    Text(
+                        "在练习页点右上角「提交」可以保存本次练习记录；直接返回不会保存。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = backWarningNoMore,
+                            onCheckedChange = { backWarningNoMore = it }
+                        )
+                        Text(
+                            "以后不再提示，直接返回",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (backWarningNoMore) AppPrefs.practiceBackWarningDisabled = true
+                    showBackWarning = false
+                    navController.popBackStack()
+                }) { Text("点此返回") }
+            }
+        )
     }
 
     // ── 二级：挖空策略 BottomSheet ──

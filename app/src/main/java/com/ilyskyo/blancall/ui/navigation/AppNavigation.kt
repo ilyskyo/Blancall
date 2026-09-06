@@ -53,6 +53,7 @@ import com.ilyskyo.blancall.ui.ai.AiHistoryScreen
 import com.ilyskyo.blancall.ui.ai.AiProfileEditScreen
 import com.ilyskyo.blancall.ui.ai.AiScreen
 import com.ilyskyo.blancall.ui.practice.PracticeScreen
+import com.ilyskyo.blancall.ui.cloze.CustomClozeEditScreen
 import com.ilyskyo.blancall.ui.reader.ReaderScreen
 import com.ilyskyo.blancall.ui.settings.SettingsScreen
 import com.ilyskyo.blancall.ui.settings.HelpScreen
@@ -242,6 +243,26 @@ fun AppNavigation() {
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
             ReaderScreen(navController, articleId)
+        }
+
+        // 自定义挖空模板编辑页（按文章保存多套配置）
+        composable(
+            route = "custom_cloze_edit/{articleId}?configId={configId}",
+            arguments = listOf(
+                navArgument("articleId") { type = NavType.LongType },
+                navArgument("configId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            ),
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) { backStackEntry ->
+            val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
+            val configId = backStackEntry.arguments?.getLong("configId") ?: -1L
+            CustomClozeEditScreen(navController, articleId, configId)
         }
 
         composable(

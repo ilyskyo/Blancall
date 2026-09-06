@@ -460,6 +460,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     GlassActionItem("阅读模式", Modifier.weight(1f), enabled = barVisible) {
                         readingMode = true
                     }
+                    // 自定义挖空：进入模板编辑页（按文章保存多套配置，练习时选用）
+                    GlassActionItem("自定义", Modifier.weight(1f), enabled = barVisible) {
+                        navController.navigate("custom_cloze_edit/${art.id}")
+                    }
                     // AI 对话入口（设置中启用 AI 功能后才显示）
                     if (aiEnabled) {
                         GlassActionItem("AI", Modifier.weight(1f), enabled = barVisible) {
