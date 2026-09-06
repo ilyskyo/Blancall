@@ -160,22 +160,17 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var showIncompleteDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    // 自定义挖空：配置选择浮层 + 返回未保存提示弹窗
-    var showCustomPicker by remember { mutableStateOf(false) }
+    // 自定义挖空：配置选择浮层（?custom=true 进入时以浮层形式直接列配置，替代底部弹层）+ 返回未保存提示弹窗
     var customConfigs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
     var showBackWarning by remember { mutableStateOf(false) }
     var backWarningNoMore by remember { mutableStateOf(false) }
-    // 从「?custom=true」进入时（各页面开始练习选「自定义挖空」）自动弹配置选择浮层；
-    // customEntryShown 门控防止文章未加载完成时模式浮层闪现
-    var customEntryShown by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(openCustomPicker, article?.id) {
-        if (openCustomPicker && article != null && articleIds.size == 1 && !customEntryShown) {
-            customEntryShown = true
+        if (openCustomPicker && article != null && articleIds.size == 1) {
             customConfigs = CustomClozeStore.getInstance(context.filesDir)
                 .getConfigs(articleIds.first())
-            showCustomPicker = true
         }
     }
+    val customConfigName by vm.customConfigName.collectAsState()
 
     LaunchedEffect(articleIds) {
         if (articleIds.size > 1) {
@@ -243,7 +238,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             Spacer(Modifier.width(8.dp))
             // 顶部标题：左右滑动可快速切换三种练习模式（AI 开启时按已选难度重新生成）
             val latestMode by rememberUpdatedState(mode)
-            val titleSwipeEnabled by rememberUpdatedState(modeSelected && !isSubmitted)
+            val titleSwipeEnabled by rememberUpdatedState(modeSelected && !isSubmitted && customConfigName == null)
             // 标题拖拽跟手：滑动时标题随手指平移（有拖拽动画，而非静止检测后跳切）
             // 标题拖拽跟手：Animatable 支持拖拽时即时 snapTo、松手 animateTo 平滑回弹
             val titleDrag = remember { Animatable(0f) }
@@ -342,15 +337,17 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         },
                         trailing = {
                             Text(
-                                modeLabel(mode),
+                                // 自定义练习时显示用户命名的配置名
+                                customConfigName ?: modeLabel(mode),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
                     )
-                    // ── 切换模式 → 打开 BottomSheet ──
+                    // ── 切换模式 → 打开 BottomSheet（自定义练习锁定模式，置灰禁用）──
                     GlassMenuItem(
+                        enabled = customConfigName == null,
                         onClick = { showMoreMenu = false; showModeSheet = true },
                         leadingIcon = {
                             AppIcon(
@@ -361,8 +358,9 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         },
                         label = { Text("切换模式…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) }
                     )
-                    // ── 挖空策略 → 打开 BottomSheet ──
+                    // ── 挖空策略 → 打开 BottomSheet（自定义练习禁用：策略变更会覆盖自定义挖空）──
                     GlassMenuItem(
+                        enabled = customConfigName == null,
                         onClick = { showMoreMenu = false; showStrategySheet = true },
                         leadingIcon = {
                             AppIcon(
@@ -438,6 +436,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         SectionMode.SELECTED -> "段落：自选 (${selectedSections.size}/${sections.size})"
                     }
                     GlassMenuItem(
+                        // 自定义练习禁用：段落变更会重生成、覆盖自定义挖空
+                        enabled = customConfigName == null,
                         onClick = {
                             showMoreMenu = false
                             showSectionSheet = true
@@ -769,7 +769,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // ── 模式选择浮层（初次进入，未选模式时显示）──
     // 模式选择浮层：fade + scale 弹性动画，避免直接消失的视觉跳变
     AnimatedVisibility(
-        visible = !modeSelected && article != null && (!openCustomPicker || customEntryShown),
+        visible = !modeSelected && article != null,
         enter = fadeIn(animationSpec = tween(160)) +
                 scaleIn(
                     animationSpec = spring(
@@ -786,11 +786,11 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 .fillMaxSize()
                 // 模态遮罩：压暗底层页面，毛玻璃叠在内容页上不会显得"透穿破图"
                 .background(Color.Black.copy(alpha = 0.32f))
-                // 消费点击：浮层显示时阻断底层页面交互
+                // 消费点击：浮层显示时阻断底层页面交互（自定义入口：点遮罩直接退出练习）
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() }
-                ) { },
+                ) { if (openCustomPicker) navController.popBackStack() },
             contentAlignment = Alignment.Center
         ) {
             GlassCard(
@@ -800,72 +800,145 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 containerColor = MaterialTheme.colorScheme.surface,
                 containerAlpha = if (isBlancallDark()) GLASS_ALPHA_DARK else GLASS_MENU_ALPHA_LIGHT
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "选择练习模式",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        article?.title ?: "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(20.dp))
-
-                    // 句子挖空
-                    ModeCard(
-                        emoji = "📝",
-                        title = "句子挖空",
-                        desc = "隐藏完复句子，适合段落背诵",
-                        onClick = {
-                            vm.onModeChosen(BlancallMode.SENTENCE)
-                            modeSelected = true
+                if (openCustomPicker) {
+                    // ── 自定义入口：浮层内直接列配置（选完即练；点遮罩/返回退出）──
+                    Column(
+                        modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "选择自定义配置",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            article?.title ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(20.dp))
+                        if (customConfigs.isEmpty()) {
+                            Text(
+                                "这篇文章还没有自定义配置\n点下方按钮去创建",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        } else {
+                            customConfigs.forEach { cfg ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            vm.startCustomPractice(cfg)
+                                            modeSelected = true
+                                        }
+                                        .padding(horizontal = 4.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🎯", fontSize = 20.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(cfg.name, style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                        Text(
+                                            "${cfg.blanks.size} 个空 · " + when (cfg.mode) {
+                                                "SENTENCE" -> "句子挖空"
+                                                "REVERSE" -> "反向默写"
+                                                else -> "字词挖空"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    TextButton(onClick = {
+                                        vm.startCustomPractice(cfg)
+                                        modeSelected = true
+                                    }) { Text("开始", style = MaterialTheme.typography.labelLarge) }
+                                    IconButton(onClick = {
+                                        CustomClozeStore.getInstance(context.filesDir)
+                                            .deleteConfig(articleIds.first(), cfg.id)
+                                        customConfigs = CustomClozeStore.getInstance(context.filesDir)
+                                            .getConfigs(articleIds.first())
+                                    }) {
+                                        AppIcon(
+                                            kind = AppIconKind.Close,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    )
-                    Spacer(Modifier.height(10.dp))
-
-                    // 字词挖空
-                    ModeCard(
-                        emoji = "🔤",
-                        title = "字词挖空",
-                        desc = "挖掉关键词/字，精准检测掌握度",
-                        onClick = {
-                            vm.onModeChosen(BlancallMode.WORD)
-                            modeSelected = true
-                        }
-                    )
-                    Spacer(Modifier.height(10.dp))
-
-                    // 反向默写
-                    ModeCard(
-                        emoji = "✍️",
-                        title = "反向默写",
-                        desc = "把段落打散后默写原文，深度记忆",
-                        onClick = {
-                            vm.onModeChosen(BlancallMode.REVERSE)
-                            modeSelected = true
-                        }
-                    )
-
-                    // 自定义挖空（仅单篇文章练习时提供；跨文复习不适用）
-                    if (articleIds.size == 1) {
-                        Spacer(Modifier.height(10.dp))
-                        ModeCard(
-                            emoji = "🎯",
-                            title = "自定义挖空",
-                            desc = "使用自己点选的挖空配置练题",
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
                             onClick = {
-                                customConfigs = CustomClozeStore.getInstance(context.filesDir)
-                                    .getConfigs(articleIds.first())
-                                showCustomPicker = true
+                                navController.navigate("custom_cloze_edit/${articleIds.first()}")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(if (customConfigs.isEmpty()) "去创建自定义配置" else "新建 / 编辑配置")
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "选择练习模式",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            article?.title ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(20.dp))
+
+                        // 句子挖空
+                        ModeCard(
+                            emoji = "📝",
+                            title = "句子挖空",
+                            desc = "隐藏完复句子，适合段落背诵",
+                            onClick = {
+                                vm.onModeChosen(BlancallMode.SENTENCE)
+                                modeSelected = true
+                            }
+                        )
+                        Spacer(Modifier.height(10.dp))
+
+                        // 字词挖空
+                        ModeCard(
+                            emoji = "🔤",
+                            title = "字词挖空",
+                            desc = "挖掉关键词/字，精准检测掌握度",
+                            onClick = {
+                                vm.onModeChosen(BlancallMode.WORD)
+                                modeSelected = true
+                            }
+                        )
+                        Spacer(Modifier.height(10.dp))
+
+                        // 反向默写
+                        ModeCard(
+                            emoji = "✍️",
+                            title = "反向默写",
+                            desc = "把段落打散后默写原文，深度记忆",
+                            onClick = {
+                                vm.onModeChosen(BlancallMode.REVERSE)
+                                modeSelected = true
                             }
                         )
                     }
@@ -922,95 +995,6 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     onClick = { vm.switchMode(BlancallMode.REVERSE); showModeSheet = false }
                 )
                 Spacer(Modifier.height(24.dp))
-            }
-        }
-    }
-
-    // ── 自定义挖空：配置选择浮层 ──
-    if (showCustomPicker) {
-        GlassModalBottomSheet(
-            onDismissRequest = { showCustomPicker = false },
-            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
-            } }
-        ) {
-            Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 36.dp)) {
-                Text("使用自定义挖空", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "选择这篇文章保存的一套挖空配置，直接开始练习",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(16.dp))
-                if (customConfigs.isEmpty()) {
-                    Text(
-                        "这篇文章还没有自定义配置",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 12.dp)
-                    )
-                } else {
-                    customConfigs.forEach { cfg ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    showCustomPicker = false
-                                    vm.startCustomPractice(cfg.blanks, cfg.mode)
-                                    modeSelected = true
-                                }
-                                .padding(horizontal = 4.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("🎯", fontSize = 18.sp)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(cfg.name, style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface)
-                                Text(
-                                    "${cfg.blanks.size} 个空 · " + when (cfg.mode) {
-                                        "SENTENCE" -> "句子挖空"
-                                        "REVERSE" -> "反向默写"
-                                        else -> "字词挖空"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            TextButton(onClick = {
-                                showCustomPicker = false
-                                vm.startCustomPractice(cfg.blanks, cfg.mode)
-                                modeSelected = true
-                            }) { Text("开始", style = MaterialTheme.typography.labelLarge) }
-                            IconButton(onClick = {
-                                CustomClozeStore.getInstance(context.filesDir)
-                                    .deleteConfig(articleIds.first(), cfg.id)
-                                customConfigs = CustomClozeStore.getInstance(context.filesDir)
-                                    .getConfigs(articleIds.first())
-                            }) {
-                                AppIcon(
-                                    kind = AppIconKind.Close,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        showCustomPicker = false
-                        navController.navigate("custom_cloze_edit/${articleIds.first()}")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text(if (customConfigs.isEmpty()) "去创建自定义配置" else "新建 / 编辑配置")
-                }
             }
         }
     }

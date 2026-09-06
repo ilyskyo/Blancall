@@ -1244,7 +1244,20 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      * 强制整篇模式（段落选择清空）保证配置的句子索引与全文切句口径对齐。
      * modeStr = SENTENCE / WORD / REVERSE（配置编辑器里选定的目标模式）。
      */
-    fun startCustomPractice(blanks: List<CustomClozeStore.BlankSpec>, modeStr: String = "WORD") {
+    /** 自定义练习进行中显示的配置名（非空 = 自定义模式锁定，禁止切换模式/策略/段落） */
+    private val _customConfigName = MutableStateFlow<String?>(null)
+    val customConfigName: StateFlow<String?> = _customConfigName.asStateFlow()
+
+    private var activeCustomConfig: CustomClozeStore.CustomConfig? = null
+
+    /** 用一套配置直接开始自定义练习（配置选择浮层调用） */
+    fun startCustomPractice(config: CustomClozeStore.CustomConfig) {
+        activeCustomConfig = config
+        _customConfigName.value = config.name
+        applyCustomPractice(config.blanks, config.mode)
+    }
+
+    private fun applyCustomPractice(blanks: List<CustomClozeStore.BlankSpec>, modeStr: String = "WORD") {
         val content = _article.value?.content ?: return
         if (content.isBlank() || blanks.isEmpty()) return
         val sentences = SentenceSplitter.split(content)
@@ -1897,6 +1910,11 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         _trainingAnalysis.value = null
         _analysisLoading.value = false
         _analysisError.value = false
+        // 自定义练习重做：按配置重建挖空，不走常规重生成
+        activeCustomConfig?.let {
+            applyCustomPractice(it.blanks, it.mode)
+            return
+        }
         // AI 开启：按上次难度经 AI 重新挖空（反向默写仍在 AI 路径内走本地打散）
         if (isAiAvailable()) {
             _isSubmitted.value = false
