@@ -257,6 +257,7 @@ fun HomeScreen(
         BlancallAlertDialog(
             onDismissRequest = { showSaveSuccessDialog = false },
             shape = RoundedCornerShape(28.dp),
+            textBottomSpacing = 0.dp,
             title = {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -285,20 +286,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.weight(1f))
-                    // 右上角：+ 新建（继续导入）
-                    IconButton(
-                        onClick = {
-                            showSaveSuccessDialog = false
-                            navController.navigate("import")
-                        }
-                    ) {
-                        AppIcon(
-                            kind = AppIconKind.Add,
-                            modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // 右上角：x 关闭
+                    // 右上角：x 关闭（+ 新建已删，与「继续导入」按钮功能重复）
                     IconButton(onClick = { showSaveSuccessDialog = false }) {
                         AppIcon(
                             kind = AppIconKind.Close,

@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import com.qmdeve.liquidglass.widget.LiquidGlassView
 import java.util.concurrent.atomic.AtomicReference
@@ -110,6 +112,13 @@ fun BottomNavBar(
     val accent = MaterialTheme.colorScheme.primary
     val subTint = MaterialTheme.colorScheme.onSurfaceVariant
     val density = LocalDensity.current
+
+    // 液态玻璃开关（设置-外观）：关闭后玻璃层 alpha 渐隐、回退纯色底。
+    // LiquidGlassView 是 AndroidView，不能按条件移出组合树（detach 态 PreDraw 会崩），
+    // 因此节点常驻、只动 alpha。
+    val navGlass by AppPrefs.navLiquidGlassFlow.collectAsState()
+    val barGlassAlpha by animateFloatAsState(if (navGlass) 1f else 0f, label = "barGlassAlpha")
+    val sliderGlassAlpha by animateFloatAsState(if (navGlass) 1f else 0f, label = "sliderGlassAlpha")
 
     val barHeightDp = 64.dp
     val barCornerDp = 28.dp
@@ -280,6 +289,7 @@ fun BottomNavBar(
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(0f)
+                        .graphicsLayer { alpha = barGlassAlpha }
                         .shadow(
                             elevation = 14.dp,
                             shape = barShape,
@@ -289,6 +299,22 @@ fun BottomNavBar(
                         )
                         .clip(barShape)
                 )
+
+                // 液态玻璃关闭时的纯色底回退（与 API<33 分支同款样式）
+                if (!navGlass) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .zIndex(0.05f)
+                            .shadow(
+                                14.dp, barShape,
+                                ambientColor = Color.Black.copy(alpha = 0.20f),
+                                spotColor = Color.Black.copy(alpha = 0.26f)
+                            )
+                            .clip(barShape)
+                            .background(if (isDark) Color(0xE61A1A1A) else Color(0xC8FFFFFF))
+                    )
+                }
             } else {
                 Box(
                     Modifier
@@ -391,6 +417,7 @@ fun BottomNavBar(
                         },
                         modifier = Modifier
                             .size(width = sliderWDp, height = 48.dp)
+                            .graphicsLayer { alpha = sliderGlassAlpha }
                             .shadow(
                             elevation = 8.dp,
                             shape = sliderShape,
@@ -400,6 +427,15 @@ fun BottomNavBar(
                         )
                             .clip(sliderShape)
                     )
+                    // 液态玻璃关闭时：主题色纯色底（与 API<33 分支同款）
+                    if (!navGlass) {
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .clip(sliderShape)
+                                .background(accent.copy(alpha = if (isDark) 0.35f else 0.28f))
+                        )
+                    }
                     // 滑块饰面：白色描边（顶部高光渐变已移除，立体液晶感靠液态玻璃本身）
                     Box(
                         Modifier

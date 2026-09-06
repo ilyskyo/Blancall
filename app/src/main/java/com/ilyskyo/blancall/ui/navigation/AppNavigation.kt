@@ -70,7 +70,6 @@ import com.ilyskyo.blancall.ui.viewmodel.SectionMode
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
-    val predictiveBack by AppPrefs.predictiveBackFlow.collectAsState()
     // 内置素材库：启用任一库后底部导航栏追加「素材库」入口（支持多库扩展）
     val enabledLibraries by AppPrefs.builtInLibraryKeysFlow.collectAsState()
     // 当前路由（用于底部导航栏高亮）
@@ -142,33 +141,27 @@ fun AppNavigation() {
     // ══════════════════════════════════════════════════════
 
     // enterTransition：前进导航 → 新页面从右侧滑入
-    val enterSlide: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = if (predictiveBack) {
-        { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(300)) +
-          fadeIn(tween(200)) }
-    } else {
-        { EnterTransition.None }
+    // 说明：manifest 的 enableOnBackInvokedCallback 为静态属性无法运行时切换，
+    // 原预测性返回开关已移除，转场固定采用预测性返回风格的滑动动画。
+    val enterSlide: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = {
+        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(300)) +
+          fadeIn(tween(200))
     }
 
     // exitTransition：前进导航 → 旧页面向右滑出（快速，不加缩放）
-    val exitSlide: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = if (predictiveBack) {
-        { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(200)) }
-    } else {
-        { ExitTransition.None }
+    val exitSlide: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = {
+        slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(200))
     }
 
     // popExitTransition：系统返回 / 预测性返回 → 当前页面退出
     // 只做快速淡出，因为 enableEdgeToEdge() 已处理系统级滑动+缩放动画
-    val popExitSlide: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = if (predictiveBack) {
-        { fadeOut(tween(200)) }
-    } else {
-        { ExitTransition.None }
+    val popExitSlide: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = {
+        fadeOut(tween(200))
     }
 
     // popEnterTransition：系统返回 → 上一页从左侧滑入
-    val popEnterSlide: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = if (predictiveBack) {
-        { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(250)) }
-    } else {
-        { EnterTransition.None }
+    val popEnterSlide: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = {
+        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(250))
     }
 
     // 底部导航模式：根页面 tab 切换用极短渐隐（crossfade）。

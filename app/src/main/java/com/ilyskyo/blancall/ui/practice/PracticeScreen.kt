@@ -1055,11 +1055,11 @@ private fun IncompleteSubmitDialog(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        HintRow("只批改已完成的部分")
+                        HintRow("✓ 只批改已完成的部分")
                         Spacer(Modifier.height(4.dp))
-                        HintRow("未填写内容不会计入错误统计")
+                        HintRow("✓ 未填写内容不会计入错误统计")
                         Spacer(Modifier.height(4.dp))
-                        HintRow("当前练习进度会被保存，下次可以继续")
+                        HintRow("✓ 当前练习进度会被保存，下次可以继续")
                     }
                 }
             }
@@ -2453,7 +2453,7 @@ private fun Modifier.pinchZoom(onZoomChange: (Float) -> Unit): Modifier = pointe
                 val dx = a.x - b.x
                 val dy = a.y - b.y
                 val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                if (prevDist > 0f && dist > 0f && prevDist > 0f) {
+                if (prevDist > 0f && dist > 0f) {
                     val factor = dist / prevDist
                     if (factor.isFinite()) onZoomChange(factor)
                 }

@@ -8,6 +8,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,7 +63,16 @@ object FileTextExtractor {
      * 提取文件文本。suspend 函数，内部切换到 Dispatchers.IO 执行。
      * 超过 [MAX_FILE_SIZE] 的文件将抛出异常。
      */
-    suspend fun extractText(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun extractText(context: Context, uri: Uri): String = extractTextWithInfo(context, uri).text
+
+    /** 提取结果：text=纯文本，hasImages=源文档是否包含图片/嵌入对象（这些内容不会随文本导入） */
+    data class ExtractResult(val text: String, val hasImages: Boolean)
+
+    /**
+     * 提取文件文本 + 图片检测结果。suspend 函数，内部切换到 Dispatchers.IO 执行。
+     * 超过 [MAX_FILE_SIZE] 的文件将抛出异常。
+     */
+    suspend fun extractTextWithInfo(context: Context, uri: Uri): ExtractResult = withContext(Dispatchers.IO) {
         // 文件大小检查，防止大文件 OOM
         checkFileSize(context, uri)
 
@@ -72,30 +82,35 @@ object FileTextExtractor {
         when {
             // PDF
             fileName.endsWith(".pdf", ignoreCase = true) || mimeType == "application/pdf" ->
-                extractPdfText(context, uri)
+                ExtractResult(extractPdfText(context, uri), detectPdfImages(context, uri))
 
             // DOCX (Word 2007+)
             fileName.endsWith(".docx", ignoreCase = true) ||
                 mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ->
-                extractDocxText(context, uri)
+                ExtractResult(extractDocxText(context, uri), detectDocxImages(context, uri))
+
+            // DOC（Word 97-2003 二进制格式）
+            (fileName.endsWith(".doc", ignoreCase = true) && !fileName.endsWith(".docx", ignoreCase = true)) ||
+                mimeType == "application/msword" ->
+                extractDocResult(context, uri)
 
             // EPUB
             fileName.endsWith(".epub", ignoreCase = true) || mimeType == "application/epub+zip" ->
-                extractEpubText(context, uri)
+                ExtractResult(extractEpubText(context, uri), detectEpubImages(context, uri))
 
             // HTML
             fileName.endsWith(".html", ignoreCase = true) ||
                 fileName.endsWith(".htm", ignoreCase = true) ||
                 mimeType == "text/html" ->
-                extractHtmlText(context, uri)
+                ExtractResult(extractHtmlText(context, uri), detectHtmlImages(context, uri))
 
             // RTF
             fileName.endsWith(".rtf", ignoreCase = true) ||
                 mimeType == "application/rtf" || mimeType == "text/rtf" ->
-                extractRtfText(context, uri)
+                ExtractResult(extractRtfText(context, uri), detectRtfImages(context, uri))
 
             // 纯文本（TXT / MD / 未知格式等）
-            else -> extractPlainText(context, uri)
+            else -> ExtractResult(extractPlainText(context, uri), false)
         }
     }
 
@@ -359,6 +374,366 @@ object FileTextExtractor {
         text = text.replace(RTF_NL_REGEX, "\n\n")
         text = text.replace(RTF_WS_REGEX, " ")
         return text.trim()
+    }
+
+    // ─────────────────── 图片检测 ───────────────────
+
+    /** PDF：任一页资源含图片 XObject 即视为含图片 */
+    private fun detectPdfImages(context: Context, uri: Uri): Boolean {
+        ensurePdfBoxInitialized(context)
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { ins ->
+                PDDocument.load(ins).use { document ->
+                    for (page in document.pages) {
+                        val resources = page.resources ?: continue
+                        for (name in resources.xObjectNames) {
+                            val x = runCatching { resources.getXObject(name) }.getOrNull() ?: continue
+                            if (x is PDImageXObject) return true
+                        }
+                    }
+                }
+                false
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** DOCX：zip 内存在 word/media/ 条目即视为含图片 */
+    private fun detectDocxImages(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { ins ->
+                ZipInputStream(ins).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        if (entry.name.startsWith("word/media/", ignoreCase = true)) return true
+                        entry = zip.nextEntry
+                    }
+                }
+                false
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** DOC：图片/嵌入对象存于 "Data" 流，非空即视为含图片 */
+    private fun docHasImages(streams: Map<String, ByteArray>): Boolean {
+        return (streams["Data"]?.size ?: 0) > 0
+    }
+
+    /** EPUB：正文 HTML 含 <img> 标签即视为含图片 */
+    private fun detectEpubImages(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { ins ->
+                ZipInputStream(ins).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        val name = entry.name.lowercase()
+                        if (name.endsWith(".xhtml") || name.endsWith(".html") || name.endsWith(".htm")) {
+                            if (String(zip.readBytes(), Charsets.ISO_8859_1).contains("<img", ignoreCase = true)) {
+                                return true
+                            }
+                        }
+                        entry = zip.nextEntry
+                    }
+                }
+                false
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun detectHtmlImages(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { bytes ->
+                String(bytes, detectCharset(bytes)).contains("<img", ignoreCase = true)
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun detectRtfImages(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { bytes ->
+                String(bytes, detectCharset(bytes)).contains("\\pict", ignoreCase = true)
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // ─────────────────── DOC（Word 97-2003 二进制格式） ───────────────────
+
+    /** 提取 .doc 文本 + 图片检测结果。伪装成 .doc 的纯文本/HTML/RTF 会按对应格式兜底解析 */
+    private fun extractDocResult(context: Context, uri: Uri): ExtractResult {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw Exception("无法打开 DOC 文件")
+
+        val streams = try {
+            parseOleStreams(bytes)
+        } catch (_: Exception) {
+            null
+        }
+
+        // 无 WordDocument 流：多半不是真正的 .doc，按文本/HTML/RTF 兜底
+        if (streams == null || !streams.containsKey("WordDocument")) {
+            val asString = String(bytes, detectCharset(bytes)).trimStart('\uFEFF')
+            val text = when {
+                asString.startsWith("{\\rtf") -> stripRtf(asString)
+                asString.contains("<html", ignoreCase = true) || asString.contains("<body", ignoreCase = true) ->
+                    stripHtml(asString)
+                else -> asString
+            }.trim()
+            return ExtractResult(text, false)
+        }
+
+        return ExtractResult(extractDocText(streams), docHasImages(streams))
+    }
+
+    private fun extractDocText(streams: Map<String, ByteArray>): String {
+        val wd = streams["WordDocument"] ?: throw Exception("无效的 DOC 文件：未找到 WordDocument 流")
+        val flags = leU16(wd, 0x000A)
+        if (flags and 0x0100 != 0) throw Exception("文档已加密，无法读取")
+        val nFib = leU16(wd, 0x0002)
+        val tableName = if (flags and 0x0200 != 0) "1Table" else "0Table"
+
+        // 优先走 piece table（Word 97+，支持快速保存的多分片），失败回退 fcMin/fcMac 连续文本
+        val pieces = if (nFib >= 0x00C1) parseDocPieceTable(wd, streams[tableName]) else null
+        val text = if (pieces != null) {
+            buildString {
+                for ((raw, isUtf16) in pieces) {
+                    append(if (isUtf16) String(raw, Charsets.UTF_16LE) else decodeDocBytes(raw))
+                }
+            }
+        } else {
+            val fcMin = leU32(wd, 0x18)
+            val fcMac = leU32(wd, 0x1C)
+            val byteCount = (fcMac - fcMin).toInt()
+            if (byteCount <= 0 || fcMin >= wd.size) return ""
+            val raw = wd.copyOfRange(fcMin.toInt(), minOf(wd.size, (fcMin + byteCount).toInt()))
+            if (flags and 0x1000 != 0) String(raw, Charsets.UTF_16LE) else decodeDocBytes(raw)
+        }
+        return cleanupDocText(text)
+    }
+
+    /** 压缩（8-bit）分片解码：非 ASCII 字节按 GB18030 兜底，纯 ASCII 用 ISO-8859-1 */
+    private fun decodeDocBytes(raw: ByteArray): String {
+        return if (raw.any { it < 0 }) {
+            runCatching { String(raw, charset("GB18030")) }.getOrDefault(String(raw, Charsets.ISO_8859_1))
+        } else {
+            String(raw, Charsets.ISO_8859_1)
+        }
+    }
+
+    /** 解析 FIB → CLX → PlcPcd 分片表；结构不合法返回 null（调用方走回退路径） */
+    private fun parseDocPieceTable(wd: ByteArray, table: ByteArray?): List<Pair<ByteArray, Boolean>>? {
+        if (table == null) return null
+        val fcClx = leU32(wd, 0x01A2)
+        val lcbClx = leU32(wd, 0x01A6)
+        if (fcClx <= 0L || lcbClx <= 0L || fcClx + lcbClx > table.size) return null
+        val clx = table.copyOfRange(fcClx.toInt(), (fcClx + lcbClx).toInt())
+
+        var plc: ByteArray? = null
+        var pos = 0
+        while (pos < clx.size) {
+            when (clx[pos].toInt() and 0xFF) {
+                1 -> { // Prc：跳过修改记录
+                    if (pos + 3 > clx.size) return null
+                    pos += 3 + leU16(clx, pos + 1)
+                }
+                2 -> { // Pcdt：PlcPcd 所在
+                    if (pos + 5 > clx.size) return null
+                    val lcb = leU32(clx, pos + 1).toInt()
+                    if (lcb <= 0 || pos + 5 + lcb > clx.size) return null
+                    plc = clx.copyOfRange(pos + 5, pos + 5 + lcb)
+                }
+                else -> return null
+            }
+            if (plc != null) break
+        }
+        val p = plc ?: return null
+        if (p.size < 16 || (p.size - 4) % 12 != 0) return null
+        val n = (p.size - 4) / 12
+        val result = mutableListOf<Pair<ByteArray, Boolean>>()
+        val base = 4 * (n + 1)
+        for (i in 0 until n) {
+            val cpStart = leU32(p, 4 * i)
+            val cpEnd = leU32(p, 4 * (i + 1))
+            val cpCount = (cpEnd - cpStart).toInt()
+            if (cpCount <= 0) continue
+            val fcRaw = leU32(p, base + 8 * i + 2)
+            val compressed = fcRaw and 0x40000000L != 0L
+            val fc = fcRaw and 0x3FFFFFFFL
+            if (compressed) {
+                val start = (fc shr 1).toInt()
+                if (start >= wd.size) continue
+                result.add(wd.copyOfRange(start, minOf(wd.size, start + cpCount)) to false)
+            } else {
+                val start = fc.toInt()
+                if (start >= wd.size) continue
+                result.add(wd.copyOfRange(start, minOf(wd.size, start + 2 * cpCount)) to true)
+            }
+        }
+        return if (result.isEmpty()) null else result
+    }
+
+    /** Word 控制字符 → 换行/删除，并折叠多余空行 */
+    private fun cleanupDocText(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (ch in text) {
+            when {
+                ch == '\r' || ch == '\u0007' || ch == '\u000B' || ch == '\u000C' -> sb.append('\n')
+                ch == '\u001E' -> sb.append('-')
+                ch == '\u0013' || ch == '\u0014' || ch == '\u0015' -> { /* 域字符，丢弃 */ }
+                ch.code < 0x20 && ch != '\t' && ch != '\n' -> { /* 其他控制字符，丢弃 */ }
+                else -> sb.append(ch)
+            }
+        }
+        var out = sb.toString()
+        while (out.contains("\n\n\n")) out = out.replace("\n\n\n", "\n\n")
+        return out.trim()
+    }
+
+    // ─────────────────── OLE2 / CFB 复合文档解析（.doc 容器） ───────────────────
+
+    private val OLE_MAGIC = byteArrayOf(
+        0xD0.toByte(), 0xCF.toByte(), 0x11.toByte(), 0xE0.toByte(),
+        0xA1.toByte(), 0xB1.toByte(), 0x1A.toByte(), 0xE1.toByte()
+    )
+
+    private const val OLE_FREE_SECTOR = -0x1
+    private const val OLE_END_OF_CHAIN = -0x2
+
+    private fun leU16(b: ByteArray, off: Int): Int {
+        if (off + 2 > b.size) return 0
+        return (b[off].toInt() and 0xFF) or ((b[off + 1].toInt() and 0xFF) shl 8)
+    }
+
+    private fun leU32(b: ByteArray, off: Int): Long {
+        if (off + 4 > b.size) return 0L
+        return (b[off].toLong() and 0xFF) or
+            ((b[off + 1].toLong() and 0xFF) shl 8) or
+            ((b[off + 2].toLong() and 0xFF) shl 16) or
+            ((b[off + 3].toLong() and 0xFF) shl 24)
+    }
+
+    /** 解析 OLE2/CFB 复合文档，返回 流名 → 内容。结构非法时抛异常 */
+    private fun parseOleStreams(data: ByteArray): Map<String, ByteArray> {
+        if (data.size < 512 || !data.copyOfRange(0, 8).contentEquals(OLE_MAGIC)) {
+            throw Exception("无效的 DOC 文件")
+        }
+        val sectorShift = leU16(data, 0x1E)
+        val miniShift = leU16(data, 0x20)
+        if (sectorShift < 7 || sectorShift > 12 || miniShift < 6 || miniShift > 9) {
+            throw Exception("无效的 DOC 文件")
+        }
+        val ssz = 1 shl sectorShift
+        val msz = 1 shl miniShift
+        val numFat = leU32(data, 0x2C).toInt()
+        val firstDir = leU32(data, 0x30).toInt()
+        val miniCutoff = leU32(data, 0x38).toInt()
+        val firstMiniFat = leU32(data, 0x3C).toInt()
+        val numMiniFat = leU32(data, 0x40).toInt()
+        val firstDifat = leU32(data, 0x44).toInt()
+        val numDifat = leU32(data, 0x48).toInt()
+
+        fun readSector(s: Int): ByteArray? {
+            val off = (s + 1).toLong() * ssz
+            if (s < 0 || off + ssz > data.size) return null
+            return data.copyOfRange(off.toInt(), (off + ssz).toInt())
+        }
+
+        // DIFAT：头部 109 项 + DIFAT 扇区链
+        val fatSectors = mutableListOf<Int>()
+        for (i in 0 until 109) {
+            val v = leU32(data, 0x4C + 4 * i).toInt()
+            if (v != OLE_FREE_SECTOR && v != OLE_END_OF_CHAIN) fatSectors.add(v)
+        }
+        var difatCur = firstDifat
+        var difatGuard = 0
+        while (difatCur >= 0 && numDifat > 0 && difatGuard < 65536) {
+            difatGuard++
+            val sec = readSector(difatCur) ?: break
+            for (i in 0 until ssz / 4 - 1) {
+                val v = leU32(sec, 4 * i).toInt()
+                if (v != OLE_FREE_SECTOR && v != OLE_END_OF_CHAIN) fatSectors.add(v)
+            }
+            difatCur = leU32(sec, ssz - 4).toInt()
+            if (difatCur == OLE_FREE_SECTOR || difatCur == OLE_END_OF_CHAIN) break
+        }
+
+        // FAT
+        val fat = mutableListOf<Int>()
+        val fatList = if (numFat in 1..fatSectors.size) fatSectors.take(numFat) else fatSectors
+        for (fs in fatList) {
+            val sec = readSector(fs) ?: continue
+            for (i in 0 until ssz / 4) fat.add(leU32(sec, 4 * i).toInt())
+        }
+        fun chain(start: Int, table: List<Int>): List<Int> {
+            val out = mutableListOf<Int>()
+            val visited = mutableSetOf<Int>()
+            var c = start
+            while (c >= 0 && c !in visited && visited.size <= table.size + 1) {
+                visited.add(c)
+                out.add(c)
+                c = if (c < table.size) table[c] else OLE_END_OF_CHAIN
+            }
+            return out
+        }
+        fun readChain(start: Int, size: Long, table: List<Int>, sectorSize: Int, container: ByteArray? = null): ByteArray {
+            val buf = java.io.ByteArrayOutputStream()
+            for (s in chain(start, table)) {
+                if (container != null) {
+                    val from = s * sectorSize
+                    if (from >= container.size) break
+                    buf.write(container, from, minOf(sectorSize, container.size - from))
+                } else {
+                    val sec = readSector(s) ?: break
+                    buf.write(sec)
+                }
+            }
+            val all = buf.toByteArray()
+            return if (size >= all.size) all else all.copyOf(size.toInt())
+        }
+
+        // 目录项
+        val dirData = readChain(firstDir, Long.MAX_VALUE, fat, ssz)
+        var rootStart = -1
+        data class DirEntry(val name: String, val type: Int, val start: Int, val size: Long)
+        val dirEntries = mutableListOf<DirEntry>()
+        var off = 0
+        while (off + 128 <= dirData.size) {
+            val nameLen = leU16(dirData, off + 0x40)
+            val type = dirData[off + 0x42].toInt() and 0xFF
+            val name = if (nameLen in 2..64) String(dirData, off, nameLen - 2, Charsets.UTF_16LE) else ""
+            val start = leU32(dirData, off + 0x74).toInt()
+            val size = leU32(dirData, off + 0x78)
+            if (type == 5) rootStart = start
+            dirEntries.add(DirEntry(name, type, start, size))
+            off += 128
+        }
+
+        // 小流（mini stream）+ MiniFAT：小于 miniCutoff 的流存在其中
+        val miniContainer = if (rootStart >= 0) readChain(rootStart, Long.MAX_VALUE, fat, ssz) else ByteArray(0)
+        val miniFat = mutableListOf<Int>()
+        if (numMiniFat > 0 && firstMiniFat >= 0) {
+            val mfb = readChain(firstMiniFat, Long.MAX_VALUE, fat, ssz)
+            for (i in 0 until mfb.size / 4) miniFat.add(leU32(mfb, 4 * i).toInt())
+        }
+
+        val streams = mutableMapOf<String, ByteArray>()
+        for (e in dirEntries) {
+            if (e.type != 2 || e.name.isEmpty() || streams.containsKey(e.name)) continue
+            streams[e.name] = if (e.size < miniCutoff) {
+                readChain(e.start, e.size, miniFat, msz, miniContainer)
+            } else {
+                readChain(e.start, e.size, fat, ssz)
+            }
+        }
+        return streams
     }
 
     // ─────────────────── 纯文本 + 编码检测 ───────────────────

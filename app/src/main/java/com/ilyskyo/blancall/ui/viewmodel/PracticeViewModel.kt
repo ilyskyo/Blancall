@@ -150,6 +150,15 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _showHint = MutableStateFlow(true)
     val showHint: StateFlow<Boolean> = _showHint.asStateFlow()
 
+    // 双指缩放字号（练习页），默认 1.0x，范围 0.6x ~ 3.0x
+    private val _fontScale = MutableStateFlow(1f)
+    val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
+    fun adjustFontScale(factor: Float) {
+        if (!factor.isFinite() || factor <= 0f) return
+        _fontScale.value = (_fontScale.value * factor).coerceIn(0.6f, 3.0f)
+    }
+    fun resetFontScale() { _fontScale.value = 1f }
+
     // 空数警告提示
     private val _blankCountWarning = MutableStateFlow<BlankCountWarning?>(null)
     val blankCountWarning: StateFlow<BlankCountWarning?> = _blankCountWarning.asStateFlow()
@@ -186,10 +195,6 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     /** AI 生成错误提示（失败时回退本地算法，仍可练习） */
     private val _aiError = MutableStateFlow<String?>(null)
     val aiError: StateFlow<String?> = _aiError.asStateFlow()
-
-    /** 练习页字号缩放倍数（双指缩放），便于个性化阅读 */
-    private val _fontScale = MutableStateFlow(1f)
-    val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
 
     private var aiGenerateJob: Job? = null
 
@@ -550,6 +555,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             _isSubmitted.value = false
             _dictationInput.value = ""
             _dictationCheckResult.value = null
+            stopAllBlankHints()
+            _weakHintCount.value = 0
+            _strongHintCount.value = 0
             _wordBlankCount.value = 0
             _sectionMode.value = SectionMode.FULL
             _selectedSections.value = emptySet()
@@ -854,17 +862,6 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         if (difficultyConfirmed) {
             regenerateCurrentModeViaAi()
         }
-    }
-
-    /** 字号缩放（双指缩放手势驱动），范围 0.6x ~ 3.0x。 */
-    fun setFontScale(scale: Float) {
-        _fontScale.value = scale.coerceIn(0.6f, 3.0f)
-    }
-
-    /** 连续缩放：以增量因子叠加（每帧手势比率相乘，便于跟手），范围 0.6x ~ 3.0x。 */
-    fun adjustFontScale(factor: Float) {
-        if (factor <= 0f || factor.isNaN()) return
-        _fontScale.value = (_fontScale.value * factor).coerceIn(0.6f, 3.0f)
     }
 
     /**
@@ -1700,19 +1697,19 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      * 任何失败都不影响练习主流程。
      */
     private fun updateFsrsState(articleId: Long, rating: FsrsEngine.Rating) {
-        viewModelScope.launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    val store = FsrsStateStore.getInstance(
-                        getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
-                    )
-                    val newState = FsrsEngine.review(
-                        store.get(articleId) ?: FsrsEngine.CardState(), rating
-                    )
-                    store.save(articleId, newState)
-                }
-            } catch (_: Exception) { /* FSRS 状态更新失败不影响主流程 */ }
-        }
+        try {
+            val store = FsrsStateStore.getInstance(
+                getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
+            )
+            val newState = FsrsEngine.review(
+                store.get(articleId) ?: FsrsEngine.CardState(),
+                rating
+            )
+            // 持久化切 IO 线程，避免主线程阻塞文件写
+            viewModelScope.launch {
+                withContext(Dispatchers.IO) { store.save(articleId, newState) }
+            }
+        } catch (_: Exception) { /* FSRS 状态更新失败不影响主流程 */ }
     }
 
     /**

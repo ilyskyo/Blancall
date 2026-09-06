@@ -28,10 +28,6 @@ object AppPrefs {
         "logo", "celebrate", "edit", "inbox", "arrowforward", "openinfull", "check"
     )
 
-    private val _predictiveBackFlow = MutableStateFlow(true)
-    /** 响应式状态流，Compose 中通过 collectAsState() 订阅 */
-    val predictiveBackFlow: StateFlow<Boolean> = _predictiveBackFlow.asStateFlow()
-
     private val _autoIndentEnabledFlow = MutableStateFlow(true)
     /** 段落首行自动缩进开关（导入时给未缩进段落补两格；关闭后不再新增缩进） */
     val autoIndentEnabledFlow: StateFlow<Boolean> = _autoIndentEnabledFlow.asStateFlow()
@@ -59,6 +55,10 @@ object AppPrefs {
     private val _lightBeigeBackgroundFlow = MutableStateFlow(false)
     /** 浅色模式米黄底色开关：开启使用暖米黄底色，关闭使用纯白底色（深色模式不受影响） */
     val lightBeigeBackgroundFlow: StateFlow<Boolean> = _lightBeigeBackgroundFlow.asStateFlow()
+
+    private val _navLiquidGlassFlow = MutableStateFlow(true)
+    /** 底部导航栏液态玻璃开关：关闭后玻璃层隐藏，回退纯色底（性能/功耗优先） */
+    val navLiquidGlassFlow: StateFlow<Boolean> = _navLiquidGlassFlow.asStateFlow()
 
     private val _reviewTemplateFlow = MutableStateFlow("standard")
     /** 复习模板 ID（sprint / standard / deep） */
@@ -116,7 +116,6 @@ object AppPrefs {
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        _predictiveBackFlow.value = prefs.getBoolean("predictive_back", true)
         _autoIndentEnabledFlow.value = prefs.getBoolean("auto_indent_enabled", true)
         _homeBrandExpandedFlow.value = prefs.getBoolean("home_brand_expanded", false)
         _accentColorFlow.value = prefs.getInt("accent_color", 0)
@@ -124,6 +123,7 @@ object AppPrefs {
         _subtitleFlow.value = prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge."
         _showHomeEmojiFlow.value = prefs.getBoolean("show_home_emoji", false)
         _lightBeigeBackgroundFlow.value = prefs.getBoolean("light_beige_background", false)
+        _navLiquidGlassFlow.value = prefs.getBoolean("nav_liquid_glass", true)
         _reviewTemplateFlow.value = prefs.getString("review_template", "standard") ?: "standard"
         _hiddenArticleIdsFlow.value = prefs.getStringSet("hidden_articles", emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
@@ -155,15 +155,6 @@ object AppPrefs {
             prefs.getString("reading_occlusion_mode", "long")?.takeIf { it in setOf("long", "short", "mixed") } ?: "long"
         _readingOcclusionColorFlow.value = prefs.getInt("reading_occlusion_color", 0).coerceIn(0, 5)
     }
-
-    var predictiveBackEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("predictive_back", true) else true
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putBoolean("predictive_back", value) }
-                _predictiveBackFlow.value = value
-            }
-        }
 
     /** 段落首行自动缩进开关 */
     var autoIndentEnabled: Boolean
@@ -232,6 +223,16 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("light_beige_background", value) }
                 _lightBeigeBackgroundFlow.value = value
+            }
+        }
+
+    /** 底部导航栏液态玻璃开关（关闭后回退纯色底） */
+    var navLiquidGlassEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("nav_liquid_glass", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("nav_liquid_glass", value) }
+                _navLiquidGlassFlow.value = value
             }
         }
 
@@ -558,35 +559,4 @@ object AppPrefs {
             prefs.edit { putLong("reading_sec_$articleId", getReadingSeconds(articleId) + seconds) }
         }
     }
-
-    /**
-     * AI API Key：经 Android Keystore AES/GCM 加密后存储（只落密文，绝不落明文）。
-     * 解密失败（如备份恢复后密钥不可用）时自动清空密文，由用户重新配置。
-     */
-    var aiApiKey: String
-        get() {
-            if (!::prefs.isInitialized) return ""
-            val enc = prefs.getString("ai_api_key_enc", "") ?: return ""
-            if (enc.isBlank()) return ""
-            return SecurePrefs.decrypt(enc) ?: run {
-                // 密钥失效：清除密文，避免反复解密失败
-                prefs.edit { remove("ai_api_key_enc") }
-                ""
-            }
-        }
-        set(value) {
-            if (::prefs.isInitialized) {
-                if (value.isBlank()) {
-                    prefs.edit { remove("ai_api_key_enc") }
-                } else {
-                    val enc = SecurePrefs.encrypt(value)
-                    if (enc != null) {
-                        prefs.edit { putString("ai_api_key_enc", enc) }
-                    } else {
-                        // 加密失败（Keystore 异常等）：不保存，避免写入无效数据
-                        prefs.edit { remove("ai_api_key_enc") }
-                    }
-                }
-            }
-        }
 }

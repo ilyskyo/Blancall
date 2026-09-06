@@ -79,6 +79,8 @@ fun ImportScreen(navController: NavController) {
     var lastPdfUri by remember { mutableStateOf<Uri?>(null) }
     var hasPdf by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // 文档含图片提示：仅文件导入且源文档含图片/嵌入对象时显示
+    var imageNotice by remember { mutableStateOf<String?>(null) }
     var showFullscreenInput by remember { mutableStateOf(false) }
     var showLargeFileWarning by remember { mutableStateOf(false) }
     var titleSuggestionDismissed by remember { mutableStateOf(false) }
@@ -127,9 +129,10 @@ fun ImportScreen(navController: NavController) {
             isLoading = true
             scope.launch {
                 try {
-                    val text = withContext(Dispatchers.IO) {
-                        FileTextExtractor.extractText(context, it)
+                    val result = withContext(Dispatchers.IO) {
+                        FileTextExtractor.extractTextWithInfo(context, it)
                     }
+                    val text = result.text
                     if (text.length > MAX_CONTENT_LENGTH) {
                         Toast.makeText(context, "文本过长（${text.length}字符），已截断至 $MAX_CONTENT_LENGTH 字符，建议拆分导入", Toast.LENGTH_LONG).show()
                         content = text.take(MAX_CONTENT_LENGTH)
@@ -137,6 +140,7 @@ fun ImportScreen(navController: NavController) {
                         content = text
                     }
                     fileLoaded = true
+                    imageNotice = if (result.hasImages) "文档中的图片无法导入，已仅保留文字内容" else null
                     if (title.isBlank()) {
                         // getFileName 内部走 ContentResolver.query，需在 IO 线程执行
                         val fileName = withContext(Dispatchers.IO) { FileTextExtractor.getFileName(context, it) }
@@ -208,7 +212,7 @@ fun ImportScreen(navController: NavController) {
         ) {
             FilterChip(
                 selected = !useFileImport,
-                onClick = { useFileImport = false; fileLoaded = false; lastFileAutoIndent = true },
+                onClick = { useFileImport = false; fileLoaded = false; lastFileAutoIndent = true; imageNotice = null },
                 label = { Text("粘贴文本") },
                 shape = RoundedCornerShape(8.dp),
                 colors = FilterChipDefaults.filterChipColors(
@@ -348,6 +352,16 @@ fun ImportScreen(navController: NavController) {
                     )
                 }
             }
+
+            imageNotice?.let { msg ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = msg,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         } else {
             OutlinedTextField(
                 value = content,
@@ -401,8 +415,8 @@ fun ImportScreen(navController: NavController) {
                             titleSuggestionDismissed = false
                             errorMessage = null
                         }
+                        content.isBlank() -> errorMessage = "请输入内容"
                         title.isBlank() -> errorMessage = "请输入文章标题"
-                        content.isBlank() -> errorMessage = "请输入或导入文本内容"
                         content.length > LARGE_FILE_THRESHOLD && !showLargeFileWarning -> {
                             showLargeFileWarning = true
                             errorMessage = null

@@ -77,7 +77,9 @@ fun BlancallAlertDialog(
     containerColor: Color? = null,
     tonalElevation: Dp = 0.dp,
     properties: DialogProperties? = null,
-    content: @Composable (() -> Unit)? = null
+    content: @Composable (() -> Unit)? = null,
+    // text 块之后的底部间距；当按钮直接放在 text 内部时传 0.dp，避免按钮下方出现 24dp 空白
+    textBottomSpacing: Dp = 24.dp
 ) {
     Dialog(onDismissRequest = onDismissRequest, properties = properties ?: DialogProperties()) {
         var visible by remember { mutableStateOf(false) }
@@ -115,7 +117,7 @@ fun BlancallAlertDialog(
                     }
                     if (text != null) {
                         Box(modifier = Modifier.fillMaxWidth()) { text() }
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(textBottomSpacing))
                     }
                     content?.let {
                         it()

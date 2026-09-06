@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "5.7"
+        versionCode = 22
+        versionName = "5.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -125,6 +125,8 @@ dependencies {
     implementation("com.qmdeve.liquidglass:core:1.0.5")
 
     testImplementation(libs.junit)
+    // JVM 单测解析 BlancallGenerator 的 JSON 序列化（仅测试期，不进 APK）
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
