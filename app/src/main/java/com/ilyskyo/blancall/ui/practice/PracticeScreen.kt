@@ -95,7 +95,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PracticeScreen(navController: NavController, articleIds: List<Long>, initialMode: BlancallMode? = null, resume: Boolean = false, initialSectionMode: SectionMode? = null, openCustomPicker: Boolean = false) {
+fun PracticeScreen(navController: NavController, articleIds: List<Long>, initialMode: BlancallMode? = null, resume: Boolean = false, initialSectionMode: SectionMode? = null, initialConfigId: Long = -1L) {
     val vm: PracticeViewModel = viewModel()
     val article by vm.article.collectAsState()
     val mode by vm.mode.collectAsState()
@@ -160,18 +160,20 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var showIncompleteDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    // 自定义挖空：配置选择浮层（?custom=true 进入时以浮层形式直接列配置，替代底部弹层）+ 返回未保存提示弹窗
-    var customConfigs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
-    var showBackWarning by remember { mutableStateOf(false) }
-    var backWarningNoMore by remember { mutableStateOf(false) }
-    // 本次进入练习已提示过一次：点「返回作答」回练习后，再按返回直接退出（不重复弹窗）
-    var backWarnedThisSession by remember { mutableStateOf(false) }
-    LaunchedEffect(openCustomPicker, article?.id) {
-        if (openCustomPicker && article != null && articleIds.size == 1) {
-            customConfigs = CustomClozeStore.getInstance(context.filesDir)
-                .getConfigs(articleIds.first())
+    // 自定义挖空：从配置列表页「开始练习」进入（?configId=）——应用配置直接开始，无弹层
+    var customConfigApplied by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(initialConfigId, article?.id) {
+        if (initialConfigId > 0 && article != null && articleIds.size == 1 && !customConfigApplied) {
+            customConfigApplied = true
+            CustomClozeStore.getInstance(context.filesDir).getConfigs(articleIds.first())
+                .firstOrNull { it.id == initialConfigId }?.let {
+                    vm.startCustomPractice(it)
+                    modeSelected = true
+                }
         }
     }
+    var showBackWarning by remember { mutableStateOf(false) }
+    var backWarningNoMore by remember { mutableStateOf(false) }
     val customConfigName by vm.customConfigName.collectAsState()
 
     LaunchedEffect(articleIds) {
@@ -227,17 +229,19 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 返回：有未提交作答时先弹提示（返回本身不承担保存，保存用右上角提交）
-            BackButton(onClick = {
+            // 返回：未提交过作答必须先弹窗确认（返回本身不承担保存，保存用右上角提交）
+            val handlePracticeBack = {
                 val hasUnsaved = modeSelected && !isSubmitted &&
                     (userAnswers.values.any { it.isNotBlank() } || dictationInput.isNotBlank())
-                if (hasUnsaved && !AppPrefs.practiceBackWarningDisabled && !backWarnedThisSession) {
-                    backWarnedThisSession = true
+                if (hasUnsaved && !AppPrefs.practiceBackWarningDisabled) {
                     showBackWarning = true
                 } else {
                     navController.popBackStack()
                 }
-            })
+            }
+            // 系统返回手势/返回键也走同一逻辑，否则会绕过弹窗直接退出
+            BackHandler(onBack = { handlePracticeBack() })
+            BackButton(onClick = { handlePracticeBack() })
             Spacer(Modifier.width(8.dp))
             // 顶部标题：左右滑动可快速切换三种练习模式（AI 开启时按已选难度重新生成）
             val latestMode by rememberUpdatedState(mode)
@@ -348,9 +352,10 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             )
                         }
                     )
-                    // ── 切换模式 → 打开 BottomSheet（自定义练习锁定模式，置灰禁用）──
+                    // 自定义练习：只保留显示提示，其余菜单项全部隐藏
+                    if (customConfigName == null) {
+                    // ── 切换模式 → 打开 BottomSheet ──
                     GlassMenuItem(
-                        enabled = customConfigName == null,
                         onClick = { showMoreMenu = false; showModeSheet = true },
                         leadingIcon = {
                             AppIcon(
@@ -361,9 +366,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         },
                         label = { Text("切换模式…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) }
                     )
-                    // ── 挖空策略 → 打开 BottomSheet（自定义练习禁用：策略变更会覆盖自定义挖空）──
+                    // ── 挖空策略 → 打开 BottomSheet ──
                     GlassMenuItem(
-                        enabled = customConfigName == null,
                         onClick = { showMoreMenu = false; showStrategySheet = true },
                         leadingIcon = {
                             AppIcon(
@@ -387,6 +391,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         }
                     )
                     GlassMenuDivider()
+                    } // end: 自定义练习隐藏区（切换模式/挖空策略）
                     // ── 提示开关（保留菜单，符合 Apple 开关直觉）──
                     GlassMenuItem(
                         onClick = { vm.toggleHint() },
@@ -398,8 +403,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             )
                         }
                     )
-                    // ── 古文模式（字词模式时显示，保留菜单）──
-                    if (mode == BlancallMode.WORD) {
+                    // ── 古文模式（字词模式时显示，保留菜单；自定义练习隐藏）──
+                    if (customConfigName == null && mode == BlancallMode.WORD) {
                         GlassMenuItem(
                             onClick = { vm.setClassicalMode(!classicalMode) },
                             label = { Text("古文模式", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) },
@@ -411,7 +416,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             }
                         )
                     }
-                    // ── 沉浸模式（一次性动作，关闭菜单）──
+                    // ── 沉浸模式（一次性动作，关闭菜单；自定义练习隐藏）──
+                    if (customConfigName == null) {
                     GlassMenuItem(
                         onClick = { vm.toggleImmersiveMode(); showMoreMenu = false },
                         label = {
@@ -431,16 +437,16 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             }
                         }
                     )
+                    } // end: 沉浸模式（自定义练习隐藏）
                     GlassMenuDivider()
-                    // ── 段落分层（始终显示）──
+                    // ── 段落分层（始终显示；自定义练习隐藏）──
+                    if (customConfigName == null) {
                     val sectionLabel = when (sectionMode) {
                         SectionMode.FULL -> "段落：全文连贯"
                         SectionMode.WEAKNESS -> "段落：薄弱集训"
                         SectionMode.SELECTED -> "段落：自选 (${selectedSections.size}/${sections.size})"
                     }
                     GlassMenuItem(
-                        // 自定义练习禁用：段落变更会重生成、覆盖自定义挖空
-                        enabled = customConfigName == null,
                         onClick = {
                             showMoreMenu = false
                             showSectionSheet = true
@@ -454,8 +460,9 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         },
                         label = { Text(sectionLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) }
                     )
-                    // ── 导出 / 分享（已提交时）──
-                    if (isSubmitted) {
+                    } // end: 段落分层（自定义练习隐藏）
+                    // ── 导出 / 分享（已提交时；自定义练习隐藏）──
+                    if (isSubmitted && customConfigName == null) {
                         GlassMenuDivider()
                         GlassMenuItem(
                             onClick = { showExportDialog = true; showMoreMenu = false },
@@ -789,11 +796,11 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 .fillMaxSize()
                 // 模态遮罩：压暗底层页面，毛玻璃叠在内容页上不会显得"透穿破图"
                 .background(Color.Black.copy(alpha = 0.32f))
-                // 消费点击：浮层显示时阻断底层页面交互（自定义入口：点遮罩直接退出练习）
+                // 消费点击：浮层显示时阻断底层页面交互
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() }
-                ) { if (openCustomPicker) navController.popBackStack() },
+                ) { },
             contentAlignment = Alignment.Center
         ) {
             GlassCard(
@@ -803,93 +810,6 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 containerColor = MaterialTheme.colorScheme.surface,
                 containerAlpha = if (isBlancallDark()) GLASS_ALPHA_DARK else GLASS_MENU_ALPHA_LIGHT
             ) {
-                if (openCustomPicker) {
-                    // ── 自定义入口：浮层内直接列配置（选完即练；点遮罩/返回退出）──
-                    Column(
-                        modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            "选择自定义配置",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            article?.title ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(20.dp))
-                        if (customConfigs.isEmpty()) {
-                            Text(
-                                "这篇文章还没有自定义配置\n点下方按钮去创建",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 12.dp)
-                            )
-                        } else {
-                            customConfigs.forEach { cfg ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .clickable {
-                                            vm.startCustomPractice(cfg)
-                                            modeSelected = true
-                                        }
-                                        .padding(horizontal = 4.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("🎯", fontSize = 20.sp)
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(cfg.name, style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface)
-                                        Text(
-                                            "${cfg.blanks.size} 个空 · " + when (cfg.mode) {
-                                                "SENTENCE" -> "句子挖空"
-                                                "REVERSE" -> "反向默写"
-                                                else -> "字词挖空"
-                                            },
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    TextButton(onClick = {
-                                        vm.startCustomPractice(cfg)
-                                        modeSelected = true
-                                    }) { Text("开始", style = MaterialTheme.typography.labelLarge) }
-                                    IconButton(onClick = {
-                                        CustomClozeStore.getInstance(context.filesDir)
-                                            .deleteConfig(articleIds.first(), cfg.id)
-                                        customConfigs = CustomClozeStore.getInstance(context.filesDir)
-                                            .getConfigs(articleIds.first())
-                                    }) {
-                                        AppIcon(
-                                            kind = AppIconKind.Close,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = {
-                                navController.navigate("custom_cloze_edit/${articleIds.first()}")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text(if (customConfigs.isEmpty()) "去创建自定义配置" else "新建 / 编辑配置")
-                        }
-                    }
-                } else {
                     Column(
                         modifier = Modifier.padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -945,7 +865,6 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             }
                         )
                     }
-                }
             }
         }
     }

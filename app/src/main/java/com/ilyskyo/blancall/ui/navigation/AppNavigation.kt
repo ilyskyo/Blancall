@@ -54,6 +54,7 @@ import com.ilyskyo.blancall.ui.ai.AiProfileEditScreen
 import com.ilyskyo.blancall.ui.ai.AiScreen
 import com.ilyskyo.blancall.ui.practice.PracticeScreen
 import com.ilyskyo.blancall.ui.cloze.CustomClozeEditScreen
+import com.ilyskyo.blancall.ui.cloze.CustomClozeListScreen
 import com.ilyskyo.blancall.ui.reader.ReaderScreen
 import com.ilyskyo.blancall.ui.settings.SettingsScreen
 import com.ilyskyo.blancall.ui.settings.HelpScreen
@@ -245,6 +246,21 @@ fun AppNavigation() {
             ReaderScreen(navController, articleId)
         }
 
+        // 自定义挖空配置列表页（新建 / 点击编辑 / 长按开始练习·重命名·删除）
+        composable(
+            route = "custom_cloze_list/{articleId}",
+            arguments = listOf(
+                navArgument("articleId") { type = NavType.LongType }
+            ),
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) { backStackEntry ->
+            val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
+            CustomClozeListScreen(navController, articleId)
+        }
+
         // 自定义挖空模板编辑页（按文章保存多套配置）
         composable(
             route = "custom_cloze_edit/{articleId}?configId={configId}",
@@ -266,7 +282,7 @@ fun AppNavigation() {
         }
 
         composable(
-            route = "practice/{articleId}?mode={mode}&resume={resume}&sectionMode={sectionMode}&custom={custom}",
+            route = "practice/{articleId}?mode={mode}&resume={resume}&sectionMode={sectionMode}&configId={configId}",
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType },
                 navArgument("mode") {
@@ -281,9 +297,9 @@ fun AppNavigation() {
                     type = NavType.StringType
                     defaultValue = ""
                 },
-                navArgument("custom") {
-                    type = NavType.StringType
-                    defaultValue = "false"
+                navArgument("configId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
                 }
             ),
             enterTransition = enterSlide,
@@ -301,7 +317,7 @@ fun AppNavigation() {
                 navController, listOf(articleId), initialMode,
                 resume = resumeStr == "true",
                 initialSectionMode = initialSectionMode,
-                openCustomPicker = backStackEntry.arguments?.getString("custom") == "true"
+                initialConfigId = backStackEntry.arguments?.getLong("configId") ?: -1L
             )
         }
 

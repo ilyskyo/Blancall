@@ -461,9 +461,9 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     GlassActionItem("阅读模式", Modifier.weight(1f), enabled = barVisible) {
                         readingMode = true
                     }
-                    // 自定义挖空：进入模板编辑页（按文章保存多套配置，练习时选用）
+                    // 自定义挖空：进入配置列表页（新建 / 编辑 / 长按开始练习）
                     GlassActionItem("自定义", Modifier.weight(1f), enabled = barVisible) {
-                        navController.navigate("custom_cloze_edit/${art.id}")
+                        navController.navigate("custom_cloze_list/${art.id}")
                     }
                     // AI 对话入口（设置中启用 AI 功能后才显示）
                     if (aiEnabled) {
@@ -552,7 +552,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                 is PickerSelection.Base ->
                     navController.navigate("practice/${articleId}?mode=${sel.mode.name}")
                 PickerSelection.Custom ->
-                    navController.navigate("practice/${articleId}?custom=true")
+                    navController.navigate("custom_cloze_list/${articleId}")
             }
         }
     )

@@ -547,7 +547,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     is PickerSelection.Base ->
                         navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
                     PickerSelection.Custom ->
-                        navController.navigate("practice/${pendingPracticeArticleId}?custom=true")
+                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}")
                 }
             }
         }

@@ -246,11 +246,10 @@ fun CustomClozeEditScreen(
                             showSaveDialog = true
                         }
                     },
-                    enabled = article != null,
+                    // 未选任何挖空时置灰（无可保存内容）
+                    enabled = article != null && blankCount > 0,
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    AppIcon(kind = AppIconKind.Check, modifier = Modifier.height(16.dp), tint = MaterialTheme.colorScheme.onPrimary)
-                    Spacer(Modifier.width(4.dp))
                     Text("保存")
                 }
             }

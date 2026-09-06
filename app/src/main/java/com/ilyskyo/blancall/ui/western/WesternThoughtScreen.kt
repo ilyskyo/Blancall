@@ -650,7 +650,7 @@ fun LibraryContentPage(
                             is PickerSelection.Base ->
                                 navController.navigate("practice/${articleId}?mode=${sel.mode.name}")
                             PickerSelection.Custom ->
-                                navController.navigate("practice/${articleId}?custom=true")
+                                navController.navigate("custom_cloze_list/${articleId}")
                         }
                     }
                 }
