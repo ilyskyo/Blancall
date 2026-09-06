@@ -128,7 +128,11 @@ fun SearchScreen(navController: NavController) {
             // ── 结果区 ──
             when {
                 trimmed.isEmpty() -> EmptyHint("搜索标题、作者、正文或添加日期")
-                results.isEmpty() -> EmptyHint("没有找到与「$query」相关的内容")
+                results.isEmpty() -> {
+                    // 长搜索词截断显示，避免空态文案被撑爆
+                    val shown = if (trimmed.length > 10) trimmed.take(10) + "…" else trimmed
+                    EmptyHint("没有找到与「$shown」相关的内容")
+                }
                 else -> {
                     Text(
                         "共 ${results.size} 篇",
@@ -315,7 +319,11 @@ private fun EmptyHint(text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 3,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 32.dp)
         )
     }
 }
