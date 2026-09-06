@@ -135,8 +135,8 @@ fun CustomClozeListScreen(
 
             Text(
                 articleTitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
             )
             Spacer(Modifier.height(4.dp))

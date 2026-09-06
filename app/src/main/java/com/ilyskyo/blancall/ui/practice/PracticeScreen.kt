@@ -438,9 +438,9 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         }
                     )
                     } // end: 沉浸模式（自定义练习隐藏）
-                    GlassMenuDivider()
                     // ── 段落分层（始终显示；自定义练习隐藏）──
                     if (customConfigName == null) {
+                    GlassMenuDivider()
                     val sectionLabel = when (sectionMode) {
                         SectionMode.FULL -> "段落：全文连贯"
                         SectionMode.WEAKNESS -> "段落：薄弱集训"

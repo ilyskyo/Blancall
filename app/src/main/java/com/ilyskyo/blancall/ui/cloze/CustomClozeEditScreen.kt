@@ -263,8 +263,8 @@ fun CustomClozeEditScreen(
 
             Text(
                 article?.title ?: "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
             )
             Spacer(Modifier.height(12.dp))
