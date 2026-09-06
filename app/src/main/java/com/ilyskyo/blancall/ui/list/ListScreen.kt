@@ -56,6 +56,7 @@ import com.ilyskyo.blancall.ui.common.DeleteConfirmDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
+import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -539,10 +540,15 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         visible = showModePicker,
         anchorRect = practiceButtonRect,
         onDismiss = { showModePicker = false },
-        onModeSelected = { mode ->
+        onModeSelected = { sel ->
             showModePicker = false
             if (pendingPracticeArticleId > 0) {
-                navController.navigate("practice/${pendingPracticeArticleId}?mode=${mode.name}")
+                when (sel) {
+                    is PickerSelection.Base ->
+                        navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
+                    PickerSelection.Custom ->
+                        navController.navigate("practice/${pendingPracticeArticleId}?custom=true")
+                }
             }
         }
     )

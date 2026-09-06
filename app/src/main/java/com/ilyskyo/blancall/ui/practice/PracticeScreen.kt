@@ -95,7 +95,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PracticeScreen(navController: NavController, articleIds: List<Long>, initialMode: BlancallMode? = null, resume: Boolean = false, initialSectionMode: SectionMode? = null) {
+fun PracticeScreen(navController: NavController, articleIds: List<Long>, initialMode: BlancallMode? = null, resume: Boolean = false, initialSectionMode: SectionMode? = null, openCustomPicker: Boolean = false) {
     val vm: PracticeViewModel = viewModel()
     val article by vm.article.collectAsState()
     val mode by vm.mode.collectAsState()
@@ -158,11 +158,24 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var showStrategySheet by remember { mutableStateOf(false) }
     var showSectionSheet by remember { mutableStateOf(false) }
     var showIncompleteDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
     // 自定义挖空：配置选择浮层 + 返回未保存提示弹窗
     var showCustomPicker by remember { mutableStateOf(false) }
     var customConfigs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
     var showBackWarning by remember { mutableStateOf(false) }
     var backWarningNoMore by remember { mutableStateOf(false) }
+    // 从「?custom=true」进入时（各页面开始练习选「自定义挖空」）自动弹配置选择浮层；
+    // customEntryShown 门控防止文章未加载完成时模式浮层闪现
+    var customEntryShown by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(openCustomPicker, article?.id) {
+        if (openCustomPicker && article != null && articleIds.size == 1 && !customEntryShown) {
+            customEntryShown = true
+            customConfigs = CustomClozeStore.getInstance(context.filesDir)
+                .getConfigs(articleIds.first())
+            showCustomPicker = true
+        }
+    }
 
     LaunchedEffect(articleIds) {
         if (articleIds.size > 1) {
@@ -207,7 +220,6 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     val blankCountWarning by vm.blankCountWarning.collectAsState()
 
     // PDF 导出（F8）
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showExportDialog by remember { mutableStateOf(false) }
 
@@ -757,7 +769,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // ── 模式选择浮层（初次进入，未选模式时显示）──
     // 模式选择浮层：fade + scale 弹性动画，避免直接消失的视觉跳变
     AnimatedVisibility(
-        visible = !modeSelected && article != null,
+        visible = !modeSelected && article != null && (!openCustomPicker || customEntryShown),
         enter = fadeIn(animationSpec = tween(160)) +
                 scaleIn(
                     animationSpec = spring(
@@ -947,7 +959,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable {
                                     showCustomPicker = false
-                                    vm.startCustomPractice(cfg.blanks)
+                                    vm.startCustomPractice(cfg.blanks, cfg.mode)
                                     modeSelected = true
                                 }
                                 .padding(horizontal = 4.dp, vertical = 10.dp),
@@ -958,12 +970,19 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             Column(Modifier.weight(1f)) {
                                 Text(cfg.name, style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface)
-                                Text("${cfg.blanks.size} 个空", style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    "${cfg.blanks.size} 个空 · " + when (cfg.mode) {
+                                        "SENTENCE" -> "句子挖空"
+                                        "REVERSE" -> "反向默写"
+                                        else -> "字词挖空"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             TextButton(onClick = {
                                 showCustomPicker = false
-                                vm.startCustomPractice(cfg.blanks)
+                                vm.startCustomPractice(cfg.blanks, cfg.mode)
                                 modeSelected = true
                             }) { Text("开始", style = MaterialTheme.typography.labelLarge) }
                             IconButton(onClick = {

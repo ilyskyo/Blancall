@@ -25,7 +25,9 @@ class CustomClozeStore private constructor(private val file: File) {
         val id: Long,
         val name: String,
         val createdAt: Long,
-        val blanks: List<BlankSpec>
+        val blanks: List<BlankSpec>,
+        /** 目标练习模式：SENTENCE / WORD / REVERSE（旧配置无此字段默认 WORD） */
+        val mode: String = "WORD"
     )
 
     private val lock = Any()
@@ -67,7 +69,8 @@ class CustomClozeStore private constructor(private val file: File) {
                     id = o.optLong("id"),
                     name = o.optString("name", "自定义"),
                     createdAt = o.optLong("createdAt"),
-                    blanks = blanks
+                    blanks = blanks,
+                    mode = o.optString("mode", "WORD")
                 )
             )
         }
@@ -89,6 +92,7 @@ class CustomClozeStore private constructor(private val file: File) {
             .put("id", newId)
             .put("name", config.name)
             .put("createdAt", if (config.createdAt > 0) config.createdAt else System.currentTimeMillis())
+            .put("mode", config.mode)
         val bArr = JSONArray()
         config.blanks.forEach { bArr.put(JSONObject().put("s", it.s).put("a", it.a).put("b", it.b)) }
         entry.put("blanks", bArr)

@@ -46,6 +46,15 @@ import com.ilyskyo.blancall.ui.common.PopupGlassPlate
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import kotlin.math.max
 
+/**
+ * 模式选择结果：基础三模式，或「自定义挖空」（不带 BlancallMode，由调用方导航到
+ * practice?custom=true 走配置选择流程）。
+ */
+sealed interface PickerSelection {
+    data class Base(val mode: BlancallMode) : PickerSelection
+    data object Custom : PickerSelection
+}
+
 // ── 弹窗尺寸常量 ──
 private val PopupEstimateDp = 310.dp
 private val PopupWidthDp = 320.dp
@@ -90,7 +99,7 @@ fun AdaptiveModePicker(
     visible: Boolean,
     anchorRect: Rect?,
     onDismiss: () -> Unit,
-    onModeSelected: (BlancallMode) -> Unit
+    onModeSelected: (PickerSelection) -> Unit
 ) {
     // 内部可见状态：退场动画播完才真正移除弹窗。
     // 不能用 visible 直接控制（visible=false 立即 return 会让 Popup 瞬间消失，
@@ -280,7 +289,7 @@ fun AdaptiveModePicker(
 @Composable
 private fun AdaptiveBottomSheetPicker(
     onDismiss: () -> Unit,
-    onModeSelected: (BlancallMode) -> Unit
+    onModeSelected: (PickerSelection) -> Unit
 ) {
     GlassModalBottomSheet(
         onDismissRequest = onDismiss
@@ -307,20 +316,22 @@ private fun ModeListContent(
     expandDirection: ExpandDirection,
     containerProgress: Float,
     isExiting: Boolean,
-    onModeSelected: (BlancallMode) -> Unit
+    onModeSelected: (PickerSelection) -> Unit
 ) {
     // 项进入窗口：[项进入起点, 项完全显示]。三段错峰但用同一个弹性曲线
     data class ModeEntry(
         val emoji: String,
         val label: String,
         val sublabel: String,
-        val mode: BlancallMode
+        val mode: BlancallMode = BlancallMode.SENTENCE,
+        val custom: Boolean = false
     )
     val entries = remember {
         listOf(
             ModeEntry("📝", "句子挖空", "从句/半句/整句 — 理解式记忆", BlancallMode.SENTENCE),
             ModeEntry("🔤", "字词挖空", "1-3字词精准填空 — 细节记忆", BlancallMode.WORD),
-            ModeEntry("✍️", "反向默写", "段落打散默写 — 整段还原", BlancallMode.REVERSE)
+            ModeEntry("✍️", "反向默写", "段落打散默写 — 整段还原", BlancallMode.REVERSE),
+            ModeEntry("🎯", "自定义挖空", "用自己点选的挖空配置练题", custom = true)
         )
     }
     // ── 错峰窗口：把 containerProgress 切成 4 段不重叠区间，每段 0.25 ──
@@ -373,7 +384,12 @@ private fun ModeListContent(
                 emoji = entry.emoji,
                 label = entry.label,
                 sublabel = entry.sublabel,
-                onClick = { onModeSelected(entry.mode) }
+                onClick = {
+                    onModeSelected(
+                        if (entry.custom) PickerSelection.Custom
+                        else PickerSelection.Base(entry.mode)
+                    )
+                }
             )
         }
     }
@@ -467,7 +483,7 @@ private fun PressableModeItem(
 fun ModePickerAnchor(
     showPicker: Boolean,
     onDismiss: () -> Unit,
-    onModeSelected: (BlancallMode) -> Unit,
+    onModeSelected: (PickerSelection) -> Unit,
     content: @Composable (Modifier) -> Unit
 ) {
     var anchorRect by remember { mutableStateOf(Rect.Zero) }

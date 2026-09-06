@@ -71,6 +71,7 @@ import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.RadarChart
 import com.ilyskyo.blancall.ui.common.StatItem
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
+import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import kotlinx.coroutines.Dispatchers
@@ -809,11 +810,16 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         visible = showModePicker,
         anchorRect = practiceButtonRect.takeIf { it != Rect.Zero },
         onDismiss = { showModePicker = false },
-        onModeSelected = { mode ->
+        onModeSelected = { sel ->
             showModePicker = false
             if (pendingPracticeArticleId > 0) {
                 // 从全局统计进入练习，返回时自然回到本页
-                navController.navigate("practice/${pendingPracticeArticleId}?mode=${mode.name}")
+                when (sel) {
+                    is PickerSelection.Base ->
+                        navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
+                    PickerSelection.Custom ->
+                        navController.navigate("practice/${pendingPracticeArticleId}?custom=true")
+                }
             }
         }
     )

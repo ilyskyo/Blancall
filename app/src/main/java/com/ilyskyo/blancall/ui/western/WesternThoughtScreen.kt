@@ -76,6 +76,7 @@ import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
+import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -634,7 +635,7 @@ fun LibraryContentPage(
         visible = showPracticePicker,
         anchorRect = null,
         onDismiss = { showPracticePicker = false },
-        onModeSelected = { mode ->
+        onModeSelected = { sel ->
             showPracticePicker = false
             if (pendingPracticeText.isNotBlank()) {
                 scope.launch {
@@ -645,7 +646,12 @@ fun LibraryContentPage(
                         pendingPracticeLabel
                     )
                     if (articleId > 0) {
-                        navController.navigate("practice/${articleId}?mode=${mode.name}")
+                        when (sel) {
+                            is PickerSelection.Base ->
+                                navController.navigate("practice/${articleId}?mode=${sel.mode.name}")
+                            PickerSelection.Custom ->
+                                navController.navigate("practice/${articleId}?custom=true")
+                        }
                     }
                 }
             }

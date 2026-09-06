@@ -1239,11 +1239,12 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 进入自定义挖空练习：按配置的「句索引 + 句内区间」确定性构造字词挖空结果，
-     * 复用字词挖空的作答/判分/进度恢复链路。
+     * 进入自定义挖空练习：按配置的「句索引 + 句内区间」确定性构造对应模式的挖空结果，
+     * 复用该模式的作答/判分/进度恢复链路，判分评分与默认模式完全一致。
      * 强制整篇模式（段落选择清空）保证配置的句子索引与全文切句口径对齐。
+     * modeStr = SENTENCE / WORD / REVERSE（配置编辑器里选定的目标模式）。
      */
-    fun startCustomPractice(blanks: List<CustomClozeStore.BlankSpec>) {
+    fun startCustomPractice(blanks: List<CustomClozeStore.BlankSpec>, modeStr: String = "WORD") {
         val content = _article.value?.content ?: return
         if (content.isBlank() || blanks.isEmpty()) return
         val sentences = SentenceSplitter.split(content)
@@ -1276,7 +1277,6 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // 强制整篇模式，句子索引与全文切句对齐
         _sectionMode.value = SectionMode.FULL
         _selectedSections.value = emptySet()
-        _mode.value = BlancallMode.WORD
         _wordAnswers.value = emptyMap()
         _checkResults.value = emptyMap()
         _isSubmitted.value = false
@@ -1288,39 +1288,59 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // 已有自定义配置 → 视同已确认过设置，避免后续模式切换弹采集页
         difficultyConfirmed = true
 
-        data class Sel(val sIdx: Int, val range: IntRange, val text: String)
-        val all = bySentence.entries.sortedBy { it.key }.flatMap { (s, ranges) ->
-            ranges.map { Sel(s, it, sentences[s].substring(it.first, it.last + 1)) }
-        }
-
-        // 构造显示文本（从后往前替换为 ___），收集空位
-        val builders = sentences.map { StringBuilder(it) }.toMutableList()
-        for (sel in all.sortedWith(compareByDescending<Sel> { it.sIdx }.thenByDescending { it.range.first })) {
-            builders[sel.sIdx].replace(sel.range.first, sel.range.last + 1, "___")
-        }
-        val resultBlanks = mutableListOf<BlancallGenerator.WordBlankInfo>()
-        val resultSentences = mutableListOf<BlancallGenerator.WordClozeSentence>()
-        var globalIdx = 0
-        for (s in sentences.indices) {
-            val idxs = mutableListOf<Int>()
-            all.filter { it.sIdx == s }.sortedBy { it.range.first }.forEach { sel ->
-                resultBlanks.add(BlancallGenerator.WordBlankInfo(globalIdx, sel.text, sel.range.first))
-                idxs.add(globalIdx)
-                globalIdx++
+        when (modeStr) {
+            "SENTENCE" -> {
+                _mode.value = BlancallMode.SENTENCE
+                val result = BlancallGenerator.buildCustomSentenceCloze(content, bySentence)
+                _sentenceCloze.value = result
+                _wordCloze.value = null
+                _dictationResult.value = null
+                _totalBlanks.value = result.blanks.size
             }
-            resultSentences.add(BlancallGenerator.WordClozeSentence(builders[s].toString(), idxs))
+            "REVERSE" -> {
+                _mode.value = BlancallMode.REVERSE
+                val result = BlancallGenerator.buildCustomDictation(content, bySentence.keys)
+                _dictationResult.value = result
+                _sentenceCloze.value = null
+                _wordCloze.value = null
+                _totalBlanks.value = result.clauses.size
+            }
+            else -> {
+                _mode.value = BlancallMode.WORD
+                data class Sel(val sIdx: Int, val range: IntRange, val text: String)
+                val all = bySentence.entries.sortedBy { it.key }.flatMap { (s, ranges) ->
+                    ranges.map { Sel(s, it, sentences[s].substring(it.first, it.last + 1)) }
+                }
+                // 构造显示文本（从后往前替换为 ___），收集空位
+                val builders = sentences.map { StringBuilder(it) }.toMutableList()
+                for (sel in all.sortedWith(compareByDescending<Sel> { it.sIdx }.thenByDescending { it.range.first })) {
+                    builders[sel.sIdx].replace(sel.range.first, sel.range.last + 1, "___")
+                }
+                val resultBlanks = mutableListOf<BlancallGenerator.WordBlankInfo>()
+                val resultSentences = mutableListOf<BlancallGenerator.WordClozeSentence>()
+                var globalIdx = 0
+                for (s in sentences.indices) {
+                    val idxs = mutableListOf<Int>()
+                    all.filter { it.sIdx == s }.sortedBy { it.range.first }.forEach { sel ->
+                        resultBlanks.add(BlancallGenerator.WordBlankInfo(globalIdx, sel.text, sel.range.first))
+                        idxs.add(globalIdx)
+                        globalIdx++
+                    }
+                    resultSentences.add(BlancallGenerator.WordClozeSentence(builders[s].toString(), idxs))
+                }
+                val result = BlancallGenerator.WordClozeResult(
+                    resultSentences, resultBlanks, resultSentences.joinToString("\n") { it.text },
+                    maxBlanks = resultBlanks.size, suggestedBlanks = resultBlanks.size
+                )
+                _wordCloze.value = result
+                _sentenceCloze.value = null
+                _dictationResult.value = null
+                _totalBlanks.value = result.blanks.size
+            }
         }
-        val result = BlancallGenerator.WordClozeResult(
-            resultSentences, resultBlanks, resultSentences.joinToString("\n") { it.text },
-            maxBlanks = resultBlanks.size, suggestedBlanks = resultBlanks.size
-        )
 
-        _wordCloze.value = result
-        _sentenceCloze.value = null
-        _dictationResult.value = null
         // 整篇模式：锚点即全文切句位置（判分记录的句子归属与热力图依赖）
         _sentenceAnchors.value = buildSentenceAnchors(content, content, SectionSplitter.split(content), emptySet())
-        _totalBlanks.value = result.blanks.size
         practiceStartTime = System.currentTimeMillis()
     }
 

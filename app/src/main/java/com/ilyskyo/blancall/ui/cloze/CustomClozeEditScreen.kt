@@ -3,25 +3,31 @@
 
 package com.ilyskyo.blancall.ui.cloze
 
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -33,39 +39,38 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.BlancallGenerator
+import com.ilyskyo.blancall.algorithm.SentenceSplitter
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
-import com.ilyskyo.blancall.algorithm.SentenceSplitter
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
-import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * 自定义挖空模板编辑页。
+ * 自定义挖空模板编辑页（v2：自定义即预览）。
  *
- * 交互：
- * - 全文按句子拆开展示，每个句子有独立的拆分级Level：0=整句 → 1=从句 → 2=字词 → 3=单字
- * - 点按 token：切换挖空选中（选中即渲染成字词挖空同款的空）
- * - 长按 token：整句拆分升级一级（大爆炸式逐级打碎，最细到单字）
- * - 相邻选中区间构造配置时自动合并为一个空
+ * 顶部三枚模式 chips 选择这套配置的目标练习模式，编辑与预览实时切换为该模式的空样式：
+ * - 📝 句子挖空：点选整句挖整句，选中处渲染为练习同款「[N] ＿＿＿＿」序号空
+ * - 🔤 字词挖空：长按逐级炸碎（从句→字词→单字），点选区间，渲染高亮空框
+ * - ✍️ 反向默写：点选句子加入默写（无炸），选中处渲染为从句卡片「N. 挖一词」
  *
- * 配置按文章保存（CustomClozeStore），可存多套；blanks 记录「句索引 + 句内区间」，
- * 练习时确定性构造成 WordClozeResult，复用字词挖空全部判分链路。
+ * 配置按文章保存多套（CustomClozeStore），blanks 记录「句索引 + 句内区间」，
+ * 练习时按配置模式确定性构造对应挖空结果，复用既有判分链路。
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -78,11 +83,15 @@ fun CustomClozeEditScreen(
     var article by remember { mutableStateOf<Article?>(null) }
     var notFound by remember { mutableStateOf(false) }
 
-    // 每句拆分级Level（0..3）
+    // 目标练习模式（配置与模式绑定）
+    var clozeMode by rememberSaveable { mutableStateOf("WORD") }
+    var pendingMode by remember { mutableStateOf("WORD") }
+    var showModeSwitchConfirm by remember { mutableStateOf(false) }
+
+    // 每句拆分级Level（仅字词模式使用，0..3）
     val levels = remember { mutableStateListOf<Int>() }
     // 每句的选中区间（句内字符 [start, end)）
     val selected = remember { mutableStateMapOf<Int, MutableList<IntRange>>() }
-    // 已加载的待编辑配置（编辑已有配置时用于回填与原地保存）
     var editingConfig by remember { mutableStateOf<CustomClozeStore.CustomConfig?>(null) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
@@ -106,36 +115,58 @@ fun CustomClozeEditScreen(
             if (cfg != null) {
                 editingConfig = cfg
                 saveName = cfg.name
+                clozeMode = cfg.mode
                 cfg.blanks.forEach { b ->
-                    // 回填：把有选中的句子直接炸到单字级，保证区间与 token 边界对齐
-                    if (b.s in sentences.indices) {
-                        while (levels[b.s] < 3) levels[b.s] = levels[b.s] + 1
-                        selected.getOrPut(b.s) { mutableStateListOf() }.add(b.a until b.b)
+                    if (b.s !in sentences.indices) return@forEach
+                    when (cfg.mode) {
+                        // 字词模式：区间对齐 token 边界需炸到单字级
+                        "WORD" -> {
+                            while (levels[b.s] < 3) levels[b.s] = levels[b.s] + 1
+                            selected.getOrPut(b.s) { mutableStateListOf() }.add(b.a until b.b)
+                        }
+                        // 句子/反向：整句选择，区间即全句
+                        else -> selected.getOrPut(b.s) { mutableStateListOf() }.add(0 until sentences[b.s].length)
                     }
                 }
             }
         }
     }
 
+    fun selectedSentenceCount(): Int = selected.values.count { it.isNotEmpty() }
+
     fun buildConfig(): CustomClozeStore.CustomConfig? {
         val art = article ?: return null
         val sentences = SentenceSplitter.split(art.content)
         val blanks = mutableListOf<CustomClozeStore.BlankSpec>()
-        selected.forEach { (s, ranges) ->
-            if (s !in sentences.indices) return@forEach
-            // 合并相邻/重叠区间并排序
-            val merged = ranges.sortedBy { it.first }
-                .fold(mutableListOf<IntRange>()) { acc, r ->
-                    val last = acc.lastOrNull()
-                    if (last != null && r.first <= last.last + 1) {
-                        acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
-                    } else acc.add(r)
-                    acc
+        when (clozeMode) {
+            // 句子/反向：整句选择
+            "SENTENCE", "REVERSE" -> {
+                selected.forEach { (s, ranges) ->
+                    if (s in sentences.indices && ranges.isNotEmpty()) {
+                        blanks.add(CustomClozeStore.BlankSpec(s, 0, sentences[s].length))
+                    }
                 }
-            merged.forEach { r ->
-                val a = r.first.coerceIn(0, sentences[s].length)
-                val b = (r.last + 1).coerceIn(a + 1, sentences[s].length)
-                blanks.add(CustomClozeStore.BlankSpec(s, a, b))
+                blanks.sortBy { it.s }
+            }
+            // 字词：区间合并
+            else -> {
+                selected.forEach { (s, ranges) ->
+                    if (s !in sentences.indices) return@forEach
+                    val merged = ranges.sortedBy { it.first }
+                        .fold(mutableListOf<IntRange>()) { acc, r ->
+                            val last = acc.lastOrNull()
+                            if (last != null && r.first <= last.last + 1) {
+                                acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
+                            } else acc.add(r)
+                            acc
+                        }
+                    merged.forEach { r ->
+                        val a = r.first.coerceIn(0, sentences[s].length)
+                        val b = (r.last + 1).coerceIn(a + 1, sentences[s].length)
+                        blanks.add(CustomClozeStore.BlankSpec(s, a, b))
+                    }
+                }
+                blanks.sortWith(compareBy({ it.s }, { it.a }))
             }
         }
         if (blanks.isEmpty()) return null
@@ -143,7 +174,8 @@ fun CustomClozeEditScreen(
             id = editingConfig?.id ?: 0L,
             name = saveName.ifBlank { editingConfig?.name ?: "" },
             createdAt = editingConfig?.createdAt ?: 0L,
-            blanks = blanks.sortedWith(compareBy({ it.s }, { it.a }))
+            blanks = blanks,
+            mode = clozeMode
         )
     }
 
@@ -160,51 +192,50 @@ fun CustomClozeEditScreen(
         editingConfig = cfg.copy(id = newId)
     }
 
-    val blankCount = selected.values.sumOf { list ->
-        list.sortedBy { it.first }
-            .fold(0 to Int.MIN_VALUE) { (count, lastEnd), r ->
-                if (r.first <= lastEnd + 1) count to maxOf(lastEnd, r.last)
-                else (count + 1) to r.last
-            }.first
+    val blankCount = if (clozeMode == "WORD") {
+        selected.values.sumOf { list ->
+            list.sortedBy { it.first }
+                .fold(0 to Int.MIN_VALUE) { (count, lastEnd), r ->
+                    if (r.first <= lastEnd + 1) count to maxOf(lastEnd, r.last)
+                    else (count + 1) to r.last
+                }.first
+        }
+    } else {
+        selectedSentenceCount()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .widthIn(max = 600.dp)
                 .padding(horizontal = 20.dp)
         ) {
-            // ── 顶栏：返回 + 标题 + 已选空数 + 保存（常驻右上角）──
+            // ── 顶栏：返回 + 标题 + 保存（常驻右上角，SettingsScreen 同款规范）──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "自定义挖空",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        "点按选中挖空 · 长按逐级拆碎（从句→字词→单字）",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "自定义挖空",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
+                )
                 Text(
                     "$blankCount 个空",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.width(10.dp))
-                // 常驻右上角保存按钮
                 androidx.compose.material3.Button(
                     onClick = {
                         if (editingConfig != null) {
@@ -230,6 +261,28 @@ fun CustomClozeEditScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
+            Spacer(Modifier.height(12.dp))
+
+            // ── 模式选择 chips（自定义即预览：切换即改变编辑语义与空样式）──
+            ModeChipRow(current = clozeMode, onChange = { next ->
+                if (next == clozeMode) return@ModeChipRow
+                if (selected.values.any { it.isNotEmpty() }) {
+                    pendingMode = next
+                    showModeSwitchConfirm = true
+                } else {
+                    clozeMode = next
+                }
+            })
+            Spacer(Modifier.height(4.dp))
+            Text(
+                when (clozeMode) {
+                    "SENTENCE" -> "点选要挖掉的整句（选中即预览句子挖空样式）"
+                    "REVERSE" -> "点选句子加入反向默写（练习时逐从句挖一词打乱还原）"
+                    else -> "点按选中挖空 · 长按逐级拆碎（从句→字词→单字）"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(8.dp))
 
             // ── 正文句子列表 ──
@@ -240,33 +293,59 @@ fun CustomClozeEditScreen(
                 val sentences = remember(article?.id, article?.content) {
                     SentenceSplitter.split(article!!.content)
                 }
+                // 全局空序号偏移：按句序累计前文已选空数（预览编号与练习一致）
+                var blankOffset = 0
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)
+                    contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
                     items(sentences.size, key = { it }) { sIdx ->
                         val sentence = sentences[sIdx]
-                        val level = levels.getOrElse(sIdx) { 0 }
-                        val ranges = selected[sIdx]
+                        val ranges = selected[sIdx]?.toList() ?: emptyList()
+                        val mergedCount = mergeRanges(ranges).size
+                        val offsetBefore = blankOffset
+                        blankOffset += mergedCount
                         SentenceEditCard(
                             index = sIdx + 1,
                             sentence = sentence,
-                            level = level,
-                            selectedRanges = ranges?.toList() ?: emptyList(),
+                            level = levels.getOrElse(sIdx) { 0 },
+                            mode = clozeMode,
+                            selectedRanges = ranges,
+                            blankIndexOffset = offsetBefore,
                             onToggle = { range ->
                                 val list = selected.getOrPut(sIdx) { mutableStateListOf() }
                                 val hit = list.firstOrNull { it.first <= range.last && range.first <= it.last }
                                 if (hit != null) list.remove(hit) else list.add(range)
                             },
                             onExplode = {
-                                if (levels[sIdx] < 3) levels[sIdx] = levels[sIdx] + 1
+                                if (clozeMode == "WORD" && levels[sIdx] < 3) levels[sIdx] = levels[sIdx] + 1
                             }
                         )
                     }
                 }
             }
         }
+    }
+
+    // ── 模式切换确认（已选内容非空时）──
+    if (showModeSwitchConfirm) {
+        BlancallAlertDialog(
+            onDismissRequest = { showModeSwitchConfirm = false },
+            title = { Text("切换挖空模式？", fontWeight = FontWeight.SemiBold) },
+            text = { Text("切换后将清空当前已选的挖空内容。", style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showModeSwitchConfirm = false
+                    selected.clear()
+                    levels.replaceAll { 0 }
+                    clozeMode = pendingMode
+                }) { Text("清空并切换") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showModeSwitchConfirm = false }) { Text("取消") }
+            }
+        )
     }
 
     // ── 保存命名弹窗（新建配置时）──
@@ -296,7 +375,6 @@ fun CustomClozeEditScreen(
                 androidx.compose.material3.TextButton(onClick = {
                     showSaveDialog = false
                     doSave()
-                    // 新建保存成功后直接返回上一页
                     navController.popBackStack()
                 }) { Text("保存") }
             },
@@ -307,23 +385,9 @@ fun CustomClozeEditScreen(
     }
 }
 
-/**
- * 单句编辑卡片：按当前 Level 切 token，点选挖空、长按炸碎。
- * 选中区间合并渲染（相邻选中的 token 连成一个空）。
- */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
-@Composable
-private fun SentenceEditCard(
-    index: Int,
-    sentence: String,
-    level: Int,
-    selectedRanges: List<IntRange>,
-    onToggle: (IntRange) -> Unit,
-    onExplode: () -> Unit
-) {
-    val tokens = remember(sentence, level) { tokensFor(sentence, level) }
-    // 选中合并区间：用于渲染（相邻 token 连成一个空）
-    val merged = selectedRanges.sortedBy { it.first }
+/** 合并相邻/重叠区间 */
+private fun mergeRanges(ranges: List<IntRange>): List<IntRange> =
+    ranges.sortedBy { it.first }
         .fold(mutableListOf<IntRange>()) { acc, r ->
             val last = acc.lastOrNull()
             if (last != null && r.first <= last.last + 1) {
@@ -331,6 +395,48 @@ private fun SentenceEditCard(
             } else acc.add(r)
             acc
         }
+
+/** 模式切换 chips（自定义即预览：三选一） */
+@Composable
+private fun ModeChipRow(current: String, onChange: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("SENTENCE" to "📝 句子", "WORD" to "🔤 字词", "REVERSE" to "✍️ 反向").forEach { (m, label) ->
+            FilterChip(
+                selected = current == m,
+                onClick = { onChange(m) },
+                label = { Text(label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
+    }
+}
+
+/**
+ * 单句编辑卡片：按当前模式渲染编辑语义与预览样式。
+ * - SENTENCE / REVERSE：整句点选（无炸），选中之渲染各自模式的空预览
+ * - WORD：v1 炸链（level 0-3），选中渲染高亮空框
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@Composable
+private fun SentenceEditCard(
+    index: Int,
+    sentence: String,
+    level: Int,
+    mode: String,
+    selectedRanges: List<IntRange>,
+    blankIndexOffset: Int,
+    onToggle: (IntRange) -> Unit,
+    onExplode: () -> Unit
+) {
+    val tokens = when (mode) {
+        // 句子/反向模式：单位固定为整句（无炸）
+        "SENTENCE", "REVERSE" -> listOf(EditToken(sentence, 0 until sentence.length))
+        else -> tokensFor(sentence, level)
+    }
+    val merged = mergeRanges(selectedRanges)
 
     fun isSelectedRange(range: IntRange): Boolean =
         merged.any { it.first <= range.first && range.last <= it.last }
@@ -343,7 +449,11 @@ private fun SentenceEditCard(
             .padding(12.dp)
     ) {
         Text(
-            "第 $index 句 · ${levelName(level)}",
+            when (mode) {
+                "SENTENCE" -> "第 $index 句"
+                "REVERSE" -> "第 $index 句 · 默写单元"
+                else -> "第 $index 句 · ${levelName(level)}"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -354,42 +464,86 @@ private fun SentenceEditCard(
         ) {
             tokens.forEach { token ->
                 val selectedNow = isSelectedRange(token.range)
-                if (selectedNow) {
-                    // 选中 → 字词挖空同款空样式（与练习页填空框一致的高亮空）
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                                RoundedCornerShape(6.dp)
+                when {
+                    // ── 句子挖空预览：[N] 徽章 + 下划线（SentenceClozeContent 同款）──
+                    selectedNow && mode == "SENTENCE" -> {
+                        val globalN = blankIndexOffset + merged.indexOfFirst { it.first <= token.range.first && token.range.last <= it.last } + 1
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "[$globalN]",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
                             )
-                            .combinedClickable(onClick = { onToggle(token.range) }, onLongClick = onExplode)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "＿".repeat(sentence.length.coerceIn(2, 10)),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .combinedClickable(onClick = { onToggle(token.range) })
+                                    .padding(horizontal = 2.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    // ── 反向默写预览：从句卡片「N. 挖一词」（DictationClauseCard 同款）──
+                    selectedNow && mode == "REVERSE" -> {
+                        val globalN = blankIndexOffset + merged.indexOfFirst { it.first <= token.range.first && token.range.last <= it.last } + 1
                         Text(
-                            "＿".repeat((token.text.length.coerceAtLeast(1)).coerceAtMost(6)),
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 15.sp,
-                            lineHeight = 20.sp
+                            "$globalN. " + BlancallGenerator.blankOneWordInClause(sentence),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .combinedClickable(onClick = { onToggle(token.range) })
+                                .padding(10.dp)
                         )
                     }
-                } else {
-                    Text(
-                        token.text,
-                        fontSize = 15.sp,
-                        lineHeight = 20.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .combinedClickable(
-                                onClick = { onToggle(token.range) },
-                                onLongClick = onExplode
+                    // ── 字词挖空预览：高亮空框 ──
+                    selectedNow -> {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                    RoundedCornerShape(6.dp)
+                                )
+                                .combinedClickable(onClick = { onToggle(token.range) }, onLongClick = onExplode)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "＿".repeat(token.text.length.coerceAtLeast(1).coerceAtMost(6)),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 15.sp,
+                                lineHeight = 20.sp
                             )
-                            .padding(horizontal = 2.dp, vertical = 4.dp)
-                    )
+                        }
+                    }
+                    // ── 未选中原文 token ──
+                    else -> {
+                        Text(
+                            token.text,
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .combinedClickable(
+                                    onClick = { onToggle(token.range) },
+                                    onLongClick = { if (mode == "WORD") onExplode() }
+                                )
+                                .padding(horizontal = 2.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -409,7 +563,7 @@ private fun levelName(level: Int): String = when (level) {
 /**
  * 按级Level切分 token：
  * - 0 整句
- * - 1 从句：按句内标点（逗号/顿号/分号/冒号等）切，标点跟随前一个 token
+ * - 1 从句：按句内标点切，标点跟随前一个 token
  * - 2 字词：连续汉字每 2 字一块（末尾余 1 字自成一tok），英文单词整体
  * - 3 单字：每个汉字一个 token，英文单词整体
  * 标点（非中文非字母字符）始终并入前一个 token，避免单独的标点空。
@@ -426,13 +580,11 @@ private fun tokensFor(sentence: String, level: Int): List<EditToken> {
     fun isPunct(c: Char) = !isChinese(c) && !c.isLetter()
 
     if (level == 1) {
-        // 从句：标点为切分点，标点并入前一个从句
         var start = 0
         while (i < n) {
             val c = sentence[i]
             if (isPunct(c)) {
                 i++
-                // 连续标点一并带上
                 while (i < n && isPunct(sentence[i])) i++
                 out.add(EditToken(sentence.substring(start, i), start until i))
                 start = i
@@ -450,7 +602,6 @@ private fun tokensFor(sentence: String, level: Int): List<EditToken> {
             isChinese(c) -> {
                 var runEnd = i
                 while (runEnd < n && isChinese(sentence[runEnd])) runEnd++
-                // 汉字串按 chunk 切块
                 var s = i
                 while (s < runEnd) {
                     val e = minOf(s + chunk, runEnd)
@@ -468,7 +619,6 @@ private fun tokensFor(sentence: String, level: Int): List<EditToken> {
                 tokenStart = i
             }
             else -> {
-                // 标点：并入前一个 token（若无前 token 则自成一tok）
                 i++
                 while (i < n && isPunct(sentence[i])) i++
                 val end = i

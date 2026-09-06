@@ -558,6 +558,93 @@ object BlancallGenerator {
         return DictationResult(clauses, shuffled)
     }
 
+    // ═══════════════════════════════════════════
+    //  自定义挖空构造（编辑器选点 → 确定性结果）
+    // ═══════════════════════════════════════════
+
+    /**
+     * 自定义句子挖空：按「句索引 → 句内区间列表」构造句子挖空结果。
+     * 区间自动合并相邻/重叠、过滤越界；displayText 用与 generateSentenceCloze
+     * 同款的 "[N] ___" 标记（句内从后往前替换，避免偏移错位）。
+     */
+    fun buildCustomSentenceCloze(
+        content: String,
+        rangesBySentence: Map<Int, List<IntRange>>
+    ): SentenceClozeResult {
+        val sentences = SentenceSplitter.split(content)
+        // 规范化：越界过滤 + 相邻/重叠合并
+        val normalized = rangesBySentence.mapValues { (_, ranges) ->
+            ranges.let { rs ->
+                rs.map { r ->
+                    val len = sentences.getOrElse(r.first) { "" }.length
+                    val a = r.first.coerceIn(0, len)
+                    val b = (r.last + 1).coerceIn(a + 1, len)
+                    a until b
+                }.sortedBy { it.first }
+                    .fold(mutableListOf<IntRange>()) { acc, r ->
+                        val last = acc.lastOrNull()
+                        if (last != null && r.first <= last.last + 1) {
+                            acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
+                        } else acc.add(r)
+                        acc
+                    }
+            }
+        }.filterValues { it.isNotEmpty() }
+
+        data class Sel(val sIdx: Int, val range: IntRange, val text: String)
+        val all = normalized.entries.sortedBy { it.key }.flatMap { (s, ranges) ->
+            ranges.map { Sel(s, it, sentences[s].substring(it.first, it.last + 1)) }
+        }
+
+        // 编号 + 构造 SentenceBlankInfo
+        val blanks = all.mapIndexed { idx, sel ->
+            SentenceBlankInfo(
+                index = idx,
+                originalText = sel.text,
+                sentenceIndex = sel.sIdx,
+                startInSentence = sel.range.first,
+                endInSentence = sel.range.last + 1
+            )
+        }
+
+        // displayText：句内从后往前替换为 "[N] ___"
+        val builders = sentences.map { StringBuilder(it) }.toMutableList()
+        for (b in blanks.sortedWith(compareByDescending<SentenceBlankInfo> { it.sentenceIndex }
+            .thenByDescending { it.startInSentence })) {
+            builders[b.sentenceIndex].replace(b.startInSentence, b.endInSentence, "[${b.index + 1}] ___")
+        }
+        return SentenceClozeResult(sentences, blanks, builders.joinToString("\n") { it.toString() })
+    }
+
+    /**
+     * 自定义反向默写：仅对选中句子做从句切分 + 每从句挖一词 + 打乱，
+     * 未选中句子不参与。与 generateDictation 同构，仅从句来源限定为选中句。
+     */
+    fun buildCustomDictation(content: String, selectedSentences: Set<Int>): DictationResult {
+        if (selectedSentences.isEmpty()) return DictationResult(emptyList(), emptyList())
+        val sentences = SentenceSplitter.split(content)
+        val clauses = mutableListOf<String>()
+        for (sIdx in sentences.indices) {
+            if (sIdx !in selectedSentences) continue
+            for (part in splitByDictationPunctuation(sentences[sIdx])) {
+                if (part.isNotBlank()) clauses.add(part)
+            }
+        }
+        if (clauses.isEmpty()) return DictationResult(emptyList(), emptyList())
+        val blankedClauses = clauses.map { blankOneWordInClause(it) }
+        val indices = clauses.indices.toMutableList()
+        indices.shuffle()
+        val shuffled = indices.mapIndexed { displayOrder, origIdx ->
+            ShuffledClause(
+                displayOrder = displayOrder,
+                originalIndex = origIdx,
+                originalText = clauses[origIdx],
+                displayText = blankedClauses[origIdx]
+            )
+        }
+        return DictationResult(clauses, shuffled)
+    }
+
     /** 按反向默写从句标点切分（标点保留在前一个从句末尾） */
     private fun splitByDictationPunctuation(text: String): List<String> {
         val result = mutableListOf<String>()
