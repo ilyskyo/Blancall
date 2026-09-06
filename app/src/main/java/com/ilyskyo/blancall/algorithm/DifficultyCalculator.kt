@@ -23,7 +23,7 @@ object DifficultyCalculator {
     }
 
     fun calculateCharDifficulty(char: Char): Float {
-        // 非中文字符（英文字母/数字/标点等）查笔画表无意义，直接给较低难度，避免抬升整句均值。
+        // 非中文字符（英文字母/数字/标点等）查笔画表无意义，直接给较低难度，避免抬升复句均值。
         // 含基本区与扩展A区汉字；扩展A区生僻字未收录笔画表时默认 10 画（偏高，符合其生僻特性）。
         if (char !in '\u4e00'..'\u9fff' && char !in '\u3400'..'\u4dbf') return 0.2f
         val strokeScore = getStrokeScore(char)

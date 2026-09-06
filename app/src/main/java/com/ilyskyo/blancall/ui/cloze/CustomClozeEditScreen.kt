@@ -65,9 +65,9 @@ import kotlinx.coroutines.withContext
  * 自定义挖空模板编辑页（v2：自定义即预览）。
  *
  * 顶部三枚模式 chips 选择这套配置的目标练习模式，编辑与预览实时切换为该模式的空样式：
- * - 📝 句子挖空：点选整句挖整句，选中处渲染为练习同款「[N] ＿＿＿＿」序号空
- * - 🔤 字词挖空：长按逐级炸碎（从句→字词→单字），点选区间，渲染高亮空框
- * - ✍️ 反向默写：点选句子加入默写（无炸），选中处渲染为从句卡片「N. 挖一词」
+ * - 📝 句子挖空：点选复句挖复句，选中处渲染为练习同款「[N] ＿＿＿＿」序号空
+ * - 🔤 字词挖空：长按逐级炸碎（分句→字词→单字），点选区间，渲染高亮空框
+ * - ✍️ 反向默写：点选句子加入默写（无炸），选中处渲染为分句卡片「N. 挖一词」
  *
  * 配置按文章保存多套（CustomClozeStore），blanks 记录「句索引 + 句内区间」，
  * 练习时按配置模式确定性构造对应挖空结果，复用既有判分链路。
@@ -124,7 +124,7 @@ fun CustomClozeEditScreen(
                             while (levels[b.s] < 3) levels[b.s] = levels[b.s] + 1
                             selected.getOrPut(b.s) { mutableStateListOf() }.add(b.a until b.b)
                         }
-                        // 句子/反向：整句选择，区间即全句
+                        // 句子/反向：复句选择，区间即全句
                         else -> selected.getOrPut(b.s) { mutableStateListOf() }.add(0 until sentences[b.s].length)
                     }
                 }
@@ -139,7 +139,7 @@ fun CustomClozeEditScreen(
         val sentences = SentenceSplitter.split(art.content)
         val blanks = mutableListOf<CustomClozeStore.BlankSpec>()
         when (clozeMode) {
-            // 句子/反向：整句选择
+            // 句子/反向：复句选择
             "SENTENCE", "REVERSE" -> {
                 selected.forEach { (s, ranges) ->
                     if (s in sentences.indices && ranges.isNotEmpty()) {
@@ -276,9 +276,9 @@ fun CustomClozeEditScreen(
             Spacer(Modifier.height(4.dp))
             Text(
                 when (clozeMode) {
-                    "SENTENCE" -> "点选要挖掉的整句（选中即预览句子挖空样式）"
-                    "REVERSE" -> "点选句子加入反向默写（练习时逐从句挖一词打乱还原）"
-                    else -> "点按选中挖空 · 长按逐级拆碎（从句→字词→单字）"
+                    "SENTENCE" -> "点选要挖掉的复句（选中即预览句子挖空样式）"
+                    "REVERSE" -> "点选句子加入反向默写（练习时逐分句挖一词打乱还原）"
+                    else -> "点按选中挖空 · 长按逐级拆碎（分句→字词→单字）"
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -416,7 +416,7 @@ private fun ModeChipRow(current: String, onChange: (String) -> Unit) {
 
 /**
  * 单句编辑卡片：按当前模式渲染编辑语义与预览样式。
- * - SENTENCE / REVERSE：整句点选（无炸），选中之渲染各自模式的空预览
+ * - SENTENCE / REVERSE：复句点选（无炸），选中之渲染各自模式的空预览
  * - WORD：v1 炸链（level 0-3），选中渲染高亮空框
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
@@ -432,7 +432,7 @@ private fun SentenceEditCard(
     onExplode: () -> Unit
 ) {
     val tokens = when (mode) {
-        // 句子/反向模式：单位固定为整句（无炸）
+        // 句子/反向模式：单位固定为复句（无炸）
         "SENTENCE", "REVERSE" -> listOf(EditToken(sentence, 0 until sentence.length))
         else -> tokensFor(sentence, level)
     }
@@ -490,7 +490,7 @@ private fun SentenceEditCard(
                             )
                         }
                     }
-                    // ── 反向默写预览：从句卡片「N. 挖一词」（DictationClauseCard 同款）──
+                    // ── 反向默写预览：分句卡片「N. 挖一词」（DictationClauseCard 同款）──
                     selectedNow && mode == "REVERSE" -> {
                         val globalN = blankIndexOffset + merged.indexOfFirst { it.first <= token.range.first && token.range.last <= it.last } + 1
                         Text(
@@ -554,16 +554,16 @@ private fun SentenceEditCard(
 private data class EditToken(val text: String, val range: IntRange)
 
 private fun levelName(level: Int): String = when (level) {
-    0 -> "整句"
-    1 -> "从句"
+    0 -> "复句"
+    1 -> "分句"
     2 -> "字词"
     else -> "单字"
 }
 
 /**
  * 按级Level切分 token：
- * - 0 整句
- * - 1 从句：按句内标点切，标点跟随前一个 token
+ * - 0 复句
+ * - 1 分句：按句内标点切，标点跟随前一个 token
  * - 2 字词：连续汉字每 2 字一块（末尾余 1 字自成一tok），英文单词整体
  * - 3 单字：每个汉字一个 token，英文单词整体
  * 标点（非中文非字母字符）始终并入前一个 token，避免单独的标点空。

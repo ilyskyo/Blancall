@@ -824,7 +824,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     ModeCard(
                         emoji = "📝",
                         title = "句子挖空",
-                        desc = "隐藏完整句子，适合段落背诵",
+                        desc = "隐藏完复句子，适合段落背诵",
                         onClick = {
                             vm.onModeChosen(BlancallMode.SENTENCE)
                             modeSelected = true
@@ -903,7 +903,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 // 句子挖空
                 RadioListItem(
                     emoji = "📝", label = "句子挖空",
-                    desc = "从句/半句/整句 — 理解式记忆",
+                    desc = "分句/半句/复句 — 理解式记忆",
                     selected = mode == BlancallMode.SENTENCE,
                     onClick = { vm.switchMode(BlancallMode.SENTENCE); showModeSheet = false }
                 )
@@ -1080,7 +1080,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 )
                 RadioListItem(
                     emoji = "🔄", label = "全覆盖",
-                    desc = "每个从句都有机会，均匀分布",
+                    desc = "每个分句都有机会，均匀分布",
                     selected = strategy == BlancallGenerator.Strategy.FULL_COVERAGE,
                     onClick = { vm.setStrategy(BlancallGenerator.Strategy.FULL_COVERAGE); showStrategySheet = false }
                 )
@@ -1898,10 +1898,10 @@ private fun ExportPdfDialog(
 //  反向默写（段落打散默写）
 // ═══════════════════════════════════════════
 
-/** 构建反向默写的展示文本：把打乱顺序的挖空从句编号列出，作为默写线索 */
+/** 构建反向默写的展示文本：把打乱顺序的挖空分句编号列出，作为默写线索 */
 private fun buildDictationDisplayText(dictation: BlancallGenerator.DictationResult): String {
     return buildString {
-        appendLine("【默写线索 · 从句已打乱顺序并挖空】")
+        appendLine("【默写线索 · 分句已打乱顺序并挖空】")
         dictation.shuffledClauses.forEach { sh ->
             appendLine("${sh.displayOrder + 1}. ${sh.displayText}")
         }
@@ -1909,7 +1909,7 @@ private fun buildDictationDisplayText(dictation: BlancallGenerator.DictationResu
 }
 
 /**
- * 反向默写内容区：展示打乱顺序的挖空从句作为线索，每个从句旁有复制按钮，
+ * 反向默写内容区：展示打乱顺序的挖空分句作为线索，每个分句旁有复制按钮，
  * 用户复制下来还原顺序后，在下方输入框默写原文。
  * 提交后展示整段判分（覆盖率/准确率/顺序正确率/综合得分 + 逐句对比）。
  * - 暗色模式：全部使用 MaterialTheme.colorScheme，自动适配
@@ -1951,9 +1951,9 @@ private fun DictationContent(
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // ── 线索区：打乱顺序的挖空从句 ──
+        // ── 线索区：打乱顺序的挖空分句 ──
         item(key = "clueTitle") {
-            Text("默写线索（从句已打乱顺序并挖空，点复制可复制单句）",
+            Text("默写线索（分句已打乱顺序并挖空，点复制可复制单句）",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
@@ -1975,7 +1975,7 @@ private fun DictationContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 160.dp, max = 320.dp),
-                    placeholder = "按原文顺序默写整段，可把复制下来的从句拼回去…",
+                    placeholder = "按原文顺序默写整段，可把复制下来的分句拼回去…",
                     hintChar = if (!isSubmitted) dictationHintChar else null,
                     maxLines = Int.MAX_VALUE,
                     minHeight = 100.dp
@@ -1991,7 +1991,7 @@ private fun DictationContent(
     }
 }
 
-/** 反向默写单句线索卡片：展示挖空从句 + 复制按钮 */
+/** 反向默写单句线索卡片：展示挖空分句 + 复制按钮 */
 @Composable
 private fun DictationClauseCard(
     clause: BlancallGenerator.ShuffledClause,
@@ -2013,12 +2013,12 @@ private fun DictationClauseCard(
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(6.dp))
-            // 复制按钮：复制挖好空的从句文本，方便用户拼回去默写
+            // 复制按钮：复制挖好空的分句文本，方便用户拼回去默写
             TextButton(
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                     if (clipboard != null) {
-                        val clip = ClipData.newPlainText("默写从句", clause.displayText)
+                        val clip = ClipData.newPlainText("默写分句", clause.displayText)
                         clipboard.setPrimaryClip(clip)
                         Toast.makeText(context, "已复制：${clause.displayText}", Toast.LENGTH_SHORT).show()
                     }

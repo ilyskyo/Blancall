@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 /**
  * 挖空生成器：支持句子挖空和字词挖空两种模式
- * - 句子挖空：可挖从句、半句、整句（按逗号/分号粒度切分，相邻选中从句自动合并）
+ * - 句子挖空：可挖分句、半句、复句（按逗号/分号粒度切分，相邻选中分句自动合并）
  * - 字词挖空：挖 1-3 字词或英文单词，相邻选中词自动合并为一个空
  * - 支持动态自适应策略（均衡/薄弱点优先/全覆盖）
  * - 支持反向默写（段落打散后默写原文）
@@ -20,7 +20,7 @@ object BlancallGenerator {
 
     /** 逗号/分号切分正则（短文本兜底用，编译一次） */
     private val CLAUSE_SPLIT_REGEX = Regex("[，,;；]")
-    /** 从句切分标点（编译一次） */
+    /** 分句切分标点（编译一次） */
     private val CLAUSE_PUNCT = setOf('，', ',', ';', '；', '、')
     /** 英文单词匹配（无汉字时兜底挖空，编译一次避免重复编译） */
     private val ENGLISH_WORD_REGEX = Regex("[A-Za-z]+")
@@ -49,7 +49,7 @@ object BlancallGenerator {
 
     data class SentenceBlankInfo(
         val index: Int,
-        val originalText: String,          // 被挖掉的原文（可能是从句、半句或整句）
+        val originalText: String,          // 被挖掉的原文（可能是分句、半句或复句）
         val sentenceIndex: Int,
         val startInSentence: Int,          // 在句内的起始字符位置
         val endInSentence: Int             // 在句内的结束字符位置（exclusive）
@@ -74,7 +74,7 @@ object BlancallGenerator {
         val position: Int
     )
 
-    // ========== 句子挖空：支持从句/半句/整句 ==========
+    // ========== 句子挖空：支持分句/半句/复句 ==========
 
     fun generateSentenceCloze(
         content: String,
@@ -98,7 +98,7 @@ object BlancallGenerator {
             return SentenceClozeResult(emptyList(), emptyList(), content)
         }
 
-        // 将每句按逗号/分号/顿号拆分为从句
+        // 将每句按逗号/分号/顿号拆分为分句
         data class Clause(
             val text: String,
             val sentenceIdx: Int,
@@ -131,10 +131,10 @@ object BlancallGenerator {
         val densityScale = if (count > 0) 1f else errorProfile.memoryFactor.coerceIn(1f, 1.6f)
         val actualCount = (baseCount * densityScale).toInt().coerceIn(1, totalClauses)
 
-        // 策略驱动选择要挖的从句
+        // 策略驱动选择要挖的分句
         val selectedClauseIndices = when (strategy) {
             Strategy.WEAKNESS_FOCUS -> {
-                // 按错误率加权排序，优先选薄弱从句
+                // 按错误率加权排序，优先选薄弱分句
                 val weighted = allClauses.indices.map { idx ->
                     val sentIdx = allClauses[idx].sentenceIdx
                     val errorRate = errorProfile.sentenceErrorRates[sentIdx] ?: 0f
@@ -143,7 +143,7 @@ object BlancallGenerator {
                 weighted.take(actualCount).map { it.first }.toMutableSet()
             }
             Strategy.FULL_COVERAGE -> {
-                // 均匀分布，每个从句都有机会（用 toMutableSet 去重后补足）
+                // 均匀分布，每个分句都有机会（用 toMutableSet 去重后补足）
                 val step = (allClauses.size.toFloat() / actualCount).toInt().coerceAtLeast(1)
                 val indices = linkedSetOf<Int>()
                 var pos = 0
@@ -186,7 +186,7 @@ object BlancallGenerator {
             }
         }
 
-        // 合并同一句内相邻的选中从句（如选中了逗号前的从句和逗号后的从句 → 合并为一个空 = 整句）
+        // 合并同一句内相邻的选中分句（如选中了逗号前的分句和逗号后的分句 → 合并为一个空 = 复句）
         val blankGroups = mutableListOf<List<Clause>>()
         var i = 0
         while (i < allClauses.size) {
@@ -236,7 +236,7 @@ object BlancallGenerator {
         return SentenceClozeResult(allSentences, blanks, displayParts.joinToString("\n"))
     }
 
-    /** 按逗号/分号/顿号拆分从句，标点保留在前一个从句末尾 */
+    /** 按逗号/分号/顿号拆分分句，标点保留在前一个分句末尾 */
     private fun splitByClausePunctuation(text: String): List<String> {
         val result = mutableListOf<String>()
         val current = StringBuilder()
@@ -506,33 +506,33 @@ object BlancallGenerator {
     //  反向默写（段落打散 + 挖空 + 打乱顺序）
     // ═══════════════════════════════════════════
 
-    /** 打乱后的从句（作为默写线索，已挖空） */
+    /** 打乱后的分句（作为默写线索，已挖空） */
     data class ShuffledClause(
         val displayOrder: Int,      // 展示序号 0,1,2...
-        val originalIndex: Int,     // 对应原文从句索引
-        val originalText: String,  // 原文从句（完整，用于判分）
-        val displayText: String     // 挖好空的从句（含 ___，用于展示/复制）
+        val originalIndex: Int,     // 对应原文分句索引
+        val originalText: String,  // 原文分句（完整，用于判分）
+        val displayText: String     // 挖好空的分句（含 ___，用于展示/复制）
     )
 
-    /** 反向默写结果：原文从句列表（正确顺序）+ 打乱顺序的挖空从句线索 */
+    /** 反向默写结果：原文分句列表（正确顺序）+ 打乱顺序的挖空分句线索 */
     data class DictationResult(
-        val clauses: List<String>,                  // 原文从句列表（正确顺序）
-        val shuffledClauses: List<ShuffledClause>    // 打乱顺序的挖空从句
+        val clauses: List<String>,                  // 原文分句列表（正确顺序）
+        val shuffledClauses: List<ShuffledClause>    // 打乱顺序的挖空分句
     )
 
-    /** 反向默写切分标点：逗号/分号/顿号/句号/问号/叹号（标点保留在前一个从句末尾） */
+    /** 反向默写切分标点：逗号/分号/顿号/句号/问号/叹号（标点保留在前一个分句末尾） */
     private val DICTATION_CLAUSE_PUNCT = setOf(
         '，', ',', ';', '；', '、', '。', '.', '！', '!', '？', '?', '…'
     )
 
     /**
-     * 反向默写：把段落按从句粒度（逗号/句号等）切分，每个从句挖 1 个空，
+     * 反向默写：把段落按分句粒度（逗号/句号等）切分，每个分句挖 1 个空，
      * 然后打乱顺序作为线索，让用户还原顺序并默写原文。
      * @param content 原文（支持中英文混排）
      */
     fun generateDictation(content: String): DictationResult {
         if (content.isBlank()) return DictationResult(emptyList(), emptyList())
-        // 先按句末标点切句（处理英文缩写/小数），再按逗号等切从句
+        // 先按句末标点切句（处理英文缩写/小数），再按逗号等切分句
         val sentences = SentenceSplitter.split(content)
         val clauses = mutableListOf<String>()
         for (s in sentences) {
@@ -541,10 +541,10 @@ object BlancallGenerator {
         }
         if (clauses.isEmpty()) return DictationResult(emptyList(), emptyList())
 
-        // 每个从句挖 1 个空，生成展示文本
+        // 每个分句挖 1 个空，生成展示文本
         val blankedClauses = clauses.map { blankOneWordInClause(it) }
 
-        // 打乱从句顺序
+        // 打乱分句顺序
         val indices = clauses.indices.toMutableList()
         indices.shuffle()
         val shuffled = indices.mapIndexed { displayOrder, origIdx ->
@@ -617,8 +617,8 @@ object BlancallGenerator {
     }
 
     /**
-     * 自定义反向默写：仅对选中句子做从句切分 + 每从句挖一词 + 打乱，
-     * 未选中句子不参与。与 generateDictation 同构，仅从句来源限定为选中句。
+     * 自定义反向默写：仅对选中句子做分句切分 + 每分句挖一词 + 打乱，
+     * 未选中句子不参与。与 generateDictation 同构，仅分句来源限定为选中句。
      */
     fun buildCustomDictation(content: String, selectedSentences: Set<Int>): DictationResult {
         if (selectedSentences.isEmpty()) return DictationResult(emptyList(), emptyList())
@@ -645,7 +645,7 @@ object BlancallGenerator {
         return DictationResult(clauses, shuffled)
     }
 
-    /** 按反向默写从句标点切分（标点保留在前一个从句末尾） */
+    /** 按反向默写分句标点切分（标点保留在前一个分句末尾） */
     private fun splitByDictationPunctuation(text: String): List<String> {
         val result = mutableListOf<String>()
         val current = StringBuilder()
@@ -661,7 +661,7 @@ object BlancallGenerator {
     }
 
     /**
-     * 在从句中挖 1 个空：优先挖难度最高的中文字符；无汉字时挖英文单词；
+     * 在分句中挖 1 个空：优先挖难度最高的中文字符；无汉字时挖英文单词；
      * 都没有则原样返回。挖掉的内容替换为 ___。供本地与 AI 挖空兜底共用。
      */
     internal fun blankOneWordInClause(clause: String): String {

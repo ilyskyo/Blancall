@@ -43,7 +43,7 @@ object SentenceSplitter {
      * @param treatNewlineAsSentence 是否将单换行视为句子分隔。
      *        默认 true（保持兼容）。PDF 等含软换行的文本可传 false，
      *        此时单换行不切分（仅按句末标点切），避免软换行被过度切分。
-     * @return 每个元素为一个完整句子（已去除首尾空白）
+     * @return 每个元素为一个完复句子（已去除首尾空白）
      */
     fun split(text: String, treatNewlineAsSentence: Boolean = true): List<String> {
         val sentences = mutableListOf<String>()

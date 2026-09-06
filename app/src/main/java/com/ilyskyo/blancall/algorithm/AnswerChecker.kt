@@ -278,8 +278,8 @@ object AnswerChecker {
     )
 
     /**
-     * 反向默写判分：用户默写整段，与原文从句逐句最佳匹配
-     * @param originalClauses 原文从句列表（正确顺序，逗号/句号粒度）
+     * 反向默写判分：用户默写整段，与原文分句逐句最佳匹配
+     * @param originalClauses 原文分句列表（正确顺序，逗号/句号粒度）
      * @param userInput 用户默写的整段文本
      */
     fun checkDictation(
@@ -288,26 +288,26 @@ object AnswerChecker {
     ): DictationCheckResult {
         // 防御：超长输入截断（编辑距离为 O(m*n)，超长无标点文本会让计算爆炸导致卡死/OOM）
         val safeInput = if (userInput.length > 20_000) userInput.take(20_000) else userInput
-        // 用户输入按从句粒度切分（逗号/句号等），与原文从句对齐匹配
+        // 用户输入按分句粒度切分（逗号/句号等），与原文分句对齐匹配
         val userClauses = splitUserInputIntoClauses(safeInput)
         if (originalClauses.isEmpty()) {
             return DictationCheckResult(emptyList(), 0f, 0f, 0f, 0f)
         }
-        // 原文从句归一化缓存
+        // 原文分句归一化缓存
         val originalNorm = originalClauses.map { toHalfWidth(stripPunctAndSpace(it)).lowercase() }
         val used = BooleanArray(originalClauses.size) { false }
         val sentenceResults = mutableListOf<DictationSentenceResult>()
 
         for (uIdx in userClauses.indices) {
             val userSent = userClauses[uIdx]
-            // 防御：单从句超长截断（编辑距离为 O(m*n)，保护极端输入）
+            // 防御：单分句超长截断（编辑距离为 O(m*n)，保护极端输入）
             val userSentSafe = if (userSent.length > 5_000) userSent.take(5_000) else userSent
             val userNorm = toHalfWidth(stripPunctAndSpace(userSentSafe)).lowercase()
             if (userNorm.isEmpty()) {
                 sentenceResults.add(DictationSentenceResult(userSent, null, -1, 0f, Result.MISSING))
                 continue
             }
-            // 在未匹配的原文从句中找相似度最高的
+            // 在未匹配的原文分句中找相似度最高的
             var bestIdx = -1
             var bestSim = 0f
             val userLen = userNorm.length
@@ -349,7 +349,7 @@ object AnswerChecker {
         val coverageRate = matchedCount.toFloat() / originalClauses.size
         val accuracyRate = if (sentenceResults.isEmpty()) 0f
             else sentenceResults.map { it.similarity }.average().toFloat()
-        // 顺序正确率：用户从句中，匹配到的且 matchIndex 递增的比例
+        // 顺序正确率：用户分句中，匹配到的且 matchIndex 递增的比例
         var orderCorrect = 0
         var lastMatchedIdx = -1
         for (r in sentenceResults) {
@@ -371,7 +371,7 @@ object AnswerChecker {
         )
     }
 
-    /** 把用户默写的整段文本按从句粒度切分（逗号/句号等标点保留在前一个从句末尾） */
+    /** 把用户默写的整段文本按分句粒度切分（逗号/句号等标点保留在前一个分句末尾） */
     private fun splitUserInputIntoClauses(text: String): List<String> {
         val punct = setOf('，', ',', ';', '；', '、', '。', '.', '！', '!', '？', '?', '…', '\n')
         val result = mutableListOf<String>()

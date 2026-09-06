@@ -1122,7 +1122,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** 获取渐进密度对应的挖空比例（占从句总数百分比） */
+    /** 获取渐进密度对应的挖空比例（占分句总数百分比） */
     fun getProgressiveDensity(): Float = when (_progressiveLevel.value) {
         0 -> 0.15f  // 初级：挖少量
         1 -> 0.33f  // 中级：挖三分之一

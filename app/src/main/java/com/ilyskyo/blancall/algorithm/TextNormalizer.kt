@@ -49,7 +49,7 @@ object TextNormalizer {
         return s.filterNot { it.isWhitespace() }
     }
 
-    /** 批量归一化（供原文从句一次性缓存，避免提交时重复计算） */
+    /** 批量归一化（供原文分句一次性缓存，避免提交时重复计算） */
     fun normalizeList(texts: List<String>): List<String> = texts.map { normalize(it) }
 
     /** 全角 ASCII → 半角（与 AnswerChecker.toHalfWidth 同口径） */

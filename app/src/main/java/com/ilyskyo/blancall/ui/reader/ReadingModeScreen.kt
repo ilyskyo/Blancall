@@ -873,7 +873,7 @@ private fun OccludedReadingContent(
     ) {
         paragraphs.forEachIndexed { index, para ->
             if (index > 0) Spacer(Modifier.height((fontPx * 0.9f).dp))
-            // 每段的遮挡空：按当前粒度（short=字词 / long=整句 / mixed=逐句随机长或短，均为本地算法）在段内生成
+            // 每段的遮挡空：按当前粒度（short=字词 / long=复句 / mixed=逐句随机长或短，均为本地算法）在段内生成
             val ranges = remember(para, occlusion) {
                 ReaderOcclusion.localRangesInPara(para, mode)
             }
@@ -1493,7 +1493,7 @@ private fun ReadingSettingsSheet(
                     accent = accent
                 )
             }
-            // 开启后浮现遮挡粒度子项（短=字词 / 长=整句 / 混合=逐句随机长或短，均为本地算法）
+            // 开启后浮现遮挡粒度子项（短=字词 / 长=复句 / 混合=逐句随机长或短，均为本地算法）
             AnimatedVisibility(visible = occlusionEnabled) {
                 Column(Modifier.padding(top = 10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

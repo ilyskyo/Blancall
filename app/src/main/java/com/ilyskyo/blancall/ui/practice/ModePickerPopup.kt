@@ -328,7 +328,7 @@ private fun ModeListContent(
     )
     val entries = remember {
         listOf(
-            ModeEntry("📝", "句子挖空", "从句/半句/整句 — 理解式记忆", BlancallMode.SENTENCE),
+            ModeEntry("📝", "句子挖空", "分句/半句/复句 — 理解式记忆", BlancallMode.SENTENCE),
             ModeEntry("🔤", "字词挖空", "1-3字词精准填空 — 细节记忆", BlancallMode.WORD),
             ModeEntry("✍️", "反向默写", "段落打散默写 — 整段还原", BlancallMode.REVERSE),
             ModeEntry("🎯", "自定义挖空", "用自己点选的挖空配置练题", custom = true)

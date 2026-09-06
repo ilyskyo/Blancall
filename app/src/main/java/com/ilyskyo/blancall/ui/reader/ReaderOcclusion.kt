@@ -36,9 +36,9 @@ data class OcclusionParams(
     val enabled: Boolean,
     /**
      * 遮挡粒度（三种均为本地算法，控制"遮成什么大小"而非"遮多遮少"）：
-     * - "short"=短遮挡：字词级，每从句只遮最难的一两个汉字（独立小遮块）
-     * - "long" =长遮挡：整句级，把每个从句/整句作为一整块遮住（句子与其中很多字都被盖住）
-     * - "mixed"=混合遮挡：逐句用稳定的伪随机在「整句长遮」与「字词短遮」之间二选一（一会长一会短）
+     * - "short"=短遮挡：字词级，每分句只遮最难的一两个汉字（独立小遮块）
+     * - "long" =长遮挡：复句级，把每个分句/复句作为一整块遮住（句子与其中很多字都被盖住）
+     * - "mixed"=混合遮挡：逐句用稳定的伪随机在「复句长遮」与「字词短遮」之间二选一（一会长一会短）
      */
     val mode: String = "long",
     val onToggleControls: () -> Unit = {}
@@ -46,9 +46,9 @@ data class OcclusionParams(
 
 /**
  * 本地遮挡算法（双版本可用，无联网）：
- * - 短遮挡：按逗号/句号切从句，在每个从句里挑最难的一两个汉字作为小遮块。
- * - 长遮挡：把每个从句整段作为一整块遮住（盖住句子及其中很多字）。
- * - 混合遮挡：逐句用稳定的伪随机在「整句长遮」与「字词短遮」之间二选一。
+ * - 短遮挡：按逗号/句号切分句，在每个分句里挑最难的一两个汉字作为小遮块。
+ * - 长遮挡：把每个分句整段作为一整块遮住（盖住句子及其中很多字）。
+ * - 混合遮挡：逐句用稳定的伪随机在「复句长遮」与「字词短遮」之间二选一。
  * 返回在 [text] 上的半开区间 [start, end)。
  */
 object ReaderOcclusion {
@@ -90,7 +90,7 @@ object ReaderOcclusion {
         return res
     }
 
-    /** 短遮挡（字词级）每从句选取的最难字数量上限与难度阈值 */
+    /** 短遮挡（字词级）每分句选取的最难字数量上限与难度阈值 */
     private const val SHORT_MAX_CHARS = 3
     private const val SHORT_THRESHOLD = 0.35f
 
@@ -119,7 +119,7 @@ object ReaderOcclusion {
     }
 
     /**
-     * 混合遮挡的稳定伪随机：基于从句起点与全文长度得出，重组不变，
+     * 混合遮挡的稳定伪随机：基于分句起点与全文长度得出，重组不变，
      * 但长短交错自然（不严格按序号交替），约 50/50。
      */
     private fun mixedUseLong(clauseStart: Int, textLen: Int): Boolean {
@@ -128,7 +128,7 @@ object ReaderOcclusion {
         return (h and 1L) == 0L
     }
 
-    /** 将段落切成若干「从句 [s, e)」（e 含句末标点），三种模式复用 */
+    /** 将段落切成若干「分句 [s, e)」（e 含句末标点），三种模式复用 */
     private fun clausesOf(para: String): List<Pair<Int, Int>> {
         val res = mutableListOf<Pair<Int, Int>>()
         var start = 0

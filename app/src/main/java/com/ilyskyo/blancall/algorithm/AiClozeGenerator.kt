@@ -119,12 +119,12 @@ object AiClozeGenerator {
         return sb.toString()
     }
 
-    /** 挖空请求的句子/从句清单上限（字符）：防止超长文章把请求体撑爆被服务端断开 */
+    /** 挖空请求的句子/分句清单上限（字符）：防止超长文章把请求体撑爆被服务端断开 */
     private const val MAX_NUMBERED_LIST_CHARS = 12_000
 
     /**
      * 以 [idx] text 格式把清单追加进请求体，累计超过 [MAX_NUMBERED_LIST_CHARS] 时截断。
-     * 截断只会让 AI 少看到部分句子/从句（本地兜底补齐挖空），不影响原文防篡改。
+     * 截断只会让 AI 少看到部分句子/分句（本地兜底补齐挖空），不影响原文防篡改。
      */
     private fun appendNumberedList(sb: StringBuilder, items: List<String>) {
         var used = 0
@@ -177,8 +177,8 @@ object AiClozeGenerator {
     data class WordRange(val sentence: Int, val start: Int, val end: Int)
 
     /**
-     * 为"反向默写"模式构建用户请求：AI 对每个从句返回恰好 1 个挖空坐标。
-     * 反向默写语义：每个从句都挖 1 处作为线索，难度控制挖空跨度（字数）。
+     * 为"反向默写"模式构建用户请求：AI 对每个分句返回恰好 1 个挖空坐标。
+     * 反向默写语义：每个分句都挖 1 处作为线索，难度控制挖空跨度（字数）。
      */
     fun buildDictationRequest(
         content: String,
@@ -190,20 +190,20 @@ object AiClozeGenerator {
         val targetLen = dictationBlankLength(difficulty)
 
         val sb = StringBuilder()
-        sb.append("难度：$difficulty（反向默写要点：每个从句恰好挖 1 处，挖掉 $targetLen 个中文字符，或一个英文单词）。\n")
+        sb.append("难度：$difficulty（反向默写要点：每个分句恰好挖 1 处，挖掉 $targetLen 个中文字符，或一个英文单词）。\n")
         sb.append(strategyHint(strategy)).append('\n')
         if (customInput.isNotBlank()) {
             // 仅把自定义范围/空数作为软提示；无关内容 AI 应自行忽略
             sb.append("用户附加要求（可作为参考，若与本任务无关请忽略）：$customInput\n")
         }
-        sb.append("请返回 JSON 数组，元素形如 {\"sentence\": 从句编号(从0开始), \"start\": 起始字符下标, \"end\": 结束下标(不含)}，start/end 是句内下标。每一个从句都要恰好有一个元素。不要重叠，只输出数组。从句清单如下：\n")
+        sb.append("请返回 JSON 数组，元素形如 {\"sentence\": 分句编号(从0开始), \"start\": 起始字符下标, \"end\": 结束下标(不含)}，start/end 是句内下标。每一个分句都要恰好有一个元素。不要重叠，只输出数组。分句清单如下：\n")
         appendNumberedList(sb, clauses)
         return sb.toString()
     }
 
     /**
-     * 反向默写结果构造：按 AI 坐标在从句上挖空（无坐标的从句走本地兜底），
-     * 再打乱顺序作为默写线索——原文从句顺序与内容始终来自本地 [clauses]，AI 无法篡改。
+     * 反向默写结果构造：按 AI 坐标在分句上挖空（无坐标的分句走本地兜底），
+     * 再打乱顺序作为默写线索——原文分句顺序与内容始终来自本地 [clauses]，AI 无法篡改。
      */
     fun buildDictationResult(
         clauses: List<String>,
@@ -271,7 +271,7 @@ object AiClozeGenerator {
     //  软件侧：按坐标在原文上挖空 → 复用现有 result 结构
     // ════════════════════════════════════════════════
 
-    /** 句子挖空：按句子编号整句挖空，id 为局部 index（用于判分正确档位）。 */
+    /** 句子挖空：按句子编号复句挖空，id 为局部 index（用于判分正确档位）。 */
     fun buildSentenceResult(
         sentences: List<String>,
         blankSentenceIndices: Set<Int>
