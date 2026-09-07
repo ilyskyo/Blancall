@@ -35,6 +35,9 @@ Blancall 使用了以下第三方开源组件。本项目自身以 MIT 许可证
             Backdrop / CanvasBackdrop 方案（仅思路借鉴，未复制其源代码）。
    - 许可证：Apache License 2.0
    - 版权：Copyright 2025 Kyant
+   - 核验情况：本项目未包含该库的任何源码，也未将其作为编译依赖（全仓库无 com.kyant 引用）；
+             LiquidBackdropCanvas 为本项目自研实现（Android FrameLayout + Canvas/RadialGradient），
+             与上游 CanvasBackdrop（Compose Backdrop 接口实现）实现路径不同，仅思路对应。
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
