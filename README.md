@@ -89,6 +89,8 @@ git clone https://github.com/ilyskyo/Blancall.git
 - **AndroidLiquidGlassView**（QmDeve），遵循 **MIT License** 协议
   开源仓库：https://github.com/QmDeve/AndroidLiquidGlassView
 
+上述组件的完整许可文本、版权声明及修改情况说明见仓库根目录 [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES) 文件。
+
 ## 免责声明
 
 本软件按“现状”提供，不提供任何明示或暗示的担保。作者不对使用本代码造成的任何数据丢失或业务中断承担责任。
