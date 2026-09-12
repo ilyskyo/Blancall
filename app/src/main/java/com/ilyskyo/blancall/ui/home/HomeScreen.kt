@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
@@ -63,6 +65,8 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
+import com.ilyskyo.blancall.data.repository.HomeLayoutStore
+import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
@@ -589,167 +593,182 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(18.dp))
 
-            // ── 今日待复习卡片 ──
-            if (dueArticles.isNotEmpty()) {
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    // 清新马卡龙：樱花粉淡彩卡面 + 同族柔和点缀
-                    containerColor = Macaron.review().fill
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(8.dp)
-                                    .background(Macaron.review().accent, RoundedCornerShape(50))
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "要复习的任务（${dueArticles.size}篇）",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        // 全部待复习文章直接列出，无需跳转文章列表
-                        dueArticles.forEach { article ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { 
-                                        pendingPracticeArticleId = article.id
-                                        showModePicker = true
-                                    }
-                                    .onGloballyPositioned { coords ->
-                                        if (article.id == pendingPracticeArticleId) {
-                                            val pos = coords.positionInWindow()
-                                            practiceButtonRect = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
-                                        }
-                                    }
-                                    .padding(vertical = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        article.title,
-                                        // 与「继续练习」一致：文章名用楷体（Serif）
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    // 作者放标题下方的副行，避免与右侧「复习」动作挤成一行（曾误读成"苏洵复习"）
-                                    if (article.author.isNotBlank()) {
-                                        Text(
-                                            article.author.trim(),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                                Text(
-                                    "复习",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Macaron.review().accent
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
+            // ── 首页卡片画布：网格布局，支持拖动换位 / 拉伸缩放 / 大头针固定 / 长按进入编辑态 ──
+            val homeLayoutStore = remember { HomeLayoutStore.getInstance(context.filesDir) }
+            var homeCards by remember { mutableStateOf(homeLayoutStore.getCards()) }
+            var cardEditMode by remember { mutableStateOf(false) }
+            var showAddCardSheet by remember { mutableStateOf(false) }
+            val homeScope = rememberCoroutineScope()
+            fun persistHomeCards(newCards: List<HomeLayoutStore.Card>) {
+                homeCards = newCards
+                homeScope.launch { withContext(Dispatchers.IO) { homeLayoutStore.saveCards(newCards) } }
             }
 
-            // ── 继续练习卡片：恢复上次未完成的练习进度 ──
-            if (resumables.isNotEmpty()) {
-                val articleMap = remember(articles) { articles.associateBy { it.id } }
-                // 标题最大宽度限制：不超过屏幕宽度的 2/3，超出以省略号截断
-                val maxTitleWidth = (LocalConfiguration.current.screenWidthDp * 2 / 3).dp
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    // 清新马卡龙：薄荷绿淡彩卡面 + 同族柔和点缀
-                    containerColor = Macaron.continueP().fill
-                ) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(8.dp)
-                                    .background(Macaron.continueP().accent, RoundedCornerShape(50))
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "待继续完成（${resumables.size}）",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+            HomeCardCanvas(
+                cards = homeCards,
+                editMode = cardEditMode,
+                onCardsChange = { persistHomeCards(it) },
+                onDeleteCard = { card -> persistHomeCards(homeCards.filterNot { it.id == card.id }) },
+                onPinToggle = { card, row, col ->
+                    persistHomeCards(
+                        homeCards.map { c ->
+                            when {
+                                c.id != card.id -> c
+                                c.pinned -> c.copy(pinned = false, lockRow = -1, lockCol = -1)
+                                else -> c.copy(pinned = true, lockRow = row, lockCol = col)
+                            }
                         }
-                        Spacer(Modifier.height(2.dp))
-                        // 全部未完成练习都展示（首页可滚动，不受篇幅限制）
-                        resumables.forEach { item ->
-                            val art = articleMap[item.articleId] ?: return@forEach
-                            val modeLabel = when (item.mode) {
-                                "SENTENCE" -> "句子挖空"
-                                "WORD" -> "字词挖空"
-                                "REVERSE" -> "反向默写"
-                                else -> "练习"
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        navController.navigate("practice/${item.articleId}?resume=true")
-                                    }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        art.title,
-                                        // 文章名用宋体（Serif），与全局标题风格一致；宽度超限时省略号截断
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = maxTitleWidth)
-                                    )
-                                    Text(
-                                        buildString {
-                                            if (art.author.isNotBlank()) append(art.author.trim()).append(" · ")
-                                            append(modeLabel).append(" · 剩余 ")
-                                            append(item.total - item.answered).append("/").append(item.total)
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
-                                    )
+                    )
+                },
+                onEditConfig = { card ->
+                    homeScope.launch {
+                        when (card.type) {
+                            HomeLayoutStore.CardType.CUSTOM_CLOZE -> {
+                                val aid = withContext(Dispatchers.IO) {
+                                    findClozeConfigArticle(context.filesDir, card.refId)
                                 }
-                                // 右缘与「复习」对齐：去掉额外 end 留白与下移，使两卡右侧按钮同轴对称
-                                Text(
-                                    "继续",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Macaron.continueP().accent,
-                                    modifier = Modifier
-                                        .padding(start = 8.dp)
-                                )
+                                if (aid != null) {
+                                    navController.navigate("custom_cloze_edit/$aid?configId=${card.refId}")
+                                }
                             }
+                            HomeLayoutStore.CardType.CUSTOM_MASK -> {
+                                val aid = withContext(Dispatchers.IO) {
+                                    findMaskConfigArticle(context.filesDir, card.refId)
+                                }
+                                if (aid != null) {
+                                    withContext(Dispatchers.IO) {
+                                        MaskConfigStore.getInstance(context.filesDir).setSelected(aid, card.refId)
+                                        AppPrefs.readingOcclusionCustomConfigId = card.refId
+                                        AppPrefs.readingOcclusionMode = "custom"
+                                        AppPrefs.readingOcclusionEnabled = true
+                                    }
+                                    navController.navigate("reader/$aid")
+                                }
+                            }
+                            else -> Unit
                         }
                     }
+                },
+                onAddCard = { showAddCardSheet = true },
+                modifier = Modifier.fillMaxWidth(),
+                cardContent = { card ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                                onLongClick = { cardEditMode = true }
+                            )
+                    ) {
+                        HomeCardContent(
+                            card = card,
+                            articles = articles,
+                            dueArticles = dueArticles,
+                            resumables = resumables,
+                            recentArticles = recentArticles,
+                            dateFormat = dateFormat,
+                            anchorArticleId = pendingPracticeArticleId,
+                            onAnchorMeasured = { id, rect ->
+                                pendingPracticeArticleId = id
+                                practiceButtonRect = rect
+                            },
+                            onPracticeArticle = { id ->
+                                pendingPracticeArticleId = id
+                                showModePicker = true
+                            },
+                            onResumePractice = { item ->
+                                navController.navigate("practice/${item.articleId}?resume=true")
+                            },
+                            onOpenArticle = { article ->
+                                navController.navigate("reader/${article.id}")
+                            },
+                            onRemoveFromHome = { article -> hideFromHomeTarget = article },
+                            onViewAllArticles = { navController.navigateToTab("list") },
+                            onAddArticle = { navController.navigate("import") },
+                            onOpenClozeConfig = { articleId, configId ->
+                                navController.navigate("practice/$articleId?configId=$configId")
+                            },
+                            onOpenMaskConfig = { articleId, _ ->
+                                navController.navigate("reader/$articleId")
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
-                Spacer(Modifier.height(14.dp))
+            )
+            if (cardEditMode) {
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    onClick = { cardEditMode = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("完成", style = MaterialTheme.typography.bodyMedium)
+                }
             }
+            Spacer(Modifier.height(14.dp))
+
+            // ── 添加卡片：由画布顶部「+」唤起，列出未加入的系统卡与全部自定义配置 ──
+            if (showAddCardSheet) {
+                val systemAddable = listOf(
+                    Triple(HomeLayoutStore.CardType.DUE, "待复习", "今日需要复习的文章"),
+                    Triple(HomeLayoutStore.CardType.CONTINUE, "继续做", "未完成的练习进度"),
+                    Triple(HomeLayoutStore.CardType.RECENT, "最近文章", "最近打开过的文章"),
+                    Triple(HomeLayoutStore.CardType.ADD_ARTICLE, "添加文章", "导入新文章的入口")
+                ).filter { (t, _, _) -> homeCards.none { it.type == t } }
+                val customAddable by produceState<List<HomeLayoutStore.Card>>(emptyList(), homeCards) {
+                    value = withContext(Dispatchers.IO) {
+                        collectAddableCustomCards(context.filesDir, homeCards.map { it.id }.toSet())
+                    }
+                }
+                BlancallAlertDialog(
+                    onDismissRequest = { showAddCardSheet = false },
+                    title = { Text("添加卡片") },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 360.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            systemAddable.forEach { (type, label, desc) ->
+                                HomeAddCardRow(label = label, desc = desc) {
+                                    val cardId = when (type) {
+                                        HomeLayoutStore.CardType.DUE -> HomeLayoutStore.CARD_ID_DUE
+                                        HomeLayoutStore.CardType.CONTINUE -> HomeLayoutStore.CARD_ID_CONTINUE
+                                        HomeLayoutStore.CardType.RECENT -> HomeLayoutStore.CARD_ID_RECENT
+                                        else -> HomeLayoutStore.CARD_ID_ADD
+                                    }
+                                    persistHomeCards(homeCards + HomeLayoutStore.Card(cardId, type))
+                                }
+                            }
+                            if (customAddable.isNotEmpty()) {
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    "自定义配置",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                customAddable.forEach { c ->
+                                    HomeAddCardRow(
+                                        label = c.title.ifBlank { "自定义配置" },
+                                        desc = if (c.type == HomeLayoutStore.CardType.CUSTOM_CLOZE)
+                                            "自定义挖空" else "自定义遮挡"
+                                    ) {
+                                        persistHomeCards(homeCards + c)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showAddCardSheet = false }) { Text("完成") }
+                    }
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+
 
             // ── 全局统计入口：用 remember(allRecords) 包裹，避免每次重组重算 ──
             val (totalPractices, totalCorrect, totalBlanks, overallRate) = remember(allRecords) {
@@ -813,148 +832,6 @@ fun HomeScreen(
                 Spacer(Modifier.height(14.dp))
             }
 
-            // ── 最近文章 ──
-            if (recentArticles.isEmpty()) {
-                // 空状态：居中引导（首页主体为滚动容器，weight 不生效，用固定高度模拟居中，与文章列表页空态同风格）
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(390.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        AppIcon(
-                            kind = AppIconKind.Inbox,
-                            modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "还没有文章",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "点击右上角「添加」导入第一篇",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = { navController.navigate("import") },
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("导入第一篇文章")
-                        }
-                    }
-                }
-            } else {
-                Text(
-                    "最近使用",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
-
-                val isWide = LocalConfiguration.current.screenWidthDp >= 600
-                // 页面可滚动：底部预留左下角按钮组高度（两个按钮 + 间距 + 边距），
-                // 保证滚动到底部时按钮不遮挡最后一张卡片；文章数按屏幕高度分档 3/4/5
-                val screenHeightDp = LocalConfiguration.current.screenHeightDp
-                val maxRecentItems = when {
-                    screenHeightDp >= 1000 -> 5
-                    screenHeightDp >= 820 -> 4
-                    else -> 3
-                }
-                val visibleRecent = recentArticles.take(maxRecentItems)
-
-                if (isWide) {
-                    // 两列固定布局（每行 2 张），不可滚动，底部预留按钮组空间
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 120.dp)
-                    ) {
-                        visibleRecent.chunked(2).forEach { rowArticles ->
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                rowArticles.forEach { article ->
-                                    val index = visibleRecent.indexOf(article)
-                                    AnimatedVisibility(
-                                        visible = true,
-                                        enter = listItemEnter(index),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        HomeArticleCard(
-                                            article = article,
-                                            dateFormat = dateFormat,
-                                            onClick = { navController.navigate("reader/${article.id}") },
-                                            onLongClick = { hideFromHomeTarget = article },
-                                            onPractice = {
-                                                pendingPracticeArticleId = article.id
-                                                showModePicker = true
-                                            },
-                                            practiceModifier = if (article.id == pendingPracticeArticleId) Modifier.onGloballyPositioned { coords ->
-                                                val pos = coords.positionInWindow()
-                                                practiceButtonRect = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
-                                            } else Modifier
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        if (recentArticles.size > maxRecentItems) {
-                            TextButton(
-                                onClick = { navController.navigateToTab("list") },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("查看全部 (${recentArticles.size} 篇)")
-                            }
-                        }
-                    }
-                } else {
-                    // 单列固定布局，不可滚动，底部预留按钮组空间
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 120.dp)
-                    ) {
-                        visibleRecent.forEach { article ->
-                            val index = visibleRecent.indexOf(article)
-                            AnimatedVisibility(
-                                visible = true,
-                                enter = listItemEnter(index)
-                            ) {
-                                HomeArticleCard(
-                                    article = article,
-                                    dateFormat = dateFormat,
-                                    onClick = { navController.navigate("reader/${article.id}") },
-                                    onLongClick = { hideFromHomeTarget = article },
-                                    onPractice = {
-                                        pendingPracticeArticleId = article.id
-                                        showModePicker = true
-                                    },
-                                    practiceModifier = if (article.id == pendingPracticeArticleId) Modifier.onGloballyPositioned { coords ->
-                                        val pos = coords.positionInWindow()
-                                        practiceButtonRect = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
-                                    } else Modifier
-                                )
-                            }
-                        }
-                        if (recentArticles.size > maxRecentItems) {
-                            TextButton(
-                                onClick = { navController.navigateToTab("list") },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("查看全部 (${recentArticles.size} 篇)")
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -1219,3 +1096,126 @@ private data class HomeStats(
     val totalBlanks: Int,
     val overallRate: Float
 )
+
+// ── 首页卡片系统辅助 ──
+
+/** 「添加卡片」弹窗里的一行可选项 */
+@Composable
+private fun HomeAddCardRow(label: String, desc: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                desc,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            "添加",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+/** 从 custom_cloze.json 反查某个配置属于哪篇文章（失败返回 null） */
+private fun findClozeConfigArticle(filesDir: java.io.File, configId: Long): Long? = runCatching {
+    val f = java.io.File(filesDir, "custom_cloze.json")
+    if (!f.exists()) return@runCatching null
+    val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching null
+    arts.keys().forEach { key ->
+        val aid = key.toLongOrNull()
+        val arr = arts.optJSONArray(key)
+        if (aid != null && arr != null) {
+            for (i in 0 until arr.length()) {
+                if (arr.optJSONObject(i)?.optLong("id") == configId) return@runCatching aid
+            }
+        }
+    }
+    null
+}.getOrNull()
+
+/** 从 mask_config.json 反查某个遮挡配置属于哪篇文章（失败返回 null） */
+private fun findMaskConfigArticle(filesDir: java.io.File, configId: Long): Long? = runCatching {
+    val f = java.io.File(filesDir, "mask_config.json")
+    if (!f.exists()) return@runCatching null
+    val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching null
+    arts.keys().forEach { key ->
+        val aid = key.toLongOrNull()
+        val arr = arts.optJSONArray(key)
+        if (aid != null && arr != null) {
+            for (i in 0 until arr.length()) {
+                if (arr.optJSONObject(i)?.optLong("id") == configId) return@runCatching aid
+            }
+        }
+    }
+    null
+}.getOrNull()
+
+/** 收集「尚未加入画布」的自定义挖空 / 遮挡卡片（供添加卡片弹窗使用） */
+private fun collectAddableCustomCards(filesDir: java.io.File, taken: Set<String>): List<HomeLayoutStore.Card> {
+    val out = mutableListOf<HomeLayoutStore.Card>()
+    // 自定义挖空
+    runCatching {
+        val f = java.io.File(filesDir, "custom_cloze.json")
+        if (!f.exists()) return@runCatching
+        val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching
+        arts.keys().forEach { key ->
+            val arr = arts.optJSONArray(key) ?: return@forEach
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val cid = o.optLong("id")
+                if (cid <= 0) continue
+                val id = HomeLayoutStore.clozeCardId(cid)
+                if (id in taken) continue
+                out += HomeLayoutStore.Card(
+                    id = id,
+                    type = HomeLayoutStore.CardType.CUSTOM_CLOZE,
+                    refId = cid,
+                    colSpan = 1,
+                    rowSpan = 1,
+                    title = o.optString("name", "自定义挖空")
+                )
+            }
+        }
+    }
+    // 自定义遮挡
+    runCatching {
+        val f = java.io.File(filesDir, "mask_config.json")
+        if (!f.exists()) return@runCatching
+        val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching
+        arts.keys().forEach { key ->
+            val arr = arts.optJSONArray(key) ?: return@forEach
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val cid = o.optLong("id")
+                if (cid <= 0) continue
+                val id = HomeLayoutStore.maskCardId(cid)
+                if (id in taken) continue
+                out += HomeLayoutStore.Card(
+                    id = id,
+                    type = HomeLayoutStore.CardType.CUSTOM_MASK,
+                    refId = cid,
+                    colSpan = 1,
+                    rowSpan = 1,
+                    title = o.optString("name", "自定义遮挡")
+                )
+            }
+        }
+    }
+    return out
+}

@@ -172,8 +172,8 @@ fun MaskConfigEditScreen(
     // 未保存改动标记：有改动时返回（含系统返回）先弹确认，防止误触丢失
     var dirty by rememberSaveable { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
-    // 新建默认名用（"自定义 N"），进页时读一次
-    var configCount by rememberSaveable { mutableStateOf(0) }
+    // 当前文章已有配置（用于默认命名去重与保存重名校验），进页时读一次
+    var existingConfigs by remember { mutableStateOf<List<MaskConfigStore.MaskConfig>>(emptyList()) }
     // 编辑已有配置时记住原 createdAt（保存时原样传回，防列表排序跳变）
     var savedCreatedAt by rememberSaveable { mutableStateOf(0L) }
     // 文章内容失配检测：配置锚定的内容指纹与当前文章不一致时警示
@@ -233,7 +233,7 @@ fun MaskConfigEditScreen(
 
     LaunchedEffect(article.id, configId) {
         val cfgs = withContext(Dispatchers.IO) { store.getConfigs(article.id) }
-        configCount = cfgs.size
+        existingConfigs = cfgs
         if (configId > 0 && !snapshotApplied) {
             cfgs.firstOrNull { it.id == configId }?.let { cfg ->
                 editingName = cfg.name
@@ -343,13 +343,31 @@ fun MaskConfigEditScreen(
         }
     }
 
+    /**
+     * 生成当前文章内不重复的默认配置名：解析已有「自定义 N」的最大编号取 max+1；
+     * 若该编号仍被占用（历史畸形数据）则继续递增跳过。
+     */
+    fun nextDefaultName(): String {
+        val used = existingConfigs.map { it.name.trim() }.toMutableSet()
+        val maxN = existingConfigs
+            .mapNotNull { Regex("^自定义\\s*(\\d+)$").find(it.name.trim())?.groupValues?.get(1)?.toIntOrNull() }
+            .maxOrNull() ?: 0
+        var n = maxN + 1
+        while (used.contains("自定义 $n")) n++
+        return "自定义 $n"
+    }
+
+    /** 名称是否与当前文章内其他配置重名（排除自身，trim 后全等比较；新建时 savedId<0 等价于查全部） */
+    fun isNameTaken(name: String, excludeId: Long): Boolean =
+        existingConfigs.any { it.id != excludeId && it.name.trim() == name }
+
     /** 保存入口：新配置弹命名框；编辑已有配置沿用原名单直接保存（与自定义挖空一致） */
     fun requestSave() {
         if (savedId > 0L && editingName.isNotBlank()) {
             doSave()
         } else {
             if (editingName.isBlank()) {
-                editingName = "自定义 " + (configCount + 1)
+                editingName = nextDefaultName()
             }
             showSaveDialog = true
         }
@@ -589,6 +607,13 @@ fun MaskConfigEditScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
+                    // 名称去重：trim 后与其他配置全等则提示并中止保存（不关弹窗，便于改名）
+                    val name = editingName.trim().ifBlank { nextDefaultName() }
+                    if (isNameTaken(name, savedId)) {
+                        Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    editingName = name
                     showSaveDialog = false
                     doSave { ok -> if (ok) onBack() }
                 }) { Text("保存") }

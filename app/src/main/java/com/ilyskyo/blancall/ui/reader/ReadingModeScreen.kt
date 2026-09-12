@@ -70,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
@@ -538,7 +540,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .pinchZoom { zoom ->
-                    AppPrefs.readingFont = (AppPrefs.readingFont * zoom).coerceIn(14f, 24f)
+                    AppPrefs.readingFont = (AppPrefs.readingFont * zoom).coerceIn(14f, 36f)
                 }
         )
 
@@ -778,34 +780,54 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     )
 
     // ── 遮挡自定义浮层：配置列表 / 编辑器（覆盖整个阅读界面，系统返回逐级退出）──
+    // 用 Dialog 承载：GlassModalBottomSheet 内部是 Material3 ModalBottomSheet（独立 Dialog window），
+    // 其 window 的销毁滞后于组合树的移除。点击「自定义」时 sheet 会被立即移出组合树，但它的窗口在
+    // 一小段时间内仍浮于 Activity 内容之上 —— Compose 内浮层用的 zIndex 只在同一 window 内比较层级，
+    // 压不过这个残留窗口，于是被遮挡并可能吞掉点击，表现为「点自定义后要再点一下才进得去」。
+    // 改为 Dialog 后本浮层也是独立 window，且创建时间晚于 sheet 的 Dialog，层级天然更高、立即显示。
     if (maskOverlay != null) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .zIndex(2f)
-                // 拦截全部点击：空区域不再穿透到正文（防止误触发正文控制条/揭块）
-                .pointerInput(Unit) { detectTapGestures { } }
+        Dialog(
+            // 系统返回键逐级退出：编辑器 → 列表 → 关闭。
+            // 走 Dialog 的 onDismissRequest（配合下方 dismissOnBackPress），而不是在 Dialog 内容里
+            // 注册 BackHandler：Compose Dialog 的返回键由 dialog 窗口自身处理（DialogWrapper 直接回调
+            // onDismissRequest），不经过 Activity 的 OnBackPressedDispatcher，BackHandler 并不可靠。
+            onDismissRequest = {
+                if (maskOverlay == "edit") maskOverlay = "list" else maskOverlay = null
+            },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,   // 允许铺满屏幕
+                dismissOnBackPress = true,          // 返回键逐级退出（见上方 onDismissRequest）
+                dismissOnClickOutside = false,      // 全屏不透明浮层：不允许点击外部关闭
+                decorFitsSystemWindows = false       // 沉浸式：内容自己处理 insets
+            )
         ) {
-            if (maskOverlay == "edit") {
-                MaskConfigEditScreen(
-                    article = article,
-                    configId = maskEditConfigId,
-                    onBack = { maskOverlay = "list" }
-                )
-            } else {
-                MaskConfigListScreen(
-                    articleId = article.id,
-                    onBack = { maskOverlay = null },
-                    onEdit = { id ->
-                        maskEditConfigId = id
-                        maskOverlay = "edit"
-                    },
-                    onNew = {
-                        maskEditConfigId = -1L
-                        maskOverlay = "edit"
-                    }
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    // 拦截全部点击：空区域不再穿透到正文（防止误触发正文控制条/揭块）
+                    .pointerInput(Unit) { detectTapGestures { } }
+            ) {
+                if (maskOverlay == "edit") {
+                    MaskConfigEditScreen(
+                        article = article,
+                        configId = maskEditConfigId,
+                        onBack = { maskOverlay = "list" }
+                    )
+                } else {
+                    MaskConfigListScreen(
+                        articleId = article.id,
+                        onBack = { maskOverlay = null },
+                        onEdit = { id ->
+                            maskEditConfigId = id
+                            maskOverlay = "edit"
+                        },
+                        onNew = {
+                            maskEditConfigId = -1L
+                            maskOverlay = "edit"
+                        }
+                    )
+                }
             }
         }
     }
@@ -1376,7 +1398,7 @@ private fun ReadingSettingsSheet(
             Slider(
                 value = fontPx,
                 onValueChange = onFontChange,
-                valueRange = 14f..24f,
+                valueRange = 14f..36f,
                 colors = SliderDefaults.colors(
                     thumbColor = accent,
                     activeTrackColor = accent
@@ -1744,32 +1766,37 @@ private fun ReadingSettingsSheet(
                                 )
                             )
                         }
-                        // 遮挡自定义入口：切到自定义遮挡粒度并进入配置列表（生效中高亮）
+                        // 遮挡自定义入口：与上方三个粒度 chip 完全同款（统一高度/容器色，选中同蓝底），
+                        // 切到自定义遮挡粒度并进入配置列表（生效中高亮）
                         val customActive = occlusionMode == "custom"
-                        Text(
-                            "自定义",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = when {
-                                customActive && isDark -> Color(0xFFB9CFF2)
-                                customActive -> accent
-                                isDark -> DarkText
-                                else -> PaperWhiteText
+                        FilterChip(
+                            selected = customActive,
+                            onClick = {
+                                // 选中自定义模式并挂上全屏浮层，随后**立即**移除面板组合。
+                                //
+                                // 不再等 sheetState.hide() 的动画回调：隐藏动画进行期间，模态窗口
+                                // 仍浮在主窗口之上 —— 既会挡住刚挂上的浮层，又可能残留一帧吞掉
+                                // 下一次点击，表现为「点自定义后停在阅读界面，要再点一下才进去」。
+                                // 浮层是覆盖全屏的不透明页面，直接切换没有观感损失。
+                                onOcclusionModeChange("custom")
+                                onOpenMaskConfig()
+                                onDismiss()
                             },
-                            fontWeight = if (customActive) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    // 选中自定义模式并挂上全屏浮层，随后**立即**移除面板组合。
-                                    //
-                                    // 不再等 sheetState.hide() 的动画回调：隐藏动画进行期间，模态窗口
-                                    // 仍浮在主窗口之上 —— 既会挡住刚挂上的浮层，又可能残留一帧吞掉
-                                    // 下一次点击，表现为「点自定义后停在阅读界面，要再点一下才进去」。
-                                    // 浮层是覆盖全屏的不透明页面，直接切换没有观感损失。
-                                    onOcclusionModeChange("custom")
-                                    onOpenMaskConfig()
-                                    onDismiss()
-                                }
-                                .padding(horizontal = 8.dp, vertical = 8.dp)
+                            label = { Text("自定义") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = when {
+                                    customActive && isDark -> Color(0x334B5563)
+                                    customActive -> accent.copy(alpha = 0.12f)
+                                    else -> Color.Transparent
+                                },
+                                labelColor = if (isDark) DarkText else PaperWhiteText,
+                                selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true, selected = customActive,
+                                borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
+                                selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                            )
                         )
                     }
                     // ── 挡片颜色：马卡龙淡色可选（不透明真正遮住，高度与字形一致）──

@@ -112,7 +112,8 @@ fun CustomClozeEditScreen(
     var savedId by rememberSaveable { mutableStateOf(if (configId > 0) configId else 0L) }
     var savedName by rememberSaveable { mutableStateOf("") }
     var savedCreatedAt by rememberSaveable { mutableStateOf(0L) }
-    var configCount by rememberSaveable { mutableStateOf(0) }
+    // 当前文章已有配置（用于默认命名去重与保存重名校验）
+    var existingConfigs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
     // 未保存改动：返回（含系统返回）先弹确认，防误触丢失
     var dirty by rememberSaveable { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
@@ -147,7 +148,7 @@ fun CustomClozeEditScreen(
         val sentences = SentenceSplitter.split(art.content)
         repeat(sentences.size) { levels.add(0) }
         val cfgs = withContext(Dispatchers.IO) { store.getConfigs(articleId) }
-        configCount = cfgs.size
+        existingConfigs = cfgs
         // 有快照 = 旋转/重建恢复：现场（可能含未保存编辑）比磁盘新，直接回放
         if (!snapshotApplied && editorSnapshot != null) {
             snapshotApplied = true
@@ -343,12 +344,30 @@ fun CustomClozeEditScreen(
         }
     }
 
+    /**
+     * 生成当前文章内不重复的默认配置名：解析已有「自定义 N」的最大编号取 max+1；
+     * 若该编号仍被占用（历史畸形数据）则继续递增跳过。
+     */
+    fun nextDefaultName(): String {
+        val used = existingConfigs.map { it.name.trim() }.toMutableSet()
+        val maxN = existingConfigs
+            .mapNotNull { Regex("^自定义\\s*(\\d+)$").find(it.name.trim())?.groupValues?.get(1)?.toIntOrNull() }
+            .maxOrNull() ?: 0
+        var n = maxN + 1
+        while (used.contains("自定义 $n")) n++
+        return "自定义 $n"
+    }
+
+    /** 名称是否与当前文章内其他配置重名（排除自身，trim 后全等比较） */
+    fun isNameTaken(name: String, excludeId: Long): Boolean =
+        existingConfigs.any { it.id != excludeId && it.name.trim() == name }
+
     /** 保存入口：编辑已有配置沿用原名直存（与遮挡编辑器一致）；新配置弹命名框 */
     fun requestSave() {
         if (savedId > 0L && savedName.isNotBlank()) {
             doSave()
         } else {
-            if (savedName.isBlank()) savedName = "自定义 " + (configCount + 1)
+            if (savedName.isBlank()) savedName = nextDefaultName()
             showSaveDialog = true
         }
     }
@@ -432,7 +451,7 @@ fun CustomClozeEditScreen(
                                 }
                             }
                         } else {
-                            if (savedName.isBlank()) savedName = "自定义 " + (configCount + 1)
+                            if (savedName.isBlank()) savedName = nextDefaultName()
                             showSaveDialog = true
                         }
                     },
@@ -600,6 +619,13 @@ fun CustomClozeEditScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
+                    // 名称去重：trim 后与其他配置全等则提示并中止保存（不关弹窗，便于改名）
+                    val name = savedName.trim().ifBlank { nextDefaultName() }
+                    if (isNameTaken(name, savedId)) {
+                        Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    savedName = name
                     showSaveDialog = false
                     doSave { ok ->
                         if (ok) {

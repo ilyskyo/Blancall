@@ -76,6 +76,9 @@ fun MaskConfigListScreen(
     val scope = rememberCoroutineScope()
     val store = remember { MaskConfigStore.getInstance(context.filesDir) }
     var configs by remember { mutableStateOf<List<MaskConfigStore.MaskConfig>>(emptyList()) }
+    // 首帧同步渲染时 configs 必为空，但数据是异步从磁盘读的；用 loading 占位，
+    // 避免加载完成前先闪一下「还没有遮挡配置」空态文案。
+    var loading by remember { mutableStateOf(true) }
     var selectedId by remember { mutableLongStateOf(-1L) }
     var articleTitle by remember { mutableStateOf("") }
 
@@ -92,6 +95,7 @@ fun MaskConfigListScreen(
             val sel = withContext(Dispatchers.IO) { store.getSelected(articleId) }
             configs = cfgs
             selectedId = sel
+            loading = false
         }
     }
 
@@ -159,7 +163,9 @@ fun MaskConfigListScreen(
             )
             Spacer(Modifier.height(12.dp))
 
-            if (configs.isEmpty()) {
+            if (loading) {
+                // 加载中：不渲染空态/列表，避免「还没有遮挡配置」空态文案一闪而过
+            } else if (configs.isEmpty()) {
                 Spacer(Modifier.height(24.dp))
                 Text(
                     "还没有遮挡配置\n点这里新建，直接在正文上标注要遮住的句子或字词",
@@ -275,12 +281,21 @@ fun MaskConfigListScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     val cfg = renameTarget ?: return@TextButton
-                    renameTarget = null
-                    if (renameText.isNotBlank()) {
+                    val newName = renameText.trim()
+                    if (newName.isNotBlank()) {
+                        // 重名校验：与同文章下其他配置（排除自身）trim 后全等则提示并中止保存
+                        val dup = configs.any { it.id != cfg.id && it.name.trim() == newName }
+                        if (dup) {
+                            Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                            return@TextButton
+                        }
+                        renameTarget = null
                         scope.launch {
-                            withContext(Dispatchers.IO) { store.saveConfig(articleId, cfg.copy(name = renameText.trim())) }
+                            withContext(Dispatchers.IO) { store.saveConfig(articleId, cfg.copy(name = newName)) }
                             reload()
                         }
+                    } else {
+                        renameTarget = null
                     }
                 }) { Text("保存") }
             },

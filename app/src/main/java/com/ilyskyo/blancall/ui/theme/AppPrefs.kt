@@ -143,7 +143,7 @@ object AppPrefs {
         _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
         _libraryDisclaimerSeenFlow.value = prefs.getStringSet("library_disclaimer_seen", emptySet())?.toSet() ?: emptySet()
         _pdfViewModeFlow.value = prefs.getString("pdf_view_mode", "text") ?: "text"
-        _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 24f)
+        _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 36f)
         _readingLineHeightFlow.value = prefs.getFloat("reading_line_height", 2.0f).coerceIn(1.4f, 2.4f)
         _readingBgModeFlow.value = prefs.getInt("reading_bg_mode", 0)
         _readingLayoutModeFlow.value = prefs.getInt("reading_layout_mode", 0).coerceIn(0, 1)
@@ -401,8 +401,8 @@ object AppPrefs {
         get() = if (::prefs.isInitialized) _readingFontFlow.value else 17f
         set(value) {
             if (::prefs.isInitialized) {
-                prefs.edit { putFloat("reading_font", value.coerceIn(14f, 24f)) }
-                _readingFontFlow.value = value.coerceIn(14f, 24f)
+                prefs.edit { putFloat("reading_font", value.coerceIn(14f, 36f)) }
+                _readingFontFlow.value = value.coerceIn(14f, 36f)
             }
         }
 

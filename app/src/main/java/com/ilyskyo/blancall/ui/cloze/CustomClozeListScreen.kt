@@ -279,12 +279,21 @@ fun CustomClozeListScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     val cfg = renameTarget ?: return@TextButton
-                    renameTarget = null
-                    if (renameText.isNotBlank()) {
+                    val newName = renameText.trim()
+                    if (newName.isNotBlank()) {
+                        // 重名校验：与同文章下其他配置（排除自身）trim 后全等则提示并中止保存
+                        val dup = configs.any { it.id != cfg.id && it.name.trim() == newName }
+                        if (dup) {
+                            Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                            return@TextButton
+                        }
+                        renameTarget = null
                         scope.launch {
-                            withContext(Dispatchers.IO) { store.saveConfig(articleId, cfg.copy(name = renameText.trim())) }
+                            withContext(Dispatchers.IO) { store.saveConfig(articleId, cfg.copy(name = newName)) }
                             reload()
                         }
+                    } else {
+                        renameTarget = null
                     }
                 }) { Text("保存") }
             },
