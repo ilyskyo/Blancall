@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,8 +64,13 @@ import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+
+/** PdfRenderer 非线程安全（同一时间只允许一个 openPage），所有页面渲染经此串行化 */
+private val pdfPageMutex = Mutex()
 
 /**
  * 内置 PDF 预览页：用系统 [PdfRenderer] 逐页渲染，支持在 app 内直接阅览 PDF
@@ -99,8 +105,23 @@ internal fun ZoomablePdfPage(
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     // 渲染级别：未放大 1x，放大到 >=2 时用 2 倍分辨率重渲染（文字仍清晰，不再发糊）
     val renderLevel = maxOf(1, kotlin.math.ceil(scale).toInt()).coerceAtMost(2)
-    val bitmap = remember(renderer, index, renderLevel) {
-        renderPdfPage(renderer, index, pageCount, 2f * renderLevel)
+    // 位图渲染切 IO 线程（2 倍分辨率渲染 + 大位图分配耗几十 ms，同步执行会卡滚动）
+    var bitmap by remember(renderer, index, renderLevel) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(renderer, index, renderLevel) {
+        bitmap = pdfPageMutex.withLock {
+            withContext(Dispatchers.IO) {
+                renderPdfPage(renderer, index, pageCount, 2f * renderLevel)
+            }
+        }
+    }
+    // 离开组合（列表滚出屏幕 / 退出预览页）时显式回收位图：
+    // 2 倍分辨率下单页位图可达数 MB，仅靠 GC 回收会让 88 页 PDF 滚动时峰值内存偏高。
+    // 只在离屏时回收（不在替换瞬间回收），避免出现「仍在绘制却被回收」的崩溃。
+    DisposableEffect(Unit) {
+        onDispose {
+            bitmap?.recycle()
+            bitmap = null
+        }
     }
     bitmap?.let { bmp ->
         Box(

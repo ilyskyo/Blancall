@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -196,7 +197,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                 } else {
                     // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是删除/编辑。
                     // 标题字号 = 右侧两行总高度（上下边缘与作者/字符数对齐）
-                    var metaHeightPx by remember { mutableStateOf(0) }
+                    var metaHeightPx by remember { mutableIntStateOf(0) }
                     val titleFontSize = if (metaHeightPx > 0) {
                         // 标题字号 ≈ 右侧两行总高的 80%：视觉上与两行高度接近但不过大，
                         // 且不把顶栏 Row 撑高（保证作者/字符数与按钮中心线对齐）
@@ -301,8 +302,11 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     Spacer(modifier = Modifier.height(32.dp))
 
                     val readingFontId by com.ilyskyo.blancall.ui.theme.AppPrefs.readingFontIdFlow.collectAsState()
-                    val readingFontFamily = remember(readingFontId) {
-                        com.ilyskyo.blancall.ui.reader.ReaderFonts.resolveFontFamily(context, readingFontId) ?: FontFamily.Default
+                    val readingFontWeight by com.ilyskyo.blancall.ui.theme.AppPrefs.readingFontWeightFlow.collectAsState()
+                    val readingFontFamily = remember(readingFontId, readingFontWeight) {
+                        com.ilyskyo.blancall.ui.reader.ReaderFonts.resolveFontFamily(
+                            context, readingFontId, readingFontWeight
+                        ) ?: FontFamily.Default
                     }
                     val autoIndentEnabled by AppPrefs.autoIndentEnabledFlow.collectAsState()
                     val paragraphs = remember(art.content) {

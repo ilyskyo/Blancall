@@ -202,7 +202,8 @@ private fun SearchField(
                     AppIcon(
                         kind = AppIconKind.Close,
                         modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        contentDescription = "清除搜索"
                     )
                 }
             }

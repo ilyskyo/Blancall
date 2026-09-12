@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.AmbientBackground
@@ -132,7 +133,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     // 模式选择弹窗
     var showModePicker by remember { mutableStateOf(false) }
-    var pendingPracticeArticleId by remember { mutableStateOf(0L) }
+    var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     var showExportDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

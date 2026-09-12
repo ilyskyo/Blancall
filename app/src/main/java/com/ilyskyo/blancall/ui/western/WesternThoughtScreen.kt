@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.ui.western
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -389,17 +390,23 @@ fun LibraryContentPage(
                         .clickable {
                             // 练习「当前正在看的那一页」——有章节则只取该节，否则取整篇；
                             // 先弹出模式选择选项卡，用户选定后再导入并进入对应练习（不默认模式）。
-                            val target = resolvePracticeTarget(context, currentPerson, currentSection)
-                            val text = extractContentBodyFromAssets(
-                                context,
-                                target.assetPath,
-                                if (target.isSection) currentSection else ""
-                            )
-                            if (text.isNotBlank()) {
-                                pendingPracticePerson = currentPerson
-                                pendingPracticeText = text
-                                pendingPracticeLabel = target.scopeLabel
-                                showPracticePicker = true
+                            // assets 读取 + HTML 解析切 IO 线程，避免点击回调阻塞主线程
+                            scope.launch {
+                                val (target, text) = withContext(Dispatchers.IO) {
+                                    val t = resolvePracticeTarget(context, currentPerson, currentSection)
+                                    val body = extractContentBodyFromAssets(
+                                        context,
+                                        t.assetPath,
+                                        if (t.isSection) currentSection else ""
+                                    )
+                                    t to body
+                                }
+                                if (text.isNotBlank()) {
+                                    pendingPracticePerson = currentPerson
+                                    pendingPracticeText = text
+                                    pendingPracticeLabel = target.scopeLabel
+                                    showPracticePicker = true
+                                }
                             }
                         },
                     shape = RoundedCornerShape(8.dp),
@@ -487,9 +494,12 @@ fun LibraryContentPage(
                             onClick = {
                                 showMenu = false
                                 if (currentPerson.isNotBlank()) {
-                                    val text = extractContentBodyFromAssets(context, "philo/${currentPerson}.html")
-                                    if (text.isNotBlank()) {
-                                        scope.launch {
+                                    scope.launch {
+                                        // HTML 抽取切 IO 线程，避免点击回调阻塞主线程
+                                        val text = withContext(Dispatchers.IO) {
+                                            extractContentBodyFromAssets(context, "philo/${currentPerson}.html")
+                                        }
+                                        if (text.isNotBlank()) {
                                             val articleId = importPhiloToBlancall(
                                                 context, currentPerson, text, currentPerson
                                             )
@@ -623,7 +633,15 @@ fun LibraryContentPage(
                         loadUrl("file:///android_asset/${lib.assetPath}")
                     }.also { webView = it }
                 },
-                update = {}
+                update = {},
+                onRelease = { wv ->
+                    // 离开素材库页时释放 WebView 的原生资源（渲染进程、历史、缓存）。
+                    // 旧实现只创建不销毁：反复进出素材库会持续累积 native 内存，长期可能 OOM。
+                    // 先摘离父容器再 destroy，避免 "destroy() while still attached" 警告。
+                    if (webView === wv) webView = null
+                    (wv.parent as? ViewGroup)?.removeView(wv)
+                    wv.destroy()
+                }
             )
 
             // 二级菜单已移除：下载 PDF / 全文导入背诵列表 直接在一级菜单执行

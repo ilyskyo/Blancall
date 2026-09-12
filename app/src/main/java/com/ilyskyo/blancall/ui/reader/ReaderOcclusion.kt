@@ -31,6 +31,17 @@ import com.ilyskyo.blancall.algorithm.DifficultyCalculator
 /** 阅读背诵遮挡的一个空（原文 [start, end) 区间，半开区间） */
 data class OcclusionSpan(val start: Int, val end: Int)
 
+/**
+ * 遮块矩形缓存（绘制阶段专用）。
+ *
+ * 用普通可变持有对象而非 Compose State：绘制中读写不触发重组，避免"绘制时修改状态"引发的
+ * 重组风暴。key 覆盖全部影响矩形的输入（layout、遮挡集合、已揭示集合），变化即整体重算。
+ */
+private class OcclusionRectsCache {
+    var key: Triple<TextLayoutResult, List<OcclusionSpan>, Set<Int>>? = null
+    var rects: Map<Int, List<Rect>> = emptyMap()
+}
+
 /** 遮挡渲染参数：由 [ReadingModeScreen] 组装后下发给正文渲染器 */
 data class OcclusionParams(
     val enabled: Boolean,
@@ -161,6 +172,68 @@ object ReaderOcclusion {
         return out.distinctBy { it.start }
     }
 
+    /**
+     * 段内「分句」区间（供遮挡自定义编辑器点句用）：
+     * 与长遮挡/混合遮挡同一切分口径（按逗号/句号等分句标点，区间含句末标点）。
+     * 返回段内半开区间 [start, end)。
+     */
+    fun clauseRanges(para: String): List<OcclusionSpan> =
+        clausesOf(para).map { (s, e) -> OcclusionSpan(s, e) }.filter { it.end > it.start }
+
+    /**
+     * 段内「编辑单元」区间（遮挡自定义编辑器拆词/拆字用）：
+     * - level 1：字词——连续汉字每 2 字一块（末尾余 1 字自成一块），英文单词整体
+     * - level >=2：单字——每个汉字一块，英文单词整体
+     * 标点（非中文非字母字符）始终并入前一个单元，避免单独的标点块。
+     * 返回段内半开区间 [start, end)。
+     */
+    fun editUnits(para: String, level: Int): List<OcclusionSpan> {
+        if (para.isEmpty()) return emptyList()
+        if (level <= 0) return listOf(OcclusionSpan(0, para.length))
+
+        val out = mutableListOf<OcclusionSpan>()
+        var i = 0
+        val n = para.length
+
+        fun isPunct(c: Char) = !isChinese(c) && !c.isLetter()
+
+        val chunk = if (level == 1) 2 else 1
+        while (i < n) {
+            val c = para[i]
+            when {
+                isChinese(c) -> {
+                    var runEnd = i
+                    while (runEnd < n && isChinese(para[runEnd])) runEnd++
+                    var s = i
+                    while (s < runEnd) {
+                        val e = minOf(s + chunk, runEnd)
+                        out.add(OcclusionSpan(s, e))
+                        s = e
+                    }
+                    i = runEnd
+                }
+                c.isLetter() -> {
+                    var runEnd = i
+                    while (runEnd < n && para[runEnd].isLetter() && !isChinese(para[runEnd])) runEnd++
+                    out.add(OcclusionSpan(i, runEnd))
+                    i = runEnd
+                }
+                else -> {
+                    i++
+                    while (i < n && isPunct(para[i])) i++
+                    // 标点并入前一个单元（前移其终点）
+                    if (out.isNotEmpty()) {
+                        val last = out.removeAt(out.size - 1)
+                        out.add(OcclusionSpan(last.start, i))
+                    } else if (i > 0) {
+                        out.add(OcclusionSpan(0, i))
+                    }
+                }
+            }
+        }
+        return out.filter { it.end > it.start }
+    }
+
     /** 整篇本地遮挡（返回在 [text] 上的全局区间） */
     fun localRanges(text: String, mode: String): List<OcclusionSpan> {
         val out = mutableListOf<OcclusionSpan>()
@@ -174,8 +247,8 @@ object ReaderOcclusion {
         ch in '\u4e00'..'\u9fff' || ch in '\u3400'..'\u4dbf'
 }
 
-/** 计算 [OcclusionSpan] 在 [layout] 中占用的逐行矩形（用于画遮块） */
-private fun rangeRects(layout: TextLayoutResult, start: Int, end: Int): List<Rect> {
+/** 计算 [OcclusionSpan] 在 [layout] 中占用的逐行矩形（用于画遮块）；遮挡编辑器复用 */
+internal fun rangeRects(layout: TextLayoutResult, start: Int, end: Int): List<Rect> {
     val len = layout.layoutInput.text.length
     if (start >= end || start < 0 || end > len) return emptyList()
     var line = layout.getLineForOffset(start)
@@ -227,28 +300,27 @@ fun OccludedParagraph(
     fontFamily: FontFamily,
     indent: Boolean,
     maskColor: Color,
-    onToggleControls: () -> Unit
+    onToggleControls: () -> Unit,
+    /** 逐块颜色覆盖（key = span.start）：自定义遮挡每块可用不同挡片颜色；缺省统一用 [maskColor] */
+    spanColors: Map<Int, Color> = emptyMap()
 ) {
     val revealedStarts = remember { mutableStateOf(setOf<Int>()) }
     // 挡片颜色用 State 包裹：drawWithContent 在绘制阶段读取 .value，
     // 切换颜色时 State 变化触发 invalidate → 实时重绘（普通闭包变量不会触发重绘）
     val maskColorState = rememberUpdatedState(maskColor)
-    // 普通可变容器（非 State）：onTextLayout 布局回调中同步填充，
-    // 同一帧的绘制阶段（drawBehind）即可读取——避免 State 写入导致的下一帧重组时延
-    val blockRects = remember { mutableListOf<Pair<OcclusionSpan, List<Rect>>>() }
+    val spanColorsState = rememberUpdatedState(spanColors)
+    // 遮挡集合用 State 包裹：绘制阶段与点按处理实时读取。遮挡集合变化（编辑配置回存、
+    // 遮挡模式切换）无需等待重新布局即可立即生效——避免"改了配置还画旧遮块"
+    val hiddenState = rememberUpdatedState(hidden)
+    val onToggleControlsState = rememberUpdatedState(onToggleControls)
+    val layoutState = remember { mutableStateOf<TextLayoutResult?>(null) }
     val density = LocalDensity.current
     // 圆角更大（8dp）：遮块呈圆润胶囊感，贴合字形（高度已按字形 top/bottom 对齐）
     val cornerRadiusPx = with(density) { 8.dp.toPx() }
-
-    // 按当前 layout 计算全部遮块矩形（含已揭示的——已揭示位置再点一下可重新遮上）
-    fun computeBlocks(l: TextLayoutResult) {
-        blockRects.clear()
-        for (sp in hidden) {
-            if (sp.end <= sp.start) continue
-            val rects = rangeRects(l, sp.start, sp.end)
-            if (rects.isNotEmpty()) blockRects.add(sp to rects)
-        }
-    }
+    // 遮块矩形缓存：长文上百个遮块时，逐块 rangeRects 会在每次重绘（滚动/点按/颜色切换）重算一遍。
+    // 用普通可变持有对象（非 State）：绘制阶段读写不会触发重组，避免"绘制中改 State"的隐患。
+    // 缓存键包含 layout + 遮挡集合 + 已揭示集合三个影响矩形的输入，任一变化即重算 —— 不会画旧遮块。
+    val rectsCache = remember { OcclusionRectsCache() }
 
     Text(
         text = text,
@@ -260,36 +332,52 @@ fun OccludedParagraph(
         modifier = Modifier
             .fillMaxWidth()
             .drawWithContent {
-                // 先画原文，再在其上画遮块——遮块在文字之上，才能真正不透明盖住内容
+                // 先画原文，再在其上画遮块——遮块在文字之上，才能真正不透明盖住内容。
                 drawContent()
-                blockRects.forEach { (span, rects) ->
-                    if (span.start !in revealedStarts.value) {
-                        rects.forEach { r ->
-                            drawRoundRect(
-                                color = maskColorState.value,
-                                topLeft = Offset(r.left, r.top),
-                                size = Size(r.width, r.height),
-                                cornerRadius = CornerRadius(cornerRadiusPx)
-                            )
-                        }
+                val l = layoutState.value ?: return@drawWithContent
+                val hidden = hiddenState.value
+                val revealed = revealedStarts.value
+                val key = Triple(l, hidden, revealed)
+                val rects = if (rectsCache.key == key) {
+                    rectsCache.rects
+                } else {
+                    val fresh = hidden
+                        .filter { it.end > it.start && it.start !in revealed }
+                        .associate { it.start to rangeRects(l, it.start, it.end) }
+                    rectsCache.key = key
+                    rectsCache.rects = fresh
+                    fresh
+                }
+                rects.forEach { (start, blockRects) ->
+                    val blockColor = spanColorsState.value[start] ?: maskColorState.value
+                    blockRects.forEach { r ->
+                        drawRoundRect(
+                            color = blockColor,
+                            topLeft = Offset(r.left, r.top),
+                            size = Size(r.width, r.height),
+                            cornerRadius = CornerRadius(cornerRadiusPx)
+                        )
                     }
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(text) {
                 detectTapGestures { pos ->
-                    val hit = blockRects.firstOrNull { (_, rects) -> rects.any { it.contains(pos) } }
+                    val l = layoutState.value ?: return@detectTapGestures
+                    val hit = hiddenState.value.firstOrNull { sp ->
+                        sp.end > sp.start && rangeRects(l, sp.start, sp.end).any { it.contains(pos) }
+                    }
                     when {
-                        hit == null -> onToggleControls()
-                        hit.first.start in revealedStarts.value ->
-                            revealedStarts.value = revealedStarts.value - hit.first.start // 再点一下遮回去
+                        hit == null -> onToggleControlsState.value()
+                        hit.start in revealedStarts.value ->
+                            revealedStarts.value = revealedStarts.value - hit.start // 再点一下遮回去
                         else ->
-                            revealedStarts.value = revealedStarts.value + hit.first.start // 点开揭示
+                            revealedStarts.value = revealedStarts.value + hit.start // 点开揭示
                     }
                 }
             },
         onTextLayout = { l ->
-            // 布局回调：同步计算遮块矩形，同一帧绘制即可用（零时延）
-            computeBlocks(l)
+            // 布局回调：仅记录 TextLayoutResult，绘制阶段据此实时计算遮块矩形
+            layoutState.value = l
         }
     )
 }

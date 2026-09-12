@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.Redo
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Celebration
 import androidx.compose.material.icons.outlined.Check
@@ -47,7 +49,9 @@ import androidx.compose.ui.unit.dp
 enum class AppIconKind {
     Logo, Add, Close, Edit, Inbox, Celebrate, ArrowForward, OpenInFull, Check,
     Home, Articles, Insights, MoreVert, SwapHoriz, TrackChanges, ViewAgenda, Pdf, Share, Library, ChevronRight,
-    SearchHint
+    SearchHint,
+    /** 撤销 / 重做（编辑器顶栏用；AutoMirrored 保证 RTL 下箭头方向正确） */
+    Undo, Redo
 }
 
 /** 将存储 key 解析为 [AppIconKind]（未知 / 空 → [AppIconKind.Logo]） */
@@ -73,12 +77,15 @@ fun iconKeyFromKind(kind: AppIconKind): String = kind.name.lowercase()
  * @param kind 图标种类
  * @param modifier 尺寸 / 布局修饰
  * @param tint 单色描边/填充色，默认取当前主题 `onSurface`
+ * @param contentDescription 无障碍内容描述。仅当该图标本身承载读屏用户必须知道的
+ *   独立信息（如独立按钮/可点击元素）时传入；纯装饰性或与旁边文字重复的图标保持 `null`。
  */
 @Composable
 fun AppIcon(
     kind: AppIconKind,
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.onSurface
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    contentDescription: String? = null
 ) {
     val image = when (kind) {
         AppIconKind.Add -> Icons.Outlined.Add
@@ -101,10 +108,12 @@ fun AppIcon(
         AppIconKind.Library -> Icons.Outlined.AutoStories
         AppIconKind.ChevronRight -> Icons.Outlined.ChevronRight
         AppIconKind.SearchHint -> Icons.Outlined.Search
+        AppIconKind.Undo -> Icons.AutoMirrored.Outlined.Undo
+        AppIconKind.Redo -> Icons.AutoMirrored.Outlined.Redo
         AppIconKind.Logo -> null
     }
     if (image != null) {
-        Icon(imageVector = image, contentDescription = null, tint = tint, modifier = modifier)
+        Icon(imageVector = image, contentDescription = contentDescription, tint = tint, modifier = modifier)
     } else {
         BlancallLogoIcon(modifier = modifier, tint = tint)
     }

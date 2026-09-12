@@ -15,6 +15,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,7 +75,7 @@ class TouchRevealState internal constructor() {
         internal set
 
     // 动画请求令牌：每次 expand/collapse 自增，作为 LaunchedEffect 的 key 重启动画协程
-    internal var token by mutableStateOf(0)
+    internal var token by mutableIntStateOf(0)
         private set
 
     /** 预测性返回手势正在拖动中（用于 graphicsLayer 判断走退出分支缩回圆圈） */

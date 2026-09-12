@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +48,7 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -64,6 +66,7 @@ fun CustomClozeListScreen(
     pick: Boolean = false
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val store = remember { CustomClozeStore.getInstance(context.filesDir) }
     var configs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
     var articleTitle by remember { mutableStateOf("") }
@@ -76,7 +79,11 @@ fun CustomClozeListScreen(
     var renameText by remember { mutableStateOf("") }
 
     fun reload() {
-        configs = store.getConfigs(articleId)
+        // 磁盘读放 IO 线程
+        scope.launch {
+            val cfgs = withContext(Dispatchers.IO) { store.getConfigs(articleId) }
+            configs = cfgs
+        }
     }
 
     LaunchedEffect(articleId) {
@@ -89,7 +96,7 @@ fun CustomClozeListScreen(
         } else {
             articleTitle = art.title
         }
-        configs = store.getConfigs(articleId)
+        configs = withContext(Dispatchers.IO) { store.getConfigs(articleId) }
     }
 
     Box(
@@ -153,9 +160,23 @@ fun CustomClozeListScreen(
             } else if (configs.isEmpty()) {
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    "还没有自定义配置\n点右上角「新建」创建第一套",
+                    "还没有自定义配置\n点这里创建第一套",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
+                        .combinedClickable(
+                            onClick = {
+                                if (pick) {
+                                    navController.navigate("custom_cloze_edit/$articleId?pick=true")
+                                } else {
+                                    navController.navigate("custom_cloze_edit/$articleId")
+                                }
+                            }
+                        )
+                        .padding(16.dp)
                 )
             } else {
                 LazyColumn(
@@ -258,11 +279,13 @@ fun CustomClozeListScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     val cfg = renameTarget ?: return@TextButton
-                    if (renameText.isNotBlank()) {
-                        store.saveConfig(articleId, cfg.copy(name = renameText.trim()))
-                        reload()
-                    }
                     renameTarget = null
+                    if (renameText.isNotBlank()) {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { store.saveConfig(articleId, cfg.copy(name = renameText.trim())) }
+                            reload()
+                        }
+                    }
                 }) { Text("保存") }
             },
             dismissButton = {
@@ -284,10 +307,13 @@ fun CustomClozeListScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
-                    store.deleteConfig(articleId, deleteTarget!!.id)
-                    reload()
-                    Toast.makeText(context, "已删除", Toast.LENGTH_SHORT).show()
+                    val target = deleteTarget ?: return@TextButton
                     deleteTarget = null
+                    scope.launch {
+                        withContext(Dispatchers.IO) { store.deleteConfig(articleId, target.id) }
+                        reload()
+                        Toast.makeText(context, "已删除", Toast.LENGTH_SHORT).show()
+                    }
                 }) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {

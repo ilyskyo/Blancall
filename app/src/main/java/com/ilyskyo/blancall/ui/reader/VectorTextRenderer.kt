@@ -70,11 +70,12 @@ fun TextContentReader(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        // 标题：居中、加粗、醒目
+        // 标题：居中、醒目
+        // 字重固定 SemiBold：设备楷体字库无 Bold 面，请求 Bold 会回退黑体（项目既定规范）
         Text(
             text = title,
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )

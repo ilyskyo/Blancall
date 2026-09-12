@@ -572,23 +572,26 @@ object BlancallGenerator {
         rangesBySentence: Map<Int, List<IntRange>>
     ): SentenceClozeResult {
         val sentences = SentenceSplitter.split(content)
-        // 规范化：越界过滤 + 相邻/重叠合并
-        val normalized = rangesBySentence.mapValues { (_, ranges) ->
-            ranges.let { rs ->
-                rs.map { r ->
-                    val len = sentences.getOrElse(r.first) { "" }.length
-                    val a = r.first.coerceIn(0, len)
-                    val b = (r.last + 1).coerceIn(a + 1, len)
-                    a until b
-                }.sortedBy { it.first }
-                    .fold(mutableListOf<IntRange>()) { acc, r ->
-                        val last = acc.lastOrNull()
-                        if (last != null && r.first <= last.last + 1) {
-                            acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
-                        } else acc.add(r)
-                        acc
-                    }
-            }
+        // 规范化：越界过滤 + 相邻/重叠合并。
+        // 注意：区间 first/last 是【句内字符偏移】，而句子索引是 map 的 key，两者不可混用。
+        // 历史 bug：用 r.first（句内偏移）去索引 sentences 取长度 —— 短文章会取到空串，
+        // 使 (r.last+1).coerceIn(a+1, 0) 抛出 "Cannot coerce to an empty range" 崩溃；
+        // 长文章则拿到别的句子长度做裁剪，导致挖空范围与用户所选不符（静默错位）。
+        val normalized = rangesBySentence.mapValues { (sentenceIndex, ranges) ->
+            val len = sentences.getOrElse(sentenceIndex) { "" }.length
+            if (len == 0) emptyList()          // 句子不存在：整组丢弃
+            else ranges.mapNotNull { r ->
+                val a = r.first.coerceIn(0, len - 1)
+                val b = (r.last + 1).coerceIn(a + 1, len)
+                if (b > a) a until b else null
+            }.sortedBy { it.first }
+                .fold(mutableListOf<IntRange>()) { acc, r ->
+                    val last = acc.lastOrNull()
+                    if (last != null && r.first <= last.last + 1) {
+                        acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
+                    } else acc.add(r)
+                    acc
+                }
         }.filterValues { it.isNotEmpty() }
 
         data class Sel(val sIdx: Int, val range: IntRange, val text: String)

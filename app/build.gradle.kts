@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 25
-        versionName = "6.3"
+        versionCode = 26
+        versionName = "6.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -83,11 +83,10 @@ android {
 
 // 第三方 LiquidGlass 库要求 compileSdk 37，本机 SDK 暂未安装 android-37 平台；
 // 跳过其 AAR 元数据编译检查（运行时所用 API 在 compileSdk 36 可用，此前构建验证正常）
-tasks.configureEach {
-    if (name.startsWith("check") && name.endsWith("AarMetadata")) {
-        enabled = false
-    }
-}
+// 仅精确放行 check*AarMetadata 任务：不能用 startsWith("check")，否则会命中聚合任务 check 本身，
+// 导致 ./gradlew check 被静默跳过（测试与 lint 不执行）。装 SDK 37 后可整体删除本段。
+tasks.matching { it.name == "checkDebugAarMetadata" || it.name == "checkReleaseAarMetadata" }
+    .configureEach { enabled = false }
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
@@ -105,9 +104,6 @@ dependencies {
 
     // Navigation Compose（已迁入版本目录）
     implementation(libs.androidx.navigation.compose)
-
-    // DataStore
-    implementation(libs.datastore.preferences)
 
     // ViewModel Compose
     implementation(libs.lifecycle.viewmodel.compose)

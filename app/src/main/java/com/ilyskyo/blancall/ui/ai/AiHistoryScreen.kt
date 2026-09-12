@@ -13,6 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -456,7 +458,12 @@ private fun HistorySessionCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .semantics { contentDescription = "删除" }
+                ) {
                     Text("🗑", fontSize = 14.sp)
                 }
             }
@@ -511,7 +518,12 @@ private fun AnalysisCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .semantics { contentDescription = "删除" }
+                ) {
                     Text("🗑", fontSize = 14.sp)
                 }
             }

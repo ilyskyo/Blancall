@@ -1041,11 +1041,11 @@ private fun TimePickerDialog(
                             singleLine = true,
                             placeholder = { Text("0-23", style = MaterialTheme.typography.bodySmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                            textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
                             shape = RoundedCornerShape(10.dp)
                         )
                     }
-                    Text(" : ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(" : ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("分", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1061,7 +1061,7 @@ private fun TimePickerDialog(
                             singleLine = true,
                             placeholder = { Text("0-59", style = MaterialTheme.typography.bodySmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                            textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
                             shape = RoundedCornerShape(10.dp)
                         )
                     }

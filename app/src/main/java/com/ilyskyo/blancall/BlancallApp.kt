@@ -4,6 +4,8 @@
 package com.ilyskyo.blancall
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
+import android.os.StrictMode
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.data.ai.AiConfigStore
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
@@ -30,10 +32,34 @@ class BlancallApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // 开发期主线程 IO / 资源泄漏检测：仅 debug 生效（penaltyLog 只打日志，不改变发布行为）
+        // 用 ApplicationInfo 标志判断而非 BuildConfig：AGP 8 默认不生成 BuildConfig，无需为此开启 buildConfig 特性
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            StrictMode.setThreadPolicy(
+                StrictMode.ThreadPolicy.Builder()
+                    .detectAll()
+                    .penaltyLog()
+                    .build()
+            )
+            StrictMode.setVmPolicy(
+                StrictMode.VmPolicy.Builder()
+                    .detectAll()
+                    .penaltyLog()
+                    .build()
+            )
+        }
+
         // 全局崩溃日志：写入 filesDir/crash.log，闪退后可从文件定位真实根因
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
                 val logFile = java.io.File(filesDir, "crash.log")
+                // 上限 256KB：崩溃日志无上限会随长期使用持续膨胀、白占用户存储。
+                // 超限时只保留最近一半内容（崩溃路径上读这点数据代价可接受）。
+                val maxBytes = 256 * 1024L
+                if (logFile.length() > maxBytes) {
+                    val tail = logFile.readText().takeLast((maxBytes / 2).toInt())
+                    logFile.writeText("(较早日志已截断)\n$tail")
+                }
                 logFile.appendText(
                     "\n=== ${System.currentTimeMillis()} ===\n线程: ${thread.name}\n" +
                         android.util.Log.getStackTraceString(throwable) + "\n"

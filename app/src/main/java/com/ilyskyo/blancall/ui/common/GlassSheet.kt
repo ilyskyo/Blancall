@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -38,6 +39,9 @@ fun GlassModalBottomSheet(
     shape: Shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     dragHandle: @Composable (() -> Unit)? = null,
     scrimColor: Color = Color.Black.copy(alpha = 0.32f),
+    // 可外部持有的 sheetState：调用方需要「程序化收起后再执行动作」时传入，
+    // 用 sheetState.hide() + invokeOnCompletion 替代直接移除组合（避免模态窗口滞留吞掉下一次点击）
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val isDark = isBlancallDark()
@@ -56,7 +60,7 @@ fun GlassModalBottomSheet(
         scrimColor = scrimColor,
         dragHandle = dragHandle,
         // 直接展开到内容高度；避免部分展开（半屏）时出现大片留白
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         content = {
             Box(modifier = Modifier.fillMaxWidth()) {
                 // backdrop 真实模糊层（API31+）：内嵌氛围空容器并施加玻璃模糊，低版本跳过。

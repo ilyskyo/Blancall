@@ -16,7 +16,7 @@ import com.ilyskyo.blancall.data.model.PracticeStatus
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.theme.ReminderFrequency
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -143,13 +143,10 @@ class ReminderWorker(
                 context.filesDir.resolve("records.json").absolutePath
             )
 
-            // 等待异步加载完成：records 非空即视为已加载（最多等待 2 秒，避免阻塞过久）
-            val deadline = System.currentTimeMillis() + 2000L
-            while (recordRepo.records.value.isEmpty() &&
-                System.currentTimeMillis() < deadline
-            ) {
-                delay(100L)
-            }
+            // 精确等待仓储加载完成（带 2 秒上限，避免异常情况卡住 Worker）。
+            // 旧实现用「records 是否为空」当加载信号轮询：对确实没有任何练习记录的用户，
+            // 每次提醒都会白等满 2 秒才继续。
+            withTimeoutOrNull(2000L) { recordRepo.awaitLoaded() }
 
             val allRecords = recordRepo.records.value
             if (allRecords.isEmpty()) return 0

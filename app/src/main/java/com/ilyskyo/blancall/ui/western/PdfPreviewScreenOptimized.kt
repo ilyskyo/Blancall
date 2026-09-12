@@ -112,31 +112,41 @@ fun PdfPreviewScreenOptimized(
     val pageNum = remember(asset) {
         Regex("p(\\d+)").find(asset)?.groupValues?.get(1)?.toIntOrNull()
     }
-    val pdfFile = remember(asset, pageNum) {
-        val direct = File(asset)
-        if (direct.exists()) direct
-        else if (pageNum != null && pageNum in 1..GAOKAO_PAGE_START.size) {
-            copyAssetToCache(context, "gaokao/gaokao_full.pdf")
-        } else {
-            copyAssetToCache(context, asset)
-        }
-    }
+    // 异步加载：assets 复制（完整 PDF 可达数 MB）+ txt 读取 + PdfRenderer 打开全部切 IO 线程，
+    // 避免进屏首帧在主线程同步做磁盘 IO 导致卡顿。加载中显示占位空白，失败才显示错误文案。
+    var pdfFile by remember(asset) { mutableStateOf<File?>(null) }
+    var textLoaded by remember(asset) { mutableStateOf<Triple<String, String, String>?>(null) }
+    var renderer by remember(asset) { mutableStateOf<PdfRenderer?>(null) }
+    var loadFailed by remember(asset) { mutableStateOf(false) }
+
     // 篇目起始页（完整 PDF 模式）；单篇 PDF / 普通 PDF 为 0
     val startPage = pageNum?.takeIf { it in 1..GAOKAO_PAGE_START.size }?.let { GAOKAO_PAGE_START[it - 1] } ?: 0
-
-    // 配套文字版（如有）：Pair(标题, 正文）
-    val textLoaded = remember(asset) {
-        readAssetTxt(context, asset.removeSuffix(".pdf") + ".txt")
-    }
     val displayTitle = title?.takeIf { it.isNotBlank() }
         ?: textLoaded?.first
         ?: asset.substringAfterLast("/")
 
-    // 渲染器
-    val renderer = remember(pdfFile) {
-        pdfFile?.let {
-            PdfRenderer(ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY))
+    LaunchedEffect(asset, pageNum) {
+        val (file, txt) = withContext(Dispatchers.IO) {
+            val direct = File(asset)
+            val f = if (direct.exists()) direct
+            else if (pageNum != null && pageNum in 1..GAOKAO_PAGE_START.size) {
+                copyAssetToCache(context, "gaokao/gaokao_full.pdf")
+            } else {
+                copyAssetToCache(context, asset)
+            }
+            val t = readAssetTxt(context, asset.removeSuffix(".pdf") + ".txt")
+            f to t
         }
+        textLoaded = txt
+        pdfFile = file
+        renderer = file?.let {
+            withContext(Dispatchers.IO) {
+                try {
+                    PdfRenderer(ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY))
+                } catch (_: Exception) { null }
+            }
+        }
+        loadFailed = file == null || renderer == null
     }
     DisposableEffect(renderer) { onDispose { renderer?.close() } }
 
@@ -148,9 +158,10 @@ fun PdfPreviewScreenOptimized(
     // 高考 60 篇已全部配置 pN.txt，且 gaokao_full.pdf 共 88 页、PDFBox 全文提取
     // 会耗尽 256MB 堆导致 OOM 闪退——有 txt 时必须直接跳过提取。
     LaunchedEffect(pdfFile) {
-        if (pdfFile != null && textLoaded == null) {
+        val pf = pdfFile
+        if (pf != null && textLoaded == null) {
             val extracted = withContext(Dispatchers.IO) {
-                textExtractor.extractText(context, pdfFile)
+                textExtractor.extractText(context, pf)
             }
             textPages = extracted
         }
@@ -242,20 +253,22 @@ fun PdfPreviewScreenOptimized(
                             onClick = {
                                 showMenu = false
                                 // 点完即导入：不弹模式选择、不强制进入练习（之后可在背诵列表中自行开始）
-                                val finalTitle = textLoaded?.first ?: displayTitle
-                                val finalAuthor = textLoaded?.second ?: ""
-                                val finalText = textLoaded?.third ?: textPages.joinToString("\n\n") { it.text }
-                                if (finalText.isNotBlank()) {
-                                    scope.launch {
+                                scope.launch {
+                                    val finalTitle = textLoaded?.first ?: displayTitle
+                                    val finalAuthor = textLoaded?.second ?: ""
+                                    // 无配套文字版时从提取文本拼接（可能很大），切 IO 线程
+                                    val finalText = textLoaded?.third
+                                        ?: withContext(Dispatchers.IO) { textPages.joinToString("\n\n") { it.text } }
+                                    if (finalText.isNotBlank()) {
                                         val articleId = importTextToBlancall(context, finalTitle, finalText, finalAuthor)
                                         Toast.makeText(
                                             context,
                                             if (articleId > 0) "已导入背诵列表" else "导入失败，请重试",
                                             Toast.LENGTH_SHORT
                                         ).show()
+                                    } else {
+                                        Toast.makeText(context, "内容为空，无法导入", Toast.LENGTH_SHORT).show()
                                     }
-                                } else {
-                                    Toast.makeText(context, "内容为空，无法导入", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
@@ -269,13 +282,16 @@ fun PdfPreviewScreenOptimized(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         )
 
-        if (renderer == null || pdfFile == null) {
+        if (loadFailed) {
             Text(
                 text = "无法打开该 PDF",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(40.dp)
             )
+        } else if (renderer == null || pdfFile == null) {
+            // 加载中：占位空白，避免错误提示闪烁、底部按钮跳位
+            Box(Modifier.weight(1f).fillMaxWidth())
         } else if (useVectorRendering && (textLoaded != null || textPages.isNotEmpty())) {
             // 文本模式：优先用配套纯文字版（排版最干净），否则用 PDF 提取文本
             val content = textLoaded?.third ?: textPages.joinToString("\n\n") { it.text }
@@ -289,15 +305,19 @@ fun PdfPreviewScreenOptimized(
             }
         } else {
             // 图片模式：原 PDF 渲染（完整 PDF 时定位到当前篇目起始页）
-            val listState = rememberLazyListState(initialFirstVisibleItemIndex = startPage)
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    userScrollEnabled = !isZoomed
-                ) {
-                    items(renderer.pageCount) { index ->
-                        ZoomablePdfPage(renderer, index, isZoomed, onZoomChanged = { isZoomed = it })
+            // 此分支 renderer 必非 null（上方条件已挡），取局部 val 以通过编译器 smart cast
+            val r = renderer
+            if (r != null) {
+                val listState = rememberLazyListState(initialFirstVisibleItemIndex = startPage)
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        userScrollEnabled = !isZoomed
+                    ) {
+                        items(r.pageCount) { index ->
+                            ZoomablePdfPage(r, index, isZoomed, onZoomChanged = { isZoomed = it })
+                        }
                     }
                 }
             }

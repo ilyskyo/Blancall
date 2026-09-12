@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    网络安全配置。
+
+    审计结论：本应用 targetSdk ≥ 28 且此前未声明本文件，平台默认已禁止明文（cleartext）流量，
+    所以「AI Key 以 http 明文出网」并不存在。本文件的目的是把这一姿态**显式化**，
+    并为「本机/局域网本地模型」（Ollama、LM Studio 等 http 端点）开出最小必要例外。
+
+    - base-config 维持禁止明文（与平台默认一致，不产生行为变化）
+    - 仅对回环地址与模拟器宿主放行 http；公网地址必须 https
+    - 注意：域名/IP 例外不支持网段通配，局域网 IP（如 192.168.x.x）无法在此放行，
+      需要局域网 http 的用户请使用 https 或改为本机地址
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">::1</domain>
+        <!-- Android 模拟器中指向宿主机的固定地址 -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

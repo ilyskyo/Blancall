@@ -3,24 +3,24 @@
 # ════════════════════════════════════════════════════════
 
 # ── 1. WorkManager Worker 需要无参构造（反射实例化）──
--keep class com.example.cloze.notification.ReminderWorker { <init>(...); }
+-keep class com.ilyskyo.blancall.notification.ReminderWorker { <init>(...); }
 
-# ── 2. 数据模型类（Gson/JSON 反射读写字段，避免被裁剪）──
-# Article / PracticeRecord / MistakeDetail / PracticeState / PracticeStatus
--keep class com.example.cloze.data.model.Article { *; }
--keep class com.example.cloze.data.model.PracticeRecord { *; }
--keep class com.example.cloze.data.model.MistakeDetail { *; }
--keep class com.example.cloze.data.model.PracticeState { *; }
--keep class com.example.cloze.data.model.PracticeStatus { *; }
--keep class com.example.cloze.data.model.PracticeStatus$* { *; }
+# ── 2. 数据模型类（字段经 org.json 手工读写；保留以防 R8 误裁字段/构造，见报告说明）──
+# Article / PracticeRecord / MistakeDetail / PracticeState / PracticeStatus（均为 data.model 顶层类，已核对存在）
+-keep class com.ilyskyo.blancall.data.model.Article { *; }
+-keep class com.ilyskyo.blancall.data.model.PracticeRecord { *; }
+-keep class com.ilyskyo.blancall.data.model.MistakeDetail { *; }
+-keep class com.ilyskyo.blancall.data.model.PracticeState { *; }
+-keep class com.ilyskyo.blancall.data.model.PracticeStatus { *; }
+-keep class com.ilyskyo.blancall.data.model.PracticeStatus$* { *; }
 
 # ── 3. FileProvider（系统组件反射调用）──
 -keep class androidx.core.content.FileProvider { *; }
 
-# ── 4. 算法 object（保险保留，避免优化破坏单例状态）──
--keep class com.example.cloze.algorithm.ClozeGenerator { *; }
--keep class com.example.cloze.algorithm.ClozeGenerator$* { *; }
--keep class com.example.cloze.algorithm.SentenceSplitter { *; }
+# ── 4. 算法 object（保险保留，避免优化破坏单例状态；ClozeGenerator 已重命名为 BlancallGenerator）──
+-keep class com.ilyskyo.blancall.algorithm.BlancallGenerator { *; }
+-keep class com.ilyskyo.blancall.algorithm.BlancallGenerator$* { *; }
+-keep class com.ilyskyo.blancall.algorithm.SentenceSplitter { *; }
 
 # ── 5. 保留 Kotlin metadata（反射 / 协程内省依赖）──
 -keepattributes *Annotation*, InnerClasses, EnclosingMethod, Signature, Exceptions

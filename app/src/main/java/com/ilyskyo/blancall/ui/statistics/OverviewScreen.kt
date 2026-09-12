@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.*
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.MarkdownText
@@ -152,7 +153,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 
     // 模式选择弹窗（即将遗忘 → 去练习）
     var showModePicker by remember { mutableStateOf(false) }
-    var pendingPracticeArticleId by remember { mutableStateOf(0L) }
+    var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
 
     // 当前复习模板

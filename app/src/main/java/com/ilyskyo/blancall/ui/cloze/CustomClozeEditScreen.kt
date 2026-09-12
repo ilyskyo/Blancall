@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.cloze
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -32,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +42,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
+import com.ilyskyo.blancall.algorithm.ClozeTokens
+import com.ilyskyo.blancall.algorithm.ContentFingerprint
+import com.ilyskyo.blancall.algorithm.RangeOps
 import com.ilyskyo.blancall.algorithm.SentenceSplitter
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
@@ -58,15 +65,22 @@ import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.ScrollProgressBadge
+import com.ilyskyo.blancall.ui.common.TopBarIconAction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 自定义挖空模板编辑页（v2：自定义即预览）。
  *
  * 顶部三枚模式 chips 选择这套配置的目标练习模式，编辑与预览实时切换为该模式的空样式：
  * - 📝 句子挖空：点选复句挖复句，选中处渲染为练习同款「[N] ＿＿＿＿」序号空
- * - 🔤 字词挖空：长按逐级炸碎（分句→字词→单字），点选区间，渲染高亮空框
+ * - 🔤 字词挖空：长按循环切换粒度（复句→分句→字词→单字→回到复句），点选区间，渲染高亮空框
  * - ✍️ 反向默写：点选句子加入默写（无炸），选中处渲染为分句卡片「N. 挖一词」
  *
  * 配置按文章保存多套（CustomClozeStore），blanks 记录「句索引 + 句内区间」，
@@ -81,6 +95,7 @@ fun CustomClozeEditScreen(
     pick: Boolean = false
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var article by remember { mutableStateOf<Article?>(null) }
     var notFound by remember { mutableStateOf(false) }
 
@@ -93,11 +108,32 @@ fun CustomClozeEditScreen(
     val levels = remember { mutableStateListOf<Int>() }
     // 每句的选中区间（句内字符 [start, end)）
     val selected = remember { mutableStateMapOf<Int, MutableList<IntRange>>() }
-    var editingConfig by remember { mutableStateOf<CustomClozeStore.CustomConfig?>(null) }
+    // 已加载/已保存配置的三要素（拆成基础类型才能随旋转保存恢复）
+    var savedId by rememberSaveable { mutableStateOf(if (configId > 0) configId else 0L) }
+    var savedName by rememberSaveable { mutableStateOf("") }
+    var savedCreatedAt by rememberSaveable { mutableStateOf(0L) }
+    var configCount by rememberSaveable { mutableStateOf(0) }
+    // 未保存改动：返回（含系统返回）先弹确认，防误触丢失
+    var dirty by rememberSaveable { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
-    var saveName by remember { mutableStateOf("") }
+
+    // 旋转/进程重建恢复编辑现场：levels+selected 序列化快照（rememberSaveable 自动回放）
+    var editorSnapshot by rememberSaveable { mutableStateOf<String?>(null) }
+    var snapshotApplied by remember { mutableStateOf(false) }
+
+    val haptic = LocalHapticFeedback.current
+    // 文章内容失配检测：配置锚定的内容指纹与当前文章不一致时警示
+    var hashMismatch by remember { mutableStateOf(false) }
+    // 撤销/重做：操作前完整快照栈（容量 20）
+    val undoStack = remember { mutableStateListOf<ClozeEditSnapshot>() }
+    val redoStack = remember { mutableStateListOf<ClozeEditSnapshot>() }
+    var savedSnapshot by remember { mutableStateOf<ClozeEditSnapshot?>(null) }
+    // 编辑计数：任何编辑操作自增，驱动快照序列化（替代每帧 SideEffect）
+    var editSeq by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(articleId, configId) {
+        val store = CustomClozeStore.getInstance(navController.context.filesDir)
         val art = withContext(Dispatchers.IO) {
             ArticleRepository(
                 navController.context.filesDir.resolve("articles.json").absolutePath
@@ -110,30 +146,129 @@ fun CustomClozeEditScreen(
         }
         val sentences = SentenceSplitter.split(art.content)
         repeat(sentences.size) { levels.add(0) }
-        if (configId > 0) {
-            val cfg = CustomClozeStore.getInstance(navController.context.filesDir)
-                .getConfigs(articleId).firstOrNull { it.id == configId }
+        val cfgs = withContext(Dispatchers.IO) { store.getConfigs(articleId) }
+        configCount = cfgs.size
+        // 有快照 = 旋转/重建恢复：现场（可能含未保存编辑）比磁盘新，直接回放
+        if (!snapshotApplied && editorSnapshot != null) {
+            snapshotApplied = true
+            runCatching {
+                val o = JSONObject(editorSnapshot!!)
+                o.optJSONArray("levels")?.let { lv ->
+                    if (lv.length() == levels.size) {
+                        levels.clear()
+                        for (i in 0 until lv.length()) levels.add(lv.optInt(i, 0))
+                    }
+                }
+                selected.clear()
+                o.optJSONObject("sel")?.let { sel ->
+                    sel.keys().forEach { key ->
+                        val s = key.toIntOrNull() ?: return@forEach
+                        val arr = sel.optJSONArray(key) ?: return@forEach
+                        val list = selected.getOrPut(s) { mutableStateListOf() }
+                        for (j in 0 until arr.length()) {
+                            val r = arr.optJSONArray(j) ?: continue
+                            if (r.length() >= 2) list.add(r.optInt(0) until r.optInt(1))
+                        }
+                    }
+                }
+            }
+        } else if (configId > 0) {
+            val cfg = cfgs.firstOrNull { it.id == configId }
             if (cfg != null) {
-                editingConfig = cfg
-                saveName = cfg.name
+                savedId = cfg.id
+                savedName = cfg.name
+                savedCreatedAt = cfg.createdAt
                 clozeMode = cfg.mode
                 cfg.blanks.forEach { b ->
                     if (b.s !in sentences.indices) return@forEach
                     when (cfg.mode) {
-                        // 字词模式：区间对齐 token 边界需炸到单字级
-                        "WORD" -> {
-                            while (levels[b.s] < 3) levels[b.s] = levels[b.s] + 1
-                            selected.getOrPut(b.s) { mutableStateListOf() }.add(b.a until b.b)
-                        }
+                        // 字词模式：区间按保存原样回放（粒度恢复在下方统一处理）
+                        "WORD" -> selected.getOrPut(b.s) { mutableStateListOf() }.add(b.a until b.b)
                         // 句子/反向：复句选择，区间即全句
                         else -> selected.getOrPut(b.s) { mutableStateListOf() }.add(0 until sentences[b.s].length)
                     }
                 }
+                if (cfg.mode == "WORD") {
+                    if (cfg.levels.size == sentences.size) {
+                        // 保存过粒度：逐句恢复；粒度较粗导致区间切在 token 中间时自动细化对齐
+                        for (s in sentences.indices) {
+                            val rs = selected[s]?.toList() ?: emptyList()
+                            levels[s] = if (rs.isEmpty()) cfg.levels[s]
+                            else ClozeTokens.restoreLevel(sentences[s], cfg.levels[s], rs)
+                        }
+                    } else {
+                        // 旧配置无粒度记录：回退原行为（有选中的句子炸到单字级对齐）
+                        cfg.blanks.forEach { b ->
+                            if (b.s in sentences.indices) {
+                                while (levels[b.s] < 3) levels[b.s] = levels[b.s] + 1
+                            }
+                        }
+                    }
+                }
+                hashMismatch = cfg.contentHash != null && cfg.contentHash != ContentFingerprint.md5Hex(art.content)
+                editSeq++
             }
         }
     }
 
+    // 编辑驱动（而非每帧）持久化编辑现场快照：任何编辑 editSeq++，重组后序列化一次
+    LaunchedEffect(editSeq) {
+        editorSnapshot = runCatching {
+            JSONObject().apply {
+                put("levels", JSONArray().apply { levels.forEach { put(it) } })
+                put("sel", JSONObject().apply {
+                    selected.forEach { (s, list) ->
+                        if (list.isNotEmpty()) put(s.toString(), JSONArray().apply {
+                            list.forEach { r -> put(JSONArray().put(r.first).put(r.last)) }
+                        })
+                    }
+                })
+            }.toString()
+        }.getOrNull()
+    }
+
     fun selectedSentenceCount(): Int = selected.values.count { it.isNotEmpty() }
+
+    // ── 撤销/重做：操作前完整快照，容量 20；撤销后与保存点快照比较决定 dirty ──
+    fun currentSnapshot() = ClozeEditSnapshot(
+        clozeMode,
+        levels.toList(),
+        selected.mapValues { it.value.toList() }
+    )
+
+    fun pushUndo() {
+        undoStack.add(currentSnapshot())
+        if (undoStack.size > 20) undoStack.removeAt(0)
+        redoStack.clear()
+    }
+
+    fun applySnapshot(s: ClozeEditSnapshot) {
+        clozeMode = s.mode
+        levels.clear()
+        levels.addAll(s.levels)
+        selected.clear()
+        s.sel.forEach { (k, list) ->
+            selected.getOrPut(k) { mutableStateListOf() }.addAll(list)
+        }
+    }
+
+    fun undo() {
+        val snap = undoStack.removeLastOrNull() ?: return
+        redoStack.add(currentSnapshot())
+        applySnapshot(snap)
+        dirty = if (savedSnapshot != null) currentSnapshot() != savedSnapshot else true
+        editSeq++
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
+    fun redo() {
+        val snap = redoStack.removeLastOrNull() ?: return
+        undoStack.add(currentSnapshot())
+        applySnapshot(snap)
+        dirty = if (savedSnapshot != null) currentSnapshot() != savedSnapshot else true
+        editSeq++
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
 
     fun buildConfig(): CustomClozeStore.CustomConfig? {
         val art = article ?: return null
@@ -172,26 +307,58 @@ fun CustomClozeEditScreen(
         }
         if (blanks.isEmpty()) return null
         return CustomClozeStore.CustomConfig(
-            id = editingConfig?.id ?: 0L,
-            name = saveName.ifBlank { editingConfig?.name ?: "" },
-            createdAt = editingConfig?.createdAt ?: 0L,
+            id = savedId,
+            name = savedName.ifBlank { "自定义" },
+            createdAt = savedCreatedAt,
             blanks = blanks,
-            mode = clozeMode
+            mode = clozeMode,
+            // 记住每句粒度，重进编辑时忠实恢复（B6）；SENTENCE/REVERSE 下全 0 无影响
+            levels = levels.toList(),
+            // 保存 = 重新锚定到当前文章内容
+            contentHash = ContentFingerprint.md5Hex(art.content)
         )
     }
 
-    fun doSave() {
-        val art = article ?: return
+    fun doSave(onDone: (Boolean) -> Unit = {}) {
+        val art = article
         val cfg = buildConfig()
-        if (cfg == null) {
+        if (art == null || cfg == null) {
             Toast.makeText(context, "请先点选要挖空的句子或字词", Toast.LENGTH_SHORT).show()
+            onDone(false)
             return
         }
-        val total = cfg.blanks.size
-        val newId = CustomClozeStore.getInstance(context.filesDir).saveConfig(art.id, cfg)
-        Toast.makeText(context, "已保存「${cfg.name}」（$total 个空）", Toast.LENGTH_SHORT).show()
-        editingConfig = cfg.copy(id = newId)
+        // 磁盘写放 IO 线程，完成后回调（pick 流程等保存成功再跳转）
+        val snap = currentSnapshot()
+        scope.launch {
+            val total = cfg.blanks.size
+            val newId = withContext(Dispatchers.IO) {
+                CustomClozeStore.getInstance(context.filesDir).saveConfig(art.id, cfg)
+            }
+            savedId = newId
+            savedCreatedAt = if (cfg.createdAt > 0) cfg.createdAt else System.currentTimeMillis()
+            dirty = false
+            savedSnapshot = snap
+            Toast.makeText(context, "已保存「${cfg.name}」（$total 个空）", Toast.LENGTH_SHORT).show()
+            onDone(true)
+        }
     }
+
+    /** 保存入口：编辑已有配置沿用原名直存（与遮挡编辑器一致）；新配置弹命名框 */
+    fun requestSave() {
+        if (savedId > 0L && savedName.isNotBlank()) {
+            doSave()
+        } else {
+            if (savedName.isBlank()) savedName = "自定义 " + (configCount + 1)
+            showSaveDialog = true
+        }
+    }
+
+    /** 返回入口：有未保存改动先确认 */
+    fun requestBack() {
+        if (dirty) showExitConfirm = true else navController.popBackStack()
+    }
+
+    BackHandler(enabled = dirty) { requestBack() }
 
     val blankCount = if (clozeMode == "WORD") {
         selected.values.sumOf { list ->
@@ -223,33 +390,49 @@ fun CustomClozeEditScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BackButton(onClick = { navController.popBackStack() })
+                BackButton(onClick = { requestBack() })
                 Spacer(Modifier.width(12.dp))
-                Text(
-                    "自定义挖空",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f)
+                // 标题 + 计数：计数放进权重列（宽度随空数变化），不会挤动右侧按钮组
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "自定义挖空",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        "$blankCount 个空",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                // 撤销/重做：固定 36dp 槽位常驻（不可用时置灰），
+                // 点撤销后重做一出现也不会挤动位置
+                TopBarIconAction(
+                    kind = AppIconKind.Undo,
+                    enabled = undoStack.isNotEmpty(),
+                    onClick = { undo() },
+                    contentDescription = "撤销"
                 )
-                Text(
-                    "$blankCount 个空",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
+                TopBarIconAction(
+                    kind = AppIconKind.Redo,
+                    enabled = redoStack.isNotEmpty(),
+                    onClick = { redo() },
+                    contentDescription = "重做"
                 )
                 Spacer(Modifier.width(10.dp))
                 androidx.compose.material3.Button(
                     onClick = {
-                        if (editingConfig != null) {
-                            doSave()
-                            if (pick) {
-                                // 来自模式选择的「练一把」流程：保存即开始练习
-                                navController.navigate("practice/$articleId?configId=${editingConfig?.id ?: -1L}") {
-                                    popUpTo("custom_cloze_list/$articleId") { inclusive = true }
+                        if (savedId > 0L && savedName.isNotBlank()) {
+                            // 编辑已有配置：直存；pick 流程保存成功后直接开练
+                            doSave { ok ->
+                                if (ok && pick) {
+                                    navController.navigate("practice/$articleId?configId=$savedId") {
+                                        popUpTo("custom_cloze_list/$articleId") { inclusive = true }
+                                    }
                                 }
                             }
                         } else {
-                            saveName = "自定义 " + (CustomClozeStore.getInstance(context.filesDir)
-                                .getConfigs(articleId).size + 1)
+                            if (savedName.isBlank()) savedName = "自定义 " + (configCount + 1)
                             showSaveDialog = true
                         }
                     },
@@ -267,6 +450,19 @@ fun CustomClozeEditScreen(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
             )
+            if (hashMismatch) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "文章内容已修改，这套配置的标注位置可能不准确",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
             Spacer(Modifier.height(12.dp))
 
             // ── 模式选择 chips（自定义即预览：切换即改变编辑语义与空样式）──
@@ -284,7 +480,7 @@ fun CustomClozeEditScreen(
                 when (clozeMode) {
                     "SENTENCE" -> "点选要挖掉的复句（选中即预览句子挖空样式）"
                     "REVERSE" -> "点选句子加入反向默写（练习时逐分句挖一词打乱还原）"
-                    else -> "点按选中挖空 · 长按逐级拆碎（分句→字词→单字）"
+                    else -> "点按选中挖空 · 长按切换粒度（复句→分句→字词→单字，循环还原）"
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -301,34 +497,56 @@ fun CustomClozeEditScreen(
                 }
                 // 全局空序号偏移：按句序累计前文已选空数（预览编号与练习一致）
                 var blankOffset = 0
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 32.dp)
-                ) {
-                    items(sentences.size, key = { it }) { sIdx ->
-                        val sentence = sentences[sIdx]
-                        val ranges = selected[sIdx]?.toList() ?: emptyList()
-                        val mergedCount = mergeRanges(ranges).size
-                        val offsetBefore = blankOffset
-                        blankOffset += mergedCount
-                        SentenceEditCard(
-                            index = sIdx + 1,
-                            sentence = sentence,
-                            level = levels.getOrElse(sIdx) { 0 },
-                            mode = clozeMode,
-                            selectedRanges = ranges,
-                            blankIndexOffset = offsetBefore,
-                            onToggle = { range ->
-                                val list = selected.getOrPut(sIdx) { mutableStateListOf() }
-                                val hit = list.firstOrNull { it.first <= range.last && range.first <= it.last }
-                                if (hit != null) list.remove(hit) else list.add(range)
-                            },
-                            onExplode = {
-                                if (clozeMode == "WORD" && levels[sIdx] < 3) levels[sIdx] = levels[sIdx] + 1
-                            }
-                        )
+                val listState = rememberLazyListState()
+                Box(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 32.dp)
+                    ) {
+                        items(sentences.size, key = { it }) { sIdx ->
+                            val sentence = sentences[sIdx]
+                            val ranges = selected[sIdx]?.toList() ?: emptyList()
+                            val mergedCount = RangeOps.mergeRanges(ranges).size
+                            val offsetBefore = blankOffset
+                            blankOffset += mergedCount
+                            SentenceEditCard(
+                                index = sIdx + 1,
+                                sentence = sentence,
+                                level = levels.getOrElse(sIdx) { 0 },
+                                mode = clozeMode,
+                                selectedRanges = ranges,
+                                blankIndexOffset = offsetBefore,
+                                onToggle = { range ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    pushUndo()
+                                    val list = selected.getOrPut(sIdx) { mutableStateListOf() }
+                                    val hit = list.firstOrNull { it.first <= range.last && range.first <= it.last }
+                                    if (hit != null) list.remove(hit) else list.add(range)
+                                    dirty = true
+                                    editSeq++
+                                },
+                                onExplode = {
+                                    // 长按循环切换粒度：复句→分句→字词→单字→回到复句（拆碎后可还原）
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    pushUndo()
+                                    if (clozeMode == "WORD") levels[sIdx] = (levels[sIdx] + 1) % 4
+                                    dirty = true
+                                    editSeq++
+                                }
+                            )
+                        }
                     }
+                    // 长文滚动进度徽章（>8 句启用）
+                    ScrollProgressBadge(
+                        listState = listState,
+                        total = sentences.size,
+                        unit = "句",
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 4.dp, bottom = 24.dp)
+                    )
                 }
             }
         }
@@ -343,9 +561,12 @@ fun CustomClozeEditScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showModeSwitchConfirm = false
+                    pushUndo()
                     selected.clear()
                     levels.replaceAll { 0 }
                     clozeMode = pendingMode
+                    dirty = true
+                    editSeq++
                 }) { Text("清空并切换") }
             },
             dismissButton = {
@@ -365,8 +586,8 @@ fun CustomClozeEditScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     TextField(
-                        value = saveName,
-                        onValueChange = { saveName = it },
+                        value = savedName,
+                        onValueChange = { savedName = it },
                         singleLine = true,
                         placeholder = { Text("自定义") },
                         shape = RoundedCornerShape(10.dp),
@@ -380,14 +601,17 @@ fun CustomClozeEditScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showSaveDialog = false
-                    doSave()
-                    if (pick) {
-                        // 来自模式选择的「练一把」流程：保存即开始练习
-                        navController.navigate("practice/$articleId?configId=${editingConfig?.id ?: -1L}") {
-                            popUpTo("custom_cloze_list/$articleId") { inclusive = true }
+                    doSave { ok ->
+                        if (ok) {
+                            if (pick) {
+                                // 来自模式选择的「练一把」流程：保存即开始练习
+                                navController.navigate("practice/$articleId?configId=$savedId") {
+                                    popUpTo("custom_cloze_list/$articleId") { inclusive = true }
+                                }
+                            } else {
+                                navController.popBackStack()
+                            }
                         }
-                    } else {
-                        navController.popBackStack()
                     }
                 }) { Text("保存") }
             },
@@ -396,18 +620,40 @@ fun CustomClozeEditScreen(
             }
         )
     }
+
+    // ── 未保存改动退出确认 ──
+    if (showExitConfirm) {
+        BlancallAlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("放弃未保存的挖空？", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text(
+                    "当前编辑的 $blankCount 个空还没有保存，离开后将丢失。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showExitConfirm = false
+                    dirty = false
+                    navController.popBackStack()
+                }) { Text("放弃", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showExitConfirm = false }) { Text("继续编辑") }
+            }
+        )
+    }
 }
 
-/** 合并相邻/重叠区间 */
-private fun mergeRanges(ranges: List<IntRange>): List<IntRange> =
-    ranges.sortedBy { it.first }
-        .fold(mutableListOf<IntRange>()) { acc, r ->
-            val last = acc.lastOrNull()
-            if (last != null && r.first <= last.last + 1) {
-                acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
-            } else acc.add(r)
-            acc
-        }
+/**
+ * 撤销/重做快照：模式 + 每句粒度 + 选中区间完整状态（操作前的现场）。
+ */
+private data class ClozeEditSnapshot(
+    val mode: String,
+    val levels: List<Int>,
+    val sel: Map<Int, List<IntRange>>
+)
 
 /** 模式切换 chips（自定义即预览：三选一） */
 @Composable
@@ -446,10 +692,10 @@ private fun SentenceEditCard(
 ) {
     val tokens = when (mode) {
         // 句子/反向模式：单位固定为复句（无炸）
-        "SENTENCE", "REVERSE" -> listOf(EditToken(sentence, 0 until sentence.length))
-        else -> tokensFor(sentence, level)
+        "SENTENCE", "REVERSE" -> listOf(ClozeTokens.EditToken(sentence, 0 until sentence.length))
+        else -> ClozeTokens.tokensFor(sentence, level)
     }
-    val merged = mergeRanges(selectedRanges)
+    val merged = RangeOps.mergeRanges(selectedRanges)
 
     fun isSelectedRange(range: IntRange): Boolean =
         merged.any { it.first <= range.first && range.last <= it.last }
@@ -465,7 +711,7 @@ private fun SentenceEditCard(
             when (mode) {
                 "SENTENCE" -> "第 $index 句"
                 "REVERSE" -> "第 $index 句 · 默写单元"
-                else -> "第 $index 句 · ${levelName(level)}"
+                else -> "第 $index 句 · ${ClozeTokens.levelName(level)}"
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -563,86 +809,5 @@ private fun SentenceEditCard(
     }
 }
 
-/** token：文本 + 句内字符区间 */
-private data class EditToken(val text: String, val range: IntRange)
+// token 切分 / 粒度命名 / 区间合并已上移至 algorithm.ClozeTokens 与 algorithm.RangeOps（可单测）
 
-private fun levelName(level: Int): String = when (level) {
-    0 -> "复句"
-    1 -> "分句"
-    2 -> "字词"
-    else -> "单字"
-}
-
-/**
- * 按级Level切分 token：
- * - 0 复句
- * - 1 分句：按句内标点切，标点跟随前一个 token
- * - 2 字词：连续汉字每 2 字一块（末尾余 1 字自成一tok），英文单词整体
- * - 3 单字：每个汉字一个 token，英文单词整体
- * 标点（非中文非字母字符）始终并入前一个 token，避免单独的标点空。
- */
-private fun tokensFor(sentence: String, level: Int): List<EditToken> {
-    if (sentence.isEmpty()) return emptyList()
-    if (level <= 0) return listOf(EditToken(sentence, 0 until sentence.length))
-
-    val out = mutableListOf<EditToken>()
-    var i = 0
-    val n = sentence.length
-
-    fun isChinese(c: Char) = c in '\u4e00'..'\u9fff' || c in '\u3400'..'\u4dbf'
-    fun isPunct(c: Char) = !isChinese(c) && !c.isLetter()
-
-    if (level == 1) {
-        var start = 0
-        while (i < n) {
-            val c = sentence[i]
-            if (isPunct(c)) {
-                i++
-                while (i < n && isPunct(sentence[i])) i++
-                out.add(EditToken(sentence.substring(start, i), start until i))
-                start = i
-            } else i++
-        }
-        if (start < n) out.add(EditToken(sentence.substring(start), start until n))
-        return if (out.size <= 1) listOf(EditToken(sentence, 0 until sentence.length)) else out
-    }
-
-    val chunk = if (level == 2) 2 else 1
-    var tokenStart = 0
-    while (i < n) {
-        val c = sentence[i]
-        when {
-            isChinese(c) -> {
-                var runEnd = i
-                while (runEnd < n && isChinese(sentence[runEnd])) runEnd++
-                var s = i
-                while (s < runEnd) {
-                    val e = minOf(s + chunk, runEnd)
-                    out.add(EditToken(sentence.substring(s, e), s until e))
-                    s = e
-                }
-                i = runEnd
-                tokenStart = i
-            }
-            c.isLetter() -> {
-                var runEnd = i
-                while (runEnd < n && sentence[runEnd].isLetter() && !isChinese(sentence[runEnd])) runEnd++
-                out.add(EditToken(sentence.substring(i, runEnd), i until runEnd))
-                i = runEnd
-                tokenStart = i
-            }
-            else -> {
-                i++
-                while (i < n && isPunct(sentence[i])) i++
-                val end = i
-                if (out.isNotEmpty()) {
-                    val last = out.removeAt(out.size - 1)
-                    out.add(EditToken(last.text + sentence.substring(last.range.last + 1, end), last.range.first until end))
-                } else {
-                    out.add(EditToken(sentence.substring(tokenStart, end), tokenStart until end))
-                }
-            }
-        }
-    }
-    return out
-}

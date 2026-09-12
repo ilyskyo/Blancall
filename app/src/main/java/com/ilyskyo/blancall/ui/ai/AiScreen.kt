@@ -214,7 +214,8 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                         AppIcon(
                         kind = AppIconKind.ArrowForward,
                         modifier = Modifier.size(22.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        contentDescription = "发送"
                     )
                     }
                 }

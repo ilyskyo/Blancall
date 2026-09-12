@@ -277,7 +277,9 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                 // ── 联网搜索核验（开启且配置了搜索 Key 时）──
                 var searchFailed: String? = null
                 if (AppPrefs.aiSearchEnabled) {
-                    val searchKey = AiConfigStore.activeSearchProfile?.let {
+                    val searchProfile = AiConfigStore.activeSearchProfile
+                    // 解密 Key 判断是否需要跳过（沿用旧逻辑）：Keystore 解密放 IO 线程，避免主线程阻塞
+                    val searchKey = searchProfile?.let {
                         withContext(Dispatchers.IO) { it.decryptApiKey() }
                     }.orEmpty()
                     if (searchKey.isBlank()) {
@@ -286,7 +288,8 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                         _statusText.value = "🔍 正在联网搜索…"
                         try {
                             val results = withContext(Dispatchers.IO) {
-                                SearchClient.search(searchKey, trimmed)
+                                // 把整个 profile 传进去：端点与认证方式按配置生效（Tavily 兼容自定义端点）
+                                SearchClient.search(checkNotNull(searchProfile), trimmed)
                             }
                             if (results.isNotEmpty()) {
                                 // 只保留最新一条搜索上下文，避免历史里累积过期搜索结果

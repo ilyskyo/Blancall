@@ -17,6 +17,8 @@ import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.nio.charset.CodingErrorAction
 import java.util.zip.ZipInputStream
 
@@ -145,6 +147,30 @@ object FileTextExtractor {
         }
     }
 
+    /**
+     * 有界读取整个输入流为字节数组，避免把超大（或尺寸未知的）文件整读入内存导致 OOM。
+     * 边读边累计已读字节数，一旦超出 [limit] 立即抛"文件过大"异常。
+     *
+     * 为什么需要它：[getFileSize] 在 ContentProvider 不提供 SIZE 列时返回 -1，
+     * 此时 [checkFileSize] 的 `size > MAX_FILE_SIZE` 判断会直接放行。这里以 [limit] 作为兜底闸门，
+     * 保证"拿不到尺寸"的文件也不能被整个读进内存——体积闸门不会因此形同虚设。
+     */
+    private fun readAllBytesLimited(input: InputStream, limit: Long): ByteArray {
+        val buf = ByteArrayOutputStream()
+        val tmp = ByteArray(8192)
+        var total = 0L
+        var read: Int
+        while (input.read(tmp).also { read = it } != -1) {
+            // 累计计数，超过上限即刻抛异常；正常大小文件会完整读完不受影响
+            if (total + read > limit) {
+                throw Exception("文件过大（超过 ${limit / 1024 / 1024}MB），最大支持 ${MAX_FILE_SIZE / 1024 / 1024}MB")
+            }
+            buf.write(tmp, 0, read)
+            total += read
+        }
+        return buf.toByteArray()
+    }
+
     // ─────────────────── PDF ───────────────────
 
     private fun extractPdfText(context: Context, uri: Uri): String {
@@ -177,7 +203,7 @@ object FileTextExtractor {
     // ─────────────────── DOCX ───────────────────
 
     private fun extractDocxText(context: Context, uri: Uri): String {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
             ?: throw Exception("无法打开 DOCX 文件")
 
         val xmlString = extractDocxXml(bytes)
@@ -245,7 +271,7 @@ object FileTextExtractor {
      * 避免将全部 HTML 内容缓存到内存导致 OOM。
      */
     private fun extractEpubText(context: Context, uri: Uri): String {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
             ?: throw Exception("无法打开 EPUB 文件")
 
         val sb = StringBuilder()
@@ -292,7 +318,7 @@ object FileTextExtractor {
     // ─────────────────── HTML ───────────────────
 
     private fun extractHtmlText(context: Context, uri: Uri): String {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
             ?: throw Exception("无法打开 HTML 文件")
         val html = String(bytes, detectCharset(bytes))
         return stripHtml(html).trim()
@@ -339,7 +365,7 @@ object FileTextExtractor {
     // ─────────────────── RTF ───────────────────
 
     private fun extractRtfText(context: Context, uri: Uri): String {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
             ?: throw Exception("无法打开 RTF 文件")
         val rtf = String(bytes, detectCharset(bytes))
         return stripRtf(rtf).trim()
@@ -447,7 +473,7 @@ object FileTextExtractor {
 
     private fun detectHtmlImages(context: Context, uri: Uri): Boolean {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { bytes ->
+            context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }?.let { bytes ->
                 String(bytes, detectCharset(bytes)).contains("<img", ignoreCase = true)
             } ?: false
         } catch (_: Exception) {
@@ -457,7 +483,7 @@ object FileTextExtractor {
 
     private fun detectRtfImages(context: Context, uri: Uri): Boolean {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { bytes ->
+            context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }?.let { bytes ->
                 String(bytes, detectCharset(bytes)).contains("\\pict", ignoreCase = true)
             } ?: false
         } catch (_: Exception) {
@@ -469,7 +495,7 @@ object FileTextExtractor {
 
     /** 提取 .doc 文本 + 图片检测结果。伪装成 .doc 的纯文本/HTML/RTF 会按对应格式兜底解析 */
     private fun extractDocResult(context: Context, uri: Uri): ExtractResult {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
             ?: throw Exception("无法打开 DOC 文件")
 
         val streams = try {
@@ -739,7 +765,7 @@ object FileTextExtractor {
     // ─────────────────── 纯文本 + 编码检测 ───────────────────
 
     private fun extractPlainText(context: Context, uri: Uri): String {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
             ?: throw Exception("无法打开文件")
         // 移除 BOM 并 trim，与其他格式保持一致，避免 BOM 占用字符配额导致截断后少一个可见字符
         return String(bytes, detectCharset(bytes)).trimStart('\uFEFF').trim()

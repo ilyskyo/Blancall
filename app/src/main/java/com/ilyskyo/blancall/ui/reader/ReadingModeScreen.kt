@@ -28,6 +28,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FormatLineSpacing
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material3.*
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +71,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.ImmersiveSystemBarsEffect
@@ -120,6 +123,7 @@ private const val LgRefractionOffsetDp = 70f // 20-120dp：采样偏移（对齐
  * - 排版可调：字号/行距滑杆，米白/纯白/纯黑背景（浅色下可选纸张色，深色永远纯黑）
  * - 进度记忆：按整篇比例保存断点，退出时累计阅读时长
  */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     val haptic = LocalHapticFeedback.current
@@ -144,6 +148,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     val layoutMode by AppPrefs.readingLayoutModeFlow.collectAsState()
     // ── 阅读字体：预设 / 系统字体 / 导入字体（按 id 解析，见 ReaderFonts）──
     val readingFontId by AppPrefs.readingFontIdFlow.collectAsState()
+    val readingFontWeight by AppPrefs.readingFontWeightFlow.collectAsState()
 
     // ── 背诵遮挡（物理遮挡背诵）设置 ──
     val occlusionEnabled by AppPrefs.readingOcclusionEnabledFlow.collectAsState()
@@ -189,6 +194,9 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
 
     var controlsVisible by remember { mutableStateOf(true) }
     var settingsVisible by remember { mutableStateOf(false) }
+    // 遮挡自定义浮层：null=无 / "list"=配置列表 / "edit"=编辑器（编辑器从列表进出）
+    var maskOverlay by remember { mutableStateOf<String?>(null) }
+    var maskEditConfigId by remember { mutableLongStateOf(-1L) }
     // 当前节内的滚动比例（0~1），由每页回调上报，用于更细的进度条
     var inPageFraction by remember { mutableFloatStateOf(0f) }
     // 最近一次落盘的整篇进度（dispose 时回写，避免快照丢失）
@@ -278,10 +286,15 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     }
 
     // ── 全屏沉浸：隐藏系统栏/手势线，上滑可临时唤出，退出恢复 ──
-    // 统一走公共 ImmersiveSystemBarsEffect（含 ColorOS/低版本兜底 + Theme.kt 冲突规避）
-    ImmersiveSystemBarsEffect(enabled = true)
+    // 统一走公共 ImmersiveSystemBarsEffect（含 ColorOS/低版本兜底 + Theme.kt 冲突规避）。
+    // 遮挡自定义浮层（列表/编辑器）打开期间临时退出沉浸：这些是常规页面版式，
+    // 需要状态栏 inset（否则顶栏顶到屏幕上缘/挖孔下），关闭浮层后自动恢复沉浸
+    ImmersiveSystemBarsEffect(enabled = maskOverlay == null)
 
     // 打开设置时返回键优先关闭设置面板
+    BackHandler(enabled = maskOverlay != null) {
+        if (maskOverlay == "edit") maskOverlay = "list" else maskOverlay = null
+    }
     BackHandler(enabled = settingsVisible) { settingsVisible = false }
 
     // 进入后 3 秒自动隐藏控件，营造沉浸感
@@ -329,6 +342,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                 val bodyAutoIndentEnabled by AppPrefs.autoIndentEnabledFlow.collectAsState()
                                 val bodyLayoutMode by AppPrefs.readingLayoutModeFlow.collectAsState()
                                 val bodyFontId by AppPrefs.readingFontIdFlow.collectAsState()
+                                val bodyFontWeight by AppPrefs.readingFontWeightFlow.collectAsState()
                                 val bodyOcclusionEnabled by AppPrefs.readingOcclusionEnabledFlow.collectAsState()
                                 val bodyOcclusionMode by AppPrefs.readingOcclusionModeFlow.collectAsState()
                                 // 挡片颜色：正文组合内订阅，切换即时生效（ComposeView 不随外层重组）
@@ -341,8 +355,76 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                     5 -> Macaron.neutral().fill
                                     else -> Macaron.review().fill
                                 }
-                                val bodyFontFamily = remember(context, bodyFontId) {
-                                    ReaderFonts.resolveFontFamily(context, bodyFontId) ?: FontFamily.Default
+                                val bodyFontFamily = remember(context, bodyFontId, bodyFontWeight) {
+                                    // 字重直接体现在 fontFamily 里（霞鹜文楷按字重选对应字体文件）
+                                    ReaderFonts.resolveFontFamily(context, bodyFontId, bodyFontWeight)
+                                        ?: FontFamily.Default
+                                }
+                                // 自定义遮挡：custom 粒度时按文章读取使用中的配置，
+                                // 解析为「段落文本 → 遮块列表」查找器（段落口径 splitParagraphs，
+                                // 翻页/滚动两种布局下均按段文本匹配，重复段落取并集）
+                                val bodyCustomConfigId by AppPrefs.readingOcclusionCustomConfigIdFlow.collectAsState()
+                                var bodyCustomResolver by remember {
+                                    mutableStateOf<((String) -> List<MaskConfigStore.MaskSpan>)?>(null)
+                                }
+                                // 以 store 修订号参与 key：编辑器里重存配置后回阅读页，遮挡立即刷新
+                                val maskStore = remember { MaskConfigStore.getInstance(context.filesDir) }
+                                var maskRevision by remember { mutableStateOf(maskStore.getRevision()) }
+                                LaunchedEffect(Unit) {
+                                    // 轮询修订号（浮层与正文不在同一组合，无法直接共享状态）
+                                    while (true) {
+                                        val r = maskStore.getRevision()
+                                        if (r != maskRevision) maskRevision = r
+                                        kotlinx.coroutines.delay(300)
+                                    }
+                                }
+                                LaunchedEffect(bodyOcclusionMode, bodyCustomConfigId, article.id, maskRevision) {
+                                    if (bodyOcclusionMode != "custom") {
+                                        bodyCustomResolver = null
+                                    } else {
+                                        val cfg = withContext(Dispatchers.IO) {
+                                            maskStore.getConfigs(article.id)
+                                                .firstOrNull { it.id == bodyCustomConfigId }
+                                        }
+                                        if (cfg == null) {
+                                            bodyCustomResolver = null
+                                        } else {
+                                            val byIdx = cfg.spans.groupBy { it.p }
+                                            // 段落文本 → 配置遮块：整段精确匹配（滚动/翻页常规情形）之外，
+                                            // 翻页布局会把超长段落按行拆成片段，再做「包含匹配 + 区间平移」兜底
+                                            val articleParas = ReaderOcclusion.splitParagraphs(article.content)
+                                            val exact = articleParas
+                                                .withIndex()
+                                                .groupBy({ it.value.text }, { it.index })
+                                            val resolver: (String) -> List<MaskConfigStore.MaskSpan> = { paraText ->
+                                                val idxs = exact[paraText]
+                                                if (idxs != null) {
+                                                    idxs.flatMap { byIdx[it].orEmpty() }
+                                                        .distinctBy { s -> Triple(s.a, s.e, s.c) }
+                                                } else {
+                                                    // 片段：找到包含它的原段落，把遮块裁剪/平移到片段坐标系
+                                                    articleParas
+                                                        .asSequence()
+                                                        .mapIndexedNotNull { idx, p ->
+                                                            val off = p.text.indexOf(paraText)
+                                                            if (off >= 0 && paraText.length >= 4) idx to off else null
+                                                        }
+                                                        .firstOrNull()
+                                                        ?.let { (paraIdx, off) ->
+                                                            byIdx[paraIdx].orEmpty()
+                                                                .mapNotNull { s ->
+                                                                    val a = s.a - off
+                                                                    val e = s.e - off
+                                                                    if (a >= 0 && e <= paraText.length && e > a)
+                                                                        MaskConfigStore.MaskSpan(0, a, e, s.c) else null
+                                                                }
+                                                        }
+                                                        .orEmpty()
+                                                }
+                                            }
+                                            bodyCustomResolver = resolver
+                                        }
+                                    }
                                 }
                                 val bodyTextColor = when {
                                     bodyIsDark -> DarkText
@@ -386,7 +468,8 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                                 fontFamily = bodyFontFamily,
                                                 indent = bodyIndent,
                                                 maskColor = bodyMaskColor,
-                                                occlusion = bodyOcclusion
+                                                occlusion = bodyOcclusion,
+                                                customSpansResolver = bodyCustomResolver
                                             )
                                         } else {
                                             ReadingTextContent(
@@ -422,6 +505,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                             indent = bodyIndent,
                                             maskColor = bodyMaskColor,
                                             occlusion = bodyOcclusion,
+                                            customSpansResolver = bodyCustomResolver,
                                             header = if (page == 0 && article.author.isNotBlank()) {
                                                 {
                                                     Text(
@@ -653,8 +737,13 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     }
 
     // ── 阅读设置面板（液态玻璃底部面板）──
+    // sheetState 外提以便统一管理面板状态；面板内的「自定义」入口采用
+    // 「挂浮层 + 立即关闭面板」的原子切换（见 ReadingSettingsSheet 内注释），
+    // 不再依赖 hide() 动画回调，避免模态窗口滞留挡住浮层/吞掉点击。
+    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ReadingSettingsSheet(
         visible = settingsVisible,
+        sheetState = settingsSheetState,
         onDismiss = { settingsVisible = false },
         fontPx = fontPx,
         onFontChange = { AppPrefs.readingFont = it },
@@ -665,16 +754,61 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
         layoutMode = layoutMode,
         onLayoutModeChange = { AppPrefs.readingLayoutMode = it },
         fontId = readingFontId,
-        onFontIdChange = { AppPrefs.readingFontId = it },
+        onFontIdChange = { newId ->
+            AppPrefs.readingFontId = newId
+            // 换字体后把字重收敛到新字体支持的档位（预设/导入/系统字体三条路径共用此入口）：
+            // 例如从霞鹜文楷的「中等 500」切到单字重字体 → 取最近的「加粗 700」
+            AppPrefs.readingFontWeight =
+                ReaderFonts.snapWeight(AppPrefs.readingFontWeight, ReaderFonts.weightMode(newId))
+        },
+        fontWeight = readingFontWeight,
+        onFontWeightChange = { AppPrefs.readingFontWeight = it },
         occlusionEnabled = occlusionEnabled,
         onOcclusionEnabledChange = { AppPrefs.readingOcclusionEnabled = it },
         occlusionMode = occlusionMode,
         onOcclusionModeChange = { AppPrefs.readingOcclusionMode = it },
         occlusionColorIndex = occlusionColorIndex,
         onOcclusionColorChange = { AppPrefs.readingOcclusionColor = it },
+        onOpenMaskConfig = {
+            // 只负责把浮层挂上（藏在面板后）；面板本身的关闭由调用方在 hide 动画完成后执行
+            maskOverlay = "list"
+        },
         isDark = isDark,
         accent = accentColor
     )
+
+    // ── 遮挡自定义浮层：配置列表 / 编辑器（覆盖整个阅读界面，系统返回逐级退出）──
+    if (maskOverlay != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .zIndex(2f)
+                // 拦截全部点击：空区域不再穿透到正文（防止误触发正文控制条/揭块）
+                .pointerInput(Unit) { detectTapGestures { } }
+        ) {
+            if (maskOverlay == "edit") {
+                MaskConfigEditScreen(
+                    article = article,
+                    configId = maskEditConfigId,
+                    onBack = { maskOverlay = "list" }
+                )
+            } else {
+                MaskConfigListScreen(
+                    articleId = article.id,
+                    onBack = { maskOverlay = null },
+                    onEdit = { id ->
+                        maskEditConfigId = id
+                        maskOverlay = "edit"
+                    },
+                    onNew = {
+                        maskEditConfigId = -1L
+                        maskOverlay = "edit"
+                    }
+                )
+            }
+        }
+    }
 }
 
 }
@@ -720,6 +854,14 @@ internal fun buildReadingSections(content: String): List<String> {
     }
     if (current.isNotBlank()) sections += current.toString().trim()
     return sections.ifEmpty { listOf(content.trim()) }
+}
+
+/** 字重档位的中文名（霞鹜文楷：300 细 / 400 常规 / 500 中等；其余字体：400 常规 / 700 加粗） */
+private fun weightLabel(weight: Int): String = when (weight) {
+    300 -> "细"
+    500 -> "中等"
+    700 -> "加粗"
+    else -> "常规"
 }
 
 /** dp → px（液态玻璃参数用） */
@@ -805,6 +947,7 @@ private fun ReadingSectionPage(
     indent: Boolean = true,
     maskColor: Color,
     occlusion: OcclusionParams = OcclusionParams(enabled = false),
+    customSpansResolver: ((String) -> List<MaskConfigStore.MaskSpan>)? = null,
     header: (@Composable () -> Unit)? = null
 ) {
     val scrollState = rememberScrollState()
@@ -831,7 +974,8 @@ private fun ReadingSectionPage(
                 fontFamily = fontFamily,
                 indent = indent,
                 maskColor = maskColor,
-                occlusion = occlusion
+                occlusion = occlusion,
+                customSpansResolver = customSpansResolver
             )
         } else {
             ReadingTextContent(
@@ -852,6 +996,9 @@ private fun ReadingSectionPage(
  * 背诵遮挡正文渲染：按空行分段，每段以 [OccludedParagraph] 绘制——
  * 底层面板是完整原文（保证换行/缩进与正常阅读一致），上方叠加圆角遮块，
  * 点一下遮块即像揭开挡卡一样露出原文。段内外观与 [ReadingTextContent] 完全对齐。
+ *
+ * [customSpansResolver] 非空时为自定义遮挡模式：按段落文本查配置的遮块
+ * （含每块独立颜色），忽略自动遮挡算法；为 null 时按 [OcclusionParams.mode] 自动生成。
  */
 @Composable
 private fun OccludedReadingContent(
@@ -862,10 +1009,17 @@ private fun OccludedReadingContent(
     fontFamily: FontFamily,
     indent: Boolean,
     maskColor: Color,
-    occlusion: OcclusionParams
+    occlusion: OcclusionParams,
+    customSpansResolver: ((String) -> List<MaskConfigStore.MaskSpan>)? = null
 ) {
-    val paragraphs = remember(text) { text.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() } }
+    // 段落口径与遮挡自定义编辑器一致（splitParagraphs），段落索引即配置存储索引
+    val paragraphs = remember(text) { ReaderOcclusion.splitParagraphs(text) }
     val mode = occlusion.mode
+    // 挡片颜色板：与阅读设置「挡片颜色」同款（自定义遮挡每块按存储索引取色）
+    val maskPalette = listOf(
+        Macaron.review().fill, Macaron.continueP().fill, Macaron.info().fill,
+        Macaron.warn().fill, Macaron.lavender().fill, Macaron.neutral().fill
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -873,21 +1027,40 @@ private fun OccludedReadingContent(
     ) {
         paragraphs.forEachIndexed { index, para ->
             if (index > 0) Spacer(Modifier.height((fontPx * 0.9f).dp))
-            // 每段的遮挡空：按当前粒度（short=字词 / long=复句 / mixed=逐句随机长或短，均为本地算法）在段内生成
-            val ranges = remember(para, occlusion) {
-                ReaderOcclusion.localRangesInPara(para, mode)
+            if (customSpansResolver != null) {
+                // 自定义遮挡：回放该段配置的遮块（每块独立颜色）
+                val spans = customSpansResolver(para.text)
+                val ranges = spans.map { OcclusionSpan(it.a, it.e) }
+                val spanColors = spans.associate { it.a to maskPalette[it.c.coerceIn(0, maskPalette.lastIndex)] }
+                OccludedParagraph(
+                    text = para.text,
+                    hidden = ranges,
+                    fontPx = fontPx,
+                    lineHeight = lineHeight,
+                    textColor = textColor,
+                    fontFamily = fontFamily,
+                    indent = indent,
+                    maskColor = maskColor,
+                    onToggleControls = occlusion.onToggleControls,
+                    spanColors = spanColors
+                )
+            } else {
+                // 每段的遮挡空：按当前粒度（short=字词 / long=复句 / mixed=逐句随机长或短，均为本地算法）
+                val ranges = remember(para.text, occlusion) {
+                    ReaderOcclusion.localRangesInPara(para.text, if (mode == "custom") "mixed" else mode)
+                }
+                OccludedParagraph(
+                    text = para.text,
+                    hidden = ranges,
+                    fontPx = fontPx,
+                    lineHeight = lineHeight,
+                    textColor = textColor,
+                    fontFamily = fontFamily,
+                    indent = indent,
+                    maskColor = maskColor,
+                    onToggleControls = occlusion.onToggleControls
+                )
             }
-            OccludedParagraph(
-                text = para,
-                hidden = ranges,
-                fontPx = fontPx,
-                lineHeight = lineHeight,
-                textColor = textColor,
-                fontFamily = fontFamily,
-                indent = indent,
-                maskColor = maskColor,
-                onToggleControls = occlusion.onToggleControls
-            )
         }
         Spacer(Modifier.height(72.dp)) // 底部留白，避免最后一行被进度胶囊遮挡
     }
@@ -1102,10 +1275,11 @@ private fun ReadingProgressCapsule(
 
 // ========== 阅读设置面板 ==========
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ReadingSettingsSheet(
     visible: Boolean,
+    sheetState: SheetState,
     onDismiss: () -> Unit,
     fontPx: Float,
     onFontChange: (Float) -> Unit,
@@ -1117,12 +1291,16 @@ private fun ReadingSettingsSheet(
     onLayoutModeChange: (Int) -> Unit,
     fontId: String,
     onFontIdChange: (String) -> Unit,
+    /** 当前字重（300/400/500/700） */
+    fontWeight: Int,
+    onFontWeightChange: (Int) -> Unit,
     occlusionEnabled: Boolean,
     onOcclusionEnabledChange: (Boolean) -> Unit,
     occlusionMode: String,
     onOcclusionModeChange: (String) -> Unit,
     occlusionColorIndex: Int,
     onOcclusionColorChange: (Int) -> Unit,
+    onOpenMaskConfig: () -> Unit,
     isDark: Boolean,
     accent: Color
 ) {
@@ -1271,14 +1449,52 @@ private fun ReadingSettingsSheet(
                         .verticalScroll(rememberScrollState())
                         .padding(end = 4.dp)
                 ) {
-                    // 预置
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 预置（FlowRow：加入霞鹜文楷后共 5 个，窄屏自动换行而不是被挤出屏幕）
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         ReaderFonts.presets.forEach { f ->
                             val selected = fontId == f.id
                             FilterChip(
                                 selected = selected,
                                 onClick = { onFontIdChange(f.id) },
                                 label = { Text(f.name) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = when {
+                                        selected && isDark -> Color(0x334B5563)
+                                        selected -> accent.copy(alpha = 0.12f)
+                                        else -> Color.Transparent
+                                    },
+                                    labelColor = if (isDark) DarkText else PaperWhiteText,
+                                    selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true, selected = selected,
+                                    borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
+                                    selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                                )
+                            )
+                        }
+                    }
+                    // ── 字重 ──
+                    // 霞鹜文楷有三个真实字重（Light/Regular/Medium）；其余字体为常规/加粗两档。
+                    // 档位由字体能力决定，因此切换字体时上方会自动收敛到可用档位。
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "字重",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) DarkSub else PaperWhiteSub
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ReaderFonts.weightOptions(ReaderFonts.weightMode(fontId)).forEach { w ->
+                            val selected = fontWeight == w
+                            FilterChip(
+                                selected = selected,
+                                onClick = { onFontWeightChange(w) },
+                                label = { Text(weightLabel(w)) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = when {
                                         selected && isDark -> Color(0x334B5563)
@@ -1496,11 +1712,15 @@ private fun ReadingSettingsSheet(
             // 开启后浮现遮挡粒度子项（短=字词 / 长=复句 / 混合=逐句随机长或短，均为本地算法）
             AnimatedVisibility(visible = occlusionEnabled) {
                 Column(Modifier.padding(top = 10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // FlowRow：窄屏单行放不下（三 chip + 自定义）时自动换行，避免右侧被裁切
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         val options = listOf(
                             "short" to "短遮挡",
                             "long" to "长遮挡",
-                            "mixed" to "混合（长/短随机）"
+                            "mixed" to "混合长短遮挡"
                         )
                         options.forEach { (m, label) ->
                             val selected = occlusionMode == m
@@ -1524,6 +1744,33 @@ private fun ReadingSettingsSheet(
                                 )
                             )
                         }
+                        // 遮挡自定义入口：切到自定义遮挡粒度并进入配置列表（生效中高亮）
+                        val customActive = occlusionMode == "custom"
+                        Text(
+                            "自定义",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = when {
+                                customActive && isDark -> Color(0xFFB9CFF2)
+                                customActive -> accent
+                                isDark -> DarkText
+                                else -> PaperWhiteText
+                            },
+                            fontWeight = if (customActive) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    // 选中自定义模式并挂上全屏浮层，随后**立即**移除面板组合。
+                                    //
+                                    // 不再等 sheetState.hide() 的动画回调：隐藏动画进行期间，模态窗口
+                                    // 仍浮在主窗口之上 —— 既会挡住刚挂上的浮层，又可能残留一帧吞掉
+                                    // 下一次点击，表现为「点自定义后停在阅读界面，要再点一下才进去」。
+                                    // 浮层是覆盖全屏的不透明页面，直接切换没有观感损失。
+                                    onOcclusionModeChange("custom")
+                                    onOpenMaskConfig()
+                                    onDismiss()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 8.dp)
+                        )
                     }
                     // ── 挡片颜色：马卡龙淡色可选（不透明真正遮住，高度与字形一致）──
                     Spacer(Modifier.height(12.dp))

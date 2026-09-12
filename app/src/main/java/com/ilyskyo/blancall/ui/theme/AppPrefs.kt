@@ -155,10 +155,12 @@ object AppPrefs {
         } else {
             _readingFontIdFlow.value = prefs.getString("reading_font_id", "0") ?: "0"
         }
+        _readingFontWeightFlow.value = prefs.getInt("reading_font_weight", 400).coerceIn(300, 900)
         _readingOcclusionEnabledFlow.value = prefs.getBoolean("reading_occlusion_enabled", false)
         _readingOcclusionModeFlow.value =
-            prefs.getString("reading_occlusion_mode", "long")?.takeIf { it in setOf("long", "short", "mixed") } ?: "long"
+            prefs.getString("reading_occlusion_mode", "long")?.takeIf { it in setOf("long", "short", "mixed", "custom") } ?: "long"
         _readingOcclusionColorFlow.value = prefs.getInt("reading_occlusion_color", 0).coerceIn(0, 5)
+        _readingOcclusionCustomConfigIdFlow.value = prefs.getLong("reading_occlusion_custom_config_id", -1L)
     }
 
     /** 段落首行自动缩进开关 */
@@ -454,6 +456,16 @@ object AppPrefs {
             }
         }
 
+    /** 阅读字重（300/400/500/700） */
+    var readingFontWeight: Int
+        get() = if (::prefs.isInitialized) _readingFontWeightFlow.value else 400
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putInt("reading_font_weight", value) }
+                _readingFontWeightFlow.value = value
+            }
+        }
+
     /** 是否启用阅读背诵遮挡 */
     var readingOcclusionEnabled: Boolean
         get() = if (::prefs.isInitialized) _readingOcclusionEnabledFlow.value else false
@@ -464,11 +476,11 @@ object AppPrefs {
             }
         }
 
-    /** 阅读遮挡粒度：long=长遮挡（复句一整块遮住）/ short=短遮挡（字词级遮难字）/ mixed=混合（逐句随机长/短） */
+    /** 阅读遮挡粒度：long=长遮挡（复句一整块遮住）/ short=短遮挡（字词级遮难字）/ mixed=混合（逐句随机长/短）/ custom=自定义配置 */
     var readingOcclusionMode: String
         get() = if (::prefs.isInitialized) _readingOcclusionModeFlow.value else "long"
         set(value) {
-            val v = if (value in setOf("long", "short", "mixed")) value else "long"
+            val v = if (value in setOf("long", "short", "mixed", "custom")) value else "long"
             if (::prefs.isInitialized) {
                 prefs.edit { putString("reading_occlusion_mode", v) }
                 _readingOcclusionModeFlow.value = v
@@ -483,6 +495,16 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putInt("reading_occlusion_color", v) }
                 _readingOcclusionColorFlow.value = v
+            }
+        }
+
+    /** 当前使用的自定义遮挡配置 id（配合 readingOcclusionMode == "custom"；-1 = 未选择） */
+    var readingOcclusionCustomConfigId: Long
+        get() = if (::prefs.isInitialized) _readingOcclusionCustomConfigIdFlow.value else -1L
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putLong("reading_occlusion_custom_config_id", value) }
+                _readingOcclusionCustomConfigIdFlow.value = value
             }
         }
 
@@ -541,6 +563,10 @@ object AppPrefs {
     /** 阅读字体 id（预设/系统字体路径/导入字体），字体选择唯一权威来源 */
     val readingFontIdFlow: StateFlow<String> = _readingFontIdFlow.asStateFlow()
 
+    private val _readingFontWeightFlow = MutableStateFlow(400)
+    /** 阅读字重：霞鹜文楷为 300/400/500 三个真实字重，其余字体为 400/700 两档 */
+    val readingFontWeightFlow: StateFlow<Int> = _readingFontWeightFlow.asStateFlow()
+
     private val _readingOcclusionEnabledFlow = MutableStateFlow(false)
     /** 是否启用阅读背诵遮挡 */
     val readingOcclusionEnabledFlow: StateFlow<Boolean> = _readingOcclusionEnabledFlow.asStateFlow()
@@ -552,6 +578,10 @@ object AppPrefs {
     private val _readingOcclusionColorFlow = MutableStateFlow(0)
     /** 阅读遮挡挡片颜色索引（0-5 马卡龙淡色） */
     val readingOcclusionColorFlow: StateFlow<Int> = _readingOcclusionColorFlow.asStateFlow()
+
+    private val _readingOcclusionCustomConfigIdFlow = MutableStateFlow(-1L)
+    /** 当前使用的自定义遮挡配置 id（配合 readingOcclusionMode == "custom"；-1 = 未选择） */
+    val readingOcclusionCustomConfigIdFlow: StateFlow<Long> = _readingOcclusionCustomConfigIdFlow.asStateFlow()
 
     /** 文章阅读位置（0~1 全文进度），按字符比例存储，字号变化后仍可定位 */
     fun getReadingPos(articleId: Long): Float =

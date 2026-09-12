@@ -26,6 +26,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -230,7 +231,7 @@ fun HomeScreen(
 
     // 从 ImportScreen 保存成功后返回时接收信号
     var showSaveSuccessDialog by remember { mutableStateOf(false) }
-    var savedArticleId by remember { mutableStateOf(0L) }
+    var savedArticleId by remember { mutableLongStateOf(0L) }
     var showEmojiPicker by remember { mutableStateOf(false) }
     val homeIconKey by AppPrefs.homeIconKeyFlow.collectAsState()
     val showHomeEmoji by AppPrefs.showHomeEmojiFlow.collectAsState()
@@ -238,7 +239,7 @@ fun HomeScreen(
     val subtitle by AppPrefs.subtitleFlow.collectAsState()
     // 模式选择弹窗
     var showModePicker by remember { mutableStateOf(false) }
-    var pendingPracticeArticleId by remember { mutableStateOf(0L) }
+    var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     // 长按文章卡片 → "从首页删除"选项卡
     var hideFromHomeTarget by remember { mutableStateOf<Article?>(null) }
@@ -292,7 +293,8 @@ fun HomeScreen(
                         AppIcon(
                             kind = AppIconKind.Close,
                             modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            contentDescription = "关闭"
                         )
                     }
                 }
@@ -360,6 +362,16 @@ fun HomeScreen(
                 ) {
                     iconOptions.forEach { kind ->
                         val selected = kind == appIconKindFromKey(homeIconKey)
+                        val optionName = when (kind) {
+                            AppIconKind.Logo -> "默认图标"
+                            AppIconKind.Celebrate -> "庆祝"
+                            AppIconKind.Edit -> "编辑"
+                            AppIconKind.Inbox -> "收件箱"
+                            AppIconKind.ArrowForward -> "前进箭头"
+                            AppIconKind.OpenInFull -> "全屏展开"
+                            AppIconKind.Check -> "对勾"
+                            else -> "图标"
+                        }
                         Surface(
                             modifier = Modifier
                                 .size(44.dp)
@@ -377,7 +389,8 @@ fun HomeScreen(
                                 AppIcon(
                                     kind = kind,
                                     modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    contentDescription = optionName
                                 )
                             }
                         }

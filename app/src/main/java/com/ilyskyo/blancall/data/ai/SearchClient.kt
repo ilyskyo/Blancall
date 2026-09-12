@@ -31,21 +31,48 @@ object SearchClient {
     /**
      * 执行搜索。必须在 IO 线程调用。
      *
-     * @param apiKey Tavily API Key
+     * 配置真正生效：provider=custom 且 baseUrl 非空 → 用用户自定义端点（原样使用，不拼路径）；
+     * 否则回退到 Tavily 官方端点（默认行为与旧版完全一致）。
+     * 认证方式：authStyle=bearer → Key 走 Authorization 头（body 不再带 api_key）；
+     * 否则维持原样（JSON body 携带 api_key）。
+     *
+     * @param profile 当前生效的搜索配置（含 provider / baseUrl / authStyle / apiKeyEnc）
      * @param query  搜索关键词（自动截断防超长）
      * @param maxResults 返回条数上限
      */
-    fun search(apiKey: String, query: String, maxResults: Int = 5): List<SearchResult> {
-        val conn = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+    fun search(profile: AiSearchProfile, query: String, maxResults: Int = 5): List<SearchResult> {
+        // 端点解析：自定义模式必须用用户填的完整 URL；provider=custom 却没填地址时**报错而非回退**
+        // ——回退到 Tavily 会把用户的自定义 Key 发给第三方，这正是本次修复要消除的问题。
+        val endpoint = if (profile.provider == "custom") {
+            val raw = profile.baseUrl.trim()
+            if (raw.isEmpty()) throw SearchException("自定义搜索地址未填写，请在设置中补全")
+            if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+                throw SearchException("自定义搜索地址无效，需以 http:// 或 https:// 开头")
+            }
+            raw
+        } else {
+            ENDPOINT
+        }
+        // 解密 Key 仍在此处完成：search 本身只在 IO 线程被调用（见文档注释），满足 decryptApiKey 的线程约束
+        val apiKey = profile.decryptApiKey()
+
+        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
             readTimeout = 30_000
             setRequestProperty("Content-Type", "application/json")
+            // Bearer 认证：Key 放请求头；body 认证（默认）才在 JSON 里带 api_key
+            if (profile.authStyle == "bearer") {
+                setRequestProperty("Authorization", "Bearer $apiKey")
+            }
             doOutput = true
         }
         try {
             val body = JSONObject().apply {
-                put("api_key", apiKey)
+                // body 认证（默认）才把 api_key 放进 JSON；bearer 模式不放，改用请求头携带
+                if (profile.authStyle != "bearer") {
+                    put("api_key", apiKey)
+                }
                 put("query", query.take(300))
                 put("max_results", maxResults)
                 put("search_depth", "basic")
