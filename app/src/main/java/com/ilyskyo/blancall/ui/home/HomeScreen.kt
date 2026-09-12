@@ -9,8 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
@@ -76,6 +74,7 @@ import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
@@ -104,6 +103,7 @@ data class ResumableItem(
     val lastTime: Long
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
@@ -114,6 +114,10 @@ fun HomeScreen(
     val recordRepo = remember { RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath) }
     val allRecords by recordRepo.records.collectAsState()
     val dateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
+
+    // 「添加卡片」底部面板状态外提：与阅读设置面板同款写法，
+    // 保证程序化收起（点「完成」）与再次展开的动画行为一致。
+    val addCardSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // 搜索栏右侧「添加」按钮实测宽度；供品牌栏「设置」按钮等宽对齐
     var addButtonWidth by remember { mutableStateOf(0.dp) }
@@ -604,6 +608,24 @@ fun HomeScreen(
                 homeScope.launch { withContext(Dispatchers.IO) { homeLayoutStore.saveCards(newCards) } }
             }
 
+            // ── 全局统计：用 remember(allRecords) 包裹，避免每次重组重算。
+            // 提前到画布之前算：画布里的「学习数据 / 全局数据」卡片要用它。──
+            val (totalPractices, totalCorrect, totalBlanks, overallRate) = remember(allRecords) {
+                val tp = allRecords.size
+                val tc = allRecords.sumOf { it.correctCount }
+                val tb = allRecords.sumOf { it.totalBlanks }
+                val or = if (tb > 0) tc.toFloat() / tb else 0f
+                HomeStats(tp, tc, tb, or)
+            }
+            val homeStats = remember(totalPractices, totalBlanks, overallRate, articles.size) {
+                HomeStatsData(
+                    practices = totalPractices,
+                    rate = overallRate,
+                    blanks = totalBlanks,
+                    articleCount = articles.size
+                )
+            }
+
             HomeCardCanvas(
                 cards = homeCards,
                 editMode = cardEditMode,
@@ -650,18 +672,11 @@ fun HomeScreen(
                     }
                 },
                 onAddCard = { showAddCardSheet = true },
+                // 长按卡片进编辑态：交给画布内统一的手势实现（避免内层行级手势消费长按）
+                onLongPressCard = { cardEditMode = true },
                 modifier = Modifier.fillMaxWidth(),
                 cardContent = { card ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {},
-                                onLongClick = { cardEditMode = true }
-                            )
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         HomeCardContent(
                             card = card,
                             articles = articles,
@@ -693,6 +708,8 @@ fun HomeScreen(
                             onOpenMaskConfig = { articleId, _ ->
                                 navController.navigate("reader/$articleId")
                             },
+                            stats = homeStats,
+                            onOpenStats = { navController.navigateToTab("overview") },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -707,7 +724,10 @@ fun HomeScreen(
                     Text("完成", style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            Spacer(Modifier.height(14.dp))
+            // 底部留白：避开底部导航栏与左下角悬浮按钮组。
+            // 不加的话编辑态的「完成」会被顶到导航栏底下（用户反馈「跑到导航栏下面」），
+            // 非编辑态最后一行卡片同样会被遮住。
+            Spacer(Modifier.height(96.dp))
 
             // ── 添加卡片：由画布顶部「+」唤起，列出未加入的系统卡与全部自定义配置 ──
             if (showAddCardSheet) {
@@ -715,6 +735,8 @@ fun HomeScreen(
                     Triple(HomeLayoutStore.CardType.DUE, "待复习", "今日需要复习的文章"),
                     Triple(HomeLayoutStore.CardType.CONTINUE, "继续做", "未完成的练习进度"),
                     Triple(HomeLayoutStore.CardType.RECENT, "最近文章", "最近打开过的文章"),
+                    Triple(HomeLayoutStore.CardType.STATS, "学习数据", "练习次数与正确率"),
+                    Triple(HomeLayoutStore.CardType.GLOBAL_STATS, "全局数据", "累计统计概览"),
                     Triple(HomeLayoutStore.CardType.ADD_ARTICLE, "添加文章", "导入新文章的入口")
                 ).filter { (t, _, _) -> homeCards.none { it.type == t } }
                 val customAddable by produceState<List<HomeLayoutStore.Card>>(emptyList(), homeCards) {
@@ -722,65 +744,34 @@ fun HomeScreen(
                         collectAddableCustomCards(context.filesDir, homeCards.map { it.id }.toSet())
                     }
                 }
-                BlancallAlertDialog(
-                    onDismissRequest = { showAddCardSheet = false },
-                    title = { Text("添加卡片") },
-                    text = {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            systemAddable.forEach { (type, label, desc) ->
-                                HomeAddCardRow(label = label, desc = desc) {
-                                    val cardId = when (type) {
-                                        HomeLayoutStore.CardType.DUE -> HomeLayoutStore.CARD_ID_DUE
-                                        HomeLayoutStore.CardType.CONTINUE -> HomeLayoutStore.CARD_ID_CONTINUE
-                                        HomeLayoutStore.CardType.RECENT -> HomeLayoutStore.CARD_ID_RECENT
-                                        else -> HomeLayoutStore.CARD_ID_ADD
-                                    }
-                                    persistHomeCards(homeCards + HomeLayoutStore.Card(cardId, type))
-                                }
-                            }
-                            if (customAddable.isNotEmpty()) {
-                                Spacer(Modifier.height(10.dp))
-                                Text(
-                                    "自定义配置",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                customAddable.forEach { c ->
-                                    HomeAddCardRow(
-                                        label = c.title.ifBlank { "自定义配置" },
-                                        desc = if (c.type == HomeLayoutStore.CardType.CUSTOM_CLOZE)
-                                            "自定义挖空" else "自定义遮挡"
-                                    ) {
-                                        persistHomeCards(homeCards + c)
-                                    }
-                                }
-                            }
+                HomeAddCardSheet(
+                    sheetState = addCardSheetState,
+                    systemAddable = systemAddable,
+                    customAddable = customAddable,
+                    onDismiss = { showAddCardSheet = false },
+                    onAddSystem = { type ->
+                        val cardId = when (type) {
+                            HomeLayoutStore.CardType.DUE -> HomeLayoutStore.CARD_ID_DUE
+                            HomeLayoutStore.CardType.CONTINUE -> HomeLayoutStore.CARD_ID_CONTINUE
+                            HomeLayoutStore.CardType.RECENT -> HomeLayoutStore.CARD_ID_RECENT
+                            HomeLayoutStore.CardType.STATS -> HomeLayoutStore.CARD_ID_STATS
+                            HomeLayoutStore.CardType.GLOBAL_STATS -> HomeLayoutStore.CARD_ID_GLOBAL_STATS
+                            else -> HomeLayoutStore.CARD_ID_ADD
                         }
+                        persistHomeCards(homeCards + HomeLayoutStore.Card(cardId, type))
                     },
-                    confirmButton = {
-                        TextButton(onClick = { showAddCardSheet = false }) { Text("完成") }
-                    }
+                    onAddCustom = { c -> persistHomeCards(homeCards + c) },
                 )
             }
             Spacer(Modifier.height(14.dp))
 
 
-            // ── 全局统计入口：用 remember(allRecords) 包裹，避免每次重组重算 ──
-            val (totalPractices, totalCorrect, totalBlanks, overallRate) = remember(allRecords) {
-                val tp = allRecords.size
-                val tc = allRecords.sumOf { it.correctCount }
-                val tb = allRecords.sumOf { it.totalBlanks }
-                val or = if (tb > 0) tc.toFloat() / tb else 0f
-                HomeStats(tp, tc, tb, or)
-            }
-            // 学习数据卡片关闭状态：以练习次数为 key，做新练习后自动恢复显示
-            var statsCardDismissed by remember(totalPractices) { mutableStateOf(false) }
-            if (totalPractices > 0 && !statsCardDismissed) {
+            // ── 学习数据横幅：仅当首页**没有**「学习数据」卡片时，做完新练习才出现一次 ──
+            // 用户要求：已把学习数据加成卡片时不再弹，避免同一信息在首页出现两遍。
+            val hasStatsCard = homeCards.any { it.type == HomeLayoutStore.CardType.STATS }
+            // 关闭状态以练习次数为 key：做新练习后自动恢复显示
+            var statsBannerDismissed by remember(totalPractices) { mutableStateOf(false) }
+            if (!hasStatsCard && totalPractices > 0 && !statsBannerDismissed) {
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -818,8 +809,8 @@ fun HomeScreen(
                         }
                         // 叉号关闭按钮：点击后本次会话不再显示，左下角统计入口仍可进入
                         IconButton(
-                            onClick = { statsCardDismissed = true },
-                            modifier = Modifier.semantics { contentDescription = "关闭学习数据卡片" }
+                            onClick = { statsBannerDismissed = true },
+                            modifier = Modifier.semantics { contentDescription = "关闭学习数据横幅" }
                         ) {
                             AppIcon(
                                 kind = AppIconKind.Close,
@@ -1099,7 +1090,98 @@ private data class HomeStats(
 
 // ── 首页卡片系统辅助 ──
 
-/** 「添加卡片」弹窗里的一行可选项 */
+/**
+ * 「添加卡片」底部面板：沿用阅读设置面板（ReadingSettingsSheet）的原生底部弹出样式。
+ *
+ * - [sheetState] 由 [HomeScreen] 外提，程序化收起 / 再次展开的动画行为与阅读设置一致；
+ * - 面板高度不超过屏幕 55%，条目多时在面板内部滚动；
+ * - 命名 / 类型说明 + 右侧「添加」动作，排版对齐阅读设置面板的行风格。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeAddCardSheet(
+    sheetState: SheetState,
+    systemAddable: List<Triple<HomeLayoutStore.CardType, String, String>>,
+    customAddable: List<HomeLayoutStore.Card>,
+    onDismiss: () -> Unit,
+    onAddSystem: (HomeLayoutStore.CardType) -> Unit,
+    onAddCustom: (HomeLayoutStore.Card) -> Unit,
+) {
+    // 面板内容区最大高度：不超过屏幕大半，超出部分内部滚动
+    val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+    GlassModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                )
+            }
+        }
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 28.dp)
+        ) {
+            Text(
+                "添加卡片",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(14.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxPanelHeight)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                systemAddable.forEach { (type, label, desc) ->
+                    HomeAddCardRow(label = label, desc = desc) { onAddSystem(type) }
+                }
+                if (customAddable.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "自定义配置",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    customAddable.forEach { c ->
+                        HomeAddCardRow(
+                            label = c.title.ifBlank { "自定义配置" },
+                            desc = if (c.type == HomeLayoutStore.CardType.CUSTOM_CLOZE) {
+                                "自定义挖空"
+                            } else {
+                                "自定义遮挡"
+                            }
+                        ) { onAddCustom(c) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text("完成", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/** 「添加卡片」面板里的一行可选项：名称 + 类型说明 + 右侧「添加」动作 */
 @Composable
 private fun HomeAddCardRow(label: String, desc: String, onClick: () -> Unit) {
     Row(
@@ -1121,13 +1203,17 @@ private fun HomeAddCardRow(label: String, desc: String, onClick: () -> Unit) {
             Text(
                 desc,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
+        Spacer(Modifier.width(8.dp))
         Text(
             "添加",
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1
         )
     }
 }

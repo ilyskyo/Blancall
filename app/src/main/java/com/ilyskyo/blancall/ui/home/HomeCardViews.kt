@@ -10,10 +10,13 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -71,11 +74,37 @@ import org.json.JSONObject
  *
  * 画布容器（网格、拖拽、尺寸、大头针）由宿主负责；本文件只负责**按卡片类型渲染内容**，
  * 并通过 [HomeCardContent] 这一个入口分发。设计约束：
- * - 卡片宽高是动态的（画布可改列/行跨度）→ 内容一律 `fillMaxWidth()` + 纵向内滚，
- *   不写死大 padding，小尺寸下靠内部滚动吃下溢出内容；
+ * - 卡片宽高由画布给定且**固定** → 每张卡的根容器一律 `fillMaxSize()` 吃满给定尺寸，
+ *   绝不按内容自身高度 wrap 而溢出到卡片外；内容超出时**在卡片内部滚动**。
+ * - 标题与滚动区分离：标题固定在卡片顶部、正文占满余下空间并内滚 → 任何尺寸下标题都不会
+ *   与内部内容重叠（「最近使用」卡的回落问题即由此消除）。
+ * - 窄卡（`colSpan=1`）收紧内边距、隐藏次要信息；高卡（`rowSpan≥2`）内容少时做纵向分布、
+ *   空态垂直居中 → 既不空也不挤。
  * - 宿主数据与导航一律以 lambda 传入（不持有 NavController）；
  * - 仅纯色 / 现有 GlassCard 玻璃质感，无任何 gradient。
  */
+
+/** 窄卡阈值：宽度小于该值（典型为 colSpan=1）时收紧内边距、隐藏次要信息 */
+private val NARROW_CARD_WIDTH = 168.dp
+
+/**
+ * 首页「学习数据 / 全局数据」卡片的数据快照。
+ * 由宿主在 HomeScreen 里算好后传入，卡片自身不做统计计算。
+ */
+data class HomeStatsData(
+    /** 累计练习次数 */
+    val practices: Int = 0,
+    /** 总正确率 0f..1f */
+    val rate: Float = 0f,
+    /** 累计填空数（全局数据的「累计字数」） */
+    val blanks: Int = 0,
+    /** 已有文章数 */
+    val articleCount: Int = 0
+)
+
+/** 高卡阈值：高度达到该值（约 rowSpan≥2）时，内容少则纵向分布，避免全挤在顶部一小块 */
+private val TALL_CARD_HEIGHT = 140.dp
+
 @Composable
 fun HomeCardContent(
     /** 当前卡片（类型 / refId / 标题快照 / 跨度等） */
@@ -112,54 +141,91 @@ fun HomeCardContent(
     onOpenMaskConfig: (articleId: Long, configId: Long) -> Unit,
     /** 自定义配置的外部修订号：配置被重命名/删除后宿主自增即可触发重新反查 */
     configRevision: Long = 0L,
+    /** 学习数据 / 全局数据卡片的统计快照（由宿主算好传入） */
+    stats: HomeStatsData = HomeStatsData(),
+    /** 点学习数据 / 全局数据卡 → 宿主跳统计页 */
+    onOpenStats: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    when (card.type) {
-        HomeLayoutStore.CardType.DUE -> DueCard(
-            dueArticles = dueArticles,
-            anchorArticleId = anchorArticleId,
-            onAnchorMeasured = onAnchorMeasured,
-            onPracticeArticle = onPracticeArticle,
-            modifier = modifier,
-        )
+    // 卡片尺寸由画布固定。这里统一量一次实际宽高，供各卡做「窄卡收紧 / 高卡分布」自适应；
+    // 各卡再以 fillMaxSize() 吃满这个固定尺寸，绝不按内容 wrap（那正是内容溢出卡外的根因）。
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val compact = maxWidth < NARROW_CARD_WIDTH
+        val tall = maxHeight >= TALL_CARD_HEIGHT
+        val cardModifier = Modifier.fillMaxSize()
 
-        HomeLayoutStore.CardType.CONTINUE -> ContinueCard(
-            articles = articles,
-            resumables = resumables,
-            onResumePractice = onResumePractice,
-            modifier = modifier,
-        )
+        when (card.type) {
+            HomeLayoutStore.CardType.DUE -> DueCard(
+                dueArticles = dueArticles,
+                anchorArticleId = anchorArticleId,
+                onAnchorMeasured = onAnchorMeasured,
+                onPracticeArticle = onPracticeArticle,
+                compact = compact,
+                tall = tall,
+                modifier = cardModifier,
+            )
 
-        HomeLayoutStore.CardType.RECENT -> RecentCard(
-            recentArticles = recentArticles,
-            dateFormat = dateFormat,
-            anchorArticleId = anchorArticleId,
-            onAnchorMeasured = onAnchorMeasured,
-            onPracticeArticle = onPracticeArticle,
-            onOpenArticle = onOpenArticle,
-            onRemoveFromHome = onRemoveFromHome,
-            onViewAllArticles = onViewAllArticles,
-            modifier = modifier,
-        )
+            HomeLayoutStore.CardType.CONTINUE -> ContinueCard(
+                articles = articles,
+                resumables = resumables,
+                onResumePractice = onResumePractice,
+                compact = compact,
+                tall = tall,
+                modifier = cardModifier,
+            )
 
-        HomeLayoutStore.CardType.CUSTOM_CLOZE -> CustomClozeCard(
-            card = card,
-            configRevision = configRevision,
-            onOpenClozeConfig = onOpenClozeConfig,
-            modifier = modifier,
-        )
+            HomeLayoutStore.CardType.RECENT -> RecentCard(
+                recentArticles = recentArticles,
+                dateFormat = dateFormat,
+                anchorArticleId = anchorArticleId,
+                onAnchorMeasured = onAnchorMeasured,
+                onPracticeArticle = onPracticeArticle,
+                onOpenArticle = onOpenArticle,
+                onRemoveFromHome = onRemoveFromHome,
+                onViewAllArticles = onViewAllArticles,
+                compact = compact,
+                tall = tall,
+                modifier = cardModifier,
+            )
 
-        HomeLayoutStore.CardType.CUSTOM_MASK -> CustomMaskCard(
-            card = card,
-            configRevision = configRevision,
-            onOpenMaskConfig = onOpenMaskConfig,
-            modifier = modifier,
-        )
+            HomeLayoutStore.CardType.CUSTOM_CLOZE -> CustomClozeCard(
+                card = card,
+                configRevision = configRevision,
+                onOpenClozeConfig = onOpenClozeConfig,
+                compact = compact,
+                modifier = cardModifier,
+            )
 
-        HomeLayoutStore.CardType.ADD_ARTICLE -> AddArticleCard(
-            onAddArticle = onAddArticle,
-            modifier = modifier,
-        )
+            HomeLayoutStore.CardType.CUSTOM_MASK -> CustomMaskCard(
+                card = card,
+                configRevision = configRevision,
+                onOpenMaskConfig = onOpenMaskConfig,
+                compact = compact,
+                modifier = cardModifier,
+            )
+
+            HomeLayoutStore.CardType.ADD_ARTICLE -> AddArticleCard(
+                onAddArticle = onAddArticle,
+                compact = compact,
+                modifier = cardModifier,
+            )
+
+            HomeLayoutStore.CardType.STATS -> StatsCard(
+                stats = stats,
+                onOpenStats = onOpenStats,
+                compact = compact,
+                tall = tall,
+                modifier = cardModifier,
+            )
+
+            HomeLayoutStore.CardType.GLOBAL_STATS -> GlobalStatsCard(
+                stats = stats,
+                onOpenStats = onOpenStats,
+                compact = compact,
+                tall = tall,
+                modifier = cardModifier,
+            )
+        }
     }
 }
 
@@ -173,19 +239,22 @@ private fun DueCard(
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
     onPracticeArticle: (Long) -> Unit,
+    compact: Boolean,
+    tall: Boolean,
     modifier: Modifier,
 ) {
     val hue = Macaron.review()
+    val pad = if (compact) 10.dp else 14.dp
     GlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
         containerColor = hue.fill,
     ) {
+        // 外层 Column 不滚动：标题固定在顶部、正文吃满余下空间并内滚 → 标题永不与内容重叠
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(14.dp),
+                .fillMaxSize()
+                .padding(pad),
         ) {
             CardHeader(
                 dotColor = hue.accent,
@@ -198,43 +267,59 @@ private fun DueCard(
                     title = "今日已没有要复习的",
                     subtitle = "明天再来看看",
                     accent = hue.accent,
+                    compact = compact,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                 )
             } else {
-                Spacer(Modifier.height(4.dp))
-                dueArticles.forEach { article ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPracticeArticle(article.id) }
-                            .then(practiceAnchorModifier(article.id, anchorArticleId, onAnchorMeasured))
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                article.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (article.author.isNotBlank()) {
+                Spacer(Modifier.height(if (compact) 2.dp else 4.dp))
+                CardBody(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = if (tall && dueArticles.size <= 3) {
+                        Arrangement.SpaceEvenly
+                    } else {
+                        Arrangement.Top
+                    },
+                ) {
+                    dueArticles.forEach { article ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPracticeArticle(article.id) }
+                                .then(practiceAnchorModifier(article.id, anchorArticleId, onAnchorMeasured))
+                                .padding(vertical = if (compact) 3.dp else 5.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    article.author.trim(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    article.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
+                                if (article.author.isNotBlank()) {
+                                    Text(
+                                        article.author.trim(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
+                            Text(
+                                "复习",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = hue.accent,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = if (compact) 6.dp else 8.dp),
+                            )
                         }
-                        Text(
-                            "复习",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = hue.accent,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
                     }
                 }
             }
@@ -251,10 +336,17 @@ private fun ContinueCard(
     articles: List<Article>,
     resumables: List<ResumableItem>,
     onResumePractice: (ResumableItem) -> Unit,
+    compact: Boolean,
+    tall: Boolean,
     modifier: Modifier,
 ) {
     val hue = Macaron.continueP()
     val articleMap = remember(articles) { articles.associateBy { it.id } }
+    // 先解析出真正能渲染的行（文章可能已被删除），据此决定纵向分布与标题数量
+    val rows = remember(resumables, articleMap) {
+        resumables.mapNotNull { item -> articleMap[item.articleId]?.let { item to it } }
+    }
+    val pad = if (compact) 10.dp else 14.dp
     GlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
@@ -262,65 +354,79 @@ private fun ContinueCard(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(14.dp),
+                .fillMaxSize()
+                .padding(pad),
         ) {
             CardHeader(
                 dotColor = hue.accent,
-                title = if (resumables.isEmpty()) "待继续完成"
-                else "待继续完成（${resumables.size}）",
+                title = if (rows.isEmpty()) "待继续完成"
+                else "待继续完成（${rows.size}）",
             )
-            if (resumables.isEmpty()) {
+            if (rows.isEmpty()) {
                 CardEmptyState(
                     icon = AppIconKind.TrackChanges,
                     title = "没有进行中的练习",
                     subtitle = "挑一篇文章开始练一把",
                     accent = hue.accent,
+                    compact = compact,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                 )
             } else {
-                Spacer(Modifier.height(2.dp))
-                resumables.forEach { item ->
-                    val art = articleMap[item.articleId] ?: return@forEach
-                    val modeLabel = when (item.mode) {
-                        "SENTENCE" -> "句子挖空"
-                        "WORD" -> "字词挖空"
-                        "REVERSE" -> "反向默写"
-                        else -> "练习"
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onResumePractice(item) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                Spacer(Modifier.height(if (compact) 2.dp else 4.dp))
+                CardBody(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = if (tall && rows.size <= 3) {
+                        Arrangement.SpaceEvenly
+                    } else {
+                        Arrangement.Top
+                    },
+                ) {
+                    rows.forEach { (item, art) ->
+                        val modeLabel = when (item.mode) {
+                            "SENTENCE" -> "句子挖空"
+                            "WORD" -> "字词挖空"
+                            "REVERSE" -> "反向默写"
+                            else -> "练习"
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onResumePractice(item) }
+                                .padding(vertical = if (compact) 3.dp else 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    art.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    buildString {
+                                        if (art.author.isNotBlank()) append(art.author.trim()).append(" · ")
+                                        append(modeLabel).append(" · 剩余 ")
+                                        append(item.total - item.answered).append("/").append(item.total)
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             Text(
-                                art.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                buildString {
-                                    if (art.author.isNotBlank()) append(art.author.trim()).append(" · ")
-                                    append(modeLabel).append(" · 剩余 ")
-                                    append(item.total - item.answered).append("/").append(item.total)
-                                },
+                                "继续",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                                color = hue.accent,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = if (compact) 6.dp else 8.dp),
                             )
                         }
-                        Text(
-                            "继续",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = hue.accent,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
                     }
                 }
             }
@@ -345,10 +451,13 @@ private fun RecentCard(
     onOpenArticle: (Article) -> Unit,
     onRemoveFromHome: (Article) -> Unit,
     onViewAllArticles: () -> Unit,
+    compact: Boolean,
+    tall: Boolean,
     modifier: Modifier,
 ) {
     // 长按"从首页删除"弹窗：目标文章由卡片内部状态承载，确认后回调宿主持久化
     var hideTarget by remember { mutableStateOf<Article?>(null) }
+    val pad = if (compact) 10.dp else 12.dp
 
     GlassCard(
         modifier = modifier,
@@ -356,16 +465,18 @@ private fun RecentCard(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(12.dp),
+                .fillMaxSize()
+                .padding(pad),
         ) {
+            // 标题独立于滚动区：小尺寸下文章行只在下方滚动，标题不会再被内容压住 / 重叠
             Text(
                 "最近使用",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 2.dp, bottom = 8.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 2.dp, bottom = if (compact) 6.dp else 8.dp),
             )
 
             if (recentArticles.isEmpty()) {
@@ -374,31 +485,51 @@ private fun RecentCard(
                     title = "还没有文章",
                     subtitle = "点「添加文章」导入第一篇",
                     accent = MaterialTheme.colorScheme.primary,
+                    compact = compact,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                 )
             } else {
-                recentArticles.forEachIndexed { index, article ->
-                    AnimatedVisibility(visible = true, enter = listItemEnter(index)) {
-                        RecentArticleRow(
-                            article = article,
-                            dateFormat = dateFormat,
-                            onClick = { onOpenArticle(article) },
-                            onLongClick = { hideTarget = article },
-                            onPractice = { onPracticeArticle(article.id) },
-                            practiceModifier = practiceAnchorModifier(
-                                articleId = article.id,
-                                anchorArticleId = anchorArticleId,
-                                onAnchorMeasured = onAnchorMeasured,
-                            ),
-                        )
+                CardBody(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = if (tall && recentArticles.size <= 3) {
+                        Arrangement.SpaceEvenly
+                    } else {
+                        Arrangement.Top
+                    },
+                ) {
+                    recentArticles.forEachIndexed { index, article ->
+                        AnimatedVisibility(visible = true, enter = listItemEnter(index)) {
+                            RecentArticleRow(
+                                article = article,
+                                dateFormat = dateFormat,
+                                compact = compact,
+                                onClick = { onOpenArticle(article) },
+                                onLongClick = { hideTarget = article },
+                                onPractice = { onPracticeArticle(article.id) },
+                                practiceModifier = practiceAnchorModifier(
+                                    articleId = article.id,
+                                    anchorArticleId = anchorArticleId,
+                                    onAnchorMeasured = onAnchorMeasured,
+                                ),
+                            )
+                        }
+                        Spacer(Modifier.height(if (compact) 6.dp else 8.dp))
                     }
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (recentArticles.size > RECENT_VIEW_ALL_THRESHOLD) {
-                    TextButton(
-                        onClick = onViewAllArticles,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("查看全部（${recentArticles.size} 篇）")
+                    if (recentArticles.size > RECENT_VIEW_ALL_THRESHOLD) {
+                        TextButton(
+                            onClick = onViewAllArticles,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                "查看全部（${recentArticles.size} 篇）",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -441,6 +572,7 @@ private fun RecentCard(
 private fun RecentArticleRow(
     article: Article,
     dateFormat: SimpleDateFormat,
+    compact: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onPractice: () -> Unit,
@@ -462,11 +594,13 @@ private fun RecentArticleRow(
                     onLongClick()
                 },
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(
+                horizontal = if (compact) 10.dp else 12.dp,
+                vertical = if (compact) 8.dp else 10.dp,
+            ),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -478,17 +612,21 @@ private fun RecentArticleRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = buildString {
-                    if (article.author.isNotBlank()) append(article.author.trim()).append(" · ")
-                    append(article.content.length).append(" 字符")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // 窄卡下隐藏「作者·字符数」次要信息，把宽度让给标题（避免标题被挤没）
+            if (!compact) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = buildString {
+                        if (article.author.isNotBlank()) append(article.author.trim()).append(" · ")
+                        append(article.content.length).append(" 字符")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(0.6f, fill = false),
+                )
+            }
         }
 
         Spacer(Modifier.height(2.dp))
@@ -501,7 +639,7 @@ private fun RecentArticleRow(
             overflow = TextOverflow.Ellipsis,
         )
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -512,14 +650,22 @@ private fun RecentArticleRow(
                 text = dateFormat.format(Date(article.updatedAt)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                maxLines = 1,
             )
             Button(
                 onClick = onPractice,
-                modifier = practiceModifier.height(34.dp),
+                modifier = practiceModifier.height(if (compact) 30.dp else 34.dp),
                 shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                contentPadding = PaddingValues(
+                    horizontal = if (compact) 10.dp else 12.dp,
+                    vertical = 0.dp,
+                ),
             ) {
-                Text("开始练习", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    if (compact) "练习" else "开始练习",
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                )
             }
         }
     }
@@ -534,6 +680,7 @@ private fun CustomClozeCard(
     card: HomeLayoutStore.Card,
     configRevision: Long,
     onOpenClozeConfig: (Long, Long) -> Unit,
+    compact: Boolean,
     modifier: Modifier,
 ) {
     val context = LocalContext.current
@@ -558,6 +705,7 @@ private fun CustomClozeCard(
         accent = hue.accent,
         containerColor = hue.fill,
         onClick = onClick,
+        compact = compact,
         modifier = modifier,
     )
 }
@@ -571,6 +719,7 @@ private fun CustomMaskCard(
     card: HomeLayoutStore.Card,
     configRevision: Long,
     onOpenMaskConfig: (Long, Long) -> Unit,
+    compact: Boolean,
     modifier: Modifier,
 ) {
     val context = LocalContext.current
@@ -606,6 +755,7 @@ private fun CustomMaskCard(
         accent = hue.accent,
         containerColor = hue.fill,
         onClick = onClick,
+        compact = compact,
         modifier = modifier,
     )
 }
@@ -613,6 +763,8 @@ private fun CustomMaskCard(
 /**
  * 自定义配置卡（挖空 / 遮挡共用外观）：配置名 + 明细 + 「点击进入」提示；
  * 反查不到（配置已被删除）时展示淡色「配置已失效」且不可点击。
+ *
+ * 内容整体在卡片内 **垂直居中**（高卡不空、矮卡内滚），文字均带上限与省略号。
  */
 @Composable
 private fun CustomConfigCardFrame(
@@ -622,19 +774,21 @@ private fun CustomConfigCardFrame(
     accent: Color,
     containerColor: Color,
     onClick: (() -> Unit)?,
+    compact: Boolean,
     modifier: Modifier,
 ) {
+    val pad = if (compact) 10.dp else 14.dp
     GlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         containerColor = containerColor,
         onClick = onClick,
     ) {
-        Column(
+        CardBody(
             modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(14.dp),
+                .fillMaxSize()
+                .padding(pad),
+            verticalArrangement = Arrangement.Center,
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -649,6 +803,7 @@ private fun CustomConfigCardFrame(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -657,6 +812,8 @@ private fun CustomConfigCardFrame(
                     "配置已失效",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             } else {
                 Text(
@@ -671,6 +828,7 @@ private fun CustomConfigCardFrame(
                     "点击进入",
                     style = MaterialTheme.typography.labelSmall,
                     color = accent,
+                    maxLines = 1,
                 )
             }
         }
@@ -684,51 +842,58 @@ private fun CustomConfigCardFrame(
 @Composable
 private fun AddArticleCard(
     onAddArticle: () -> Unit,
+    compact: Boolean,
     modifier: Modifier,
 ) {
     val hue = Macaron.info()
+    val pad = if (compact) 10.dp else 14.dp
     GlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         containerColor = hue.fill,
         onClick = onAddArticle,
     ) {
-        Box(
+        CardBody(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            contentAlignment = Alignment.Center,
+                .fillMaxSize()
+                .padding(pad),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(if (compact) 30.dp else 36.dp)
                         .clip(CircleShape)
                         .background(hue.accent.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     AppIcon(
                         kind = AppIconKind.Add,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(if (compact) 17.dp else 20.dp),
                         tint = hue.accent,
                     )
                 }
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
                 Column {
                     Text(
                         "添加文章",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = if (compact) MaterialTheme.typography.bodySmall
+                        else MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
-                    )
-                    Text(
-                        "导入新文章开始练习",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (!compact) {
+                        Text(
+                            "导入新文章开始练习",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -736,8 +901,190 @@ private fun AddArticleCard(
 }
 
 // ══════════════════════════════════════════════════════════════════
+// STATS —— 学习数据（练习摘要，点进统计页）
+// ══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun StatsCard(
+    stats: HomeStatsData,
+    onOpenStats: () -> Unit,
+    compact: Boolean,
+    tall: Boolean,
+    modifier: Modifier,
+) {
+    val hue = Macaron.lavender()
+    val pad = if (compact) 10.dp else 14.dp
+    GlassCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        containerColor = hue.fill,
+        onClick = onOpenStats,
+    ) {
+        CardBody(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(pad),
+            // 高卡上下铺开（避免内容全挤顶部），矮卡居中
+            verticalArrangement = if (tall) Arrangement.SpaceEvenly else Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (compact) 30.dp else 36.dp)
+                    .clip(CircleShape)
+                    .background(hue.accent.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                AppIcon(
+                    kind = AppIconKind.Insights,
+                    modifier = Modifier.size(if (compact) 17.dp else 20.dp),
+                    tint = hue.accent,
+                )
+            }
+            Spacer(Modifier.height(if (compact) 6.dp else 8.dp))
+            Text(
+                "学习数据",
+                style = if (compact) MaterialTheme.typography.bodySmall
+                else MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "${stats.practices} 次练习 · 正确率 ${(stats.rate * 100).toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (tall) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "查看详情",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = hue.accent,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// GLOBAL_STATS —— 全局数据（累计统计）
+// ══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GlobalStatsCard(
+    stats: HomeStatsData,
+    onOpenStats: () -> Unit,
+    compact: Boolean,
+    tall: Boolean,
+    modifier: Modifier,
+) {
+    val hue = Macaron.neutral()
+    val pad = if (compact) 10.dp else 14.dp
+    GlassCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        containerColor = hue.fill,
+        onClick = onOpenStats,
+    ) {
+        CardBody(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(pad),
+            verticalArrangement = if (tall) Arrangement.SpaceEvenly else Arrangement.Center,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(if (compact) 26.dp else 32.dp)
+                        .clip(CircleShape)
+                        .background(hue.accent.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppIcon(
+                        kind = AppIconKind.Insights,
+                        modifier = Modifier.size(if (compact) 15.dp else 18.dp),
+                        tint = hue.accent,
+                    )
+                }
+                Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
+                Text(
+                    "全局数据",
+                    style = if (compact) MaterialTheme.typography.bodySmall
+                    else MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
+            GlobalStatRow("练习总数", "${stats.practices} 次", compact)
+            GlobalStatRow("平均正确率", "${(stats.rate * 100).toInt()}%", compact)
+            // 窄卡只留两行，避免文字被挤成省略号
+            if (!compact) GlobalStatRow("累计填空", "${stats.blanks} 字", compact)
+            if (tall && !compact) GlobalStatRow("覆盖文章", "${stats.articleCount} 篇", compact)
+        }
+    }
+}
+
+@Composable
+private fun GlobalStatRow(label: String, value: String, compact: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = if (compact) 1.dp else 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            maxLines = 1,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+        )
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
 // 共用小件
 // ══════════════════════════════════════════════════════════════════
+
+/**
+ * 卡片正文区：**先吃满调用方给定的空间，再纵向内滚**。
+ *
+ * - 内容不足一屏时按 [verticalArrangement] 排布（高卡可 `SpaceEvenly` / `Center` 填空，不显得空）；
+ * - 内容超出一屏时在卡片内部滚动，绝不画出卡片外。
+ *
+ * 调用方需传入带确定高度的 modifier：`fillMaxSize()`（直接铺满卡片）或
+ * `fillMaxWidth().weight(1f)`（标题下方占满余下空间）。
+ */
+@Composable
+private fun CardBody(
+    modifier: Modifier,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+    horizontalAlignment: Alignment.Horizontal = Alignment.Start,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = verticalArrangement,
+        horizontalAlignment = horizontalAlignment,
+        content = content,
+    )
+}
 
 /** 卡片标题行：同族圆点 + 标题（与既有待复习 / 继续练习卡一致） */
 @Composable
@@ -755,13 +1102,17 @@ private fun CardHeader(dotColor: Color, title: String) {
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
     }
 }
 
 /**
- * 精致空态：柔和圆形图标底 + 主文案 + 一行淡色副文案，居中、留白舒适。
+ * 精致空态：柔和圆形图标底 + 主文案 + 一行淡色副文案。
  * 供「待复习」「继续练习」「最近文章」三种卡的零数据场景复用。
+ *
+ * 通过内滚 + [Arrangement.Center] 实现「空间富余时垂直居中、空间不足时卡内滚动」：
+ * 图标永远完整可见（不会出现被切一半），小卡下自动缩小图标并隐藏副文案。
  */
 @Composable
 private fun CardEmptyState(
@@ -769,41 +1120,52 @@ private fun CardEmptyState(
     title: String,
     subtitle: String,
     accent: Color,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
 ) {
+    val boxSize = if (compact) 38.dp else 52.dp
+    val iconSize = if (compact) 19.dp else 26.dp
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 22.dp),
+        modifier = modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
-                .size(52.dp)
+                .size(boxSize)
                 .clip(CircleShape)
                 .background(accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center,
         ) {
             AppIcon(
                 kind = icon,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(iconSize),
                 tint = accent,
             )
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
         Text(
             title,
-            style = MaterialTheme.typography.bodyMedium,
+            style = if (compact) MaterialTheme.typography.bodySmall
+            else MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-            textAlign = TextAlign.Center,
-        )
+        // 窄卡空间紧张：只留主文案，避免副文案把空态挤到滚动
+        if (!compact) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

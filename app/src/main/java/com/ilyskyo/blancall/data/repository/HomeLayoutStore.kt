@@ -44,7 +44,16 @@ class HomeLayoutStore private constructor(private val file: File) {
         CUSTOM_MASK,
 
         /** 添加文章（入口卡） */
-        ADD_ARTICLE
+        ADD_ARTICLE,
+
+        /**
+         * 学习数据（近期/本次练习摘要，点进入统计页）。
+         * 用户已把这张卡放到首页时，做完练习不再额外弹学习数据横幅（避免重复）。
+         */
+        STATS,
+
+        /** 全局数据（累计统计：练习次数 / 正确率 / 累计字数 / 覆盖文章数） */
+        GLOBAL_STATS
     }
 
     /** 一张首页卡片 */
@@ -209,6 +218,8 @@ class HomeLayoutStore private constructor(private val file: File) {
         const val CARD_ID_CONTINUE = "continue"
         const val CARD_ID_RECENT = "recent"
         const val CARD_ID_ADD = "add"
+        const val CARD_ID_STATS = "stats"
+        const val CARD_ID_GLOBAL_STATS = "global_stats"
 
         fun clozeCardId(configId: Long) = "cloze:$configId"
         fun maskCardId(configId: Long) = "mask:$configId"

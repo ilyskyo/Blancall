@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -58,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -81,10 +85,20 @@ private val CONTROL_HIT = 32.dp
 private val HANDLE_HIT = 36.dp
 
 /** 编辑态控件图形尺寸 */
-private val CONTROL_ICON = 18.dp
+private val CONTROL_ICON = 20.dp
 
-/** 拉伸手柄灰色弧线的颜色 */
-private val HANDLE_COLOR = Color(0xFF9E9E9E)
+/**
+ * 编辑态控件的圆形底衬：**不透明白色**。
+ * 原先是 25% 白（0x40FFFFFF），在粉/绿/蓝等马卡龙卡面上几乎看不见（用户反馈「固定键、修改键、拉伸键都不显眼」）。
+ * 改为实心白底后，任何卡面（含深色玻璃）上都能清晰跳出。
+ */
+private val CONTROL_SCRIM = Color.White
+
+/** 编辑态控件图标色（深灰，白底上对比度足够） */
+private val CONTROL_ICON_COLOR = Color(0xFF3C3C43)
+
+/** 拉伸手柄弧线颜色（比原先的 #9E9E9E 更深，配合白色底衬） */
+private val HANDLE_COLOR = Color(0xFF5A5A60)
 
 /** 删除红叉的颜色 */
 private val CLOSE_COLOR = Color(0xFFE53935)
@@ -396,6 +410,8 @@ fun HomeCardCanvas(
     onPinToggle: (HomeLayoutStore.Card, row: Int, col: Int) -> Unit,
     onEditConfig: (HomeLayoutStore.Card) -> Unit,
     onAddCard: () -> Unit,
+    /** 非编辑态长按任意卡片（回传卡片 id），宿主据此进入编辑态 */
+    onLongPressCard: (String) -> Unit,
     modifier: Modifier = Modifier,
     cardContent: @Composable (HomeLayoutStore.Card) -> Unit
 ) {
@@ -405,6 +421,7 @@ fun HomeCardCanvas(
     val cbPin by rememberUpdatedState(onPinToggle)
     val cbEdit by rememberUpdatedState(onEditConfig)
     val cbAdd by rememberUpdatedState(onAddCard)
+    val cbLongPress by rememberUpdatedState(onLongPressCard)
 
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
@@ -514,26 +531,40 @@ fun HomeCardCanvas(
                                     }
                                 }
                         ) {
-                            // ① 内容层：非编辑态唯一在场的一层，点击原样透传给 cardContent
+                            // ① 内容层：非编辑态唯一在场的一层，点击原样透传给 cardContent。
+                            // 长按检测放在这里而不是宿主外层：用 requireUnconsumed = false 观察事件且
+                            // **绝不消费**，所以即使卡片内容内部有自己的行级手势（如「最近使用」列表行），
+                            // 长按依然能进编辑态（此前放外层 combinedClickable 会被内层消费掉）。
+                            // clipToBounds：内容超出槽位时裁掉，不让它画到相邻卡片上。
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(SLOT_INSET)
+                                    .clipToBounds()
+                                    .pointerInput(card.id, editMode) {
+                                        if (editMode) return@pointerInput
+                                        awaitEachGesture {
+                                            awaitFirstDown(requireUnconsumed = false)
+                                            val up = withTimeoutOrNull(
+                                                viewConfiguration.longPressTimeoutMillis
+                                            ) { waitForUpOrCancellation() }
+                                            // 超时仍未抬起 = 长按
+                                            if (up == null) cbLongPress(card.id)
+                                        }
+                                    }
                             ) {
                                 cardContent(card)
                             }
 
                             if (editMode) {
                                 // ② 编辑遮罩：吃掉点按（避免误触卡片内容）、承接拖动换位
+                                // 编辑遮罩：吃掉点按（避免误触卡片内容）、承接拖动换位。
+                                // 注意：这里**不再**画槽位描边框 —— 原先的 RoundedCornerShape(18.dp) 与卡片
+                                // 自身圆角不一致，视觉上是一圈曲率歪掉的灰框（用户反馈「删掉/把曲率做好」）。
+                                // 编辑态改由「四角白底圆钮 + 顶部加号 + 底部完成」表达，不再加外框。
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clip(RoundedCornerShape(18.dp))
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                                            RoundedCornerShape(18.dp)
-                                        )
                                         .pointerInput(card.id, cellWpx, cellPitchPx, rowUnitPx) {
                                             dragAfterSlop(
                                                 onStart = {
@@ -597,12 +628,12 @@ fun HomeCardCanvas(
                                     if (card.editable) {
                                         ControlButton(
                                             onClick = { cbEdit(card) },
-                                            scrim = Color(0x40FFFFFF)
+                                            scrim = CONTROL_SCRIM
                                         ) {
                                             Icon(
                                                 painter = painterResource(R.drawable.ic_pencil),
                                                 contentDescription = "编辑卡片配置",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                tint = CONTROL_ICON_COLOR,
                                                 modifier = Modifier.size(CONTROL_ICON)
                                             )
                                         }
@@ -613,16 +644,16 @@ fun HomeCardCanvas(
                                             val s = slots[card.id] ?: intArrayOf(0, 0)
                                             cbPin(card, s[0], s[1])
                                         },
-                                        scrim = Color(0x40FFFFFF)
+                                        scrim = CONTROL_SCRIM
                                     ) {
                                         Icon(
                                             imageVector = Icons.Outlined.PushPin,
                                             contentDescription = if (card.pinned) "取消固定" else "固定卡片",
+                                            // 已固定用主题色（一眼可辨「这张被钉住了」），未固定用深灰（白底上清晰）
                                             tint = if (card.pinned) {
                                                 MaterialTheme.colorScheme.primary
                                             } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                                    .copy(alpha = 0.45f)
+                                                CONTROL_ICON_COLOR
                                             },
                                             modifier = Modifier.size(CONTROL_ICON)
                                         )
@@ -632,7 +663,7 @@ fun HomeCardCanvas(
                                 // 右上角红叉：半透明圆形底衬，浅色卡面 / 深色玻璃上都看得见
                                 ControlButton(
                                     onClick = { cbDelete(card) },
-                                    scrim = Color(0xE6FFFFFF),
+                                    scrim = CONTROL_SCRIM,
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
                                         .padding(top = 2.dp, end = 2.dp)
@@ -734,12 +765,14 @@ fun HomeCardCanvas(
 private fun ControlButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    scrim: Color = Color(0x33FFFFFF),
+    scrim: Color = CONTROL_SCRIM,
     content: @Composable () -> Unit
 ) {
     Box(
         modifier = modifier
             .size(CONTROL_HIT)
+            // 轻阴影把白色圆钮从卡面上「抬」起来，浅色卡面（米白/浅粉）上也能看出边界
+            .shadow(elevation = 2.dp, shape = CircleShape)
             .clip(CircleShape)
             .background(scrim)
             .clickable(onClick = onClick),
@@ -755,22 +788,30 @@ private fun ControlButton(
  */
 @Composable
 private fun ResizeHandleGlyph() {
-    Canvas(
+    // 与「笔 / 大头针 / 红叉」统一的白色圆钮外观：原先只是一条细灰弧线，
+    // 在浅色卡面上几乎看不到（用户反馈「拉伸扩大键不显眼」）。
+    Box(
         modifier = Modifier
             .padding(end = 5.dp, bottom = 5.dp)
-            .size(16.dp)
+            .size(24.dp)
+            .shadow(elevation = 2.dp, shape = CircleShape)
+            .clip(CircleShape)
+            .background(CONTROL_SCRIM),
+        contentAlignment = Alignment.Center
     ) {
-        val stroke = 2.dp.toPx()
-        val inset = stroke / 2f
-        drawArc(
-            color = HANDLE_COLOR,
-            startAngle = 0f,
-            sweepAngle = 90f,
-            useCenter = false,
-            topLeft = Offset(inset, inset),
-            size = Size(size.width - stroke, size.height - stroke),
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
+        Canvas(modifier = Modifier.size(13.dp)) {
+            val stroke = 2.5.dp.toPx()
+            val inset = stroke / 2f
+            drawArc(
+                color = HANDLE_COLOR,
+                startAngle = 0f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = Offset(inset, inset),
+                size = Size(size.width - stroke, size.height - stroke),
+                style = Stroke(width = stroke, cap = StrokeCap.Round)
+            )
+        }
     }
 }
 
