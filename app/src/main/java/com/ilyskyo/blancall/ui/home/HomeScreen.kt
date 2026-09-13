@@ -13,9 +13,15 @@ import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -45,11 +51,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,8 +85,10 @@ import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -109,6 +118,12 @@ fun HomeScreen(
     // 「添加卡片」底部面板状态外提：与阅读设置面板同款写法，
     // 保证程序化收起（点「完成」）与再次展开的动画行为一致。
     val addCardSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 「管理最近文章」底部面板（编辑态入口）：同款外提状态
+    val manageArticlesSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showManageArticlesSheet by remember { mutableStateOf(false) }
+    // 「选择文章」底部面板（添加卡片 → 文章卡片）：点选一篇文章单独成一张卡
+    val articlePickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showArticlePickerSheet by remember { mutableStateOf(false) }
 
     // 搜索栏右侧「添加」按钮实测宽度；供品牌栏「设置」按钮等宽对齐
     var addButtonWidth by remember { mutableStateOf(0.dp) }
@@ -177,6 +192,62 @@ fun HomeScreen(
         }
     }
 
+    // ── 首页卡片布局状态（提到外层函数作用域：悬浮「完成」按钮与学习数据弹窗也要用）──
+    val homeLayoutStore = remember { HomeLayoutStore.getInstance(context.filesDir) }
+    var homeCards by remember { mutableStateOf(homeLayoutStore.getCards()) }
+    var cardEditMode by remember { mutableStateOf(false) }
+    var showAddCardSheet by remember { mutableStateOf(false) }
+    // 学习数据弹窗显隐（悬浮于底部导航栏之上，不随内容滚动）
+    var showStatsPopup by remember { mutableStateOf(false) }
+    val homeScope = rememberCoroutineScope()
+    fun persistHomeCards(newCards: List<HomeLayoutStore.Card>) {
+        homeCards = newCards
+        homeScope.launch { withContext(Dispatchers.IO) { homeLayoutStore.saveCards(newCards) } }
+    }
+
+    // ── 全局统计：用 remember(allRecords) 包裹，避免每次重组重算 ──
+    val (totalPractices, totalCorrect, totalBlanks, overallRate) = remember(allRecords) {
+        val tp = allRecords.size
+        val tc = allRecords.sumOf { it.correctCount }
+        val tb = allRecords.sumOf { it.totalBlanks }
+        val or = if (tb > 0) tc.toFloat() / tb else 0f
+        HomeStats(tp, tc, tb, or)
+    }
+    val homeStats = remember(totalPractices, totalBlanks, overallRate, articles.size) {
+        HomeStatsData(
+            practices = totalPractices,
+            rate = overallRate,
+            blanks = totalBlanks,
+            articleCount = articles.size
+        )
+    }
+
+    // 首页是否已有「学习数据」卡片：有则不再弹悬浮学习数据（同一信息不出现两遍）
+    val hasStatsCard = homeCards.any { it.type == HomeLayoutStore.CardType.STATS }
+    // 做完一次**新**练习才弹（无卡片时）。两重保障避免误弹：
+    //  ① 基线持久化到 AppPrefs（跨进程）——冷启动后 remember/进程内单例都会重置；
+    //  ② 先 awaitLoaded() 再比对——记录是异步读盘的，先见空列表再变真实值，直接比对会把历史练习当成「刚做完」。
+    LaunchedEffect(Unit) {
+        recordRepo.awaitLoaded()
+        if (homeCards.any { it.type == HomeLayoutStore.CardType.STATS }) return@LaunchedEffect
+        val practices = recordRepo.records.value.size
+        val baseline = AppPrefs.statsPopupBaseline()
+        if (baseline >= 0 && practices > baseline) showStatsPopup = true
+        AppPrefs.setStatsPopupBaseline(practices)
+    }
+    // 已有「学习数据」卡片（信息已在首页常驻）/ 进入编辑态：收起弹窗
+    // （编辑态收起还为了避免与悬浮「完成」按钮叠在一起）
+    LaunchedEffect(hasStatsCard, cardEditMode) {
+        if (hasStatsCard || cardEditMode) showStatsPopup = false
+    }
+    // 弹出后自动收起（点详情 / 关闭可提前收起）
+    LaunchedEffect(showStatsPopup) {
+        if (showStatsPopup) {
+            delay(STATS_POPUP_AUTO_DISMISS_MS)
+            showStatsPopup = false
+        }
+    }
+
     // 首页隐藏的文章（长按"从首页删除"，仅从首页移除，不从文章列表删除）
     val hiddenArticleIds by AppPrefs.hiddenArticleIdsFlow.collectAsState()
     // 按更新时间倒序排列（最近操作过的在前），过滤掉首页隐藏的文章
@@ -240,8 +311,6 @@ fun HomeScreen(
     var showModePicker by remember { mutableStateOf(false) }
     var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
-    // 长按文章卡片 → "从首页删除"选项卡
-    var hideFromHomeTarget by remember { mutableStateOf<Article?>(null) }
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
     LaunchedEffect(savedStateHandle) {
         val saved = savedStateHandle?.get<Boolean>("articleSaved") ?: false
@@ -589,34 +658,7 @@ fun HomeScreen(
             Spacer(Modifier.height(18.dp))
 
             // ── 首页卡片画布：网格布局，支持拖动换位 / 拉伸缩放 / 大头针固定 / 长按进入编辑态 ──
-            val homeLayoutStore = remember { HomeLayoutStore.getInstance(context.filesDir) }
-            var homeCards by remember { mutableStateOf(homeLayoutStore.getCards()) }
-            var cardEditMode by remember { mutableStateOf(false) }
-            var showAddCardSheet by remember { mutableStateOf(false) }
-            val homeScope = rememberCoroutineScope()
-            fun persistHomeCards(newCards: List<HomeLayoutStore.Card>) {
-                homeCards = newCards
-                homeScope.launch { withContext(Dispatchers.IO) { homeLayoutStore.saveCards(newCards) } }
-            }
-
-            // ── 全局统计：用 remember(allRecords) 包裹，避免每次重组重算。
-            // 提前到画布之前算：画布里的「学习数据 / 全局数据」卡片要用它。──
-            val (totalPractices, totalCorrect, totalBlanks, overallRate) = remember(allRecords) {
-                val tp = allRecords.size
-                val tc = allRecords.sumOf { it.correctCount }
-                val tb = allRecords.sumOf { it.totalBlanks }
-                val or = if (tb > 0) tc.toFloat() / tb else 0f
-                HomeStats(tp, tc, tb, or)
-            }
-            val homeStats = remember(totalPractices, totalBlanks, overallRate, articles.size) {
-                HomeStatsData(
-                    practices = totalPractices,
-                    rate = overallRate,
-                    blanks = totalBlanks,
-                    articleCount = articles.size
-                )
-            }
-
+            // （布局状态与统计都已提到函数作用域，原因：悬浮层也要读）
             HomeCardCanvas(
                 cards = homeCards,
                 editMode = cardEditMode,
@@ -663,11 +705,21 @@ fun HomeScreen(
                     }
                 },
                 onAddCard = { showAddCardSheet = true },
+                // 编辑态「管理最近文章」入口：一篇文章都没有时不展示该按钮
+                onManageArticles = if (recentArticles.isEmpty()) null else {
+                    { showManageArticlesSheet = true }
+                },
                 // 长按卡片进编辑态：交给画布内统一的手势实现（避免内层行级手势消费长按）
                 onLongPressCard = { cardEditMode = true },
                 modifier = Modifier.fillMaxWidth(),
                 cardContent = { card ->
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    // 编辑态淡化卡面：角上的白钮必然会压住标题一角，内容淡下去后
+                    // 视觉重心落在「白钮 + 点亮描环」上，不会显得内容被压坏
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(alpha = if (cardEditMode) 0.5f else 1f)
+                    ) {
                         HomeCardContent(
                             card = card,
                             articles = articles,
@@ -690,7 +742,6 @@ fun HomeScreen(
                             onOpenArticle = { article ->
                                 navController.navigate("reader/${article.id}")
                             },
-                            onRemoveFromHome = { article -> hideFromHomeTarget = article },
                             onViewAllArticles = { navController.navigateToTab("list") },
                             onAddArticle = { navController.navigate("import") },
                             onOpenClozeConfig = { articleId, configId ->
@@ -706,19 +757,10 @@ fun HomeScreen(
                     }
                 }
             )
-            if (cardEditMode) {
-                Spacer(Modifier.height(4.dp))
-                TextButton(
-                    onClick = { cardEditMode = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("完成", style = MaterialTheme.typography.bodyMedium)
-                }
-            }
             // 底部留白：避开底部导航栏与左下角悬浮按钮组。
-            // 不加的话编辑态的「完成」会被顶到导航栏底下（用户反馈「跑到导航栏下面」），
-            // 非编辑态最后一行卡片同样会被遮住。
-            Spacer(Modifier.height(96.dp))
+            // 编辑态再多留一段，避免悬浮的「完成」压住最后一行卡片（旧版「完成」内联在下方，
+            // 需要滚到底才能点到、还会被导航栏顶到屏外 —— 用户反馈「跑到导航栏下面」）。
+            Spacer(Modifier.height(if (cardEditMode) 168.dp else 96.dp))
 
             // ── 添加卡片：由画布顶部「+」唤起，列出未加入的系统卡与全部自定义配置 ──
             if (showAddCardSheet) {
@@ -726,10 +768,20 @@ fun HomeScreen(
                     Triple(HomeLayoutStore.CardType.DUE, "待复习", "今日需要复习的文章"),
                     Triple(HomeLayoutStore.CardType.CONTINUE, "继续做", "未完成的练习进度"),
                     Triple(HomeLayoutStore.CardType.RECENT, "最近文章", "最近打开过的文章"),
+                    Triple(HomeLayoutStore.CardType.ARTICLE, "文章卡片", "把某一篇文章单独放成一张卡"),
                     Triple(HomeLayoutStore.CardType.STATS, "学习数据", "练习次数与正确率"),
                     Triple(HomeLayoutStore.CardType.GLOBAL_STATS, "全局数据", "累计统计概览"),
                     Triple(HomeLayoutStore.CardType.ADD_ARTICLE, "添加文章", "导入新文章的入口")
-                ).filter { (t, _, _) -> homeCards.none { it.type == t } }
+                ).filter { (t, _, _) ->
+                    // 文章卡片可以放多张（每篇一张）：只要还有未添加的文章就始终可选
+                    if (t == HomeLayoutStore.CardType.ARTICLE) {
+                        articles.any { a ->
+                            homeCards.none { it.id == HomeLayoutStore.articleCardId(a.id) }
+                        }
+                    } else {
+                        homeCards.none { it.type == t }
+                    }
+                }
                 val customAddable by produceState<List<HomeLayoutStore.Card>>(emptyList(), homeCards) {
                     value = withContext(Dispatchers.IO) {
                         collectAddableCustomCards(context.filesDir, homeCards.map { it.id }.toSet())
@@ -741,111 +793,180 @@ fun HomeScreen(
                     customAddable = customAddable,
                     onDismiss = { showAddCardSheet = false },
                     onAddSystem = { type ->
-                        val cardId = when (type) {
-                            HomeLayoutStore.CardType.DUE -> HomeLayoutStore.CARD_ID_DUE
-                            HomeLayoutStore.CardType.CONTINUE -> HomeLayoutStore.CARD_ID_CONTINUE
-                            HomeLayoutStore.CardType.RECENT -> HomeLayoutStore.CARD_ID_RECENT
-                            HomeLayoutStore.CardType.STATS -> HomeLayoutStore.CARD_ID_STATS
-                            HomeLayoutStore.CardType.GLOBAL_STATS -> HomeLayoutStore.CARD_ID_GLOBAL_STATS
-                            else -> HomeLayoutStore.CARD_ID_ADD
+                        if (type == HomeLayoutStore.CardType.ARTICLE) {
+                            // 文章卡片先选文章：收起当前面板，弹出选择文章面板
+                            showAddCardSheet = false
+                            showArticlePickerSheet = true
+                        } else {
+                            val cardId = when (type) {
+                                HomeLayoutStore.CardType.DUE -> HomeLayoutStore.CARD_ID_DUE
+                                HomeLayoutStore.CardType.CONTINUE -> HomeLayoutStore.CARD_ID_CONTINUE
+                                HomeLayoutStore.CardType.RECENT -> HomeLayoutStore.CARD_ID_RECENT
+                                HomeLayoutStore.CardType.STATS -> HomeLayoutStore.CARD_ID_STATS
+                                HomeLayoutStore.CardType.GLOBAL_STATS -> HomeLayoutStore.CARD_ID_GLOBAL_STATS
+                                else -> HomeLayoutStore.CARD_ID_ADD
+                            }
+                            persistHomeCards(homeCards + HomeLayoutStore.Card(cardId, type))
                         }
-                        persistHomeCards(homeCards + HomeLayoutStore.Card(cardId, type))
                     },
                     onAddCustom = { c -> persistHomeCards(homeCards + c) },
                 )
             }
             Spacer(Modifier.height(14.dp))
 
-
-            // ── 学习数据横幅：仅当首页**没有**「学习数据」卡片时，做完新练习才出现一次 ──
-            // 用户要求：已把学习数据加成卡片时不再弹，避免同一信息在首页出现两遍。
-            val hasStatsCard = homeCards.any { it.type == HomeLayoutStore.CardType.STATS }
-            // 关闭状态以练习次数为 key：做新练习后自动恢复显示
-            var statsBannerDismissed by remember(totalPractices) { mutableStateOf(false) }
-            if (!hasStatsCard && totalPractices > 0 && !statsBannerDismissed) {
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    onClick = { navController.navigateToTab("overview") }
-                ) {
-                    Row(
-                        Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("学习数据", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "${totalPractices}次练习 · 正确率 ${(overallRate * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f)
-                            )
-                        }
-                        // 固定 64dp 宽 Box + Text 居中，让"查看详情"和"继续"的文字中央在同一对称轴
-                        Box(
-                            modifier = Modifier
-                                .width(64.dp)
-                                .padding(end = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "查看详情",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                        // 叉号关闭按钮：点击后本次会话不再显示，左下角统计入口仍可进入
-                        IconButton(
-                            onClick = { statsBannerDismissed = true },
-                            modifier = Modifier.semantics { contentDescription = "关闭学习数据横幅" }
-                        ) {
-                            AppIcon(
-                                kind = AppIconKind.Close,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-            }
-
         }
     }
 
         } // 内层首页内容 Box 闭合
+
+        // ── 悬浮层：固定在底部导航栏之上，不随首页内容滚动 ──
+        // 安全底距 = 导航栏高(64dp) + 栏底距(14dp) + 间距(12dp) = 90dp，再叠加 navigationBarsPadding()
+        // 适配手势导航条 —— 任何设备上都不会掉到导航栏下面（用户反馈「完成键跑到导航栏下面」）。
+
+        // ① 编辑态「完成」：旧版内联在画布下方，要滚到底才能看到、还会被导航栏遮住
+        AnimatedVisibility(
+            visible = cardEditMode,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = FLOATING_BOTTOM_PADDING)
+                .navigationBarsPadding(),
+        ) {
+            Button(
+                onClick = { cardEditMode = false },
+                modifier = Modifier
+                    .widthIn(max = 600.dp)
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
+            ) {
+                // 系统黑体（SansSerif）：主操作按钮，不用主题的楷体/衬线体
+                Text(
+                    "完成",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontFamily = FontFamily.SansSerif,
+                )
+            }
+        }
+
+        // ② 学习数据弹窗：做完一次新练习、且首页没有「学习数据」卡片时弹出（有卡片则不弹，信息不重复）
+        AnimatedVisibility(
+            visible = showStatsPopup && !cardEditMode,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 3 }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = FLOATING_BOTTOM_PADDING)
+                .navigationBarsPadding(),
+        ) {
+            StatsPopupCard(
+                practices = totalPractices,
+                rate = overallRate,
+                blanks = totalBlanks,
+                onViewDetails = {
+                    showStatsPopup = false
+                    navController.navigateToTab("overview")
+                },
+                onDismiss = { showStatsPopup = false },
+                modifier = Modifier
+                    .widthIn(max = 600.dp)
+                    .fillMaxWidth(),
+            )
+        }
+
     }
 
-    // 长按"从首页删除"选项卡
-    hideFromHomeTarget?.let { target ->
-        BlancallAlertDialog(
-            onDismissRequest = { hideFromHomeTarget = null },
-            title = { Text("从首页删除") },
-            text = {
-                Column {
-                    Text("「${target.title}」将从首页最近文章中移除。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(6.dp))
-                    Text("可在「我的文章」中继续查看。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // ── 「选择文章」底部面板：添加卡片 → 文章卡片，点选一篇文章单独成一张卡 ──
+    if (showArticlePickerSheet) {
+        HomeArticlePickerSheet(
+            sheetState = articlePickerSheetState,
+            articles = articles,
+            isAdded = { a -> homeCards.any { it.id == HomeLayoutStore.articleCardId(a.id) } },
+            onDismiss = { showArticlePickerSheet = false },
+            onPick = { a ->
+                val newId = HomeLayoutStore.articleCardId(a.id)
+                if (homeCards.none { it.id == newId }) {
+                    persistHomeCards(
+                        homeCards + HomeLayoutStore.Card(
+                            id = newId,
+                            type = HomeLayoutStore.CardType.ARTICLE,
+                            refId = a.id,
+                            title = a.title,
+                        )
+                    )
                 }
+                showArticlePickerSheet = false
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    AppPrefs.hideArticleFromHome(target.id)
-                    hideFromHomeTarget = null
-                }) { Text("从首页删除", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { hideFromHomeTarget = null }) { Text("取消") }
-            }
         )
+    }
+
+    // ── 「管理最近文章」底部面板：编辑态入口，逐条从首页移除（仅首页隐藏，不删文章）──
+    // 原「长按文章行 → 从首页删除」已下线：它与「长按卡片进编辑态」互相打架（用户反馈「一些卡片长按无效」）
+    if (showManageArticlesSheet) {
+        val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+        GlassModalBottomSheet(
+            onDismissRequest = { showManageArticlesSheet = false },
+            sheetState = manageArticlesSheetState,
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, bottom = 28.dp)
+            ) {
+                Text(
+                    "管理最近文章",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "从首页移除后不再出现在「最近使用」卡片里，文章本身不会被删除。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(14.dp))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxPanelHeight)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (recentArticles.isEmpty()) {
+                        Text(
+                            "首页已经没有可移除的文章了",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        recentArticles.forEach { article ->
+                            ManageArticleRow(
+                                title = article.title,
+                                subtitle = buildString {
+                                    if (article.author.isNotBlank()) {
+                                        append(article.author.trim()).append(" · ")
+                                    }
+                                    append(dateFormat.format(Date(article.updatedAt)))
+                                },
+                                onRemove = { AppPrefs.hideArticleFromHome(article.id) },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                TextButton(
+                    onClick = { showManageArticlesSheet = false },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("完成", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
     }
 
     // 模式选择弹窗：常驻组件，内部状态控制显隐，保证退场动画完整播放
@@ -1040,7 +1161,7 @@ private fun HomeAddCardSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp, bottom = 28.dp)
+                .padding(start = 24.dp, end = 24.dp, bottom = 36.dp)
         ) {
             Text(
                 "添加卡片",
@@ -1078,14 +1199,137 @@ private fun HomeAddCardSheet(
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.align(Alignment.End)
+        }
+    }
+}
+
+/**
+ * 「选择文章」面板：把某一篇文章单独添加为首页卡片。
+ * 与「添加卡片」同一套原生底部弹出样式（拖拽手柄 + 标题 + 内部滚动列表）；
+ * 已添加过的文章显示「已添加」且不可再点。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeArticlePickerSheet(
+    sheetState: SheetState,
+    articles: List<Article>,
+    isAdded: (Article) -> Boolean,
+    onDismiss: () -> Unit,
+    onPick: (Article) -> Unit,
+) {
+    val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+    GlassModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text("完成", style = MaterialTheme.typography.labelLarge)
+                Box(
+                    Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                )
             }
         }
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 36.dp)
+        ) {
+            Text(
+                "选择文章",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "选中的文章会单独成为一张卡片，随时可以开始练习。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(14.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxPanelHeight)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (articles.isEmpty()) {
+                    Text(
+                        "还没有文章，先去导入一篇吧",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                } else {
+                    articles.forEach { a ->
+                        val added = isAdded(a)
+                        HomeArticlePickRow(
+                            title = a.title,
+                            subtitle = buildString {
+                                if (a.author.isNotBlank()) append(a.author.trim()).append(" · ")
+                                append(a.content.length).append(" 字符")
+                            },
+                            added = added,
+                        ) { if (!added) onPick(a) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 「选择文章」面板里的一行：标题 + 副信息 + 右侧「添加 / 已添加」 */
+@Composable
+private fun HomeArticlePickRow(
+    title: String,
+    subtitle: String,
+    added: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !added, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (added) "已添加" else "添加",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (added) {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+            maxLines = 1
+        )
     }
 }
 
@@ -1123,6 +1367,42 @@ private fun HomeAddCardRow(label: String, desc: String, onClick: () -> Unit) {
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1
         )
+    }
+}
+
+/** 「管理最近文章」面板里的一行：标题 + 副信息 + 右侧「移除」（仅首页隐藏，不删文章） */
+@Composable
+private fun ManageArticleRow(title: String, subtitle: String, onRemove: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        TextButton(onClick = onRemove) {
+            Text(
+                "移除",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
     }
 }
 
@@ -1212,4 +1492,105 @@ private fun collectAddableCustomCards(filesDir: java.io.File, taken: Set<String>
         }
     }
     return out
+}
+
+// ── 首页悬浮层（底部导航栏之上）──
+
+/** 悬浮元素的安全底距 = 导航栏高(64dp) + 栏底距(14dp) + 间距(12dp)，再叠加 navigationBarsPadding() */
+private val FLOATING_BOTTOM_PADDING = 90.dp
+
+/** 学习数据弹窗自动收起延时（点详情 / 关闭可提前） */
+private const val STATS_POPUP_AUTO_DISMISS_MS = 6000L
+
+/**
+ * 「学习数据」悬浮弹窗：仅当用户**刚做完一次练习**且首页没有学习数据卡片时弹出。
+ * 固定悬浮于底部导航栏之上（见 [FLOATING_BOTTOM_PADDING]），不随内容滚动。
+ */
+@Composable
+private fun StatsPopupCard(
+    practices: Int,
+    rate: Float,
+    blanks: Int,
+    onViewDetails: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    GlassCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(22.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        onClick = onViewDetails,
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "学习数据",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AppIcon(
+                        kind = AppIconKind.Close,
+                        modifier = Modifier.size(15.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        contentDescription = "关闭"
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(end = 6.dp)) {
+                StatMetric("$practices", "累计练习", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                StatMetric("${(rate * 100).toInt()}%", "正确率", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                StatMetric("$blanks", "累计填空", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(14.dp))
+            Button(
+                onClick = onViewDetails,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 6.dp)
+                    .height(44.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text("查看详情", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/** 弹窗内的单个数值指标：大号数字 + 小字说明 */
+@Composable
+private fun StatMetric(value: String, label: String, accent: Color, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = accent,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            maxLines = 1,
+        )
+    }
 }

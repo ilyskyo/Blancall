@@ -7,10 +7,10 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -43,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -58,10 +57,14 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
+import com.ilyskyo.blancall.ui.common.AppIcon
+import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.GlassButton
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.floor
@@ -82,11 +85,26 @@ private val SLOT_INSET = 5.dp
 /** 编辑态控件的触摸热区（≥32dp，图形本身更小） */
 private val CONTROL_HIT = 32.dp
 
-/** 拉伸手柄的触摸热区 */
-private val HANDLE_HIT = 36.dp
+/**
+ * 编辑态控件的**视觉**白圆直径（比热区小）。
+ * 关键约束：相邻两张卡的同侧控件圆心距 = 卡面实际间距 22dp + 两侧各内缩 10dp = 42dp，
+ * 42dp > 26dp + 两侧阴影 —— 任何相邻关系（横排 / 竖排 / 对角）下圆钮都不会相碰。
+ */
+private val CONTROL_VISUAL = 26.dp
 
-/** 编辑态控件图形尺寸 */
-private val CONTROL_ICON = 20.dp
+/**
+ * 编辑态控件圆心相对卡片角的内缩量：圆心落在**卡片内 10dp** 处
+ * （= CONTROL_HIT/2 − CONTROL_INSET）。
+ * 旧版向卡外偏移 8dp，圆心离卡角太远的后果：相邻卡的圆钮互相压住、
+ * 拖动/缩放时被别的卡片盖住一半（用户反馈「圆圈会残缺、有遮挡」）。
+ */
+private val CONTROL_INSET = 6.dp
+
+/** 拉伸手柄的触摸热区 */
+private val HANDLE_HIT = 40.dp
+
+/** 编辑态控件图标尺寸 */
+private val CONTROL_ICON = 18.dp
 
 /**
  * 编辑态控件的圆形底衬：**不透明白色**。
@@ -95,14 +113,37 @@ private val CONTROL_ICON = 20.dp
  */
 private val CONTROL_SCRIM = Color.White
 
-/** 编辑态控件图标色（深灰，白底上对比度足够） */
-private val CONTROL_ICON_COLOR = Color(0xFF3C3C43)
+/** 编辑态控件图标色（近黑，白底上对比度拉满） */
+private val CONTROL_ICON_COLOR = Color(0xFF1F1F24)
 
-/** 拉伸手柄弧线颜色（比原先的 #9E9E9E 更深，配合白色底衬） */
-private val HANDLE_COLOR = Color(0xFF5A5A60)
+/** 拉伸手柄弧线颜色（与控件图标同色，白底上清晰） */
+private val HANDLE_COLOR = Color(0xFF1F1F24)
+
+/** 白底圆钮的描边：让白钮在纯白/米白卡面上也能一眼看出边界 */
+private val CONTROL_RING = Color(0x33000000)
 
 /** 删除红叉的颜色 */
 private val CLOSE_COLOR = Color(0xFFE53935)
+
+// ---------------------------------------------------------------------------
+// 渲染辅助
+// ---------------------------------------------------------------------------
+
+/**
+ * 一张卡在画布内的当前几何（含拖动 / 缩放预览与位置动画）。
+ * 内容层与控件层**共用同一份**几何：两层用相同的 offset/width/height 与 graphicsLayer，
+ * 保证控件白钮在拖动/缩放中始终与卡片像素级对齐。
+ */
+private data class CardGeo(
+    val x: Dp,
+    val y: Dp,
+    val width: Dp,
+    val height: Dp,
+    val colSpan: Int,
+    val rowSpan: Int,
+    val isDragging: Boolean,
+    val isResizing: Boolean,
+)
 
 // ---------------------------------------------------------------------------
 // 布局算法（纯函数，可单测）
@@ -411,6 +452,8 @@ fun HomeCardCanvas(
     onPinToggle: (HomeLayoutStore.Card, row: Int, col: Int) -> Unit,
     onEditConfig: (HomeLayoutStore.Card) -> Unit,
     onAddCard: () -> Unit,
+    /** 编辑态「管理最近文章」入口（null = 不展示该按钮，如一篇都没有时） */
+    onManageArticles: (() -> Unit)? = null,
     /** 非编辑态长按任意卡片（回传卡片 id），宿主据此进入编辑态 */
     onLongPressCard: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -450,16 +493,39 @@ fun HomeCardCanvas(
     val currentSlots by rememberUpdatedState(slots)
 
     Column(modifier = modifier) {
+        // 编辑态工具条：左「管理最近文章」（有文章时才出现）+ 右「添加卡片」。
+        // 行内长按「从首页删除」已下线：它与「长按卡片进编辑态」互相打架（用户反馈「一些卡片长按无效」），
+        // 移除入口统一收进这里的管理面板。
         if (editMode) {
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 10.dp),
-                contentAlignment = Alignment.Center
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                onManageArticles?.let { onManage ->
+                    GlassButton(
+                        onClick = onManage,
+                        modifier = Modifier.height(44.dp),
+                    ) {
+                        AppIcon(
+                            kind = AppIconKind.Inbox,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "管理最近文章",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f))
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
                         .clickable { cbAdd() },
@@ -469,7 +535,7 @@ fun HomeCardCanvas(
                         imageVector = Icons.Outlined.Add,
                         contentDescription = "添加卡片",
                         tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -523,6 +589,9 @@ fun HomeCardCanvas(
                     .fillMaxWidth()
                     .height(ROW_UNIT * totalRows.toFloat())
             ) {
+                // 卡片几何统一先算好（含位移动画）：内容层与控件层**共用同一份**，
+                // 两层用相同的 offset/尺寸/缩放，控件白钮在拖动、缩放中始终与卡面像素级对齐。
+                val geoMap = LinkedHashMap<String, CardGeo>(cards.size)
                 cards.forEach { card ->
                     key(card.id) {
                         val slot = slots[card.id] ?: intArrayOf(0, 0)
@@ -546,14 +615,26 @@ fun HomeCardCanvas(
                             COLUMN_GAP * (colSpan - 1).toFloat()
                         val h = ROW_UNIT * rowSpan.toFloat()
 
+                        geoMap[card.id] = CardGeo(x, y, w, h, colSpan, rowSpan, isDragging, isResizing)
+                    }
+                }
+
+                // ── 第一遍：全部卡片的内容层（正文 + 指示环 + 拖动遮罩）──
+                cards.forEach { card ->
+                    key(card.id) {
+                        // 注意：不要在这里写 `?: return@key`。在 @Composable inline 函数（key）
+                        // 的 lambda 里做 labeled return，Compose 编译器会生成 $NON_LOCAL_RETURN 机制、
+                        // 产出名为 <anonymous> 的 JVM 方法 —— ClassFormatError: Illegal method name，
+                        // 类一加载就崩（单测/真机同样）。geoMap 在同一组合内先填充，取值为空即异常。
+                        val geo = geoMap.getValue(card.id)
                         Box(
                             modifier = Modifier
-                                .offset(x = x, y = y)
-                                .width(w)
-                                .height(h)
-                                .zIndex(if (isDragging || isResizing) 1f else 0f)
+                                .offset(x = geo.x, y = geo.y)
+                                .width(geo.width)
+                                .height(geo.height)
+                                .zIndex(if (geo.isDragging || geo.isResizing) 1f else 0f)
                                 .graphicsLayer {
-                                    if (isDragging || isResizing) {
+                                    if (geo.isDragging || geo.isResizing) {
                                         scaleX = 1.03f
                                         scaleY = 1.03f
                                         alpha = 0.96f
@@ -564,21 +645,42 @@ fun HomeCardCanvas(
                             // 长按检测放在这里而不是宿主外层：用 requireUnconsumed = false 观察事件且
                             // **绝不消费**，所以即使卡片内容内部有自己的行级手势（如「最近使用」列表行），
                             // 长按依然能进编辑态（此前放外层 combinedClickable 会被内层消费掉）。
-                            // clipToBounds：内容超出槽位时裁掉，不让它画到相邻卡片上。
+                            // 关键：裁切用**卡片同曲率的圆角**（不是 clipToBounds 的直角）——
+                            // 内容/背景溢出槽位时按圆角轮廓裁掉，四角永远是圆的；
+                            // 旧版直角裁切会露出直角残角，看起来像「这个角没做圆角」。
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(SLOT_INSET)
-                                    .clipToBounds()
+                                    .clip(HOME_CARD_SHAPE)
                                     .pointerInput(card.id, editMode) {
                                         if (editMode) return@pointerInput
                                         awaitEachGesture {
-                                            awaitFirstDown(requireUnconsumed = false)
-                                            val up = withTimeoutOrNull(
+                                            val down = awaitFirstDown(requireUnconsumed = false)
+                                            val slop = viewConfiguration.touchSlop
+                                            var acc = Offset.Zero
+                                            // 长按判定：按住满 longPressTimeout 且期间**未抬起、未滑动越过 touch slop**。
+                                            // 不能用 waitForUpOrCancellation：内层手势（按钮/行点击）消费事件时它会同样
+                                            // 返回 null，与「超时」不可区分 —— 那正是之前「一些卡片长按无效 / 乱触发」的根因。
+                                            val timedOut = withTimeoutOrNull(
                                                 viewConfiguration.longPressTimeoutMillis
-                                            ) { waitForUpOrCancellation() }
-                                            // 超时仍未抬起 = 长按
-                                            if (up == null) cbLongPress(card.id)
+                                            ) {
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    val change = event.changes
+                                                        .firstOrNull { it.id == down.id } ?: break
+                                                    if (!change.pressed) break
+                                                    acc += change.positionChange()
+                                                    if (acc.getDistance() > slop) break
+                                                }
+                                            }
+                                            // null = 时间到且全程按住未滑动 → 长按：给一次触感反馈并进编辑态
+                                            if (timedOut == null) {
+                                                haptic.performHapticFeedback(
+                                                    HapticFeedbackType.LongPress
+                                                )
+                                                cbLongPress(card.id)
+                                            }
                                         }
                                     }
                             ) {
@@ -586,11 +688,21 @@ fun HomeCardCanvas(
                             }
 
                             if (editMode) {
-                                // ② 编辑遮罩：吃掉点按（避免误触卡片内容）、承接拖动换位
-                                // 编辑遮罩：吃掉点按（避免误触卡片内容）、承接拖动换位。
-                                // 注意：这里**不再**画槽位描边框 —— 原先的 RoundedCornerShape(18.dp) 与卡片
-                                // 自身圆角不一致，视觉上是一圈曲率歪掉的灰框（用户反馈「删掉/把曲率做好」）。
-                                // 编辑态改由「四角白底圆钮 + 顶部加号 + 底部完成」表达，不再加外框。
+                                // ② 编辑态指示环：与卡片**同曲率**（HOME_CARD_SHAPE）且同样内缩一个 SLOT_INSET，
+                                // 环正好贴着卡片外缘、内外圆角一致 —— 视觉上像卡片本身被「点亮」，
+                                // 而不是套一圈曲率对不上的灰框（旧版 RoundedCornerShape(18.dp)，用户反馈「删掉/把曲率做好」）。
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(SLOT_INSET)
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                            shape = HOME_CARD_SHAPE,
+                                        )
+                                )
+
+                                // ③ 编辑遮罩：吃掉点按（避免误触卡片内容）、承接拖动换位
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -646,11 +758,44 @@ fun HomeCardCanvas(
                                         }
                                 )
 
-                                // ③ 控件层（在遮罩之上，先于遮罩拿到指针事件）
+                                // ④ 控件层已移至第二遍「控件浮层」（见下方）：绘制在全部卡片内容之上，
+                                //    拖动 / 缩放中不会被任何卡面盖住。
+                            }
+                        }
+                    }
+                }
+
+                // ── 第二遍：编辑态控件浮层 ──
+                // 写在全部卡片内容**之后**（zIndex ≥ 2f，拖动/缩放中的卡再高一档 3f）：
+                // 无论卡片怎样互相重叠、拖动或缩放，四角的圆圈都完整绘制在卡面之上 ——
+                // 修掉「拖动 / 拉动编辑大小时圆圈残缺、有遮挡」的问题。
+                if (editMode) {
+                    cards.forEach { card ->
+                        key(card.id) {
+                            // 同样：不得用 `return@key`（见上方的说明）。
+                            val geo = geoMap.getValue(card.id)
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = geo.x, y = geo.y)
+                                    .width(geo.width)
+                                    .height(geo.height)
+                                    .zIndex(if (geo.isDragging || geo.isResizing) 3f else 2f)
+                                    .graphicsLayer {
+                                        if (geo.isDragging || geo.isResizing) {
+                                            // 只缩放、**不设 alpha**：alpha<1 会让该层走离屏合成，
+                                            // 图层边界=卡片矩形，控件伸出卡角的那一截被直角裁掉
+                                            // （用户反馈「拖动/拉伸时圆圈上边和左边被削平」）。
+                                            scaleX = 1.03f
+                                            scaleY = 1.03f
+                                        }
+                                    }
+                            ) {
+                                // 四角控件的圆心一律落在卡片内 10dp（见 CONTROL_INSET），
+                                // 与相邻卡同侧控件的圆心距 ≥ 30dp > 视觉直径 26dp，圆钮互不相碰。
                                 Row(
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
-                                        .padding(top = 4.dp, start = 4.dp),
+                                        .offset(x = -CONTROL_INSET, y = -CONTROL_INSET),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     // 「笔」在大头针左侧（仅可编辑卡显示）
@@ -689,13 +834,13 @@ fun HomeCardCanvas(
                                     }
                                 }
 
-                                // 右上角红叉：半透明圆形底衬，浅色卡面 / 深色玻璃上都看得见
+                                // 右上角红叉：实心白底衬，浅色卡面 / 深色玻璃上都看得见
                                 ControlButton(
                                     onClick = { cbDelete(card) },
                                     scrim = CONTROL_SCRIM,
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
-                                        .padding(top = 2.dp, end = 2.dp)
+                                        .offset(x = CONTROL_INSET, y = -CONTROL_INSET)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Close,
@@ -705,10 +850,12 @@ fun HomeCardCanvas(
                                     )
                                 }
 
-                                // 右下角拉伸手柄：图形是灰色短弧线，热区比图形大得多
+                                // 右下角拉伸手柄：只有一段弧线、没有圆底（用户要求），
+                                // 卡角自己的圆角因此完整露出来；热区仍比图形大得多。
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
+                                        .offset(x = CONTROL_INSET, y = CONTROL_INSET)
                                         .size(HANDLE_HIT)
                                         .pointerInput(card.id, cellWpx, cellPitchPx, rowUnitPx) {
                                             dragAfterSlop(
@@ -787,8 +934,9 @@ fun HomeCardCanvas(
 }
 
 /**
- * 编辑态圆形小按钮：热区固定 [CONTROL_HIT]（≥32dp），图形由 [content] 决定。
- * 底衬 [scrim] 保证在浅色卡面 / 深色玻璃上都看得见。
+ * 编辑态圆形小按钮：**触摸热区**固定 [CONTROL_HIT]（≥32dp），**视觉白圆**为 [CONTROL_VISUAL]，
+ * 两者分层 —— 热区不缩水（好点），白圆缩到 26dp 后相邻卡的控件不再相碰。
+ * 白色实心底衬 + 投影 + 极淡描边，保证在米白 / 浅粉 / 浅绿等任何卡面上都能一眼看到。
  */
 @Composable
 private fun ControlButton(
@@ -800,35 +948,41 @@ private fun ControlButton(
     Box(
         modifier = modifier
             .size(CONTROL_HIT)
-            // 轻阴影把白色圆钮从卡面上「抬」起来，浅色卡面（米白/浅粉）上也能看出边界
-            .shadow(elevation = 2.dp, shape = CircleShape)
+            // clip 成圆再 clickable：点击（长按）时的 Material 水波纹被裁成**圆形**，
+            // 不然会画成一个灰色方块（用户反馈「点击圆圈时出现灰色矩形」）。
             .clip(CircleShape)
-            .background(scrim)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        content()
+        Box(
+            modifier = Modifier
+                .size(CONTROL_VISUAL)
+                // 轻阴影把白色圆钮从卡面上「抬」起来；2dp 即可，再深就会与相邻卡阴影相碰
+                .shadow(elevation = 2.dp, shape = CircleShape)
+                .clip(CircleShape)
+                .background(scrim)
+                .border(1.5.dp, CONTROL_RING, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
     }
 }
 
 /**
- * 拉伸手柄图形：右下角一段灰色四分之一圆弧（`0° → 90°` 即从右中扫到中下），
- * 用 [StrokeCap.Round] 收口，视觉上提示「可拉大」。图形 16dp，外层热区 [HANDLE_HIT]。
+ * 拉伸手柄图形：**只有一段右下弧线，不带圆底**（用户要求「不要圆圈底」）。
+ * 好处：卡片右下角自身的圆角完整露出来（不被白圆盖住）；纯深灰弧线在浅色卡面上
+ * 反而比「白圆里的弧」更醒目。
  */
 @Composable
 private fun ResizeHandleGlyph() {
-    // 与「笔 / 大头针 / 红叉」统一的白色圆钮外观：原先只是一条细灰弧线，
-    // 在浅色卡面上几乎看不到（用户反馈「拉伸扩大键不显眼」）。
     Box(
-        modifier = Modifier
-            .padding(end = 5.dp, bottom = 5.dp)
-            .size(24.dp)
-            .shadow(elevation = 2.dp, shape = CircleShape)
-            .clip(CircleShape)
-            .background(CONTROL_SCRIM),
-        contentAlignment = Alignment.Center
+        // 弧线整体收进卡角内侧（用户反馈「黑色弧线应该再靠内一点」）：
+        // 热区右下角在卡角外 6dp，再内缩 8dp → 弧线重心落在卡内约 13dp，与热区中心一致。
+        modifier = Modifier.padding(end = 8.dp, bottom = 8.dp),
+        contentAlignment = Alignment.BottomEnd,
     ) {
-        Canvas(modifier = Modifier.size(13.dp)) {
+        Canvas(modifier = Modifier.size(18.dp)) {
             val stroke = 2.5.dp.toPx()
             val inset = stroke / 2f
             drawArc(

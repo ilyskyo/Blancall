@@ -21,9 +21,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Blancall">
+        <!-- 锁定竖屏：全部界面（首页卡片网格 / 阅读 / 练习 / 统计）都是竖屏单列设计，
+             横屏下首页内容区仅 406dp 高，卡片网格会被压成一行半，明显劣于竖屏。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:label="@string/app_name"
             android:theme="@style/Theme.Blancall.Splash"
             android:windowSoftInputMode="adjustResize"

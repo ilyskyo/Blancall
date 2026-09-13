@@ -19,6 +19,7 @@ import java.io.File
  * 卡片 id 约定：
  * - 系统卡：`"due"` / `"continue"` / `"recent"`（内容由系统提供，可删除后重新添加）
  * - 入口卡：`"add"`（添加文章）
+ * - 文章卡：`"article:<articleId>"`（单独把某一篇文章放成一张卡，refId = 文章 id）
  * - 自定义卡：`"cloze:<configId>"` / `"mask:<configId>"`（关联用户的自定义挖空/遮挡配置）
  *
  * 持久化：filesDir/home_layout.json
@@ -53,7 +54,13 @@ class HomeLayoutStore private constructor(private val file: File) {
         STATS,
 
         /** 全局数据（累计统计：练习次数 / 正确率 / 累计字数 / 覆盖文章数） */
-        GLOBAL_STATS
+        GLOBAL_STATS,
+
+        /**
+         * 文章卡片：把某一篇具体文章单独放成一张卡（`refId` = 文章 id）。
+         * 与「最近文章」不同：内容固定为指定文章，不随最近打开变化。
+         */
+        ARTICLE
     }
 
     /** 一张首页卡片 */
@@ -223,6 +230,7 @@ class HomeLayoutStore private constructor(private val file: File) {
 
         fun clozeCardId(configId: Long) = "cloze:$configId"
         fun maskCardId(configId: Long) = "mask:$configId"
+        fun articleCardId(articleId: Long) = "article:$articleId"
 
         @Volatile
         private var instance: HomeLayoutStore? = null

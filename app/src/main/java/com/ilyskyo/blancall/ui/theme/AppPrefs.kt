@@ -276,6 +276,19 @@ object AppPrefs {
         }
     }
 
+    /**
+     * 上次已提示「学习数据」弹窗时的累计练习次数（-1 = 尚未建立基线）。
+     * 首页学习数据弹窗只在**做完一次新练习**后弹，故需要一条跨进程的基线：
+     * 冷启动时记录是异步读盘的，先见空列表再变真实值，只看次数会把历史练习误判成「刚做完」。
+     */
+    fun statsPopupBaseline(): Int =
+        if (::prefs.isInitialized) prefs.getInt("stats_popup_baseline", -1) else -1
+
+    /** 记录「学习数据」弹窗基线（见 [statsPopupBaseline]） */
+    fun setStatsPopupBaseline(practices: Int) {
+        if (::prefs.isInitialized) prefs.edit { putInt("stats_popup_baseline", practices) }
+    }
+
     // ── AI 学习助手 ──
 
     var aiEnabled: Boolean
