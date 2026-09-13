@@ -18,8 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
@@ -35,6 +37,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +84,7 @@ import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.theme.AppPrefs
+import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
@@ -140,50 +144,73 @@ fun HomeScreen(
     val headerScope = rememberCoroutineScope()
     // 品牌栏拉满所需的「下拉行程」（约 2.2 倍品牌栏高度），行程比把手宽裕、不会一下瞬满
     val brandPullPx = with(LocalDensity.current) { (brandHeight * 2.2f).toPx() }
+    // ── 墨墨式下拉手感状态 ──
+    // brandPull：**本次拖动**的累计下拉量 0..1。与 brandProgress 不同：展开状态下拉时，
+    // brandProgress 恒为 1（栏已满），只能靠 brandPull 反映“拉向收起”的进度 ——
+    // 阈值判定与提示条均以它为准。
+    var brandPull by remember { mutableFloatStateOf(0f) }
+    // 手指正在拖品牌栏（提示条只在拖动中出现）
+    var brandPullActive by remember { mutableStateOf(false) }
+    // 提示条内容**快照**：方向在本次拖动开始时锁定、达标状态在拖动中实时更新，
+    // 松手后两者都冻结。否则松手瞬间 brandExpanded 已切换 / brandPull 已清零，
+    // 提示条淡出期间会闪出一帧反向文案（用户反馈「最后一帧显示继续下滑收起顶栏」）。
+    var brandHintExpand by remember { mutableStateOf(true) }
+    var brandHintReach by remember { mutableStateOf(false) }
     // 品牌栏开合用带回弹的弹簧动画（略 overshoot，收尾更有弹性）
     val bounceSpring = spring<Float>(
         dampingRatio = Spring.DampingRatioMediumBouncy,
         stiffness = Spring.StiffnessMediumLow
     )
-    val topBarConnection = remember(homeScrollState, brandProgress, headerScope, bounceSpring, brandPullPx) {
+    val topBarConnection = remember(homeScrollState, brandProgress, brandExpanded, bounceSpring, brandPullPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val dy = available.y
                 // 滚到顶再继续下拉：
                 //  - 未展开：over-scroll 实时转为头部展开（带递进阻尼的跟手）
-                //  - 已拉满：再次下拉 → 回弹收起（toggle）
+                //  - 已展开：高度锁定满值，只累计 brandPull（供「继续下滑 收起顶栏」提示与阈值判定）
                 if (dy > 0f && homeScrollState.value <= 0f) {
-                    // 拖拽跟手：随进度递增阻力，越接近拉满越费劲（收/展状态由松手 toggle 决定）
+                    // 拖拽跟手：随进度递增阻力，越接近拉满越费劲；松手后是否切换由 brandPull 阈值决定
                     headerScope.launch {
-                        val damped = dy / brandPullPx * (1f - brandProgress.value * 0.35f)
-                        brandProgress.snapTo((brandProgress.value + damped).coerceIn(0f, 1f))
+                        if (!brandPullActive) {
+                            // 本次拖动开始：锁定提示方向（松手后不再随 brandExpanded 翻转）
+                            brandHintExpand = !brandExpanded
+                            brandPullActive = true
+                        }
+                        val damped = dy / brandPullPx * (1f - brandPull * 0.35f)
+                        brandPull = (brandPull + damped).coerceIn(0f, 1f)
+                        brandHintReach = brandPull >= BRAND_TOGGLE_THRESHOLD
+                        // 收起态：高度跟手上长；展开态：保持满高（下拉只表达“收起”意图）
+                        if (!brandExpanded) brandProgress.snapTo(brandPull)
                     }
                     return Offset(0f, dy)
                 }
                 return Offset.Zero
             }
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                // 品牌栏展开/收起完全由「再次下拉」toggle 控制，滚动内容不自动收起
+                // 品牌栏展开/收起完全由「下拉到阈值后松手」决定，滚动内容不自动收起
                 return Offset.Zero
             }
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (homeScrollState.value <= 0f && brandProgress.value > 0f) {
-                    headerScope.launch {
-                        // 已完全展开时，再由「再次下拉」toggle 收起；尚未拉满(或刚松手)的同一次下拉
-                        // 直接送满并固定——避免松手后自动再收起来，保证只有再次下拉或上滑才会收回。
-                        if (brandProgress.value >= 0.99f) {
-                            brandExpanded = !brandExpanded
-                            AppPrefs.homeBrandExpanded = brandExpanded
-                            if (brandExpanded) {
-                                brandProgress.animateTo(1f, bounceSpring)
-                            } else {
-                                brandProgress.animateTo(0f, tween(durationMillis = 280))
-                            }
-                        } else {
-                            brandExpanded = true
-                            AppPrefs.homeBrandExpanded = true
+                if (homeScrollState.value <= 0f && brandPullActive) {
+                    // 松手结算（墨墨式手感）：拉到阈值 → 执行切换；未达阈值 → **回弹恢复原状**
+                    // （旧版不到阈值也直接“送满展开”，下拉一点就自动全展开，手感突兀）
+                    val reached = brandPull >= BRAND_TOGGLE_THRESHOLD
+                    brandPullActive = false
+                    brandPull = 0f
+                    if (reached) {
+                        brandExpanded = !brandExpanded
+                        AppPrefs.homeBrandExpanded = brandExpanded
+                        if (brandExpanded) {
                             brandProgress.animateTo(1f, bounceSpring)
+                        } else {
+                            brandProgress.animateTo(0f, tween(durationMillis = 280))
                         }
+                    } else {
+                        // 回弹：回到当前实际状态（收起态 0 / 展开态 1）
+                        brandProgress.animateTo(
+                            if (brandExpanded) 1f else 0f,
+                            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+                        )
                     }
                     return available
                 }
@@ -649,6 +676,45 @@ fun HomeScreen(
                 onAdd = { navController.navigate("import") },
                 onAddWidthMeasured = { addButtonWidth = it }
             )
+
+            // ── 下拉提示条（参考墨墨背单词手感）：仅拖动品牌栏时出现 ──
+            //    收起态：“继续下滑 展开顶栏”；展开态：“继续下滑 收起顶栏”。
+            //    拉到阈值后文案变为“松开手指”，并加深颜色/字重，明确告知“可以松手了”。
+            //    文案/颜色均取自拖动开始时锁定的快照，松手淡出期间不会闪出反向内容。
+            AnimatedVisibility(
+                visible = brandPullActive && brandPull > 0.05f,
+                enter = fadeIn(tween(120)) + expandVertically(tween(140)),
+                exit = fadeOut(tween(120)) + shrinkVertically(tween(140)),
+            ) {
+                val brandHintColor = if (brandHintExpand) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    Macaron.warn().accent
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(brandHintColor.copy(alpha = if (brandHintReach) 0.14f else 0.08f))
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = buildString {
+                            append("↓ ")
+                            append(if (brandHintReach) "松开手指" else "继续下滑")
+                            append("，")
+                            append(if (brandHintExpand) "展开顶栏" else "收起顶栏")
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (brandHintReach) FontWeight.SemiBold else FontWeight.Normal,
+                        color = brandHintColor,
+                        maxLines = 1,
+                    )
+                }
+            }
 
             Spacer(Modifier.height(14.dp))
             HorizontalDivider(
@@ -1501,6 +1567,12 @@ private val FLOATING_BOTTOM_PADDING = 90.dp
 
 /** 学习数据弹窗自动收起延时（点详情 / 关闭可提前） */
 private const val STATS_POPUP_AUTO_DISMISS_MS = 6000L
+
+/**
+ * 品牌栏下拉切换阈值（0~1）：本次下拉量达到该比例后松手才执行展开/收起，
+ * 未达阈值松手回弹恢复原状（参考墨墨背单词的「继续下滑 → 松开手指」手感）。
+ */
+private const val BRAND_TOGGLE_THRESHOLD = 0.6f
 
 /**
  * 「学习数据」悬浮弹窗：仅当用户**刚做完一次练习**且首页没有学习数据卡片时弹出。
