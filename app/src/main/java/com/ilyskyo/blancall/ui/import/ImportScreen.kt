@@ -84,6 +84,9 @@ fun ImportScreen(navController: NavController) {
     var imageNotice by remember { mutableStateOf<String?>(null) }
     var showFullscreenInput by remember { mutableStateOf(false) }
     var showLargeFileWarning by remember { mutableStateOf(false) }
+    // 保存流程的「进入挖空编辑」意图：标题建议 / 大文件预警弹窗会打断点击流程，
+    // 确认后必须沿用最初按钮的意图（否则点「保存并挖空」经弹窗确认会退化为仅保存）
+    var pendingOpenClozeEditor by remember { mutableStateOf(false) }
     var titleSuggestionDismissed by remember { mutableStateOf(false) }
     var showTitleSuggestionDialog by remember { mutableStateOf(false) }
     var titleHighlight by remember { mutableStateOf(false) }
@@ -420,6 +423,8 @@ fun ImportScreen(navController: NavController) {
         fun handleSaveClick(openClozeEditor: Boolean) {
             when {
                 title.isBlank() && content.isNotBlank() -> {
+                    // 记录意图：确认「使用第一行」后按同一意图保存（仅保存 / 保存并挖空）
+                    pendingOpenClozeEditor = openClozeEditor
                     showTitleSuggestionDialog = true
                     titleSuggestionDismissed = false
                     errorMessage = null
@@ -427,6 +432,8 @@ fun ImportScreen(navController: NavController) {
                 content.isBlank() -> errorMessage = "请输入内容"
                 title.isBlank() -> errorMessage = "请输入文章标题"
                 content.length > LARGE_FILE_THRESHOLD && !showLargeFileWarning -> {
+                    // 记录意图：确认「仍然保存」后按同一意图保存
+                    pendingOpenClozeEditor = openClozeEditor
                     showLargeFileWarning = true
                     errorMessage = null
                 }
@@ -537,7 +544,7 @@ fun ImportScreen(navController: NavController) {
                         showTitleSuggestionDialog = false
                         titleSuggestionDismissed = true
                         isSaving = true
-                        scope.launch { saveAndExit(firstLine, content.trim(), author.trim()) }
+                        scope.launch { saveAndExit(firstLine, content.trim(), author.trim(), pendingOpenClozeEditor) }
                     },
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -569,7 +576,7 @@ fun ImportScreen(navController: NavController) {
                     onClick = {
                         showLargeFileWarning = false
                         isSaving = true
-                        scope.launch { saveAndExit(title.trim(), content.trim(), author.trim()) }
+                        scope.launch { saveAndExit(title.trim(), content.trim(), author.trim(), pendingOpenClozeEditor) }
                     }
                 ) {
                     Text("仍然保存")
