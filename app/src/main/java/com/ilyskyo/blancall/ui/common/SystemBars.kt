@@ -22,7 +22,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 /**
  * 全局沉浸态标记：BlancallTheme 的 SideEffect 依据它跳过系统栏着色写回，
  * 避免沉浸期间主题重组（如米黄开关）把状态栏/导航栏涂成不透明色、或让
- * ColorOS 手势横线重新浮现。
+ * 手势横线重新浮现。
  */
 object SystemBarState {
     var immersive by mutableStateOf(false)
@@ -35,8 +35,8 @@ object SystemBarState {
  * 松手后自动再隐；`enabled=false` 或离开组合时恢复。
  *
  * 兜底：
- * - ColorOS/OPPO 系对手势横线 OEM 独立绘制，`hide(Type.navigationBars())` 常只隐藏透明条、
- *   横线残留——命中 ColorOS 时叠加 legacy SYSTEM_UI_FLAG 组合强制隐藏。
+ * - 部分定制系统对手势横线 OEM 独立绘制，`hide(Type.navigationBars())` 常只隐藏透明条、
+ *   横线残留——命中时叠加 legacy SYSTEM_UI_FLAG 组合强制隐藏。
  * - 低版本（API 26-28）无 WindowInsetsController 完整语义，走 legacy 分支。
  *
  * 注意：onDispose 必须复位 [SystemBarState.immersive] 并恢复系统栏显示，防止串台。
@@ -53,8 +53,8 @@ fun ImmersiveSystemBarsEffect(enabled: Boolean) {
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
-            // 兜底：手势导航下的 OEM 差异（ColorOS）与低版本 API
-            if (isGestureNavigation(window) || isColorOsRom()) {
+            // 兜底：手势导航下的 OEM 差异与低版本 API
+            if (isGestureNavigation(window) || isCustomGestureRom()) {
                 hideLegacy(window)
             }
         }
@@ -94,8 +94,8 @@ fun isGestureNavigation(window: Window): Boolean {
     }
 }
 
-/** 是否 OPPO 系 ROM（ColorOS 对手势横线做 OEM 独立绘制，hide() 常不生效） */
-fun isColorOsRom(): Boolean {
+/** 是否对手势横线独立绘制的定制 ROM（hide() 常不生效） */
+fun isCustomGestureRom(): Boolean {
     val brand = (Build.BRAND ?: "").lowercase()
     val manufacturer = (Build.MANUFACTURER ?: "").lowercase()
     val product = (Build.PRODUCT ?: "").lowercase()
@@ -104,7 +104,7 @@ fun isColorOsRom(): Boolean {
     }
 }
 
-/** legacy SYSTEM_UI_FLAG 组合：ColorOS / API26-28 的强制隐藏兜底 */
+/** legacy SYSTEM_UI_FLAG 组合：定制 ROM / API26-28 的强制隐藏兜底 */
 private fun hideLegacy(window: Window) {
     val decor = window.decorView
     val flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or

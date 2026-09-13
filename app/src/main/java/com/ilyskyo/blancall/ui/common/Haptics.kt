@@ -19,7 +19,7 @@ import androidx.compose.ui.platform.LocalView
  *
  * 实现取向：**优先系统振动服务直振一段短促「咔哒」**（[VibrationEffect.createOneShot]），
  * 原因：Compose 的 `HapticFeedbackType.LongPress` 走 `View.performHapticFeedback`，
- * 在小米等 ROM 上会被系统触感策略弱化到几乎无感（用户反馈「长按没有震动」）；
+ * 在部分定制 ROM 上会被系统触感策略弱化到几乎无感（用户反馈「长按没有震动」）；
  * 直振的幅度/时长可控，各机型表现一致。
  *
  * 兜底：设备无振动器或直振调用失败时，退回 View 的 LONG_PRESS 触感，静默失败不影响主流程。

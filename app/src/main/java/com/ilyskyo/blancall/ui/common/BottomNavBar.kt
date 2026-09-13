@@ -75,7 +75,7 @@ private const val LgSliderBlur = 12f
 private const val LgSliderDispersion = 0f
 
 /**
- * 液态玻璃底部导航栏（iOS 26 Liquid Glass tab bar 风格，真机真液态）：
+ * 液态玻璃底部导航栏（Tab 栏风格，真机真液态）：
  *
  * 架构（与阅读模式完全同构）：
  * - AppNavigation 维护一个 **专用 FrameLayout 页面容器**（pageHost），挂 NavHost；
@@ -352,7 +352,7 @@ fun BottomNavBar(
             ) {
                 tabs.forEachIndexed { index, (label, kind) ->
                     val selected = index == currentTab
-                    // 选中项用主题色（浮在浅色玻璃滑块上对比清晰，参考 iOS 26）
+                    // 选中项用主题色（浮在浅色玻璃滑块上对比清晰，参考新一代系统风格）
                     val tint = if (selected) accent else subTint
                     Box(
                         modifier = Modifier

@@ -43,7 +43,7 @@ val InversePrimaryLight = Color(0xFF8DA9FF)
 val ScrimLight = Color(0xFF000000)
 
 // Dark theme — 纯黑底色（深色模式各页面背景均为纯黑，无任何黄色调）
-// 层级抬升：背景保持纯黑，卡片 / 容器逐级抬升（Apple iOS 系统填充层级：
+// 层级抬升：背景保持纯黑，卡片 / 容器逐级抬升（系统填充层级：
 // #000000 → #1C1C1E → #2C2C2E → #3A3A3C），深色下形成清晰纵深、不再糊成一片。
 val BackgroundDark = Color(0xFF000000)
 val OnBackgroundDark = Color(0xFFF4F5F8)

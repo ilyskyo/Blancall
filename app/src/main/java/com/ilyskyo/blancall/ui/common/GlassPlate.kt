@@ -24,7 +24,7 @@ import com.qmdeve.liquidglass.widget.LiquidGlassView
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 弹窗兜底玻璃板：半透明底色 + 高光描边（Apple 液态玻璃的标志性边缘）。
+ * 弹窗兜底玻璃板：半透明底色 + 高光描边（液态玻璃的标志性边缘）。
  *
  * @param glassActive 真实液态玻璃是否存在。存在时底色压到极淡（质感交给折射层，
  *                    底色过重会把折射效果盖死）；不存在时（API<33）用较实底色撑住可读性。

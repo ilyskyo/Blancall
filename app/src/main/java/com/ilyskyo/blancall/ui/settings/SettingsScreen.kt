@@ -340,7 +340,7 @@ fun SettingsScreen(navController: NavController) {
                         )
 
                         // 子项统一收纳进嵌套玻璃面板（backdrop=false 避免双重模糊）：
-                        // 半透明染色 + 1dp 细描边延续全 App 的 Apple 玻璃语言，与「启用 AI 功能」母项形成从属层次
+                        // 半透明染色 + 1dp 细描边延续全 App 的玻璃语言，与「启用 AI 功能」母项形成从属层次
                         val isDark = isBlancallDark()
                         GlassCard(
                             modifier = Modifier.fillMaxWidth(),

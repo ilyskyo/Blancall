@@ -399,7 +399,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     )
                     GlassMenuDivider()
                     } // end: 自定义练习隐藏区（切换模式/挖空策略）
-                    // ── 提示开关（保留菜单，符合 Apple 开关直觉）──
+                    // ── 提示开关（保留菜单，符合系统开关直觉）──
                     GlassMenuItem(
                         onClick = { vm.toggleHint() },
                         label = { Text("显示提示", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) },

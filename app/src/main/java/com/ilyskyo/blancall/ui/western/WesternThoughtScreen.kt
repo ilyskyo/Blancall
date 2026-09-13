@@ -146,12 +146,12 @@ fun WesternThoughtScreen(navController: NavController) {
 }
 
 /**
- * 单个素材库卡片 — Apple 级横向布局：
+ * 单个素材库卡片 — 高品质横向布局：
  * - 左侧 4dp 竖向 accent 色条
  * - 中间：圆形图标 + 标题 + 副标题 + meta 行
  * - 右侧 chevron `›`
  * - 涟漪按下 + 浅色玻璃底
- * 视觉参考 iOS 备忘录 / App Store 编辑精选。
+ * 视觉参考系统备忘录 / 应用商店编辑精选。
  */
 @Composable
 private fun LibraryCard(
@@ -264,7 +264,7 @@ private fun LibraryCard(
 
             Spacer(Modifier.width(6.dp))
 
-            // ④ 右侧 chevron（不要 paddingEnd 让 chevron 贴边，更 Apple）
+            // ④ 右侧 chevron（不要 paddingEnd 让 chevron 贴边，更精致）
             AppIcon(
                 kind = AppIconKind.ChevronRight,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
@@ -280,7 +280,7 @@ private fun LibraryCard(
  * 素材库内容页（WebView 加载该库首页）。
  *
  * - 站内返回：先退回站内上一页，否则退出到素材库卡片页。
- * - 顶栏右侧 ⌃ 更多菜单（GlassDropdownMenu，美观 Apple 风格）：
+ * - 顶栏右侧 ⌃ 更多菜单（GlassDropdownMenu，美观的玻璃风格）：
  *     ▾ 下载 PDF ─ 弹出二选：仅本页  /  全部页
  *     ▾ 导入到 Blancall 背诵列表 ─ 弹出二选：仅本页  /  全部页
  *     ✓ 练习当前页正文（topbar 胶囊按钮，二级菜单也有快捷项）

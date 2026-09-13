@@ -29,13 +29,13 @@ import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 
 /**
- * iOS 风格开关：全 App 统一开关组件。
+ * 原生风格开关：全 App 统一开关组件。
  *
  * 参照系统开关样式：实心胶囊轨道（开启=强调色 / 关闭=灰）+ 纯白圆形滑块，
  * 滑块略大于轨道厚度上限并带 1dp 投影，形成"浮起"立体感；切换时滑块位移与轨道颜色
  * 同步弹性动画。
  *
- * 交互：indication 设为 null，彻底取消点击矩形波纹/焦点框，像 iOS 那样点按只切换状态。
+ * 交互：indication 设为 null，彻底取消点击矩形波纹/焦点框，像系统原生开关那样点按只切换状态。
  *
  * @param accent 开启态轨道色（阅读页等深色场景传强调色，默认主题主色）
  */
@@ -58,7 +58,7 @@ fun GlassSwitch(
         label = "switchTrackColor"
     )
 
-    // 尺寸对齐 iOS UISwitch：约 52x32，胶囊比例 1.625，滑块占满轨道高度只留 2dp 边距
+    // 尺寸对齐系统开关：约 52x32，胶囊比例 1.625，滑块占满轨道高度只留 2dp 边距
     val trackW = 52.dp
     val trackH = 32.dp
     val gap = 2.dp

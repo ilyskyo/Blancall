@@ -74,7 +74,7 @@ object SectionSplitter {
 
         // 第二步：若空行切分结果过少，尝试按首行缩进分段（中文排版常见：每段开头缩进两字，段间无空行）
         // 此分支仅当全文无空行（视为单段）时进入，直接对原文本切分以保留正确偏移
-        // 再回退：按"句末标点 + 单换行"分段（无空行、无缩进的文本，如贴吧/笔记风格）
+        // 再回退：按"句末标点 + 单换行"分段（无空行、无缩进的文本，如论坛/笔记风格）
         val paragraphs = if (rawParagraphs.size <= 1 &&
             (rawParagraphs.firstOrNull()?.text?.length ?: 0) > 100) {
             val indentSplit = splitByIndentation(text)

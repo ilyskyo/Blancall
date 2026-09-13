@@ -308,7 +308,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     }
 
     // ── 全屏沉浸：隐藏系统栏/手势线，上滑可临时唤出，退出恢复 ──
-    // 统一走公共 ImmersiveSystemBarsEffect（含 ColorOS/低版本兜底 + Theme.kt 冲突规避）。
+    // 统一走公共 ImmersiveSystemBarsEffect（含定制 ROM/低版本兜底 + Theme.kt 冲突规避）。
     // 遮挡自定义浮层（列表/编辑器）打开期间临时退出沉浸：这些是常规页面版式，
     // 需要状态栏 inset（否则顶栏顶到屏幕上缘/挖孔下），关闭浮层后自动恢复沉浸
     ImmersiveSystemBarsEffect(enabled = maskOverlay == null)
@@ -605,7 +605,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
             .graphicsLayer { alpha = controlsAlpha }
             .zIndex(if (controlsVisible) 0f else -1f)
     ) {
-        // 顶部：单条玻璃胶囊栏（返回 + 标题 + 设置）——控件聚合为一条，iOS 风格
+        // 顶部：单条玻璃胶囊栏（返回 + 标题 + 设置）——控件聚合为一条，系统原生风格
         // 外层 Box 负责横屏时水平居中定位；内层胶囊约束最大宽度
         LiquidGlassPill(
             sourceRef = sourceRef,
@@ -1118,7 +1118,7 @@ private fun OccludedReadingContent(
 
 /**
  * 玻璃胶囊内的图标按钮：学 Kyant0 LiquidButton 的按压反馈——
- * 按下时微缩 + 变淡，spring 回弹（iOS "液态"手感），保留系统 ripple。
+ * 按下时微缩 + 变淡，spring 回弹（"液态"手感），保留系统 ripple。
  */
 @Composable
 private fun GlassIconButton(
@@ -1180,7 +1180,7 @@ private fun LiquidGlassPill(
     // 持有真实 LiquidGlassView 引用：退出组合时 bind(null) 释放采样跟踪器（库内部 recycle），
     // 避免视图移除后 PreDraw 监听残留在 ViewTreeObserver 上。
     val glassViewRef = remember { Ref<LiquidGlassView?>(null) }
-    // 柔和投影：玻璃悬浮的"离地感"（visionOS/iOS 26 玻璃元素都有软阴影）
+    // 柔和投影：玻璃悬浮的"离地感"（新一代系统玻璃元素都有软阴影）
     val density = LocalDensity.current
     val shape = remember(cornerPx) { RoundedCornerShape(with(density) { cornerPx.toDp() }) }
     Box(
@@ -1286,7 +1286,7 @@ private fun FallbackGlassPlate(
                     else -> if (glassActive) Color(0x14FFFFFF) else Color(0xC8FFFFFF)
                 }
             )
-            // 高光描边：玻璃边缘的亮线（Apple 液态玻璃的标志性边缘），深色下提亮、浅色下用白
+            // 高光描边：玻璃边缘的亮线（液态玻璃的标志性边缘），深色下提亮、浅色下用白
             .border(BorderStroke(1.dp, if (isDark) Color(0x59FFFFFF) else Color(0xE0FFFFFF)), shape)
     )
 }
