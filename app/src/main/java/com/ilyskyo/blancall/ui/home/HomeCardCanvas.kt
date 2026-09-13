@@ -7,7 +7,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -469,6 +470,34 @@ fun HomeCardCanvas(
                         contentDescription = "添加卡片",
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+        }
+
+        // 空画布兜底：卡片被全部删光后，长按进编辑态这条路径就不存在了（没有卡片可长按），
+        // 必须给一个显式入口，否则用户再也加不回卡片。
+        if (cards.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable { cbAdd() }
+                    .padding(vertical = 28.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "添加卡片",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "还没有卡片，点这里添加",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }

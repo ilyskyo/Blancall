@@ -16,7 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -28,8 +27,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -50,7 +46,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -78,15 +73,11 @@ import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
-import com.ilyskyo.blancall.ui.common.listItemEnter
-import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.theme.AppPrefs
-import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -945,89 +936,6 @@ private fun HomeSearchBar(
     }
 }
 
-@Composable
-private fun HomeArticleCard(
-    article: Article,
-    dateFormat: SimpleDateFormat,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onPractice: () -> Unit,
-    practiceModifier: Modifier = Modifier
-) {
-    val haptic = LocalHapticFeedback.current
-    GlassCard(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        onClick = onClick,
-        onLongClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            onLongClick()
-        }
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = article.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = buildString {
-                        if (article.author.isNotBlank()) append(article.author.trim()).append("  ·  ")
-                        append(article.content.length.toString()).append(" 字符")
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
-                )
-            }
-
-            Spacer(Modifier.height(2.dp))
-
-            Text(
-                text = article.content.take(50).replace("\n", " "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = dateFormat.format(Date(article.updatedAt)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                }
-                Button(
-                    onClick = onPractice,
-                    modifier = practiceModifier.height(34.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                ) {
-                    Text("开始练习", style = MaterialTheme.typography.labelSmall)
-                }
-            }
-        }
-    }
-}
 
 /**
  * 自绘设置齿轮图标（Canvas 矢量绘制，遵循主流设计系统规范）：

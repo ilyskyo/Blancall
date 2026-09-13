@@ -952,13 +952,34 @@ private fun StatsCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
-            Text(
-                "${stats.practices} 次练习 · 正确率 ${(stats.rate * 100).toInt()}%",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // 还没练习过时显示「还没有练习记录」+ 副提示，避免「0 次练习 · 正确率 0%」的视觉空旷与错愕
+            if (stats.practices == 0) {
+                Text(
+                    "还没有练习记录",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!compact) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "做完第一次练习后这里会出现数据",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Text(
+                    "${stats.practices} 次练习 · 正确率 ${(stats.rate * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (tall) {
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -1024,11 +1045,22 @@ private fun GlobalStatsCard(
                 )
             }
             Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
-            GlobalStatRow("练习总数", "${stats.practices} 次", compact)
-            GlobalStatRow("平均正确率", "${(stats.rate * 100).toInt()}%", compact)
-            // 窄卡只留两行，避免文字被挤成省略号
-            if (!compact) GlobalStatRow("累计填空", "${stats.blanks} 字", compact)
-            if (tall && !compact) GlobalStatRow("覆盖文章", "${stats.articleCount} 篇", compact)
+            // 空态：避免「0 次 / 0% / 0 字 / 0 篇」堆一排看起来空且困惑
+            if (stats.practices == 0) {
+                Text(
+                    "还没有全局练习数据",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                GlobalStatRow("练习总数", "${stats.practices} 次", compact)
+                GlobalStatRow("平均正确率", "${(stats.rate * 100).toInt()}%", compact)
+                // 窄卡只留两行，避免文字被挤成省略号
+                if (!compact) GlobalStatRow("累计填空", "${stats.blanks} 字", compact)
+                if (tall && !compact) GlobalStatRow("覆盖文章", "${stats.articleCount} 篇", compact)
+            }
         }
     }
 }
