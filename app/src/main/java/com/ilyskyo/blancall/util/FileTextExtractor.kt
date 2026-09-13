@@ -73,12 +73,15 @@ object FileTextExtractor {
     /**
      * 提取文件文本 + 图片检测结果。suspend 函数，内部切换到 Dispatchers.IO 执行。
      * 超过 [MAX_FILE_SIZE] 的文件将抛出异常。
+     *
+     * @param fileNameHint 调用方已知的文件名（如预览页的缓存文件）；为 null 时从 URI 查询。
+     *   file:// URI 查不到 DISPLAY_NAME / MIME，不传提示会把 docx/doc 错判成纯文本。
      */
-    suspend fun extractTextWithInfo(context: Context, uri: Uri): ExtractResult = withContext(Dispatchers.IO) {
+    suspend fun extractTextWithInfo(context: Context, uri: Uri, fileNameHint: String? = null): ExtractResult = withContext(Dispatchers.IO) {
         // 文件大小检查，防止大文件 OOM
         checkFileSize(context, uri)
 
-        val fileName = getFileName(context, uri) ?: ""
+        val fileName = fileNameHint ?: getFileName(context, uri) ?: ""
         val mimeType = context.contentResolver.getType(uri)
 
         when {

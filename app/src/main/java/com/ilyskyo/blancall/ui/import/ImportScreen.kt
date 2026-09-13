@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
@@ -70,18 +71,22 @@ fun ImportScreen(navController: NavController) {
     val articleViewModel: ArticleViewModel = viewModel()
     val context = LocalContext.current
 
-    var title by remember { mutableStateOf("") }
+    // 用户数据状态用 rememberSaveable：导航到「预览 PDF」再返回时本页会离开组合，
+    // remember 会重置为初始值（用户反馈「预览返回后已选文件没了要重新选」）；
+    // rememberSaveable 由 Navigation 按目的地自动保存恢复，返回后原样保留。
+    // UI 瞬态（弹窗显隐 / isSaving / isLoading / errorMessage）仍用 remember，不跨返回恢复。
+    var title by rememberSaveable { mutableStateOf("") }
     // 作者（选填）：与标题一并保存，列表/详情页展示
-    var author by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var fileLoaded by remember { mutableStateOf(false) }
-    var useFileImport by remember { mutableStateOf(false) }
-    // PDF 导入预览：记录用户在该页导入的 PDF，用于「预览 PDF」
-    var lastPdfUri by remember { mutableStateOf<Uri?>(null) }
-    var hasPdf by remember { mutableStateOf(false) }
+    var author by rememberSaveable { mutableStateOf("") }
+    var content by rememberSaveable { mutableStateOf("") }
+    var fileLoaded by rememberSaveable { mutableStateOf(false) }
+    var useFileImport by rememberSaveable { mutableStateOf(false) }
+    // 可预览文件（TXT/PDF/DOCX/DOC/EPUB/HTML/RTF/MD）：导入后提供「预览文件」入口；
+    // 预览返回后仍保留（rememberSaveable）
+    var previewFileUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // 文档含图片提示：仅文件导入且源文档含图片/嵌入对象时显示
-    var imageNotice by remember { mutableStateOf<String?>(null) }
+    var imageNotice by rememberSaveable { mutableStateOf<String?>(null) }
     var showFullscreenInput by remember { mutableStateOf(false) }
     var showLargeFileWarning by remember { mutableStateOf(false) }
     // 保存流程的「进入挖空编辑」意图：标题建议 / 大文件预警弹窗会打断点击流程，
@@ -98,7 +103,7 @@ fun ImportScreen(navController: NavController) {
     val contentFocusRequester = remember { FocusRequester() }
     // 当前导入来源的段落是否允许自动首行缩进：粘贴/纯文本=true，PDF/Word 等文档=false。
     // 文件加载时按文件名判定；粘贴模式下恒为 true。
-    var lastFileAutoIndent by remember { mutableStateOf(true) }
+    var lastFileAutoIndent by rememberSaveable { mutableStateOf(true) }
 
     /**
      * 统一的保存并退出流程：写入文章 → 通知上一页 → 返回。
@@ -165,16 +170,11 @@ fun ImportScreen(navController: NavController) {
                             title = fileName.substringBeforeLast(".")
                         }
                     }
-                    // 记录是否为 PDF —— 导入 PDF 时提供「预览 PDF」
+                    // 记录可预览文件（TXT/PDF/DOCX/DOC/EPUB/HTML/RTF/MD）——导入后提供「预览文件」入口
                     val pickedName = withContext(Dispatchers.IO) { FileTextExtractor.getFileName(context, it) }
                     // 依据文件名判断来源是否允许自动首行缩进（PDF/Word 等文档保持原文不动）
                     lastFileAutoIndent = isAutoIndentFile(pickedName)
-                    if (pickedName?.lowercase()?.endsWith(".pdf") == true) {
-                        lastPdfUri = it
-                        hasPdf = true
-                    } else {
-                        hasPdf = false
-                    }
+                    previewFileUri = if (isPreviewableFile(pickedName)) it else null
                     errorMessage = null
                 } catch (e: Exception) {
                     errorMessage = "文件读取失败: ${e.message}"
@@ -249,27 +249,27 @@ fun ImportScreen(navController: NavController) {
             )
         }
 
-        // 导入 PDF 时提供「预览 PDF」：在 app 内打开该 PDF 原页
-        if (hasPdf && lastPdfUri != null) {
+        // 已选可预览文件时提供「预览文件」：在 app 内直接查看（PDF 原版渲染，其余提取文本）
+        val previewUri = previewFileUri
+        if (previewUri != null) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = {
-                    val uri = lastPdfUri ?: return@TextButton
                     scope.launch {
                         val f = withContext(Dispatchers.IO) {
-                            copyPdfUriToCache(context, uri)
+                            copyUriToCache(context, previewUri)
                         }
                         if (f != null) {
                             navController.navigate(
                                 "pdf_preview?asset=${Uri.encode(f.absolutePath)}" +
-                                    "&title=${Uri.encode(title.ifBlank { "PDF 预览" })}"
+                                    "&title=${Uri.encode(title.trim())}"
                             )
                         }
                     }
                 }) {
-                    Text("预览 PDF", style = MaterialTheme.typography.labelLarge)
+                    Text("预览文件", style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -660,14 +660,28 @@ private fun isAutoIndentFile(fileName: String?): Boolean {
     return ext !in NO_AUTO_INDENT_EXT
 }
 
-/** 把用户选择的 PDF（content URI）复制到缓存目录，供 PdfPreviewScreen 在 app 内预览 */
-private fun copyPdfUriToCache(context: android.content.Context, uri: Uri): File? {
+/** 预览用可识别格式：与 FileTextExtractor 支持范围一致（PDF 原版渲染，其余提取文本预览） */
+private val PREVIEWABLE_EXT = setOf("pdf", "docx", "doc", "txt", "epub", "html", "htm", "rtf", "md")
+
+/** 文件名是否为可预览格式 */
+private fun isPreviewableFile(fileName: String?): Boolean {
+    val ext = fileName?.substringAfterLast('.', "")?.lowercase().orEmpty()
+    return ext.isNotEmpty() && ext in PREVIEWABLE_EXT
+}
+
+/** 把用户选择的文件（content URI）复制到缓存目录，供预览页在 app 内打开（保留原扩展名） */
+private fun copyUriToCache(context: android.content.Context, uri: Uri): File? {
     return try {
-        val name = runCatching { FileTextExtractor.getFileName(context, uri) }.getOrNull()
+        val original = runCatching { FileTextExtractor.getFileName(context, uri) }.getOrNull()
+        val base = original
             ?.substringBeforeLast(".")
             ?.replace(Regex("[^\\w\\u4e00-\\u9fa5\\-]"), "_")
-            ?: "pdf"
-        val out = File(context.cacheDir, "pdfview/$name.pdf")
+            ?.takeIf { it.isNotBlank() }
+            ?: "file"
+        // 保留原扩展名：预览页按扩展名区分 PDF 原版渲染与文本提取预览
+        val ext = original?.substringAfterLast('.', "")?.lowercase()
+            ?.takeIf { it.isNotBlank() } ?: "pdf"
+        val out = File(context.cacheDir, "preview/$base.$ext")
         out.parentFile?.mkdirs()
         context.contentResolver.openInputStream(uri)?.use { ins ->
             out.outputStream().use { os -> ins.copyTo(os) }

@@ -70,6 +70,7 @@ import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.reader.TextContentReader
 import com.ilyskyo.blancall.ui.theme.AppPrefs
+import com.ilyskyo.blancall.util.FileTextExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,6 +113,9 @@ fun PdfPreviewScreenOptimized(
     val pageNum = remember(asset) {
         Regex("p(\\d+)").find(asset)?.groupValues?.get(1)?.toIntOrNull()
     }
+    // 仅 PDF 走原版渲染（PdfRenderer）；其余可预览格式（DOCX / DOC / TXT / EPUB / HTML / RTF / MD）
+    // 统一提取全文作文本预览——本地无版式渲染能力，内容完整可读
+    val isPdf = remember(asset) { asset.lowercase().endsWith(".pdf") }
     // 异步加载：assets 复制（完整 PDF 可达数 MB）+ txt 读取 + PdfRenderer 打开全部切 IO 线程，
     // 避免进屏首帧在主线程同步做磁盘 IO 导致卡顿。加载中显示占位空白，失败才显示错误文案。
     var pdfFile by remember(asset) { mutableStateOf<File?>(null) }
@@ -132,6 +136,27 @@ fun PdfPreviewScreenOptimized(
         ?: asset.substringAfterLast("/")
 
     LaunchedEffect(asset, pageNum) {
+        if (!isPdf) {
+            // 非 PDF（Word / EPUB / HTML / RTF / MD / TXT）：提取全文作文本预览
+            val (f, extracted) = withContext(Dispatchers.IO) {
+                val direct = File(asset)
+                val file = if (direct.exists()) direct else copyAssetToCache(context, asset)
+                val text = file?.let {
+                    runCatching {
+                        // 传文件名提示：file:// URI 查不到 DISPLAY_NAME，不传会把 docx/doc 错判成纯文本
+                        FileTextExtractor.extractTextWithInfo(context, Uri.fromFile(it), it.name).text
+                    }.getOrNull()
+                }
+                file to text
+            }
+            pdfFile = f
+            textLoaded = extracted?.takeIf { it.isNotBlank() }
+                ?.let { Triple(f?.nameWithoutExtension ?: "", "", it) }
+            renderer = null
+            pageCount = 0
+            loadFailed = f == null || textLoaded == null
+            return@LaunchedEffect
+        }
         val (file, txt) = withContext(Dispatchers.IO) {
             val direct = File(asset)
             val f = if (direct.exists()) direct
@@ -254,8 +279,8 @@ fun PdfPreviewScreenOptimized(
                         )
                     }
                     GlassDropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        // 视图模式切换（记忆选择，跨篇目保持）
-                        if (textLoaded != null || textPages.isNotEmpty()) {
+                        // 视图模式切换（记忆选择，跨篇目保持）：仅 PDF 有图片/文本两种模式
+                        if (isPdf && (textLoaded != null || textPages.isNotEmpty())) {
                             GlassMenuItem(
                                 leadingIcon = {
                                     AppIcon(
@@ -316,16 +341,13 @@ fun PdfPreviewScreenOptimized(
 
         if (loadFailed) {
             Text(
-                text = "无法打开该 PDF",
+                text = if (isPdf) "无法打开该 PDF" else "无法预览该文件",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(40.dp)
             )
-        } else if (renderer == null || pdfFile == null) {
-            // 加载中：占位空白，避免错误提示闪烁、底部按钮跳位
-            Box(Modifier.weight(1f).fillMaxWidth())
-        } else if (useVectorRendering && (textLoaded != null || textPages.isNotEmpty())) {
-            // 文本模式：优先用配套纯文字版（排版最干净），否则用 PDF 提取文本
+        } else if ((textLoaded != null || textPages.isNotEmpty()) && (useVectorRendering || !isPdf)) {
+            // 文本模式：PDF 按用户选择的模式；其余格式（Word/EPUB/HTML/RTF/MD/TXT）恒为文本预览
             val content = textLoaded?.third ?: textPages.joinToString("\n\n") { it.text }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 TextContentReader(
@@ -335,6 +357,9 @@ fun PdfPreviewScreenOptimized(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+        } else if (renderer == null || pdfFile == null) {
+            // 加载中：占位空白，避免错误提示闪烁、底部按钮跳位
+            Box(Modifier.weight(1f).fillMaxWidth())
         } else {
             // 图片模式：原 PDF 渲染（完整 PDF 时定位到当前篇目起始页）
             // 此分支 renderer 必非 null（上方条件已挡），取局部 val 以通过编译器 smart cast
