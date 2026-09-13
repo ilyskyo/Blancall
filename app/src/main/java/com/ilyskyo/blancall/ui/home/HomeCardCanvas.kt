@@ -50,12 +50,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -65,6 +63,7 @@ import com.ilyskyo.blancall.data.repository.HomeLayoutStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.floor
@@ -468,7 +467,8 @@ fun HomeCardCanvas(
     val cbLongPress by rememberUpdatedState(onLongPressCard)
 
     val density = LocalDensity.current
-    val haptic = LocalHapticFeedback.current
+    // 统一强触感：长按进编辑、拖动/缩放开始都用同一套“咔嗒”（各机型一致、明显）
+    val confirmHaptic = rememberConfirmHaptic()
 
     // 手势中的预览态（不落地，松手才写回）
     var dragCardId by remember { mutableStateOf<String?>(null) }
@@ -676,9 +676,7 @@ fun HomeCardCanvas(
                                             }
                                             // null = 时间到且全程按住未滑动 → 长按：给一次触感反馈并进编辑态
                                             if (timedOut == null) {
-                                                haptic.performHapticFeedback(
-                                                    HapticFeedbackType.LongPress
-                                                )
+                                                confirmHaptic()
                                                 cbLongPress(card.id)
                                             }
                                         }
@@ -711,9 +709,7 @@ fun HomeCardCanvas(
                                                 onStart = {
                                                     dragCardId = card.id
                                                     dragOffset = Offset.Zero
-                                                    haptic.performHapticFeedback(
-                                                        HapticFeedbackType.LongPress
-                                                    )
+                                                    confirmHaptic()
                                                 },
                                                 onDelta = { d -> dragOffset += d },
                                                 onEnd = {
@@ -868,9 +864,7 @@ fun HomeCardCanvas(
                                                     resizeRowSpan = c.rowSpan
                                                     resizeTotal = Offset.Zero
                                                     resizeCardId = card.id
-                                                    haptic.performHapticFeedback(
-                                                        HapticFeedbackType.LongPress
-                                                    )
+                                                    confirmHaptic()
                                                 },
                                                 onDelta = { d ->
                                                     resizeTotal += d

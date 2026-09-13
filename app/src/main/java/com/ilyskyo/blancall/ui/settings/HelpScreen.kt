@@ -326,6 +326,38 @@ fun HelpScreen(navController: NavController) {
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "遮挡自定义（阅读页）",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "阅读设置将遮挡粒度切到「自定义」即进入配置列表：点按配置项直接使用，行尾「编辑」进入标注页，长按可重命名 / 删除；选中自定义粒度时，按钮上会显示当前配置名。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "标注页：点句子遮住（再点取消）；长按句子拆成词，点词遮词；长按继续拆成字，点字遮字（再长按逐级还原）。双指捏合可缩放正文字号。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "自定义挖空（练习时）",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "选文时选择「自定义配置」进入编辑：点按选中挖空、长按切换粒度（复句→分句→字词→单字，循环还原）。配置列表页点按进入编辑、长按可开始练习 / 重命名 / 删除（选择器模式下点按即开始练习）。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 )
 

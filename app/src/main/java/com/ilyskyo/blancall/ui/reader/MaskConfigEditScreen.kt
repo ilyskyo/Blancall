@@ -78,6 +78,8 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.ScrollProgressBadge
 import com.ilyskyo.blancall.ui.common.TopBarIconAction
+import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.practice.pinchZoom
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.theme.ThemeManager
@@ -187,6 +189,8 @@ fun MaskConfigEditScreen(
 
     // 旋转/进程重建恢复编辑现场：levels+masks 序列化快照（rememberSaveable 自动回放）
     var editorSnapshot by rememberSaveable { mutableStateOf<String?>(null) }
+    // 快照归属的配置 id：回放前校验，防把另一套配置的编辑现场误当作本配置的（用户反馈的“旧配置内容不对”）
+    var editorSnapshotFor by rememberSaveable { mutableStateOf(-1L) }
     var snapshotApplied by remember { mutableStateOf(false) }
 
     if (levels.size != paragraphs.size) {
@@ -194,8 +198,10 @@ fun MaskConfigEditScreen(
         repeat(paragraphs.size) { levels.add(0) }
     }
 
-    // 有快照 = 旋转/重建恢复：现场（可能含未保存编辑）比磁盘新，直接回放
-    if (!snapshotApplied && editorSnapshot != null) {
+    // 有快照 = 重建恢复：现场（可能含未保存编辑）比磁盘新，直接回放；
+    // **只回放归属本配置（configId 一致）的现场** —— 跨配置（列表里点了另一套）必须丢弃，
+    // 改从磁盘加载（否则会拿着上一套的现场把新配置的内容顶掉，即“点旧配置让重新编辑”）
+    if (!snapshotApplied && editorSnapshot != null && editorSnapshotFor == configId) {
         snapshotApplied = true
         runCatching {
             val o = JSONObject(editorSnapshot!!)
@@ -229,11 +235,16 @@ fun MaskConfigEditScreen(
                 })
             }.toString()
         }.getOrNull()
+        // 记录快照归属：回放时按 configId 校验，跨配置的现场一律作废
+        editorSnapshotFor = configId
     }
 
     LaunchedEffect(article.id, configId) {
         val cfgs = withContext(Dispatchers.IO) { store.getConfigs(article.id) }
         existingConfigs = cfgs
+        // 保存目标与入口参数强制对齐（与列表页的会话 key 双保险）：
+        // 防残留状态把保存写到另一套配置（用户反馈「旧配置没保存进去」）
+        if (configId > 0 && savedId != configId) savedId = configId
         if (configId > 0 && !snapshotApplied) {
             cfgs.firstOrNull { it.id == configId }?.let { cfg ->
                 editingName = cfg.name
@@ -469,12 +480,6 @@ fun MaskConfigEditScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "点句子遮住 · 长按拆成词 · 点词遮词 · 长按拆成字 · 点字遮字（再长按逐级还原）",
-                style = MaterialTheme.typography.labelSmall,
-                color = subColor
-            )
             Spacer(Modifier.height(10.dp))
             // ── 挡片颜色：与阅读设置「挡片颜色」同款马卡龙色板 ──
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -515,7 +520,16 @@ fun MaskConfigEditScreen(
                 modifier = Modifier.padding(horizontal = 26.dp))
         } else {
             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 双指捏合调整字号（与阅读页 / 练习页同款手势）：字号写共享的
+                    // AppPrefs.readingFont，本页用 readingFontFlow 实时渲染，捏合即所见即所得；
+                    // pinchZoom 从不消费单指事件，滚动交给下层 LazyColumn，互不冲突。
+                    .pinchZoom { zoom ->
+                        AppPrefs.readingFont = (AppPrefs.readingFont * zoom).coerceIn(14f, 36f)
+                    }
+            ) {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -586,12 +600,6 @@ fun MaskConfigEditScreen(
             title = { Text("保存遮挡配置", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
-                    Text(
-                        "给这套遮挡配置起个名字，保存后在阅读模式遮挡粒度选「自定义」使用。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(12.dp))
                     TextField(
                         value = editingName,
                         onValueChange = { editingName = it },
@@ -679,6 +687,8 @@ private fun EditableOccludedSentenceParagraph(
     val currentMasks = rememberUpdatedState(masks)
     val currentToggle by rememberUpdatedState(onToggle)
     val currentSplit by rememberUpdatedState(onSplit)
+    // 长按拆句 / 拆词统一带触感反馈
+    val confirmHaptic = rememberConfirmHaptic()
     val density = LocalDensity.current
     val cornerRadiusPx = with(density) { 8.dp.toPx() }
 
@@ -723,7 +733,7 @@ private fun EditableOccludedSentenceParagraph(
                             if (clause != null) currentToggle(clause.start, clause.end)
                         }
                     },
-                    onLongPress = { currentSplit() }
+                    onLongPress = { confirmHaptic(); currentSplit() }
                 )
             },
         onTextLayout = { l -> layoutState.value = l }
@@ -752,6 +762,8 @@ private fun EditableUnitParagraph(
     val currentMasks = rememberUpdatedState(masks)
     val currentToggle by rememberUpdatedState(onToggle)
     val currentSplit by rememberUpdatedState(onSplit)
+    // 长按拆句 / 拆词统一带触感反馈
+    val confirmHaptic = rememberConfirmHaptic()
     val textStyle = TextStyle(
         fontSize = fontPx.sp,
         lineHeight = (fontPx * lineHeight).sp,
@@ -772,7 +784,7 @@ private fun EditableUnitParagraph(
                         .background(palette[masked.c.coerceIn(0, palette.lastIndex)])
                         .combinedClickable(
                             onClick = { currentToggle(u.start, u.end) },
-                            onLongClick = { currentSplit() }
+                            onLongClick = { confirmHaptic(); currentSplit() }
                         )
                 ) {
                     Text(
@@ -789,7 +801,7 @@ private fun EditableUnitParagraph(
                     modifier = Modifier
                         .combinedClickable(
                             onClick = { currentToggle(u.start, u.end) },
-                            onLongClick = { currentSplit() }
+                            onLongClick = { confirmHaptic(); currentSplit() }
                         )
                 )
             }

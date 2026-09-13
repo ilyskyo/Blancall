@@ -67,6 +67,7 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.ScrollProgressBadge
 import com.ilyskyo.blancall.ui.common.TopBarIconAction
+import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -497,9 +498,9 @@ fun CustomClozeEditScreen(
             Spacer(Modifier.height(4.dp))
             Text(
                 when (clozeMode) {
-                    "SENTENCE" -> "点选要挖掉的复句（选中即预览句子挖空样式）"
-                    "REVERSE" -> "点选句子加入反向默写（练习时逐分句挖一词打乱还原）"
-                    else -> "点按选中挖空 · 长按切换粒度（复句→分句→字词→单字，循环还原）"
+                    "SENTENCE" -> "点选要挖掉的复句"
+                    "REVERSE" -> "点选句子加入反向默写"
+                    else -> "点按选中挖空 · 长按切换粒度"
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -722,6 +723,8 @@ private fun SentenceEditCard(
         else -> ClozeTokens.tokensFor(sentence, level)
     }
     val merged = RangeOps.mergeRanges(selectedRanges)
+    // 长按拆词统一带触感反馈
+    val confirmHaptic = rememberConfirmHaptic()
 
     fun isSelectedRange(range: IntRange): Boolean =
         merged.any { it.first <= range.first && range.last <= it.last }
@@ -801,7 +804,7 @@ private fun SentenceEditCard(
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
                                     RoundedCornerShape(6.dp)
                                 )
-                                .combinedClickable(onClick = { onToggle(token.range) }, onLongClick = onExplode)
+                                .combinedClickable(onClick = { onToggle(token.range) }, onLongClick = { confirmHaptic(); onExplode() })
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -824,7 +827,7 @@ private fun SentenceEditCard(
                                 .clip(RoundedCornerShape(6.dp))
                                 .combinedClickable(
                                     onClick = { onToggle(token.range) },
-                                    onLongClick = { if (mode == "WORD") onExplode() }
+                                    onLongClick = { confirmHaptic(); if (mode == "WORD") onExplode() }
                                 )
                                 .padding(horizontal = 2.dp, vertical = 4.dp)
                         )

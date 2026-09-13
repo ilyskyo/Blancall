@@ -82,6 +82,7 @@ import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
+import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
@@ -156,6 +157,8 @@ fun HomeScreen(
     // 提示条淡出期间会闪出一帧反向文案（用户反馈「最后一帧显示继续下滑收起顶栏」）。
     var brandHintExpand by remember { mutableStateOf(true) }
     var brandHintReach by remember { mutableStateOf(false) }
+    // 统一触感反馈：下拉跨过阈值时“咔嗒”一下（与长按/拖拽同一套强反馈）
+    val brandHaptic = rememberConfirmHaptic()
     // 品牌栏开合用带回弹的弹簧动画（略 overshoot，收尾更有弹性）
     val bounceSpring = spring<Float>(
         dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -178,7 +181,10 @@ fun HomeScreen(
                         }
                         val damped = dy / brandPullPx * (1f - brandPull * 0.35f)
                         brandPull = (brandPull + damped).coerceIn(0f, 1f)
+                        val wasReach = brandHintReach
                         brandHintReach = brandPull >= BRAND_TOGGLE_THRESHOLD
+                        // 跨过阈值的一刻给一次触感反馈（告知“可以松手了”，不重复振动）
+                        if (!wasReach && brandHintReach) brandHaptic()
                         // 收起态：高度跟手上长；展开态：保持满高（下拉只表达“收起”意图）
                         if (!brandExpanded) brandProgress.snapTo(brandPull)
                     }

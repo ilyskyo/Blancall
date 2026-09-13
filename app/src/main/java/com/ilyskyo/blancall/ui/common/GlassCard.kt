@@ -62,12 +62,14 @@ fun GlassCard(
     // 点击修饰符：仅 onClick → clickable；onClick + onLongClick → combinedClickable（如文章卡片）
     // interactionSource 可外部传入（调用方需要自绘按压反馈时，如 ModeCard 的按压缩放）
     val src = interactionSource ?: remember { MutableInteractionSource() }
+    // 统一触感反馈：所有用 GlassCard 的长按（长按多选、长按菜单等）都带“咔嗒”
+    val confirmHaptic = rememberConfirmHaptic()
     val clickModifier = when {
         onClick != null && onLongClick != null -> Modifier.combinedClickable(
             interactionSource = src,
             indication = null,
             onClick = onClick,
-            onLongClick = onLongClick
+            onLongClick = { confirmHaptic(); onLongClick() }
         )
         onClick != null -> Modifier.clickable(
             interactionSource = src,

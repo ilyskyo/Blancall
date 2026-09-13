@@ -47,6 +47,7 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
+import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,6 +75,8 @@ fun CustomClozeListScreen(
 
     // 菜单/对话框状态
     var menuForId by remember { mutableStateOf<Long?>(null) }
+    // 长按列表项弹出菜单时统一带触感反馈
+    val confirmHaptic = rememberConfirmHaptic()
     var renameTarget by remember { mutableStateOf<CustomClozeStore.CustomConfig?>(null) }
     var deleteTarget by remember { mutableStateOf<CustomClozeStore.CustomConfig?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -148,8 +151,8 @@ fun CustomClozeListScreen(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                if (pick) "点按配置直接开始练习 · 长按重命名 / 删除"
-                else "点按配置进入编辑 · 长按开始练习 / 重命名 / 删除",
+                if (pick) "点按即练习 · 长按重命名 / 删除"
+                else "点按编辑 · 长按练习 / 重命名 / 删除",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -160,7 +163,7 @@ fun CustomClozeListScreen(
             } else if (configs.isEmpty()) {
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    "还没有自定义配置\n点这里创建第一套",
+                    "还没有自定义配置，点此创建",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
@@ -200,7 +203,7 @@ fun CustomClozeListScreen(
                                                 navController.navigate("custom_cloze_edit/$articleId?configId=${cfg.id}")
                                             }
                                         },
-                                        onLongClick = { menuForId = cfg.id }
+                                        onLongClick = { confirmHaptic(); menuForId = cfg.id }
                                     )
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically

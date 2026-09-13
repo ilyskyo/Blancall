@@ -199,6 +199,26 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     // 遮挡自定义浮层：null=无 / "list"=配置列表 / "edit"=编辑器（编辑器从列表进出）
     var maskOverlay by remember { mutableStateOf<String?>(null) }
     var maskEditConfigId by remember { mutableLongStateOf(-1L) }
+    // 编辑会话 token：每次从列表进入编辑（含新建）自增，并 key 到编辑页上 ——
+    // 不同会话的 rememberSaveable 槽位完全隔离，防上一套配置的编辑现场 / 保存目标
+    // 泄漏到下一次编辑（用户反馈「点旧配置进去内容不对、保存没进去」）。
+    // 旋转重建不经过入口回调，token 不变，编辑现场快照（rememberSaveable）得以正常恢复。
+    var maskEditSession by remember { mutableLongStateOf(0L) }
+    // 当前「使用中」的自定义遮挡配置名：供设置面板「自定义」chip 展示（如「自定义 · 我大一」）。
+    // 配置列表/编辑器关闭或切换会话后重新读取（AppPrefs 存的是 configId，名字需从 store 反查）
+    var maskConfigName by remember { mutableStateOf("") }
+    LaunchedEffect(maskOverlay, maskEditSession, article.id) {
+        val id = AppPrefs.readingOcclusionCustomConfigId
+        maskConfigName = if (id > 0) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    MaskConfigStore.getInstance(context.filesDir)
+                        .getConfigs(article.id)
+                        .firstOrNull { it.id == id }?.name
+                }.getOrNull().orEmpty()
+            }
+        } else ""
+    }
     // 当前节内的滚动比例（0~1），由每页回调上报，用于更细的进度条
     var inPageFraction by remember { mutableFloatStateOf(0f) }
     // 最近一次落盘的整篇进度（dispose 时回写，避免快照丢失）
@@ -775,6 +795,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
             // 只负责把浮层挂上（藏在面板后）；面板本身的关闭由调用方在 hide 动画完成后执行
             maskOverlay = "list"
         },
+        maskConfigName = maskConfigName,
         isDark = isDark,
         accent = accentColor
     )
@@ -809,21 +830,26 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     .pointerInput(Unit) { detectTapGestures { } }
             ) {
                 if (maskOverlay == "edit") {
-                    MaskConfigEditScreen(
-                        article = article,
-                        configId = maskEditConfigId,
-                        onBack = { maskOverlay = "list" }
-                    )
+                    // key(会话)：见 maskEditSession 注释 —— 不同编辑会话的状态完全隔离
+                    androidx.compose.runtime.key(maskEditSession) {
+                        MaskConfigEditScreen(
+                            article = article,
+                            configId = maskEditConfigId,
+                            onBack = { maskOverlay = "list" }
+                        )
+                    }
                 } else {
                     MaskConfigListScreen(
                         articleId = article.id,
                         onBack = { maskOverlay = null },
                         onEdit = { id ->
                             maskEditConfigId = id
+                            maskEditSession++
                             maskOverlay = "edit"
                         },
                         onNew = {
                             maskEditConfigId = -1L
+                            maskEditSession++
                             maskOverlay = "edit"
                         }
                     )
@@ -1323,6 +1349,8 @@ private fun ReadingSettingsSheet(
     occlusionColorIndex: Int,
     onOcclusionColorChange: (Int) -> Unit,
     onOpenMaskConfig: () -> Unit,
+    /** 当前「自定义」遮挡配置名（空 = 未选/已删除），选中自定义粒度时显示在 chip 上 */
+    maskConfigName: String,
     isDark: Boolean,
     accent: Color
 ) {
@@ -1782,7 +1810,13 @@ private fun ReadingSettingsSheet(
                                 onOpenMaskConfig()
                                 onDismiss()
                             },
-                            label = { Text("自定义") },
+                            label = {
+                                Text(
+                                    if (customActive && maskConfigName.isNotBlank()) {
+                                        "自定义 · $maskConfigName"
+                                    } else "自定义"
+                                )
+                            },
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = when {
                                     customActive && isDark -> Color(0x334B5563)

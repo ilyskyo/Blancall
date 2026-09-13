@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.ai
 
 import com.ilyskyo.blancall.ui.common.MarkdownText
+import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +57,8 @@ fun AiBubble(
         bottomStart = if (isUser) 16.dp else 4.dp,
         bottomEnd = if (isUser) 4.dp else 16.dp
     )
+    // 长按复制统一带触感反馈
+    val confirmHaptic = rememberConfirmHaptic()
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -75,7 +78,7 @@ fun AiBubble(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = {},
-                        onLongClick = onLongClick
+                        onLongClick = { confirmHaptic(); onLongClick() }
                     ) else Modifier
                 )
         ) {

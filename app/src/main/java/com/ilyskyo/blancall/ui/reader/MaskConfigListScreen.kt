@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.ui.reader
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +52,7 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
+import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -84,6 +86,8 @@ fun MaskConfigListScreen(
 
     // 菜单/对话框状态
     var menuForId by remember { mutableStateOf<Long?>(null) }
+    // 长按列表项弹出菜单时统一带触感反馈
+    val confirmHaptic = rememberConfirmHaptic()
     var renameTarget by remember { mutableStateOf<MaskConfigStore.MaskConfig?>(null) }
     var deleteTarget by remember { mutableStateOf<MaskConfigStore.MaskConfig?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -96,6 +100,22 @@ fun MaskConfigListScreen(
             configs = cfgs
             selectedId = sel
             loading = false
+        }
+    }
+
+    /**
+     * 点按列表项即「使用」该配置：标记选中 + 遮挡粒度切到自定义 + 确保遮挡开关打开，
+     * 然后返回阅读页（磁盘写放 IO 线程）。
+     * 旧交互把「使用」藏在长按菜单里、点按却进编辑，用户反馈「无法切换配置」，故提到主操作。
+     */
+    fun useConfig(cfg: MaskConfigStore.MaskConfig) {
+        scope.launch {
+            withContext(Dispatchers.IO) { store.setSelected(articleId, cfg.id) }
+            AppPrefs.readingOcclusionCustomConfigId = cfg.id
+            AppPrefs.readingOcclusionMode = "custom"
+            AppPrefs.readingOcclusionEnabled = true
+            Toast.makeText(context, "已使用「${cfg.name}」", Toast.LENGTH_SHORT).show()
+            onBack()
         }
     }
 
@@ -157,7 +177,7 @@ fun MaskConfigListScreen(
                 Spacer(Modifier.height(4.dp))
             }
             Text(
-                "点按配置进入编辑 · 长按使用 / 重命名 / 删除",
+                "点按即使用 · 长按重命名 / 删除",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -168,7 +188,7 @@ fun MaskConfigListScreen(
             } else if (configs.isEmpty()) {
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    "还没有遮挡配置\n点这里新建，直接在正文上标注要遮住的句子或字词",
+                    "还没有遮挡配置，点此新建",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
@@ -196,8 +216,8 @@ fun MaskConfigListScreen(
                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                                     )
                                     .combinedClickable(
-                                        onClick = { onEdit(cfg.id) },
-                                        onLongClick = { menuForId = cfg.id }
+                                        onClick = { useConfig(cfg) },
+                                        onLongClick = { confirmHaptic(); menuForId = cfg.id }
                                     )
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -217,6 +237,17 @@ fun MaskConfigListScreen(
                                         else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                Spacer(Modifier.width(8.dp))
+                                // 编辑入口：点按已改为「使用」，编辑必须显式可达
+                                Text(
+                                    "编辑",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onEdit(cfg.id) }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
                             }
                             // 长按菜单（锚定在配置卡片上）
                             GlassDropdownMenu(
@@ -226,15 +257,7 @@ fun MaskConfigListScreen(
                                 GlassMenuItem(
                                     onClick = {
                                         menuForId = null
-                                        // 标记使用 + 遮挡粒度切到自定义 + 确保遮挡开关打开（磁盘写放 IO 线程）
-                                        scope.launch {
-                                            withContext(Dispatchers.IO) { store.setSelected(articleId, cfg.id) }
-                                            AppPrefs.readingOcclusionCustomConfigId = cfg.id
-                                            AppPrefs.readingOcclusionMode = "custom"
-                                            AppPrefs.readingOcclusionEnabled = true
-                                            Toast.makeText(context, "已使用「${cfg.name}」", Toast.LENGTH_SHORT).show()
-                                            onBack()
-                                        }
+                                        useConfig(cfg)
                                     },
                                     label = { Text("使用", style = MaterialTheme.typography.bodyMedium) }
                                 )
