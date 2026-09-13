@@ -656,7 +656,20 @@ fun HomeCardCanvas(
                                     .padding(SLOT_INSET)
                                     .clip(HOME_CARD_SHAPE)
                                     .pointerInput(card.id, editMode) {
-                                        if (editMode) return@pointerInput
+                                        if (editMode) {
+                                            // 编辑态：消费一切事件（点按/长按）——
+                                            // 双保险：防任何路径下穿透到 cardContent 内部的 clickable
+                                            // （「长按进编辑后点完成会跳详情、首页↔详情反复跳」）
+                                            awaitEachGesture {
+                                                awaitFirstDown(requireUnconsumed = false)
+                                                while (true) {
+                                                    val e = awaitPointerEvent()
+                                                    e.changes.forEach { it.consume() }
+                                                    if (e.changes.all { !it.pressed }) break
+                                                }
+                                            }
+                                            return@pointerInput
+                                        }
                                         awaitEachGesture {
                                             val down = awaitFirstDown(requireUnconsumed = false)
                                             val slop = viewConfiguration.touchSlop
@@ -889,12 +902,20 @@ fun HomeCardCanvas(
                                                         HomeLayoutStore.MIN_COL_SPAN,
                                                         HomeLayoutStore.MAX_COL_SPAN
                                                     )
+                                                    // 文章卡片内容少，限制最大尺寸（最多 2 行高）——
+                                                    // 拉太大只会剩大片空白；其余卡片自由缩放（用户要求）
+                                                    val maxRowSpan =
+                                                        if (card.type == HomeLayoutStore.CardType.ARTICLE) {
+                                                            2
+                                                        } else {
+                                                            HomeLayoutStore.MAX_ROW_SPAN
+                                                        }
                                                     resizeRowSpan = (
                                                         resizeBaseRow +
                                                             (resizeTotal.y / halfRow).toInt()
                                                         ).coerceIn(
                                                         HomeLayoutStore.MIN_ROW_SPAN,
-                                                        HomeLayoutStore.MAX_ROW_SPAN
+                                                        maxRowSpan
                                                     )
                                                 },
                                                 onEnd = {

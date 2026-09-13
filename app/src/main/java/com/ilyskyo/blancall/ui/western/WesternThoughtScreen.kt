@@ -894,7 +894,7 @@ data class BuiltInLibrary(
 private val BUILT_IN_LIBRARIES = listOf(
     BuiltInLibrary(
         id = "western",
-        title = "西方思想",
+        title = "西方思想写作素材",
         subtitle = "现代西方思想史 · 20 位思想家高考素材",
         assetPath = "philo/index.html",
         accentColor = 0xFF1F3A5F,

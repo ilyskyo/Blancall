@@ -103,7 +103,7 @@ private val ONBOARDING_PAGES = listOf(
         features = listOf(
             "学习数据：练习次数与正确率",
             "错题分析 / 记忆热力图",
-            "内置「西方思想」等离线素材库"
+            "内置「西方思想写作素材」等离线素材库"
         )
     )
 )

@@ -618,7 +618,7 @@ fun SettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("西方思想", style = MaterialTheme.typography.bodyLarge,
+                        Text("西方思想写作素材", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                     }
                     GlassSwitch(
