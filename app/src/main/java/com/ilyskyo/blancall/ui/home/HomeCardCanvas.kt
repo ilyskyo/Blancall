@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -657,13 +658,15 @@ fun HomeCardCanvas(
                                     .clip(HOME_CARD_SHAPE)
                                     .pointerInput(card.id, editMode) {
                                         if (editMode) {
-                                            // 编辑态：消费一切事件（点按/长按）——
-                                            // 双保险：防任何路径下穿透到 cardContent 内部的 clickable
-                                            // （「长按进编辑后点完成会跳详情、首页↔详情反复跳」）
+                                            // 编辑态：消费一切事件（点按/长按）。
+                                            // **必须在 Initial pass 消费**：Main pass 是「子→父」，内层 clickable 会最先
+                                            // 看到未消费的 UP 并判定为点击 —— 只有父级在 Initial pass（父→子）先消费，
+                                            // 内层才会收到「已被消费的 UP」从而取消点击。
+                                            // （「长按进编辑后点完成会跳详情、首页↔详情反复跳」的根治）
                                             awaitEachGesture {
-                                                awaitFirstDown(requireUnconsumed = false)
+                                                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                                                 while (true) {
-                                                    val e = awaitPointerEvent()
+                                                    val e = awaitPointerEvent(PointerEventPass.Initial)
                                                     e.changes.forEach { it.consume() }
                                                     if (e.changes.all { !it.pressed }) break
                                                 }
@@ -671,17 +674,17 @@ fun HomeCardCanvas(
                                             return@pointerInput
                                         }
                                         awaitEachGesture {
-                                            val down = awaitFirstDown(requireUnconsumed = false)
+                                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                                             val slop = viewConfiguration.touchSlop
                                             var acc = Offset.Zero
-                                            // 长按判定：按住满 longPressTimeout 且期间**未抬起、未滑动越过 touch slop**。
-                                            // 不能用 waitForUpOrCancellation：内层手势（按钮/行点击）消费事件时它会同样
-                                            // 返回 null，与「超时」不可区分 —— 那正是之前「一些卡片长按无效 / 乱触发」的根因。
+                                            // 长按判定（Initial pass 观察）：按住满 longPressTimeout 且期间**未抬起、未滑动越过 slop**。
+                                            // 不能用 waitForUpOrCancellation：内层手势消费事件时它会同样返回 null，
+                                            // 与「超时」不可区分 —— 那正是之前「一些卡片长按无效 / 乱触发」的根因。
                                             val timedOut = withTimeoutOrNull(
                                                 viewConfiguration.longPressTimeoutMillis
                                             ) {
                                                 while (true) {
-                                                    val event = awaitPointerEvent()
+                                                    val event = awaitPointerEvent(PointerEventPass.Initial)
                                                     val change = event.changes
                                                         .firstOrNull { it.id == down.id } ?: break
                                                     if (!change.pressed) break
@@ -689,10 +692,20 @@ fun HomeCardCanvas(
                                                     if (acc.getDistance() > slop) break
                                                 }
                                             }
-                                            // null = 时间到且全程按住未滑动 → 长按：给一次触感反馈并进编辑态
+                                            // null = 时间到且全程按住未滑动 → 长按：触感反馈 + 进编辑态
                                             if (timedOut == null) {
                                                 confirmHaptic()
                                                 cbLongPress(card.id)
+                                                // **严肃修复**：长按后的抬手不能被卡内点击区误判为「点击」——
+                                                // 旧版（Main pass 不消费）：「长按添加文章卡→进导入页」「长按文章卡→进详情页」
+                                                // 「长按最近使用行→进详情」。在 Initial pass 消费本手势剩余事件（含 UP），
+                                                // 内层 clickable 收到被消费的 UP → 自动取消点击；高亮/涟漪也一并取消。
+                                                down.consume()
+                                                while (true) {
+                                                    val e = awaitPointerEvent(PointerEventPass.Initial)
+                                                    e.changes.forEach { it.consume() }
+                                                    if (e.changes.all { !it.pressed }) break
+                                                }
                                             }
                                         }
                                     }
