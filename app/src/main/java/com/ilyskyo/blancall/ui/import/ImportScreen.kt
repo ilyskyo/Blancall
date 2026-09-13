@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -102,7 +103,13 @@ fun ImportScreen(navController: NavController) {
      * 使阅读与背诵显示一致；PDF/Word 等来源保持原文不动。
      * 包裹 try/catch/finally，失败时回写错误信息并复位 isSaving，避免卡在保存中。
      */
-    suspend fun saveAndExit(saveTitle: String, saveContent: String, saveAuthor: String) {
+    suspend fun saveAndExit(
+        saveTitle: String,
+        saveContent: String,
+        saveAuthor: String,
+        /** true = 保存后直接进入该文章的「自定义挖空」编辑（用挖空页替换导入页，返回时回来源页） */
+        openClozeEditor: Boolean = false
+    ) {
         val autoIndent = if (useFileImport) lastFileAutoIndent else true
         val contentOut =
             if (autoIndent && AppPrefs.autoIndentEnabled) applyFirstLineIndent(saveContent) else saveContent
@@ -114,7 +121,14 @@ fun ImportScreen(navController: NavController) {
                 set("articleSaved", true)
                 set("savedArticleId", articleId)
             }
-            navController.popBackStack()
+            if (openClozeEditor) {
+                // 用挖空编辑页替换导入页：从挖空页返回时直接回到来源页（导入已完成，不再回到本页）
+                navController.navigate("custom_cloze_edit/$articleId") {
+                    popUpTo("import") { inclusive = true }
+                }
+            } else {
+                navController.popBackStack()
+            }
         } catch (e: Exception) {
             errorMessage = e.message ?: "保存失败"
         } finally {
@@ -283,7 +297,8 @@ fun ImportScreen(navController: NavController) {
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("文章标题") },
+                // 自适应单行标签：窄屏也永远不折行（折行会把输入框撞高，导致与右侧作者框不等高）
+                label = { AdaptiveTextFieldLabel("文章标题") },
                 modifier = Modifier
                     .weight(1.6f)
                     .focusRequester(titleFocusRequester),
@@ -301,7 +316,8 @@ fun ImportScreen(navController: NavController) {
             OutlinedTextField(
                 value = author,
                 onValueChange = { author = it },
-                label = { Text("作者（选填）") },
+                // 自适应单行标签：「作者（选填）」在部分窄屏上放不下会折行、把输入框撞高，导致两框不等高
+                label = { AdaptiveTextFieldLabel("作者（选填）") },
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(authorFocusRequester),
@@ -400,7 +416,30 @@ fun ImportScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 底部固定按钮
+        // 底部固定按钮：两个按钮共用同一套校验（标题建议/空内容/空标题/大文件警告两段式）
+        fun handleSaveClick(openClozeEditor: Boolean) {
+            when {
+                title.isBlank() && content.isNotBlank() -> {
+                    showTitleSuggestionDialog = true
+                    titleSuggestionDismissed = false
+                    errorMessage = null
+                }
+                content.isBlank() -> errorMessage = "请输入内容"
+                title.isBlank() -> errorMessage = "请输入文章标题"
+                content.length > LARGE_FILE_THRESHOLD && !showLargeFileWarning -> {
+                    showLargeFileWarning = true
+                    errorMessage = null
+                }
+                else -> {
+                    if (isSaving) return
+                    isSaving = true
+                    scope.launch {
+                        saveAndExit(title.trim(), content.trim(), author.trim(), openClozeEditor)
+                    }
+                }
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -408,38 +447,20 @@ fun ImportScreen(navController: NavController) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Button(
-                onClick = {
-                    when {
-                        title.isBlank() && content.isNotBlank() -> {
-                            showTitleSuggestionDialog = true
-                            titleSuggestionDismissed = false
-                            errorMessage = null
-                        }
-                        content.isBlank() -> errorMessage = "请输入内容"
-                        title.isBlank() -> errorMessage = "请输入文章标题"
-                        content.length > LARGE_FILE_THRESHOLD && !showLargeFileWarning -> {
-                            showLargeFileWarning = true
-                            errorMessage = null
-                        }
-                        else -> {
-                            if (isSaving) return@Button
-                            isSaving = true
-                            scope.launch { saveAndExit(title.trim(), content.trim(), author.trim()) }
-                        }
-                    }
-                },
+                onClick = { handleSaveClick(openClozeEditor = false) },
                 modifier = Modifier.weight(1f),
                 enabled = !isSaving,
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("保存文章")
+                Text("仅保存")
             }
             OutlinedButton(
-                onClick = { navController.popBackStack() },
+                onClick = { handleSaveClick(openClozeEditor = true) },
                 modifier = Modifier.weight(1f),
+                enabled = !isSaving,
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("返回首页")
+                Text("保存并挖空")
             }
         }
 
@@ -646,4 +667,29 @@ private fun copyPdfUriToCache(context: android.content.Context, uri: Uri): File?
         }
         out
     } catch (_: Exception) { null }
+}
+
+/**
+ * 自适应单行输入框标签：**基准样式与 TextField 原生 label 完全一致**（bodyLarge：主题楷体/宋体 16sp），
+ * 放得下时保持原样不变；仅在窄屏真的放不下时逐步缩小字号（下限 10sp），保证**永不折行**。
+ *
+ * 背景：Title / Author 两个输入框同排等高，若 label（如「作者（选填）」）在窄屏上
+ * 换行会把该框撑高、与另一个框高度不一致（用户实机反馈）。
+ * 注意：基准不能改小——否则放得下的机型上字号/字体会被无端改变（楷体→黑体、变大变小）。
+ */
+@Composable
+private fun AdaptiveTextFieldLabel(text: String) {
+    val base = MaterialTheme.typography.bodyLarge
+    var fontSize by remember(text) { mutableStateOf(base.fontSize) }
+    Text(
+        text = text,
+        maxLines = 1,
+        overflow = TextOverflow.Clip,
+        style = base.copy(fontSize = fontSize),
+        onTextLayout = { result ->
+            if (result.hasVisualOverflow && fontSize.value > 10f) {
+                fontSize = (fontSize.value - 0.5f).sp
+            }
+        }
+    )
 }

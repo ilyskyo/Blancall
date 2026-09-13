@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -92,12 +93,13 @@ private val CONTROL_HIT = 32.dp
 private val CONTROL_VISUAL = 26.dp
 
 /**
- * 编辑态控件圆心相对卡片角的内缩量：圆心落在**卡片内 10dp** 处
+ * 编辑态控件圆心相对卡片角的内缩量：圆心落在**卡片槽位内 11dp** 处
  * （= CONTROL_HIT/2 − CONTROL_INSET）。
- * 旧版向卡外偏移 8dp，圆心离卡角太远的后果：相邻卡的圆钮互相压住、
- * 拖动/缩放时被别的卡片盖住一半（用户反馈「圆圈会残缺、有遮挡」）。
+ * 槽位比卡面大 SLOT_INSET（5dp），即圆心距**卡面**约 6dp，
+ * 圆钮向卡外伸出的量降到最小 —— 相邻卡片的行间隙只有 10dp，
+ * 控件伸得太多会与邻卡的控件相互贴住（用户反馈「还是略有遮挡」）。
  */
-private val CONTROL_INSET = 6.dp
+private val CONTROL_INSET = 3.dp
 
 /** 拉伸手柄的触摸热区 */
 private val HANDLE_HIT = 40.dp
@@ -704,6 +706,14 @@ fun HomeCardCanvas(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
+                                        // 编辑态**彻底吃掉纯点击**：旧版遮罩不消费点击，点按会穿透到内容层
+                                        // 触发「打开阅读」——「长按进编辑后点完成会跳详情、首页↔详情反复跳」的根因。
+                                        // 空 clickable 只消费点击（无涟漪）；dragAfterSlop 用
+                                        // requireUnconsumed=false 观察事件，拖动换位不受影响。
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) {}
                                         .pointerInput(card.id, cellWpx, cellPitchPx, rowUnitPx) {
                                             dragAfterSlop(
                                                 onStart = {
@@ -964,28 +974,33 @@ private fun ControlButton(
 }
 
 /**
- * 拉伸手柄图形：**只有一段右下弧线，不带圆底**（用户要求「不要圆圈底」）。
- * 好处：卡片右下角自身的圆角完整露出来（不被白圆盖住）；纯深灰弧线在浅色卡面上
- * 反而比「白圆里的弧」更醒目。
+ * 拉伸手柄图形：**沿卡片右下圆角的一段小弧**（无圆底）。
+ *
+ * 与卡片圆角**同心、曲率一致**，且在外侧留出合理间距（中心线半径 24dp，
+ * 弧线内缘距圆角约 2.5dp）——不贴边、不抢视觉，只截取中间一小段短弧。
  */
 @Composable
 private fun ResizeHandleGlyph() {
+    // 定位：弧圆心需与「卡面右下角圆角」同心，即「卡面右下角 −(20,20)」=「槽位右下角 −25dp」；
+    // Canvas 左上角即圆心 → Canvas（26dp）右下 = 槽位角 +1dp；热区右下在槽位外 +3dp
+    // （CONTROL_INSET）→ padding = 3 − 1 = 2。
     Box(
-        // 弧线整体收进卡角内侧（用户反馈「黑色弧线应该再靠内一点」）：
-        // 热区右下角在卡角外 6dp，再内缩 8dp → 弧线重心落在卡内约 13dp，与热区中心一致。
-        modifier = Modifier.padding(end = 8.dp, bottom = 8.dp),
+        modifier = Modifier.padding(end = 2.dp, bottom = 2.dp),
         contentAlignment = Alignment.BottomEnd,
     ) {
-        Canvas(modifier = Modifier.size(18.dp)) {
-            val stroke = 2.5.dp.toPx()
-            val inset = stroke / 2f
+        Canvas(modifier = Modifier.size(26.dp)) {
+            val stroke = 3.dp.toPx()
+            // 中心线半径：圆角（20dp）+ 4dp —— 与圆角同心，外侧留出约 2.5dp 视觉间距
+            val radius = 24.dp.toPx()
             drawArc(
                 color = HANDLE_COLOR,
-                startAngle = 0f,
-                sweepAngle = 90f,
+                // 只取圆角弧的一小段（30°~60°，共 30°）：短而居中，轻轻抱住卡角
+                startAngle = 30f,
+                sweepAngle = 30f,
                 useCenter = false,
-                topLeft = Offset(inset, inset),
-                size = Size(size.width - stroke, size.height - stroke),
+                // 负 topLeft：圆心 = Canvas 左上角
+                topLeft = Offset(-radius, -radius),
+                size = Size(radius * 2f, radius * 2f),
                 style = Stroke(width = stroke, cap = StrokeCap.Round)
             )
         }

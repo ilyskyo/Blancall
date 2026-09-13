@@ -589,9 +589,10 @@ private fun RecentCard(
 /**
  * 最近文章行。
  *
- * [dense]（卡片只有 1 行高）时整行收成**真正的单行**：标题 + 「练习」按钮同排，
- * 去掉摘要 / 日期 / 作者——旧版按钮单独占一行（还夹了个无意义的横向 Spacer），
- * 两行叠加会溢出矮卡可视区，按钮悬在内嵌块边缘被裁半截（用户反馈「展示不良」）。
+ * [dense]（真·单行）：标题 + 字符数 + 「练习」按钮同排；
+ * [slim]（超紧凑三行）：给「文章卡片」的矮卡用 —— 标题+字符数 / 摘要 / 日期+小按钮，
+ * 间距减半，完整信息也能塞进 1 行高的卡里（用户要求「小小的、像图 2 这样」）。
+ * 两者都 false 时为标准三行（标题+字符数 / 摘要 / 日期 + 按钮）。
  */
 @Composable
 private fun RecentArticleRow(
@@ -602,6 +603,7 @@ private fun RecentArticleRow(
     onClick: () -> Unit,
     onPractice: () -> Unit,
     practiceModifier: Modifier,
+    slim: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -610,8 +612,11 @@ private fun RecentArticleRow(
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             .clickable(onClick = onClick)
             .padding(
-                horizontal = if (compact) 10.dp else 12.dp,
-                vertical = if (dense) 1.dp else if (compact) 8.dp else 10.dp,
+                start = if (compact || slim) 10.dp else 12.dp,
+                end = if (compact || slim) 10.dp else 12.dp,
+                // slim：上窄下宽 —— 按钮离卡底略远一点，视觉更平衡（用户反馈「太靠着底」）
+                top = if (dense) 1.dp else if (slim) 3.dp else if (compact) 8.dp else 10.dp,
+                bottom = if (dense) 1.dp else if (slim) 6.dp else if (compact) 8.dp else 10.dp,
             ),
     ) {
         Row(
@@ -642,38 +647,76 @@ private fun RecentArticleRow(
                     modifier = Modifier.weight(0.6f, fill = false),
                 )
             }
-            // dense（矮卡）：练习按钮与标题同排 —— 整行只有一行高
+            // dense（矮卡）：字符数 + 练习按钮与标题同排 —— 整行只有一行高
             if (dense) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "${article.content.length} 字符",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
                 Spacer(Modifier.width(8.dp))
                 PracticeButton(compact = true, dense = true, onPractice = onPractice, modifier = practiceModifier)
             }
         }
 
         if (!dense) {
-            Spacer(Modifier.height(2.dp))
-
-            Text(
-                text = article.content.take(50).replace("\n", " "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            if (slim) {
+                // 超紧凑三行：摘要 + 日期/按钮（间距压到最小，适应 1 行高的卡）
+                Spacer(Modifier.height(1.dp))
                 Text(
-                    text = dateFormat.format(Date(article.updatedAt)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    text = article.content.take(50).replace("\n", " "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                PracticeButton(compact = compact, onPractice = onPractice, modifier = practiceModifier)
+                Spacer(Modifier.height(1.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = dateFormat.format(Date(article.updatedAt)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        maxLines = 1,
+                    )
+                    // 按钮用标准尺寸（compact 30dp）—— 矮卡里也和其它卡一样大（用户反馈「练习键可以大的」）
+                    PracticeButton(
+                        compact = true,
+                        onPractice = onPractice,
+                        modifier = practiceModifier,
+                    )
+                }
+            } else {
+                Spacer(Modifier.height(2.dp))
+
+                Text(
+                    text = article.content.take(50).replace("\n", " "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = dateFormat.format(Date(article.updatedAt)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        maxLines = 1,
+                    )
+                    PracticeButton(compact = compact, onPractice = onPractice, modifier = practiceModifier)
+                }
             }
         }
     }
@@ -711,10 +754,10 @@ private fun PracticeButton(
 /**
  * 文章卡片：把某一篇具体文章单独放成一张卡（与「最近文章」不同，内容不随最近打开变化）。
  *
- * - 卡面以**文章标题**为主视觉（同族圆点 + 标题，与其他卡一致）；
- * - 标准卡：摘要 + 底部「作者 · 字数 · 日期 + 开始练习」；高卡摘要多给几行；
- * - 矮卡（1 行高）：单行收拢 —— 圆点 + 标题 + 小练习按钮；
- * - 点卡片主体 → 打开阅读；点「练习」→ 模式选择弹窗（按钮位置上报锚点）；
+ * 内容**完全复用「最近使用」卡里的文章行**（[RecentArticleRow]，同款排版）：
+ * - 标准/高卡：标题 + 字符数 / 摘要 / 日期 + 开始练习；
+ * - 矮卡（1 行高）：标题 + 字符数 + 练习按钮单行收拢；
+ * - 点行体→ 打开阅读；点练习→ 模式选择弹窗（按钮位置上报锚点）；
  * - 文章已被删除（article == null）→ 空态提示，长按进编辑态可删除本卡。
  */
 @Composable
@@ -729,17 +772,18 @@ private fun ArticleCard(
     modifier: Modifier,
 ) {
     val hue = Macaron.warn()
+    // 卡面保持默认素净底色（不再用蜜桃色整卡铺底——用户反馈「黄色太丑」，
+    // 与「最近使用」观感一致；hue 仅用于空态图标点缀）
     GlassCard(
         modifier = modifier,
         shape = HOME_CARD_SHAPE,
-        containerColor = hue.fill,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(m.pad),
-        ) {
-            if (article == null) {
+        if (article == null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(m.pad),
+            ) {
                 CardHeader(dotColor = hue.accent, title = "文章卡片")
                 CardEmptyState(
                     icon = AppIconKind.Inbox,
@@ -752,90 +796,30 @@ private fun ArticleCard(
                         .fillMaxWidth()
                         .weight(1f),
                 )
-            } else if (m.short) {
-                // 矮卡（1 行高）：单行 —— 圆点 + 标题 + 练习按钮，去掉摘要与元信息
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(8.dp).background(hue.accent, CircleShape))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        article.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    PracticeButton(
-                        compact = true,
-                        dense = true,
-                        onPractice = { onPracticeArticle(article.id) },
-                        modifier = practiceAnchorModifier(
-                            articleId = article.id,
-                            anchorArticleId = anchorArticleId,
-                            onAnchorMeasured = onAnchorMeasured,
-                        ),
-                    )
-                }
-            } else {
-                // 整卡主体可点：进阅读页（练习按钮是内层点击，优先级更高）
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable { onOpenArticle(article) },
-                ) {
-                    CardHeader(dotColor = hue.accent, title = article.title)
-                    Spacer(Modifier.height(if (m.compact) 4.dp else 6.dp))
-                    Text(
-                        text = article.content.take(120).replace("\n", " "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                        maxLines = if (m.tall) 4 else if (m.compact) 2 else 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    // weight 把按钮行压到卡底：卡片变高时留白在中段，按钮位置稳定
-                    Spacer(Modifier.weight(1f))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // 窄卡（1 列）空间不足：只留日期，作者/字数让给标题
-                        Text(
-                            text = if (m.compact) {
-                                dateFormat.format(Date(article.updatedAt))
-                            } else {
-                                buildString {
-                                    if (article.author.isNotBlank()) {
-                                        append(article.author.trim()).append(" · ")
-                                    }
-                                    append(article.content.length).append(" 字符 · ")
-                                    append(dateFormat.format(Date(article.updatedAt)))
-                                }
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        PracticeButton(
-                            compact = m.compact,
-                            onPractice = { onPracticeArticle(article.id) },
-                            modifier = practiceAnchorModifier(
-                                articleId = article.id,
-                                anchorArticleId = anchorArticleId,
-                                onAnchorMeasured = onAnchorMeasured,
-                            ),
-                        )
-                    }
-                }
+            }
+        } else {
+            // 与「最近使用」卡内的文章行同款内容；矮卡（1 行高）用 slim 紧凑三行 ——
+            // 用户要求「卡片小小的、内容像图 2 那样完整」
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (m.short) 2.dp else m.pad),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                RecentArticleRow(
+                    article = article,
+                    dateFormat = dateFormat,
+                    compact = m.compact,
+                    dense = false,
+                    slim = m.short,
+                    onClick = { onOpenArticle(article) },
+                    onPractice = { onPracticeArticle(article.id) },
+                    practiceModifier = practiceAnchorModifier(
+                        articleId = article.id,
+                        anchorArticleId = anchorArticleId,
+                        onAnchorMeasured = onAnchorMeasured,
+                    ),
+                )
             }
         }
     }

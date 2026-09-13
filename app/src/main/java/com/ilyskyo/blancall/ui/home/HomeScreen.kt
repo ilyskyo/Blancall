@@ -143,8 +143,9 @@ fun HomeScreen(
     // 品牌栏(logo+设置)全展开高度；搜索栏常驻不折叠，故无需计入头部展开预算
     val brandHeight = 72.dp
     val headerScope = rememberCoroutineScope()
-    // 品牌栏拉满所需的「下拉行程」（约 2.2 倍品牌栏高度），行程比把手宽裕、不会一下瞬满
-    val brandPullPx = with(LocalDensity.current) { (brandHeight * 2.2f).toPx() }
+    // 品牌栏「拉满」所需的行程（4 倍品牌栏高度 = 288dp）：轻扫一两厘米完全不够，
+    // 必须刻意长时间下拉才能逼近阈值 —— 收/放只认阈值，不受快速短滑影响（用户反馈「手滑一下就收放」）
+    val brandPullPx = with(LocalDensity.current) { (brandHeight * 4f).toPx() }
     // ── 墨墨式下拉手感状态 ──
     // brandPull：**本次拖动**的累计下拉量 0..1。与 brandProgress 不同：展开状态下拉时，
     // brandProgress 恒为 1（栏已满），只能靠 brandPull 反映“拉向收起”的进度 ——
@@ -168,11 +169,11 @@ fun HomeScreen(
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val dy = available.y
-                // 滚到顶再继续下拉：
-                //  - 未展开：over-scroll 实时转为头部展开（带递进阻尼的跟手）
-                //  - 已展开：高度锁定满值，只累计 brandPull（供「继续下滑 收起顶栏」提示与阈值判定）
+                // 滚到顶再继续下拉：只累计本次下拉量 brandPull（阈值判定 + 提示条），
+                // 顶栏本身纹丝不动 —— 松手时越过阈值才收/放（无跟手预览，避免轻扫误触）
                 if (dy > 0f && homeScrollState.value <= 0f) {
-                    // 拖拽跟手：随进度递增阻力，越接近拉满越费劲；松手后是否切换由 brandPull 阈值决定
+                    // 只累计下拉量（阈值判定 + 提示条用）——**不做跟手预览**：
+                    // 轻扫一下不会把顶栏拉出来，只有松手时越过阈值才会收/放（用户反馈「轻扫也能收放」）
                     headerScope.launch {
                         if (!brandPullActive) {
                             // 本次拖动开始：锁定提示方向（松手后不再随 brandExpanded 翻转）
@@ -185,8 +186,6 @@ fun HomeScreen(
                         brandHintReach = brandPull >= BRAND_TOGGLE_THRESHOLD
                         // 跨过阈值的一刻给一次触感反馈（告知“可以松手了”，不重复振动）
                         if (!wasReach && brandHintReach) brandHaptic()
-                        // 收起态：高度跟手上长；展开态：保持满高（下拉只表达“收起”意图）
-                        if (!brandExpanded) brandProgress.snapTo(brandPull)
                     }
                     return Offset(0f, dy)
                 }
@@ -198,8 +197,8 @@ fun HomeScreen(
             }
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (homeScrollState.value <= 0f && brandPullActive) {
-                    // 松手结算（墨墨式手感）：拉到阈值 → 执行切换；未达阈值 → **回弹恢复原状**
-                    // （旧版不到阈值也直接“送满展开”，下拉一点就自动全展开，手感突兀）
+                    // 松手结算：**只认阈值** —— 拉过阈值才收/放顶栏，未达阈值什么都不做
+                    // （无跟手预览，也不回弹：轻扫一下顶栏纹丝不动，避免误触）
                     val reached = brandPull >= BRAND_TOGGLE_THRESHOLD
                     brandPullActive = false
                     brandPull = 0f
@@ -211,12 +210,6 @@ fun HomeScreen(
                         } else {
                             brandProgress.animateTo(0f, tween(durationMillis = 280))
                         }
-                    } else {
-                        // 回弹：回到当前实际状态（收起态 0 / 展开态 1）
-                        brandProgress.animateTo(
-                            if (brandExpanded) 1f else 0f,
-                            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
-                        )
                     }
                     return available
                 }
@@ -967,6 +960,8 @@ fun HomeScreen(
                             id = newId,
                             type = HomeLayoutStore.CardType.ARTICLE,
                             refId = a.id,
+                            // 默认一行高：「小小的」紧凑形态（slim 行完整展示标题/字符数/摘要/日期/练习）
+                            rowSpan = 1,
                             title = a.title,
                         )
                     )
