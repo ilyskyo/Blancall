@@ -468,6 +468,11 @@ fun HomeCardCanvas(
     val cbEdit by rememberUpdatedState(onEditConfig)
     val cbAdd by rememberUpdatedState(onAddCard)
     val cbLongPress by rememberUpdatedState(onLongPressCard)
+    // **时序修复**：editMode 必须用 rememberUpdatedState 读最新值，且**不能**作为下面
+    // pointerInput 的 key —— 长按进编辑态会立即触发重组，若 pointerInput 因 key 变化被取消，
+    // 正在「等待并消费本手势剩余事件（含 UP）」的协程会一并死掉，抬手仍会穿透到卡内点击区
+    // （用户反馈：长按添加文章卡→进导入页 / 文章卡→详情页 / 最近使用行→详情页）。
+    val currentEditMode by rememberUpdatedState(editMode)
 
     val density = LocalDensity.current
     // 统一强触感：长按进编辑、拖动/缩放开始都用同一套“咔嗒”（各机型一致、明显）
@@ -656,55 +661,55 @@ fun HomeCardCanvas(
                                     .fillMaxSize()
                                     .padding(SLOT_INSET)
                                     .clip(HOME_CARD_SHAPE)
-                                    .pointerInput(card.id, editMode) {
-                                        if (editMode) {
-                                            // 编辑态：消费一切事件（点按/长按）。
-                                            // **必须在 Initial pass 消费**：Main pass 是「子→父」，内层 clickable 会最先
-                                            // 看到未消费的 UP 并判定为点击 —— 只有父级在 Initial pass（父→子）先消费，
-                                            // 内层才会收到「已被消费的 UP」从而取消点击。
-                                            // （「长按进编辑后点完成会跳详情、首页↔详情反复跳」的根治）
-                                            awaitEachGesture {
+                                    // key 只含 card.id：editMode 引起的重组**不再重启本协程**，
+                                    // 长按判定后「消费剩余事件直到抬手」的循环才能活到 UP 被吃掉（时序修复）。
+                                    .pointerInput(card.id) {
+                                        awaitEachGesture {
+                                            if (currentEditMode) {
+                                                // 编辑态：消费一切事件（点按/长按）。
+                                                // **必须在 Initial pass 消费**：Main pass 是「子→父」，内层 clickable 会最先
+                                                // 看到未消费的 UP 并判定为点击 —— 只有父级在 Initial pass（父→子）先消费，
+                                                // 内层才会收到「已被消费的 UP」从而取消点击。
+                                                // （「长按进编辑后点完成会跳详情、首页↔详情反复跳」的根治）
                                                 awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                                                 while (true) {
                                                     val e = awaitPointerEvent(PointerEventPass.Initial)
                                                     e.changes.forEach { it.consume() }
                                                     if (e.changes.all { !it.pressed }) break
                                                 }
-                                            }
-                                            return@pointerInput
-                                        }
-                                        awaitEachGesture {
-                                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                            val slop = viewConfiguration.touchSlop
-                                            var acc = Offset.Zero
-                                            // 长按判定（Initial pass 观察）：按住满 longPressTimeout 且期间**未抬起、未滑动越过 slop**。
-                                            // 不能用 waitForUpOrCancellation：内层手势消费事件时它会同样返回 null，
-                                            // 与「超时」不可区分 —— 那正是之前「一些卡片长按无效 / 乱触发」的根因。
-                                            val timedOut = withTimeoutOrNull(
-                                                viewConfiguration.longPressTimeoutMillis
-                                            ) {
-                                                while (true) {
-                                                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                                                    val change = event.changes
-                                                        .firstOrNull { it.id == down.id } ?: break
-                                                    if (!change.pressed) break
-                                                    acc += change.positionChange()
-                                                    if (acc.getDistance() > slop) break
+                                            } else {
+                                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                                val slop = viewConfiguration.touchSlop
+                                                var acc = Offset.Zero
+                                                // 长按判定（Initial pass 观察）：按住满 longPressTimeout 且期间**未抬起、未滑动越过 slop**。
+                                                // 不能用 waitForUpOrCancellation：内层手势消费事件时它会同样返回 null，
+                                                // 与「超时」不可区分 —— 那正是之前「一些卡片长按无效 / 乱触发」的根因。
+                                                val timedOut = withTimeoutOrNull(
+                                                    viewConfiguration.longPressTimeoutMillis
+                                                ) {
+                                                    while (true) {
+                                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                        val change = event.changes
+                                                            .firstOrNull { it.id == down.id } ?: break
+                                                        if (!change.pressed) break
+                                                        acc += change.positionChange()
+                                                        if (acc.getDistance() > slop) break
+                                                    }
                                                 }
-                                            }
-                                            // null = 时间到且全程按住未滑动 → 长按：触感反馈 + 进编辑态
-                                            if (timedOut == null) {
-                                                confirmHaptic()
-                                                cbLongPress(card.id)
-                                                // **严肃修复**：长按后的抬手不能被卡内点击区误判为「点击」——
-                                                // 旧版（Main pass 不消费）：「长按添加文章卡→进导入页」「长按文章卡→进详情页」
-                                                // 「长按最近使用行→进详情」。在 Initial pass 消费本手势剩余事件（含 UP），
-                                                // 内层 clickable 收到被消费的 UP → 自动取消点击；高亮/涟漪也一并取消。
-                                                down.consume()
-                                                while (true) {
-                                                    val e = awaitPointerEvent(PointerEventPass.Initial)
-                                                    e.changes.forEach { it.consume() }
-                                                    if (e.changes.all { !it.pressed }) break
+                                                // null = 时间到且全程按住未滑动 → 长按：触感反馈 + 进编辑态
+                                                if (timedOut == null) {
+                                                    confirmHaptic()
+                                                    cbLongPress(card.id)
+                                                    // **严肃修复**：长按后的抬手不能被卡内点击区误判为「点击」——
+                                                    // 旧版（Main pass 不消费）：「长按添加文章卡→进导入页」「长按文章卡→进详情页」
+                                                    // 「长按最近使用行→进详情」。在 Initial pass 消费本手势剩余事件（含 UP），
+                                                    // 内层 clickable 收到被消费的 UP → 自动取消点击；高亮/涟漪也一并取消。
+                                                    down.consume()
+                                                    while (true) {
+                                                        val e = awaitPointerEvent(PointerEventPass.Initial)
+                                                        e.changes.forEach { it.consume() }
+                                                        if (e.changes.all { !it.pressed }) break
+                                                    }
                                                 }
                                             }
                                         }
