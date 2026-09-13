@@ -337,6 +337,9 @@ fun HomeScreen(
     var showModePicker by remember { mutableStateOf(false) }
     var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
+    // 弹窗锚点来源：true=点击练习按钮（行位置上报有效）；false=「保存成功→开始练习」
+    // （没有按钮锚点，居中弹出；此时行位置上报会污染锚点——其所在行可能在屏幕外）
+    var anchorFromButton by remember { mutableStateOf(false) }
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
     LaunchedEffect(savedStateHandle) {
         val saved = savedStateHandle?.get<Boolean>("articleSaved") ?: false
@@ -411,6 +414,10 @@ fun HomeScreen(
                             onClick = {
                                 showSaveSuccessDialog = false
                                 pendingPracticeArticleId = savedArticleId
+                                // 清除上次练习按钮的陈旧锚点并停用行锚点上报：本路径居中弹出
+                                // （沿用旧锚点会把选项卡弹到上次那篇文章的位置，可能在屏幕外）
+                                anchorFromButton = false
+                                practiceButtonRect = Rect.Zero
                                 showModePicker = true
                             },
                             modifier = Modifier.weight(1f).height(48.dp),
@@ -794,10 +801,15 @@ fun HomeScreen(
                             dateFormat = dateFormat,
                             anchorArticleId = pendingPracticeArticleId,
                             onAnchorMeasured = { id, rect ->
-                                pendingPracticeArticleId = id
-                                practiceButtonRect = rect
+                                // 仅「点击练习按钮」路径消费行位置作为锚点；
+                                // 「保存成功→开始练习」不上报（避免锚点被改成屏幕外的行位置）
+                                if (anchorFromButton) {
+                                    pendingPracticeArticleId = id
+                                    practiceButtonRect = rect
+                                }
                             },
                             onPracticeArticle = { id ->
+                                anchorFromButton = true
                                 pendingPracticeArticleId = id
                                 showModePicker = true
                             },
@@ -1039,7 +1051,8 @@ fun HomeScreen(
     // 模式选择弹窗：常驻组件，内部状态控制显隐，保证退场动画完整播放
     AdaptiveModePicker(
         visible = showModePicker,
-        anchorRect = practiceButtonRect,
+        // Rect.Zero = 无有效锚点 → 传 null 走屏幕中心伪锚点（居中弹出）
+        anchorRect = practiceButtonRect.takeIf { it != Rect.Zero },
         onDismiss = { showModePicker = false },
         onModeSelected = { sel ->
             showModePicker = false

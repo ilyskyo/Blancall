@@ -135,7 +135,13 @@ fun AdaptiveModePicker(
 
     val isDark = isBlancallDark()
 
-    val effectiveAnchor = anchorRect ?: Rect(Offset.Zero, Offset(screenHeightPx / 2, screenHeightPx / 2))
+    // 无锚点时的伪锚点：屏幕横向中心、纵向 38% 处，向下弹出居中面板。
+    // 「保存成功 → 开始练习」路径没有可锚定的按钮，**不能沿用上次练习按钮的旧锚点**：
+    // 那篇文章所在的行可能在屏幕外，会把选项卡弹到屏幕外（用户反馈「点了开始练习没有弹出」）
+    val effectiveAnchor = anchorRect ?: Rect(
+        Offset(screenWidthPx / 2, screenHeightPx * 0.38f),
+        Offset(screenWidthPx / 2, screenHeightPx * 0.38f)
+    )
     val spaceAbove = effectiveAnchor.top
     val spaceBelow = screenHeightPx - effectiveAnchor.bottom
     val neededSpace = popupEstimatePx + minMarginPx
@@ -163,13 +169,12 @@ fun AdaptiveModePicker(
         popupX = minMarginPx
     }
 
+    // 上下双向钳制：锚点可能位于屏幕之外（首页卡片可拖动，锚定行的位置可超出窗口），
+    // 不钳制会把选项卡整块画到屏幕外 —— 点了「开始练习」看不到弹窗（用户反馈根因之一）
+    val maxPopupTop = (screenHeightPx - popupEstimatePx - minMarginPx).coerceAtLeast(minMarginPx)
     val popupY = when (expandDirection) {
-        // DOWN 也要钳制下界：防止估算偏小时卡片底部越过屏幕下缘
-        ExpandDirection.DOWN -> min(
-            effectiveAnchor.bottom + arrowGapPx,
-            screenHeightPx - popupEstimatePx - minMarginPx
-        )
-        ExpandDirection.UP -> max(minMarginPx, effectiveAnchor.top - popupEstimatePx - arrowGapPx)
+        ExpandDirection.DOWN -> (effectiveAnchor.bottom + arrowGapPx).coerceIn(minMarginPx, maxPopupTop)
+        ExpandDirection.UP -> (effectiveAnchor.top - popupEstimatePx - arrowGapPx).coerceIn(minMarginPx, maxPopupTop)
         else -> effectiveAnchor.bottom
     }
 
