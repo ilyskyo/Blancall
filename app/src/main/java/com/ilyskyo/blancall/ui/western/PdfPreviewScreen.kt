@@ -96,10 +96,11 @@ fun PdfPreviewScreen(
 internal fun ZoomablePdfPage(
     renderer: PdfRenderer,
     index: Int,
+    /** 总页数：由父级一次性读入传入 —— 组合/重组期绝不直接访问 renderer，避免文档关闭后访问抛异常（闪退） */
+    pageCount: Int,
     isZoomed: Boolean,
     onZoomChanged: (Boolean) -> Unit
 ) {
-    val pageCount = renderer.pageCount
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }

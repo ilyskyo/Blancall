@@ -117,6 +117,12 @@ fun PdfPreviewScreenOptimized(
     var pdfFile by remember(asset) { mutableStateOf<File?>(null) }
     var textLoaded by remember(asset) { mutableStateOf<Triple<String, String, String>?>(null) }
     var renderer by remember(asset) { mutableStateOf<PdfRenderer?>(null) }
+    // 总页数：打开成功后一次性读入。组合/绘制期不再直接访问 renderer ——
+    // 此前在 items(renderer.pageCount) 里组合期读取，渲染器被关闭后重组即抛
+    // IllegalStateException: Document already closed（用户反馈「预览 PDF 闪退」）
+    var pageCount by remember(asset) { mutableStateOf(0) }
+    // PDF 文件描述符：PdfRenderer.close() 不负责关闭它，随渲染器一并回收，避免句柄泄漏
+    var pdfPfd by remember(asset) { mutableStateOf<ParcelFileDescriptor?>(null) }
     var loadFailed by remember(asset) { mutableStateOf(false) }
 
     // 篇目起始页（完整 PDF 模式）；单篇 PDF / 普通 PDF 为 0
@@ -139,16 +145,42 @@ fun PdfPreviewScreenOptimized(
         }
         textLoaded = txt
         pdfFile = file
-        renderer = file?.let {
+        val opened: Pair<ParcelFileDescriptor?, PdfRenderer?> = file?.let {
             withContext(Dispatchers.IO) {
                 try {
-                    PdfRenderer(ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY))
-                } catch (_: Exception) { null }
+                    val p = ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY)
+                    val r = try {
+                        PdfRenderer(p)
+                    } catch (_: Exception) {
+                        p.close()
+                        null
+                    }
+                    if (r == null) null to null else p to r
+                } catch (_: Exception) {
+                    null to null
+                }
             }
-        }
+        } ?: (null to null)
+        pdfPfd = opened.first
+        renderer = opened.second
+        // 刚打开时一次性读取页数（此后组合/绘制期不再触碰 renderer）
+        pageCount = opened.second?.let { r ->
+            withContext(Dispatchers.IO) { runCatching { r.pageCount }.getOrDefault(0) }
+        } ?: 0
         loadFailed = file == null || renderer == null
     }
-    DisposableEffect(renderer) { onDispose { renderer?.close() } }
+    // **防闪退**：onDispose 里读 renderer（state 委托）得到的是「最新值」而非本 effect 创建时的值 ——
+    // renderer 从 null 变为实例时 key 变化，旧 effect 的 onDispose 会把刚打开的实例 close 掉，
+    // 随后的组合访问（pageCount/items）抛 IllegalStateException: Document already closed。
+    // 先取快照，保证只关闭「本 effect 对应的那一个」实例；PFD 一并回收（PdfRenderer.close 不负责关它）。
+    DisposableEffect(renderer) {
+        val r = renderer
+        val p = pdfPfd
+        onDispose {
+            r?.close()
+            p?.close()
+        }
+    }
 
     // 文本提取器
     val textExtractor = remember { PdfTextExtractor() }
@@ -307,7 +339,7 @@ fun PdfPreviewScreenOptimized(
             // 图片模式：原 PDF 渲染（完整 PDF 时定位到当前篇目起始页）
             // 此分支 renderer 必非 null（上方条件已挡），取局部 val 以通过编译器 smart cast
             val r = renderer
-            if (r != null) {
+            if (r != null && pageCount > 0) {
                 val listState = rememberLazyListState(initialFirstVisibleItemIndex = startPage)
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     LazyColumn(
@@ -315,8 +347,8 @@ fun PdfPreviewScreenOptimized(
                         modifier = Modifier.fillMaxSize(),
                         userScrollEnabled = !isZoomed
                     ) {
-                        items(r.pageCount) { index ->
-                            ZoomablePdfPage(r, index, isZoomed, onZoomChanged = { isZoomed = it })
+                        items(pageCount) { index ->
+                            ZoomablePdfPage(r, index, pageCount, isZoomed, onZoomChanged = { isZoomed = it })
                         }
                     }
                 }
