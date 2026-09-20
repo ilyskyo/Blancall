@@ -259,11 +259,18 @@ fun HandwritingPanel(
      *
      * ⚠️ 上屏必须**按批**（一次 [commitChars] 带多个字）：调用方的 `value + 新增`
      * 是组合期快照，同一帧里分多次写会互相覆盖、只剩最后一个字。
+     *
+     * @param prefix 用户点选的候选字（连写点选路径传入）。它必须与后续可自动上屏的段
+     *   **合并成同一批**提交——若先单独 commit 一次再走本函数，同帧两次写入会互相覆盖，
+     *   点选的字会被后一批（旧快照 + 后续段）覆盖丢失（真机：连写「谁说你」→ 点「谁」
+     *   候选 → 只上屏「说你」）。
      */
-    fun advancePending(from: Int) {
+    fun advancePending(from: Int, prefix: List<Char> = emptyList()) {
         val segs = pendingSegments
         val results = pendingResults
         if (from >= segs.size) {
+            // 无后续段时，prefix（点选字）也必须上屏——单独按批提交后收尾
+            if (prefix.isNotEmpty()) commitChars(prefix)
             pendingSegments = emptyList()
             pendingResults = emptyList()
             pendingAt = 0
@@ -271,7 +278,8 @@ fun HandwritingPanel(
             statusText = null
             return
         }
-        val commit = ArrayList<Char>()
+        val commit = ArrayList<Char>(prefix.size + segs.size)
+        commit.addAll(prefix)
         val consumed = ArrayList<List<Offset>>()
         var i = from
         while (i < segs.size) {
@@ -844,15 +852,22 @@ fun HandwritingPanel(
                                 confidence = c.confidence,
                                 highlighted = c === r.best,
                                 onClick = {
-                                    // 走统一的 commitChars：与自动上屏共用「记录时间戳」这一步，
-                                    // 否则点候选上屏的字不在可撤回窗口内，划掉会撤到更早的字
-                                    commitChars(listOf(c.char))
-                                    if (pendingSegments.isNotEmpty() && pendingAt < pendingSegments.size) {
+                                    // ⚠️ 点选字与「后续可自动上屏段」必须**合并为同一批**提交：
+                                    // 同帧两次 onValueChange 会因调用方 `value + chars` 的快照
+                                    // 互相覆盖（真机：连写「谁说你」→ 点「谁」候选 →
+                                    // 只有「说你」上屏，「谁」被后一次写入覆盖丢失）。
+                                    // 因此不再单独 commitChars，点选字作为 prefix 交给
+                                    // advancePending 与后续段一起、一次批次上屏（commitChars
+                                    // 内部统一记录撤回时间戳，与自动上屏共用同一步）。
+                                    val seg = pendingSegments.getOrNull(pendingAt)
+                                    if (seg != null) {
                                         // 连写逐段确认：抹掉这一段的墨迹后继续往后推
                                         // （后面的段该自动上屏就上屏，该继续停就继续停）
-                                        inkRef.get()?.removeStrokes(pendingSegments[pendingAt])
-                                        advancePending(pendingAt + 1)
+                                        inkRef.get()?.removeStrokes(seg)
+                                        advancePending(pendingAt + 1, prefix = listOf(c.char))
                                     } else {
+                                        // 非连写（单字识别）路径：独立一次提交后清板
+                                        commitChars(listOf(c.char))
                                         clearAll()
                                     }
                                 }
