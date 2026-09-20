@@ -35,9 +35,13 @@
              平板横屏是手写笔（S Pen / M-Pencil）最佳使用姿态，锁竖屏等于放弃这部分用户。
              曾经锁竖屏的理由是「横屏下首页内容区仅 406dp 高，卡片网格被压成一行半」，
              该问题已由按可用宽度动态计算网格列数解决（见 ui/common/Adaptive.kt）。 -->
+        <!-- launchMode=singleTask：桌面图标重复点击 / Home 后立即切回时**复用同一实例**
+             （真机反馈：standard 模式下会新建实例叠回「首页」，用户视角是「刚操作的页面被退掉了」）。
+             复用实例后走 onNewIntent，Compose 导航栈与页面状态原样保留。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.Blancall.Splash"
