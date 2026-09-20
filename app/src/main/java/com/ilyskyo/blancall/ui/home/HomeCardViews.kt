@@ -50,10 +50,12 @@ import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
+import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.listItemEnter
+import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
 import java.io.File
@@ -893,10 +895,14 @@ private fun CustomMaskCard(
         {
             scope.launch {
                 val store = MaskConfigStore.getInstance(context.filesDir)
-                withContext(Dispatchers.IO) { store.setSelected(found.articleId, card.refId) }
-                AppPrefs.readingOcclusionCustomConfigId = card.refId
-                AppPrefs.readingOcclusionMode = "custom"
-                AppPrefs.readingOcclusionEnabled = true
+                withContext(Dispatchers.IO) {
+                    store.setSelected(found.articleId, card.refId)
+                    // 只写目标文章的阅读设置（按文章独立；原写全局会污染其它文章）
+                    updateArticleReaderPrefs(
+                        ReaderPrefsStore.getInstance(context),
+                        found.articleId
+                    ) { it.copy(occlusionCustomConfigId = card.refId, occlusionMode = "custom", occlusionEnabled = true) }
+                }
                 onOpenMaskConfig(found.articleId, card.refId)
             }
         }

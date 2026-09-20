@@ -454,8 +454,12 @@ private suspend fun PointerInputScope.dragAfterSlop(
  * - **编辑态**：卡片正文上方盖一层拖拽遮罩（拖动换位），四角分别是
  *   左上下「笔 / 大头针」、右上「红叉删除」、右下「拉伸手柄」，顶部中央「+」。
  *
- * 列数固定为 [HomeLayoutStore.COLUMNS]（2）：卡片尺寸是绝对列数语义，列数一变就会破坏
- * `colSpan` 的含义（详见下方 columns 处的说明）。
+ * 列数默认 [HomeLayoutStore.COLUMNS]（2）、大屏可自适应增列：卡片的 `colSpan` 是
+ * 绝对列数语义（1–2 列），列数只影响画布粒度、不影响数据（详见下方 columns 处说明）。
+ *
+ * @param columns 渲染列数。默认 [HomeLayoutStore.COLUMNS]（2）；大屏由调用方按
+ *   画布可用宽度自适应传入更大偶数（见 [com.ilyskyo.blancall.ui.common.homeGridColumns]）。
+ *   只改变画布粒度——卡片仍按 colSpan（1–2 列）占位，列数越多一行排得越多、卡越窄。
  *
  * 拖动 / 缩放期间只改本地预览态，**松手才回写** [onCardsChange]，保证一次手势一次提交。
  *
@@ -476,6 +480,8 @@ fun HomeCardCanvas(
     /** 非编辑态长按任意卡片（回传卡片 id），宿主据此进入编辑态 */
     onLongPressCard: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** 渲染列数：大屏自适应多列（见 KDoc）；默认与卡片「绝对列数」存储语义一致 */
+    columns: Int = HomeLayoutStore.COLUMNS,
     cardContent: @Composable (HomeLayoutStore.Card) -> Unit
 ) {
     // 回调也用 rememberUpdatedState 兜住：外层 lambda 每次重组换新实例也不会漏掉最新逻辑
@@ -492,20 +498,17 @@ fun HomeCardCanvas(
     val currentEditMode by rememberUpdatedState(editMode)
 
     // ---------------------------------------------------------------------
-    // 列数**固定**为 HomeLayoutStore.COLUMNS（2），不随可用宽度变化。
+    // 列数：默认 [HomeLayoutStore.COLUMNS]（2）；大屏由调用方传入更大的偶数
+    // （HomeScreen 按画布可用宽度自适应，见 homeGridColumns）。
     //
-    // ⚠️ 这里曾经改成「按可用宽度动态增列」（gridColumnsFor），那是个错误，已回退：
-    // 卡片尺寸是**绝对列数**语义 —— `colSpan` 默认值就是 2（= 2 列画布上的「满宽」，
-    // 见 HomeLayoutStore.Card），而 `MAX_COL_SPAN` 同样是 2。
-    // 一旦列数 > 2，默认卡立刻只剩 2/3 宽，且**永远无法再拉回满宽**
-    // （右侧多出的那一列没有任何卡能占），属于可见的功能退化。
+    // 渲染列数只改变**画布粒度**：卡片尺寸仍是「绝对列数」语义（colSpan 1–2，
+    // 满宽 = 2，见 HomeLayoutStore），因此列数增多不会破坏数据语义 ——
+    // 卡片照常按 1–2 列占位，一行能排的卡随列数增加、单卡随之变窄，
+    // 宽屏下不再被拉成 600dp 级扁条（真机反馈）。
     //
-    // 当初想解决的「横屏 2 列卡片被拉成超宽扁条」其实并不存在：
-    // 画布外层本来就有 600dp 上限（见 HomeScreen），2 列时单卡最宽约 294dp。
-    // 真要让平板用满宽度，得先把尺寸模型从「绝对列数」换成「比例」，
-    // 那是独立的一次数据迁移，不该顺手塞进布局里做。
+    // 历史：这里曾把「固定 2 列」当作唯一安全解（怕列数 >2 后卡回不到满宽）——
+    // 那是把「渲染粒度」错当成「尺寸语义」；两者解耦后此顾虑不成立。
     // ---------------------------------------------------------------------
-    val columns = HomeLayoutStore.COLUMNS
 
     val density = LocalDensity.current
     // 统一强触感：长按进编辑、拖动/缩放开始都用同一套“咔嗒”（各机型一致、明显）

@@ -69,6 +69,7 @@ import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
+import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
@@ -80,10 +81,14 @@ import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.GridMaxWidth
+import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.homeGridColumns
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
+import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
@@ -586,7 +591,9 @@ fun HomeScreen(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 600.dp),
+                // 内容宽上限：窄屏保持 600dp；宽屏放宽到 [GridMaxWidth]。（大屏自适应列数
+                // 需要更宽画布，上限过窄会把卡片拉成 600dp 级扁条——真机反馈。）
+                .widthIn(max = if (LocalIsLargeScreen) GridMaxWidth else 600.dp),
             color = MaterialTheme.colorScheme.background
         ) {
             Column(
@@ -731,7 +738,12 @@ fun HomeScreen(
 
             // ── 首页卡片画布：网格布局，支持拖动换位 / 拉伸缩放 / 大头针固定 / 长按进入编辑态 ──
             // （布局状态与统计都已提到函数作用域，原因：悬浮层也要读）
+            // 列数随可用宽度自适应（大屏多列；手机 2 列不变）——按画布实际内容宽折算，
+            // 不依赖窗口宽近似（会多算侧栏宽度）。
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val hcGridWidth = if (maxWidth.value.isFinite()) maxWidth.value else 0f
             HomeCardCanvas(
+                columns = homeGridColumns(hcGridWidth),
                 cards = homeCards,
                 editMode = cardEditMode,
                 onCardsChange = { persistHomeCards(it) },
@@ -765,9 +777,11 @@ fun HomeScreen(
                                 if (aid != null) {
                                     withContext(Dispatchers.IO) {
                                         MaskConfigStore.getInstance(context.filesDir).setSelected(aid, card.refId)
-                                        AppPrefs.readingOcclusionCustomConfigId = card.refId
-                                        AppPrefs.readingOcclusionMode = "custom"
-                                        AppPrefs.readingOcclusionEnabled = true
+                                        // 只写目标文章的阅读设置（按文章独立；原写全局会污染其它文章）
+                                        updateArticleReaderPrefs(
+                                            ReaderPrefsStore.getInstance(context),
+                                            aid
+                                        ) { it.copy(occlusionCustomConfigId = card.refId, occlusionMode = "custom", occlusionEnabled = true) }
                                     }
                                     navController.navigate("reader/$aid")
                                 }
@@ -834,6 +848,7 @@ fun HomeScreen(
                     }
                 }
             )
+            } // close BoxWithConstraints（画布列数测量）
             // 底部留白：避开底部导航栏与左下角悬浮按钮组。
             // 编辑态再多留一段，避免悬浮的「完成」压住最后一行卡片（旧版「完成」内联在下方，
             // 需要滚到底才能点到、还会被导航栏顶到屏外 —— 用户反馈「跑到导航栏下面」）。
