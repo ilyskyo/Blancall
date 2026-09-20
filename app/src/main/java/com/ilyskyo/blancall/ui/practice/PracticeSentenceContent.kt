@@ -168,6 +168,10 @@ internal fun SentenceClozeContent(
         val currentScript = HandwritingScript.forAnswer(
             blanks.getOrNull(currentBlankIndex)?.originalText.orEmpty()
         )
+        // 生僻字守卫：当前空「已输入内容之后的下一个期望字符」；
+        // 该字不在识别字表（生僻字）时，手写面板会禁止自动上屏并引导键盘输入。
+        val currentExpectedNext: Char? = blanks.getOrNull(currentBlankIndex)?.originalText
+            ?.getOrNull((userAnswers[currentBlankIndex] ?: "").length)
 
         // 已切到双栏时收起「就地书写」弹层：右栏作答区是常驻的，
         // 弹层留着会盖住左侧原文（旋转到横屏 / 展开折叠屏时会遇到）。
@@ -238,6 +242,11 @@ internal fun SentenceClozeContent(
                         hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
                         maxLines = 3,
                         minHeight = 74.dp,
+                        expectedNextChar = currentExpectedNext,
+                        // 英文默写的答案先验：剩余答案（容错匹配后整词提交）
+                        expectedWord = blanks.getOrNull(currentBlankIndex)?.originalText
+                            ?.drop((userAnswers[currentBlankIndex] ?: "").length)
+                            ?.takeIf { it.isNotEmpty() },
                         script = currentScript
                     )
                     Spacer(Modifier.height(4.dp))
@@ -322,6 +331,11 @@ internal fun SentenceClozeContent(
                         hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
                         maxLines = 3,
                         minHeight = 74.dp,
+                        expectedNextChar = currentExpectedNext,
+                        // 英文默写的答案先验：剩余答案（同上）
+                        expectedWord = blanks.getOrNull(currentBlankIndex)?.originalText
+                            ?.drop((userAnswers[currentBlankIndex] ?: "").length)
+                            ?.takeIf { it.isNotEmpty() },
                         script = currentScript,
                         // 笔点作答区同样直接进书写（临时行为，不改「默认输入方式」）
                         onPenTap = { sheetBlankIndex = currentBlankIndex }
@@ -353,7 +367,14 @@ internal fun SentenceClozeContent(
                 // 弹层是为**这个空**服务的，文种按这个空的答案选（可能当前焦点已不是它）
                 script = HandwritingScript.forAnswer(
                     blanks.getOrNull(sheetIdx)?.originalText.orEmpty()
-                )
+                ),
+                // 生僻字守卫：同样按「这个空」的进度给下一个期望字符
+                expectedNextChar = blanks.getOrNull(sheetIdx)?.originalText
+                    ?.getOrNull((userAnswers[sheetIdx] ?: "").length),
+                // 英文默写的答案先验：同样按「这个空」的进度给剩余答案
+                expectedWord = blanks.getOrNull(sheetIdx)?.originalText
+                    ?.drop((userAnswers[sheetIdx] ?: "").length)
+                    ?.takeIf { it.isNotEmpty() }
             )
         }
     }
@@ -378,6 +399,11 @@ internal fun SentenceBlankInline(
 ) {
     Row(
         modifier = Modifier
+            // ⚠️ clip 必须放在 background 与 clickable **之前**，一次解决两件事：
+            // ① 「当前挖空」的选中底色变成圆角（原来是与圆角按键不一致的直角灰块）；
+            // ② clickable 的按压/悬停指示器被裁成圆角 —— 指示器绘制在该节点边界内，
+            //    链上若不先 clip，圆角控件上就会浮出一个直角矩形（真机复现过）。
+            .clip(RoundedCornerShape(6.dp))
             .then(
                 if (isCurrent && !isSubmitted)
                     Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))

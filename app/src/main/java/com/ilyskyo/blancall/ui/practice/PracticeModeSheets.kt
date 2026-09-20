@@ -190,10 +190,14 @@ internal fun RadioListItem(
     onClick: () -> Unit
 ) {
     Surface(
+        // ⚠️ 必须用 Surface(onClick = …) **重载**，不能把 clickable 挂到 modifier 上：
+        // Surface 的 shape 只裁剪它自己的背景，挂在 modifier 上的 clickable 位于裁剪**外层**，
+        // 其按压/悬停指示器是矩形 ⇒ 圆角卡片上会浮出一个直角灰块（真机复现）。
+        // onClick 重载内部是 surface(clip) → clickable，指示器自然被裁成圆角。
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .clickable(onClick = onClick),
+            .padding(vertical = 3.dp),
         shape = RoundedCornerShape(12.dp),
         color = if (selected)
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
@@ -336,10 +340,14 @@ internal fun SectionModeItem(
     onClick: () -> Unit
 ) {
     Surface(
+        // ⚠️ 必须用 Surface(onClick = …) **重载**，不能把 clickable 挂到 modifier 上：
+        // Surface 的 shape 只裁剪它自己的背景，挂在 modifier 上的 clickable 位于裁剪**外层**，
+        // 其按压/悬停指示器是矩形 ⇒ 圆角卡片上会浮出一个直角灰块（真机复现）。
+        // onClick 重载内部是 surface(clip) → clickable，指示器自然被裁成圆角。
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .clickable(onClick = onClick),
+            .padding(vertical = 3.dp),
         shape = RoundedCornerShape(12.dp),
         color = if (selected)
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
@@ -374,9 +382,10 @@ internal fun SectionCheckItem(
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        // ⚠️ 同 [RadioListItem]：必须走 Surface(onClick = …) 重载，否则圆角卡片上会
+        // 浮出直角矩形按压指示器（shape 剪不到 modifier 层的 clickable）。
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         color = if (isSelected)
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)

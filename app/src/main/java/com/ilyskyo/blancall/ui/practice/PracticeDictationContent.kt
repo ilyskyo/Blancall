@@ -84,7 +84,7 @@ import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.ui.common.penTapToHandwriting
 import com.ilyskyo.blancall.ui.handwriting.AnswerInputField
-import com.ilyskyo.blancall.ui.handwriting.HandwritingAnswerSheet
+import com.ilyskyo.blancall.ui.handwriting.HandwritingPanel
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
@@ -140,12 +140,21 @@ internal fun DictationContent(
     val handwritingMode by AppPrefs.handwritingInputEnabledFlow.collectAsStateWithLifecycle()
     // ⚠️ 手写文种必须按**原文**选：整段默写的目标就是原文，而 AnswerInputField 默认走中文模型 ——
     // 英文文章下会一个字都认不出（真机反馈「反向默写的手写没法用」的直接原因之一）。
-    val dictationScript = remember(dictation.clauses) {
-        HandwritingScript.forAnswer(dictation.clauses.joinToString(""))
+    val dictationText = remember(dictation.clauses) { dictation.clauses.joinToString("") }
+    val dictationScript = remember(dictationText) { HandwritingScript.forAnswer(dictationText) }
+    // 生僻字守卫：已输入内容之后的下一个期望字符（古诗文生僻字手写认不出时引导键盘）
+    val dictationExpectedNext: Char? = dictationText.getOrNull(userInput.length)
+    // 英文默写的「答案先验」：剩余原文里的**当前词**（跳过前导空格，只取连续拉丁字母）。
+    // 传给手写面板做容错匹配（纠正 o/0、1/l 等混淆后整词提交）；用户未严格对齐原文时
+    // 匹配自然失败，无副作用。
+    val dictationExpectedWord: String? = remember(dictationText, userInput) {
+        val rest = dictationText.drop(userInput.length).trimStart()
+        rest.takeWhile { it.isLetter() && it.code < 0x2E80 }.takeIf { it.isNotEmpty() }
     }
-    // 底部书写板：笔点作答区（或手写态下点作答区）后打开。
+    // 手写作答区是否展开：手写模式开着就常驻；笔点了作答区也展开（笔来了就能写）。
     // ⚠️ 与「手写模式开关」解耦：开关只决定**默认**输入方式，笔点是临时行为。
-    var sheetOpen by remember { mutableStateOf(false) }
+    var penWriting by remember { mutableStateOf(false) }
+    val writingVisible = handwritingMode || penWriting
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -174,23 +183,48 @@ internal fun DictationContent(
                     onValueChange = onInputChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 笔点即书写（与句子挖空 / 字词挖空同一套入口）：
-                        // 笔尖落在作答区 → 弹出底部书写板；手指点 → 照常弹键盘。
+                        // 笔点即书写：笔尖落在作答区 → 展开下面的手写作答区；手指点 → 照常弹键盘。
                         // 必须**消费整段笔事件**，否则笔的按下会漏给外层 LazyColumn ——
                         // 真机现象就是「页面跟着笔一起滚、字却写不进去」。
-                        .penTapToHandwriting(key = "dictationInput") { sheetOpen = true }
-                        .then(
-                            // 手写态下不撑高：书写板自己就占 140dp+，
-                            // 再让输入框占 160–320dp 会把书写区挤出可视范围（真机反馈「写起来别扭」）。
-                            if (handwritingMode) Modifier
-                            else Modifier.heightIn(min = 160.dp, max = 320.dp)
-                        ),
+                        .penTapToHandwriting(key = "dictationInput") { penWriting = true }
+                        .heightIn(min = 120.dp, max = 240.dp),
                     placeholder = "按原文顺序默写整段，可把复制下来的分句拼回去…",
                     hintChar = if (!isSubmitted) dictationHintChar else null,
                     maxLines = Int.MAX_VALUE,
-                    minHeight = 100.dp,
+                    minHeight = 90.dp,
+                    // 键盘作答区永远是键盘态：手写另有下面那块常驻区，两者并存
+                    allowHandwritingSwitch = false,
+                    expectedNextChar = dictationExpectedNext,
+                    expectedWord = dictationExpectedWord,
                     script = dictationScript
                 )
+
+                Spacer(Modifier.height(8.dp))
+                // ── 手写作答区（常驻在页面上，不弹层）──
+                // 用户明确要求：给一个输入区 + 一个手写区，手写区里写的字直接落到输入区。
+                // 所以这里不用弹层、也不用「点开才出现」——手写模式开着就一直在。
+                if (writingVisible) {
+                    HandwritingPanel(
+                        modifier = Modifier.fillMaxWidth(),
+                        autoCommit = true,
+                        // ⚠️ 按批追加：调用方的 userInput 是组合期快照，逐字回调会互相覆盖
+                        onCharsPicked = { chars -> onInputChange(userInput + chars.joinToString("")) },
+                        onUndoLast = { onInputChange(userInput.dropLast(1)) },
+                        script = dictationScript,
+                        expectedNextChar = dictationExpectedNext,
+                        // 汉字待填字 ⇒ 禁用拉丁回退（答案只含汉字时不做英文识别）
+                        allowLatinFallback = dictationExpectedNext?.let {
+                            HandwritingScript.isLatinInputChar(it)
+                        } != false,
+                        expectedWord = dictationExpectedWord
+                    )
+                } else {
+                    Text(
+                        "拿笔点上面的作答区，这里就会出现手写区；写出的字直接落到上面。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         } else if (checkResult != null) {
             // 评分卡：综合得分 + 覆盖率/准确率/顺序正确率 + 查看本篇文章数据
@@ -199,21 +233,6 @@ internal fun DictationContent(
                 TrainingAnalysisCard(analysisLoading, analysis, analysisError, onRetryAnalysis)
             }
         }
-    }
-
-    // ── 就地书写弹层：笔点作答区后弹出（与另两个模式同一套交互）──
-    // ⚠️ 必须放在 **LazyColumn 之外**：它的 content lambda 不是 @Composable 作用域，
-    // 放进去编译直接报「@Composable invocations can only happen from ...」。
-    // 弹层里写完整段：顶部实时回显、可退格/清空，关掉即完成（答案已实时写回）。
-    if (sheetOpen && !isSubmitted) {
-        HandwritingAnswerSheet(
-            answer = userInput,
-            hintChar = dictationHintChar,
-            blankLabel = "整段默写",
-            onAnswerChange = onInputChange,
-            onDismissRequest = { sheetOpen = false },
-            script = dictationScript
-        )
     }
 }
 

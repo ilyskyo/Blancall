@@ -27,6 +27,7 @@ import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.ui.common.StylusActivity
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import kotlinx.coroutines.Dispatchers
@@ -1283,8 +1284,21 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * 手写作答期间**不做任何提示**。
+     *
+     * 弱提示的节奏是「无输入 10s → 淡显下一字 → 再 5s → **自动填入**」，用户正拿笔写字时：
+     * 淡显的字会被他当成自己写的、自动填入更是直接替他改答案 —— 纯打断。
+     * 用户要求：只要有手写笔在手写，就不要提示。
+     */
+    private fun isHandwritingActive(): Boolean =
+        AppPrefs.handwritingInputEnabled || StylusActivity.isWriting
+
     private fun maybeStartBlankHint(blankIndex: Int) {
-        if (_isSubmitted.value || !_showHint.value) { blankHintJobs[blankIndex]?.cancel(); return }
+        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) {
+            blankHintJobs[blankIndex]?.cancel()
+            return
+        }
         val expected = expectedText(blankIndex) ?: return
         if (expected.isBlank()) return
         startBlankHint(blankIndex, expected)
@@ -1297,7 +1311,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      * @param blankIndex 字词/句子模式当前聚焦的空；反向默写传 null（整段输入计时）
      */
     fun ensureHintTimer(blankIndex: Int? = null) {
-        if (_isSubmitted.value || !_showHint.value) return
+        // 手写作答期间不提示（见 isHandwritingActive）
+        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) return
         when (_mode.value) {
             BlancallMode.SENTENCE, BlancallMode.WORD -> {
                 val idx = blankIndex ?: return
@@ -1352,7 +1367,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      * 再 5s 无输入自动填入并循环；任何键入重新计时。
      */
     private fun startDictationHint() {
-        if (_isSubmitted.value || !_showHint.value) {
+        // 手写作答期间不提示（见 isHandwritingActive）
+        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) {
             dictationHintJob?.cancel()
             _dictationHint.value = null
             return
