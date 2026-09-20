@@ -53,6 +53,7 @@ import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.MarkdownText
+import com.ilyskyo.blancall.ui.common.pinchZoomByTouch
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
@@ -117,31 +118,15 @@ internal fun prevMode(m: BlancallMode): BlancallMode =
 // ========== 双指缩放字号 ==========
 
 /**
- * 双指捏合缩放：仅当屏幕上有 ≥2 个触点时按缩放增量回调 [onZoomChange]，
- * 单指滑动完全交给下层滚动容器处理，不产生任何手势冲突。
+ * 双指捏合缩放（仅手指触点）。实现已统一到 [com.ilyskyo.blancall.ui.common.pinchZoomByTouch]，
+ * 此处保留同名的内部别名，避免各处调用点大面积改动。
+ *
+ * 关键修复：旧实现用 `pressed.size >= 2` 判定双指，**未过滤 PointerType**，
+ * 导致平板上「一手扶屏（手指）+ 一手写字（主动笔）」被误判为双指捏合 → 字号乱跳。
+ * 现在只有手指参与捏合，手写笔与鼠标不触发缩放。
  */
-internal fun Modifier.pinchZoom(onZoomChange: (Float) -> Unit): Modifier = pointerInput(Unit) {
-    awaitEachGesture {
-        awaitFirstDown(requireUnconsumed = false)
-        var prevDist = -1f
-        do {
-            val event = awaitPointerEvent()
-            val pressed = event.changes.filter { it.pressed }
-            if (pressed.size >= 2) {
-                val a = pressed[0].position
-                val b = pressed[1].position
-                val dx = a.x - b.x
-                val dy = a.y - b.y
-                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                if (prevDist > 0f && dist > 0f) {
-                    val factor = dist / prevDist
-                    if (factor.isFinite()) onZoomChange(factor)
-                }
-                prevDist = dist
-            }
-        } while (event.changes.any { it.pressed })
-    }
-}
+internal fun Modifier.pinchZoom(onZoomChange: (Float) -> Unit): Modifier =
+    this.pinchZoomByTouch(onZoomChange = onZoomChange)
 
 
 /** 把整套 Typography 的每个字号按 [scale] 放大（lineHeight 同步），用于练习页字号缩放。 */

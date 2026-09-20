@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
@@ -80,6 +81,10 @@ import com.ilyskyo.blancall.algorithm.PdfExporter
 import com.ilyskyo.blancall.algorithm.SectionSplitter
 import com.ilyskyo.blancall.algorithm.ShareImageGenerator
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
+import com.ilyskyo.blancall.data.handwriting.HandwritingScript
+import com.ilyskyo.blancall.ui.common.penTapToHandwriting
+import com.ilyskyo.blancall.ui.handwriting.AnswerInputField
+import com.ilyskyo.blancall.ui.handwriting.HandwritingAnswerSheet
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
@@ -132,6 +137,15 @@ internal fun DictationContent(
         if (!isSubmitted) onEnterInput()
     }
     val context = LocalContext.current
+    val handwritingMode by AppPrefs.handwritingInputEnabledFlow.collectAsStateWithLifecycle()
+    // ⚠️ 手写文种必须按**原文**选：整段默写的目标就是原文，而 AnswerInputField 默认走中文模型 ——
+    // 英文文章下会一个字都认不出（真机反馈「反向默写的手写没法用」的直接原因之一）。
+    val dictationScript = remember(dictation.clauses) {
+        HandwritingScript.forAnswer(dictation.clauses.joinToString(""))
+    }
+    // 底部书写板：笔点作答区（或手写态下点作答区）后打开。
+    // ⚠️ 与「手写模式开关」解耦：开关只决定**默认**输入方式，笔点是临时行为。
+    var sheetOpen by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -155,16 +169,27 @@ internal fun DictationContent(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                 // 反向默写弱提示：提示字紧跟已输入文字的下一字位（5s 淡入浅灰）
-                HintOutlinedField(
+                AnswerInputField(
                     value = userInput,
                     onValueChange = onInputChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 160.dp, max = 320.dp),
+                        // 笔点即书写（与句子挖空 / 字词挖空同一套入口）：
+                        // 笔尖落在作答区 → 弹出底部书写板；手指点 → 照常弹键盘。
+                        // 必须**消费整段笔事件**，否则笔的按下会漏给外层 LazyColumn ——
+                        // 真机现象就是「页面跟着笔一起滚、字却写不进去」。
+                        .penTapToHandwriting(key = "dictationInput") { sheetOpen = true }
+                        .then(
+                            // 手写态下不撑高：书写板自己就占 140dp+，
+                            // 再让输入框占 160–320dp 会把书写区挤出可视范围（真机反馈「写起来别扭」）。
+                            if (handwritingMode) Modifier
+                            else Modifier.heightIn(min = 160.dp, max = 320.dp)
+                        ),
                     placeholder = "按原文顺序默写整段，可把复制下来的分句拼回去…",
                     hintChar = if (!isSubmitted) dictationHintChar else null,
                     maxLines = Int.MAX_VALUE,
-                    minHeight = 100.dp
+                    minHeight = 100.dp,
+                    script = dictationScript
                 )
             }
         } else if (checkResult != null) {
@@ -174,6 +199,21 @@ internal fun DictationContent(
                 TrainingAnalysisCard(analysisLoading, analysis, analysisError, onRetryAnalysis)
             }
         }
+    }
+
+    // ── 就地书写弹层：笔点作答区后弹出（与另两个模式同一套交互）──
+    // ⚠️ 必须放在 **LazyColumn 之外**：它的 content lambda 不是 @Composable 作用域，
+    // 放进去编译直接报「@Composable invocations can only happen from ...」。
+    // 弹层里写完整段：顶部实时回显、可退格/清空，关掉即完成（答案已实时写回）。
+    if (sheetOpen && !isSubmitted) {
+        HandwritingAnswerSheet(
+            answer = userInput,
+            hintChar = dictationHintChar,
+            blankLabel = "整段默写",
+            onAnswerChange = onInputChange,
+            onDismissRequest = { sheetOpen = false },
+            script = dictationScript
+        )
     }
 }
 

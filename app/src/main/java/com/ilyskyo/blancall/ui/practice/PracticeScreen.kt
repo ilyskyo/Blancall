@@ -83,6 +83,8 @@ import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
+import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.PracticeMaxWidth
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import com.ilyskyo.blancall.ui.viewmodel.BlankCountWarning
@@ -228,8 +230,18 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     val scope = rememberCoroutineScope()
     var showExportDialog by remember { mutableStateOf(false) }
 
+    // 宽屏放宽内容上限：**只有「句子挖空」在未提交时需要横向空间** ——
+    // 它内部会切成「左文章 / 右作答」双栏（见 SentenceClozeContent）。
+    // 若外层仍卡 600dp，两栏各只剩约 290dp（中文 16sp 约 15 字/行）——
+    // 那比手机单栏还难读，等于把平板做得比手机更差。
+    // 其余模式（词卡、整段默写）是单列内容，保持 600dp 的可读上限：
+    // 放宽只会把输入框拉成长条，并不会更好用。
+    val practiceMaxWidth =
+        if (LocalIsLargeScreen && mode == BlancallMode.SENTENCE && !isSubmitted) PracticeMaxWidth
+        else 600.dp
+
     Box(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
-        Column(modifier = Modifier.fillMaxSize().widthIn(max = 600.dp).padding(horizontal = 16.dp, vertical = 16.dp)) {
+        Column(modifier = Modifier.fillMaxSize().widthIn(max = practiceMaxWidth).padding(horizontal = 16.dp, vertical = 16.dp)) {
         // ── 顶部导航：返回 + 文章标题 + 操作 ──
         Row(
             modifier = Modifier.fillMaxWidth(),

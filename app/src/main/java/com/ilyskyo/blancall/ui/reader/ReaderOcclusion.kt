@@ -3,7 +3,6 @@
 
 package com.ilyskyo.blancall.ui.reader
 
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.DifficultyCalculator
+import com.ilyskyo.blancall.ui.common.tapGesturesPenAware
 
 /** 阅读背诵遮挡的一个空（原文 [start, end) 区间，半开区间） */
 data class OcclusionSpan(val start: Int, val end: Int)
@@ -360,9 +360,12 @@ fun OccludedParagraph(
                     }
                 }
             }
-            .pointerInput(text) {
-                detectTapGestures { pos ->
-                    val l = layoutState.value ?: return@detectTapGestures
+            // 点按揭示/遮回。用 tapGesturesPenAware 而非 detectTapGestures：
+            // 挖空默写陪伴阅读时用户可能一手扶屏一手握笔，扶屏的手指不应点开遮块
+            // （笔书写期间 StylusActivity.isWriting 为真，此处自动忽略手指点按）。
+            .then(
+                Modifier.tapGesturesPenAware { pos ->
+                    val l = layoutState.value ?: return@tapGesturesPenAware
                     val hit = hiddenState.value.firstOrNull { sp ->
                         sp.end > sp.start && rangeRects(l, sp.start, sp.end).any { it.contains(pos) }
                     }
@@ -374,7 +377,7 @@ fun OccludedParagraph(
                             revealedStarts.value = revealedStarts.value + hit.start // 点开揭示
                     }
                 }
-            },
+            ),
         onTextLayout = { l ->
             // 布局回调：仅记录 TextLayoutResult，绘制阶段据此实时计算遮块矩形
             layoutState.value = l

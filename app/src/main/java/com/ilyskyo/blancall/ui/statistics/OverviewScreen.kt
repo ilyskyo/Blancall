@@ -67,6 +67,8 @@ import com.ilyskyo.blancall.ui.common.CalendarHeatmap
 import com.ilyskyo.blancall.ui.common.DailyTrendChart
 import com.ilyskyo.blancall.ui.common.GaugeProgress
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.GridMaxWidth
+import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.MemoryDecayChart
 import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.RadarChart
@@ -332,7 +334,8 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 600.dp)
+                // 大屏放宽上限：平板横屏用满宽度展示统计卡，窄屏不受影响（600dp 内铺满）
+                .widthIn(max = if (LocalIsLargeScreen) GridMaxWidth else 600.dp)
                 .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
             // ── 顶部栏：返回 + 标题 + 筛选 + 导出 ──

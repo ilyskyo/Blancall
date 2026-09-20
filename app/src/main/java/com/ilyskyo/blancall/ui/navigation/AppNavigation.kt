@@ -19,6 +19,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +47,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.ilyskyo.blancall.ui.common.BottomNavBar
+import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.NavRail
 import com.ilyskyo.blancall.ui.home.HomeScreen
 import com.ilyskyo.blancall.ui.import.ImportScreen
 import com.ilyskyo.blancall.ui.list.ListScreen
@@ -172,20 +176,39 @@ fun AppNavigation() {
     val noneTransition: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = { fadeIn(tween(100)) }
     val noneExitTransition: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = { fadeOut(tween(100)) }
 
-    Box(
+    // ── 大屏适配：宽度 ≥600dp（平板竖屏 / 折叠屏展开 / 手机与平板横屏）改用侧边导航栏 ──
+    // 依据 Material 3 规范：Compact(<600) 底栏 / Medium(600–839) 侧栏 / Expanded(≥840) 侧栏。
+    // 横屏用侧栏的实质理由：横屏竖向空间稀缺而横向富余，底栏会再切掉 64dp。
+    val isLargeScreen = LocalIsLargeScreen
+
+    // 页面容器引用必须先声明：NavRail 与底栏都要用它做玻璃折射采样源，
+    // 而它在下方 AndroidView 的 factory 里才被赋值（首次组合时仍为 null，
+    // 玻璃侧有「等 host 就绪再 bind」的轮询逻辑兜住）。
+    val outerRegistry = LocalSaveableStateRegistry.current
+    var pageHost by remember { mutableStateOf<FrameLayout?>(null) }
+
+    Row(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+    // 侧边导航栏（仅大屏）：置于 Row 首位，页面容器自然获得剩余宽度。
+    // 与底栏同为液态玻璃，host 取 pageHost（页面容器）折射实时内容。
+    if (isLargeScreen && currentTab >= 0) {
+        NavRail(
+            currentTab = currentTab,
+            onSelect = { selectTab(it) },
+            showLibraryTab = enabledLibraries.isNotEmpty(),
+            host = pageHost
+        )
+    }
     // 页面容器：专用 FrameLayout（内含 ComposeView 渲染 NavHost）。
     // 作为液态玻璃导航栏的采样源——玻璃悬浮其上、非其子视图，
     // 因此能实时折射页面内容且不会形成折射自身的反馈循环
     // （与阅读模式「玻璃 bind 正文容器」同一架构，两者均已真机验证）。
     // 嵌套 ComposeView 组合没有默认 SaveableStateRegistry，透传外层以保证旋转后导航栈可恢复。
-    val outerRegistry = LocalSaveableStateRegistry.current
-    var pageHost by remember { mutableStateOf<FrameLayout?>(null) }
     AndroidView(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.weight(1f).fillMaxHeight(),
         factory = { ctx ->
             FrameLayout(ctx).also { fl ->
                 pageHost = fl
@@ -560,11 +583,13 @@ fun AppNavigation() {
     } // close factory
     ) // close AndroidView（页面容器，玻璃采样源）
 
-        // ── 底部导航栏（设置中开启后显示，仅在三个根页面） ──
+        // ── 底部导航栏（仅窄屏；大屏由左侧 NavRail 承接） ──
         // 悬浮于页面容器之上（Box z 上层），玻璃折射采样「页面实时内容」。
         // 进入/离开根 tab 页面时使用下滑+淡出动画（避免闪现消失）。
+        // 大屏下 visible 恒为 false：AnimatedVisibility 会走完整下滑出场动画，
+        // 因此旋转/折叠展开时是「底栏滑走、侧栏出现」的自然交接，而非硬切。
         AnimatedVisibility(
-            visible = currentTab >= 0,
+            visible = currentTab >= 0 && !isLargeScreen,
             enter = slideInVertically(
                 animationSpec = tween(320, easing = LinearOutSlowInEasing),
                 initialOffsetY = { fullHeight -> fullHeight }
@@ -577,7 +602,8 @@ fun AppNavigation() {
             ) + fadeOut(
                 animationSpec = tween(220)
             ),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            // 在 Row 中，底部对齐只剩垂直方向有意义（水平方向被 weight 占满）
+            modifier = Modifier.align(Alignment.Bottom)
         ) {
             BottomNavBar(
                 currentTab = currentTab,
@@ -586,7 +612,7 @@ fun AppNavigation() {
                 host = pageHost
             )
         }
-    } // close Box
+    } // close Row
 }
 
 /**

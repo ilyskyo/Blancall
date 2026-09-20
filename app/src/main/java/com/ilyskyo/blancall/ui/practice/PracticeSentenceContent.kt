@@ -53,6 +53,11 @@ import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.MarkdownText
+import com.ilyskyo.blancall.ui.common.NavRailWidth
+import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.TwoPaneMinHeightDp
+import com.ilyskyo.blancall.ui.common.TwoPaneMinWidthDp
+import com.ilyskyo.blancall.ui.common.suppressAsPalmMisTouch
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
@@ -80,6 +85,11 @@ import com.ilyskyo.blancall.algorithm.PdfExporter
 import com.ilyskyo.blancall.algorithm.SectionSplitter
 import com.ilyskyo.blancall.algorithm.ShareImageGenerator
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
+import com.ilyskyo.blancall.data.handwriting.HandwritingScript
+import com.ilyskyo.blancall.ui.common.penTapToHandwriting
+import com.ilyskyo.blancall.ui.handwriting.AnswerInputField
+import com.ilyskyo.blancall.ui.handwriting.HandwritingAnswerSheet
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
@@ -116,6 +126,9 @@ internal fun SentenceClozeContent(
         var currentBlankIndex by remember { mutableIntStateOf(0) }
         val blanks = result.blanks
         val totalBlanks = blanks.size
+        // 手写态下点挖空 → 弹出底部书写板（就地书写）。null = 未打开
+        var sheetBlankIndex by remember { mutableStateOf<Int?>(null) }
+        val handwritingMode by AppPrefs.handwritingInputEnabledFlow.collectAsStateWithLifecycle()
         // 进入/切换焦点即启动提示计时：满足无操作时长即提示，不受"是否输入过"影响
         LaunchedEffect(currentBlankIndex, isSubmitted) {
             if (!isSubmitted) onBlankFocus(currentBlankIndex)
@@ -137,7 +150,30 @@ internal fun SentenceClozeContent(
             return
         }
 
-        val isWide = LocalConfiguration.current.screenWidthDp >= 600
+        // 双栏判据：宽度要**扣掉大屏侧边导航栏**，高度也要够。
+        //
+        // ① 不能直接用 screenWidthDp：大屏下左侧有 NavRail，屏幕宽度会高估一个导航栏的宽度，
+        //    在 700dp 级别的折叠屏竖屏上会把两栏切得都过窄。
+        // ② 必须同时看高度：手机横屏宽度常达标（900dp），但高度只有 400dp 左右，
+        //    右栏「输入区 + 手写板(≥140dp) + 切换 + 上一空/下一空」约 280dp 会被挤出可视区，
+        //    表现为「书写板看不见/点不到」。只看宽度是错的。
+        val config = LocalConfiguration.current
+        val contentWidthDp =
+            config.screenWidthDp - (if (LocalIsLargeScreen) NavRailWidth.value.toInt() else 0)
+        val isWide = contentWidthDp >= TwoPaneMinWidthDp && config.screenHeightDp >= TwoPaneMinHeightDp
+
+        // 当前作答目标的文种：按**该空的标准答案**自动选模型
+        // （含 CJK → 汉字模型；纯拉丁 → EMNIST 英语模型）。
+        // 练习页是唯一知道答案的地方，所以判断必须在这里做，而不是在书写板内部猜。
+        val currentScript = HandwritingScript.forAnswer(
+            blanks.getOrNull(currentBlankIndex)?.originalText.orEmpty()
+        )
+
+        // 已切到双栏时收起「就地书写」弹层：右栏作答区是常驻的，
+        // 弹层留着会盖住左侧原文（旋转到横屏 / 展开折叠屏时会遇到）。
+        LaunchedEffect(isWide) {
+            if (isWide) sheetBlankIndex = null
+        }
 
         if (isWide && !isSubmitted) {
             // 平板：左侧内容 + 右侧输入
@@ -167,7 +203,15 @@ internal fun SentenceClozeContent(
                                         checkResult = checkResults[blank.index],
                                         isSubmitted = isSubmitted,
                                         hintChar = hintChars[blank.index],
-                                        onClick = { currentBlankIndex = blank.index }
+                                        onClick = {
+                                            // 掌托守卫：手写时扶屏的手掌蹭到挖空，不应把书写板弹出来
+                                            if (!suppressAsPalmMisTouch()) {
+                                                currentBlankIndex = blank.index
+                                                // 宽屏双栏下**不**弹底部书写板：右栏作答区本来就常驻，
+                                                // 再叠一层弹层会盖住左侧原文 —— 而默写恰恰要一边看句子一边写。
+                                                // 弹层只服务窄屏的「就地书写」。
+                                            }
+                                        }
                                     )
                                     lastPos = blank.endInSentence
                                 }
@@ -186,14 +230,15 @@ internal fun SentenceClozeContent(
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
-                    HintOutlinedField(
+                    AnswerInputField(
                         value = userAnswers[currentBlankIndex] ?: "",
                         onValueChange = { onAnswerChange(currentBlankIndex, it) },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = "请输入被挖掉的内容",
                         hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
                         maxLines = 3,
-                        minHeight = 74.dp
+                        minHeight = 74.dp,
+                        script = currentScript
                     )
                     Spacer(Modifier.height(4.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -243,7 +288,18 @@ internal fun SentenceClozeContent(
                                         checkResult = checkResults[blank.index],
                                         isSubmitted = isSubmitted,
                                         hintChar = hintChars[blank.index],
-                                        onClick = { currentBlankIndex = blank.index }
+                                        // 笔点即书写：笔尖落在挖空上直接弹书写板，不用先手动切模式
+                                        onPenTap = {
+                                            currentBlankIndex = blank.index
+                                            sheetBlankIndex = blank.index
+                                        },
+                                        onClick = {
+                                            // 掌托守卫：手写时扶屏的手掌蹭到挖空，不应把书写板弹出来
+                                            if (!suppressAsPalmMisTouch()) {
+                                                currentBlankIndex = blank.index
+                                                if (handwritingMode) sheetBlankIndex = blank.index
+                                            }
+                                        }
                                     )
                                     lastPos = blank.endInSentence
                                 }
@@ -258,14 +314,17 @@ internal fun SentenceClozeContent(
 
                 if (!isSubmitted) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    HintOutlinedField(
+                    AnswerInputField(
                         value = userAnswers[currentBlankIndex] ?: "",
                         onValueChange = { onAnswerChange(currentBlankIndex, it) },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = "请输入被挖掉的内容",
                         hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
                         maxLines = 3,
-                        minHeight = 74.dp
+                        minHeight = 74.dp,
+                        script = currentScript,
+                        // 笔点作答区同样直接进书写（临时行为，不改「默认输入方式」）
+                        onPenTap = { sheetBlankIndex = currentBlankIndex }
                     )
                     Spacer(Modifier.height(4.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -281,6 +340,22 @@ internal fun SentenceClozeContent(
                 }
             }
         }
+
+        // ── 就地书写面板：手写态下点击某个挖空后弹出 ──
+        val sheetIdx = sheetBlankIndex
+        if (sheetIdx != null && !isSubmitted) {
+            HandwritingAnswerSheet(
+                answer = userAnswers[sheetIdx] ?: "",
+                hintChar = hintChars[sheetIdx],
+                blankLabel = "第 ${sheetIdx + 1} 空",
+                onAnswerChange = { onAnswerChange(sheetIdx, it) },
+                onDismissRequest = { sheetBlankIndex = null },
+                // 弹层是为**这个空**服务的，文种按这个空的答案选（可能当前焦点已不是它）
+                script = HandwritingScript.forAnswer(
+                    blanks.getOrNull(sheetIdx)?.originalText.orEmpty()
+                )
+            )
+        }
     }
 }
 
@@ -294,6 +369,11 @@ internal fun SentenceBlankInline(
     checkResult: AnswerChecker.CheckDetail?,
     isSubmitted: Boolean,
     hintChar: Char? = null,
+    /**
+     * 笔点该挖空时的动作（手机布局下弹底部书写板）。
+     * 平板双栏不传：右栏本就是常驻作答区，弹层会盖住左侧原文，而默写要一边看句子一边写。
+     */
+    onPenTap: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Row(
@@ -303,6 +383,8 @@ internal fun SentenceBlankInline(
                     Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
                 else Modifier
             )
+            // 笔点即书写：笔尖落在挖空上 → 弹书写板；手指点仍走下面的 clickable
+            .penTapToHandwriting(enabled = onPenTap != null && !isSubmitted) { onPenTap?.invoke() }
             .clickable(enabled = !isSubmitted) { onClick() }
             .padding(vertical = 2.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically

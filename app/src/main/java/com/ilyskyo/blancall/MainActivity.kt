@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.ilyskyo.blancall.notification.NotificationHelper
 import com.ilyskyo.blancall.notification.ReminderWorker
+import com.ilyskyo.blancall.ui.common.ProvideWindowSizeClass
 import com.ilyskyo.blancall.ui.navigation.AppNavigation
 import com.ilyskyo.blancall.ui.navigation.NavigationDispatcher
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
@@ -33,7 +36,6 @@ import com.ilyskyo.blancall.ui.theme.BlancallTheme
 
 
 class MainActivity : ComponentActivity() {
-
     /** 通知权限被拒等场景下向用户展示的提示信息（null 表示无提示） */
     private val errorMessage = mutableStateOf<String?>(null)
 
@@ -55,6 +57,7 @@ class MainActivity : ComponentActivity() {
         runCatching { ReminderWorker.scheduleNext(this) }
     }
 
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         // 安装启动屏：在 setContent 之前调用，保证第一帧即显示与主页一致的底色，消除白屏
         installSplashScreen()
@@ -69,27 +72,33 @@ class MainActivity : ComponentActivity() {
         handleNotificationIntent(intent)
 
         setContent {
-            BlancallTheme {
-                val snackbarHostState = remember { SnackbarHostState() }
-                val msg by errorMessage
+            // 窗口尺寸类别：随窗口大小实时变化（旋转、分屏、折叠展开均会更新），
+            // 供全树按 Compact / Medium / Expanded 决定布局（网格列数、限宽、导航形态）。
+            val windowSizeClass = calculateWindowSizeClass(this)
 
-                // errorMessage 变化时弹出 Snackbar
-                LaunchedEffect(msg) {
-                    val current = msg ?: return@LaunchedEffect
-                    snackbarHostState.showSnackbar(current)
-                    errorMessage.value = null
-                }
+            ProvideWindowSizeClass(windowSizeClass) {
+                BlancallTheme {
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    val msg by errorMessage
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                ) {
-                    AppNavigation()
+                    // errorMessage 变化时弹出 Snackbar
+                    LaunchedEffect(msg) {
+                        val current = msg ?: return@LaunchedEffect
+                        snackbarHostState.showSnackbar(current)
+                        errorMessage.value = null
+                    }
 
-                    SnackbarHost(
-                        hostState = snackbarHostState,
-                        modifier = Modifier.align(Alignment.BottomCenter)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                    ) {
+                        AppNavigation()
+
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                        )
+                    }
                 }
             }
         }

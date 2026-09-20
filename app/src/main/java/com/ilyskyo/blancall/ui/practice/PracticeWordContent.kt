@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.AnswerChecker
@@ -80,6 +81,10 @@ import com.ilyskyo.blancall.algorithm.PdfExporter
 import com.ilyskyo.blancall.algorithm.SectionSplitter
 import com.ilyskyo.blancall.algorithm.ShareImageGenerator
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
+import com.ilyskyo.blancall.data.handwriting.HandwritingScript
+import com.ilyskyo.blancall.ui.handwriting.AnswerInputField
+import com.ilyskyo.blancall.ui.handwriting.HandwritingAnswerSheet
+import com.ilyskyo.blancall.ui.common.penTapToHandwriting
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
@@ -120,6 +125,14 @@ internal fun WordClozeContent(
             val firstUnfinished = blancall.blanks.indexOfFirst { userAnswers[it.index].isNullOrEmpty() }
             if (firstUnfinished >= 0) onBlankFocus(firstUnfinished)
         }
+
+        // ── 手写态：整页只保留**一块**书写板（底部弹层）──
+        // 一页可能有十几个空；若每个空都渲染书写板（≥140dp），列表会变成一望无际的
+        // 「书写板墙」——一屏装不下两个空，且用户分不清自己在写哪一个空。
+        // 因此手写态下所有空都紧凑显示，点某个空 → 底部弹层书写板（与句子挖空同一套交互）。
+        val handwritingMode by AppPrefs.handwritingInputEnabledFlow.collectAsStateWithLifecycle()
+        var sheetBlankIndex by remember { mutableStateOf<Int?>(null) }
+
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // 提交后顶部展示评分卡
             if (isSubmitted) {
@@ -147,6 +160,11 @@ internal fun WordClozeContent(
                                     isSubmitted = isSubmitted,
                                     multiline = false,
                                     hintChar = hintChars[blankIdx],
+                                    // 手写态：本卡只读紧凑，点一下弹底部书写板
+                                    handwritingCompact = handwritingMode,
+                                    onActivate = { sheetBlankIndex = blankIdx },
+                                    // 文种按该空的标准答案自动选（英文空走 EMNIST 模型）
+                                    script = HandwritingScript.forAnswer(blank.originalChar),
                                     onValueChange = { onAnswerChange(blankIdx, it) }
                                 )
                                 Spacer(Modifier.height(4.dp))
@@ -155,6 +173,23 @@ internal fun WordClozeContent(
                     }
                 }
             }
+        }
+
+        // ── 就地书写面板：手写态下点击某个空后弹出（与句子挖空同一套交互）──
+        // 弹层在这个空自己的语境里写字：顶部实时回显答案、可退格/清空，
+        // 关掉即完成（答案已实时写回）。
+        val sheetIdx = sheetBlankIndex
+        if (sheetIdx != null && !isSubmitted) {
+            HandwritingAnswerSheet(
+                answer = userAnswers[sheetIdx] ?: "",
+                hintChar = hintChars[sheetIdx],
+                blankLabel = "第 ${sheetIdx + 1} 空",
+                onAnswerChange = { onAnswerChange(sheetIdx, it) },
+                onDismissRequest = { sheetBlankIndex = null },
+                script = HandwritingScript.forAnswer(
+                    blancall.blanks.getOrNull(sheetIdx)?.originalChar.orEmpty()
+                )
+            )
         }
     }
 }
@@ -170,9 +205,34 @@ internal fun BlankCard(
     isSubmitted: Boolean,
     multiline: Boolean,
     hintChar: Char? = null,
+    /**
+     * 手写态下本卡是否「只读紧凑」（不渲染书写板，只显示已写内容）。
+     *
+     * 手写模式一页可能有十几个空：若每张卡都渲染书写板（≥140dp），列表会变成
+     * 一望无际的「书写板墙」——一屏放不下两个空，用户也分不清自己在写哪一个。
+     *
+     * 所以手写态下**所有**卡都紧凑显示，点一下再从**底部弹出书写板**
+     * （`HandwritingAnswerSheet`）——与句子挖空完全同一套交互。
+     * 这里不再用「哪张卡持有唯一一块内嵌板」的方案：内嵌板宽只有卡片宽，
+     * 且列表一滚就跟着走，真机反馈「字词挖空的手写明显比句子挖空难用」。
+     */
+    handwritingCompact: Boolean = false,
+    onActivate: (() -> Unit)? = null,
+    /** 该空的识别文种（按标准答案自动选） */
+    script: HandwritingScript = HandwritingScript.Chinese,
     onValueChange: (String) -> Unit
 ) {
+    // 手写态的紧凑卡：整张卡可点，点一下弹出书写板
+    val activatable = handwritingCompact && !isSubmitted && onActivate != null
     Card(
+        modifier = Modifier
+            // 笔点即书写：笔尖落在卡上就直接弹书写板。
+            // ⚠️ **不改 `handwritingInputEnabled` 开关** —— 那个开关是「默认输入方式」
+            // （键盘 / 手写板常驻），笔点是临时行为：笔来了就写、笔走了回到默认样子。
+            .penTapToHandwriting(key = label, enabled = onActivate != null && !isSubmitted) {
+                onActivate?.invoke()
+            }
+            .then(if (activatable) Modifier.clickable { onActivate?.invoke() } else Modifier),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -189,7 +249,7 @@ internal fun BlankCard(
                     fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(4.dp))
-            HintOutlinedField(
+            AnswerInputField(
                 value = value,
                 onValueChange = onValueChange,
                 modifier = Modifier.fillMaxWidth(),
@@ -199,7 +259,10 @@ internal fun BlankCard(
                 isError = isSubmitted && checkDetail?.result != AnswerChecker.Result.CORRECT,
                 singleLine = !multiline,
                 maxLines = if (multiline) 3 else 1,
-                imeAction = ImeAction.Next
+                imeAction = ImeAction.Next,
+                allowHandwritingSwitch = !isSubmitted,
+                handwritingCompact = handwritingCompact,
+                script = script
             )
             if (isSubmitted && checkDetail != null) {
                 Spacer(Modifier.height(4.dp))

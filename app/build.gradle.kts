@@ -32,6 +32,13 @@ android {
         versionName = "6.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 手写识别 native 只编 arm64-v8a / armeabi-v7a：
+        // 目标设备为平板与手机（均为 ARM），x86/x86_64 仅供模拟器，
+        // 不打包可省下约 19MB 静态库体积。
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     // 签名配置：仅当 local.properties 提供完整 release 签名时才创建
@@ -70,6 +77,27 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // 手写识别 native 模块（NCNN + 单字手写模型）。
+    ndkVersion = "27.0.12077973"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+    // 模型 assets（4.1MB）本身已是量化权重，再压缩收益极小且会拖慢运行时解包；
+    // 保持不压缩以支持直接读取。
+    androidResources {
+        noCompress += listOf("bin", "param")
+    }
+    kotlin {
+        compilerOptions {
+            // material3-window-size-class 全 API 仍标注 Experimental（含 calculateFromSize）。
+            // 显式 opt-in 而非在每处加 @OptIn：这类 API 已在生产项目中长期稳定使用。
+            freeCompilerArgs.add("-opt-in=androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi")
+        }
+    }
     packaging {
         resources {
             excludes += setOf(
@@ -93,6 +121,8 @@ dependencies {
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
+    // 大屏 / 折叠屏自适应：窗口尺寸类别（Compact / Medium / Expanded）
+    implementation(libs.androidx.compose.material3.window.size)
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)

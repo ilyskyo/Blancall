@@ -77,13 +77,10 @@ object AppPrefs {
     /** AI 功能总开关（关闭后所有 AI 入口隐藏） */
     val aiEnabledFlow: StateFlow<Boolean> = _aiEnabledFlow.asStateFlow()
 
-    private val _aiBaseUrlFlow = MutableStateFlow("")
-    /** AI API 地址（OpenAI 兼容格式，由用户自行填写） */
-    val aiBaseUrlFlow: StateFlow<String> = _aiBaseUrlFlow.asStateFlow()
-
-    private val _aiModelFlow = MutableStateFlow("")
-    /** AI 模型名（由用户自行填写） */
-    val aiModelFlow: StateFlow<String> = _aiModelFlow.asStateFlow()
+    // ⚠️ 旧版单配置的 ai_base_url / ai_model / ai_api_key_enc 已由 AiConfigStore 接管
+    // （见 data/ai/AiConfigStore，含旧值迁移逻辑）。这里**不再**保留 baseUrl/model 的
+    // 读取入口 —— 否则有人会绕过多配置体系直接用旧字段，重新引入
+    // 「界面上选了 A 模型、实际请求却用了 B」的那类错位。
 
     private val _aiHistoryEnabledFlow = MutableStateFlow(false)
     /** 保存与 AI 的对话（开启后对话持久化到本机，可查看历史；关闭后不保存且首页 AI 入口隐藏） */
@@ -117,6 +114,15 @@ object AppPrefs {
     /** PDF 预览视图模式：text=纯文本排版，image=原 PDF 图片渲染；跨篇目持久记忆 */
     val pdfViewModeFlow: StateFlow<String> = _pdfViewModeFlow.asStateFlow()
 
+    private val _handwritingInputEnabledFlow = MutableStateFlow(false)
+    /**
+     * 作答输入方式：false=键盘输入（默认），true=手写输入。
+     *
+     * 用户明确要求「选了笔就一直用笔，直到自己切回键盘」——因此这是**跨页面、跨启动持久**的偏好，
+     * 而不是每次进练习页都要重新点一次的一次性开关。切换入口是答题输入框右上角的笔图标。
+     */
+    val handwritingInputEnabledFlow: StateFlow<Boolean> = _handwritingInputEnabledFlow.asStateFlow()
+
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -133,8 +139,6 @@ object AppPrefs {
         _hiddenArticleIdsFlow.value = prefs.getStringSet("hidden_articles", emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         _aiEnabledFlow.value = prefs.getBoolean("ai_enabled", false)
-        _aiBaseUrlFlow.value = prefs.getString("ai_base_url", "") ?: ""
-        _aiModelFlow.value = prefs.getString("ai_model", "") ?: ""
         _aiHistoryEnabledFlow.value = prefs.getBoolean("ai_history_enabled", false)
         _aiSearchEnabledFlow.value = prefs.getBoolean("ai_search_enabled", false)
         _useAiClozeFlow.value = prefs.getBoolean("use_ai_cloze", true)
@@ -143,6 +147,7 @@ object AppPrefs {
         _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
         _libraryDisclaimerSeenFlow.value = prefs.getStringSet("library_disclaimer_seen", emptySet())?.toSet() ?: emptySet()
         _pdfViewModeFlow.value = prefs.getString("pdf_view_mode", "text") ?: "text"
+        _handwritingInputEnabledFlow.value = prefs.getBoolean("handwriting_input_enabled", false)
         _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 36f)
         _readingLineHeightFlow.value = prefs.getFloat("reading_line_height", 2.0f).coerceIn(1.4f, 2.4f)
         _readingBgModeFlow.value = prefs.getInt("reading_bg_mode", 0)
@@ -309,28 +314,6 @@ object AppPrefs {
             }
         }
 
-    var aiBaseUrl: String
-        get() = if (::prefs.isInitialized)
-            prefs.getString("ai_base_url", "") ?: ""
-        else ""
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putString("ai_base_url", value) }
-                _aiBaseUrlFlow.value = value
-            }
-        }
-
-    var aiModel: String
-        get() = if (::prefs.isInitialized)
-            prefs.getString("ai_model", "") ?: ""
-        else ""
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putString("ai_model", value) }
-                _aiModelFlow.value = value
-            }
-        }
-
     /** 保存与 AI 的对话开关 */
     var aiHistoryEnabled: Boolean
         get() = if (::prefs.isInitialized) prefs.getBoolean("ai_history_enabled", false) else false
@@ -406,6 +389,19 @@ object AppPrefs {
 
     /** 当前 PDF 预览视图模式（text=纯文本排版 / image=原 PDF 图片渲染） */
     fun pdfViewMode(): String = _pdfViewModeFlow.value
+
+    /**
+     * 作答输入方式（跨页面／跨启动持久）：true=手写输入，false=键盘输入。
+     * 见 [handwritingInputEnabledFlow] 的说明——用户要求「选了笔就一直用笔」。
+     */
+    var handwritingInputEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("handwriting_input_enabled", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("handwriting_input_enabled", value) }
+                _handwritingInputEnabledFlow.value = value
+            }
+        }
 
     // ── 沉浸阅读模式设置 ──
 

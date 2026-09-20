@@ -5,6 +5,7 @@ package com.ilyskyo.blancall.ui.reader
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
@@ -167,15 +169,23 @@ fun VectorTextRenderer(
             .background(MaterialTheme.colorScheme.surface)
             .pointerInput(Unit) {
                 awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
                     while (true) {
                         val event = awaitPointerEvent()
-                        val pressed = event.changes.filter { it.pressed }
-                        if (pressed.isEmpty()) break
-                        when (pressed.size) {
+                        // 仅手指参与缩放/平移：手写笔与鼠标不触发（否则平板上
+                        // 「扶屏手指 + 书写笔」会被误判为双指缩放，或单笔被当拖动）
+                        val touch = event.changes.filter {
+                            it.pressed && it.type == PointerType.Touch
+                        }
+                        if (touch.isEmpty()) {
+                            if (event.changes.none { it.pressed }) break
+                            continue
+                        }
+                        when (touch.size) {
                             2 -> {
                                 // 双指缩放：以双指中心为基准无损放大，并同步平移
-                                val c0 = pressed[0]
-                                val c1 = pressed[1]
+                                val c0 = touch[0]
+                                val c1 = touch[1]
                                 val prevDist = (c0.previousPosition - c1.previousPosition).getDistance()
                                 val curDist = (c0.position - c1.position).getDistance()
                                 val zoom = if (prevDist > 0f) curDist / prevDist else 1f
@@ -183,12 +193,12 @@ fun VectorTextRenderer(
                                 val midPrev = (c0.previousPosition + c1.previousPosition) / 2f
                                 val midCur = (c0.position + c1.position) / 2f
                                 offset = clampOffset(offset + (midCur - midPrev), containerSize, currentScale)
-                                pressed.forEach { if (it.positionChanged()) it.consume() }
+                                touch.forEach { if (it.positionChanged()) it.consume() }
                             }
                             1 -> {
                                 // 单指拖动（放大状态下平移内容，未放大时交给列表滚动）
                                 if (currentScale > 1f) {
-                                    val c = pressed[0]
+                                    val c = touch[0]
                                     offset = clampOffset(
                                         offset + (c.position - c.previousPosition),
                                         containerSize,

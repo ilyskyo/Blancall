@@ -1,0 +1,19 @@
+{
+  "name": "Handwritten",
+  "source_checkpoint": "runs/mbv2_phase1_aug/best.pt",
+  "source_ncnn_param": "save/output/mbv2_aug.int8.ncnn.param",
+  "source_ncnn_bin": "save/output/mbv2_aug.int8.ncnn.bin",
+  "source_charset": "data/processed/charset.json",
+  "model": "mobilenet_v2",
+  "classes": 3755,
+  "metrics": {
+    "top1": 0.9547,
+    "top10": 0.9958
+  },
+  "sha256": {
+    "best.pt": "151f32b03c49dbed77f3b8076035d28ce050d70a1a102e12581274a44cb10460",
+    "ncnn/model.ncnn.param": "8c4d0e594d8a4644fb97411d2b6335f55fed2e1b37057bc88fced724295902a3",
+    "ncnn/model.ncnn.bin": "86a4802e3c8b2ddf1180f3de361546517d708674381e58b3d10b766dc8fba49e",
+    "ncnn/charset.json": "31f5700027c8692122cec5281d12c6382506b36d56075331cd73718f624d4ed2"
+  }
+}

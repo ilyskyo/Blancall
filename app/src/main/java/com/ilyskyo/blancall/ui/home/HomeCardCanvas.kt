@@ -152,30 +152,40 @@ private data class CardGeo(
 // ---------------------------------------------------------------------------
 
 /**
- * 网格布局：把 [cards] 按顺序流式放进固定的 [HomeLayoutStore.COLUMNS] 列网格。
+ * 网格布局：把 [cards] 按顺序流式放进 [columns] 列网格。
+ *
+ * 列数由界面按**可用宽度**动态计算（窄屏手机 2 列，平板横屏更多列），
+ * 默认值保持 [HomeLayoutStore.COLUMNS] 以兼容既有调用与单测。
+ * 平板横屏下若继续用固定 2 列，卡片会被拉成超宽扁条且行数暴涨，
+ * 这正是原先「锁竖屏」想回避的问题——正解是增列，而非锁方向。
  *
  * **第一轮（钉住的卡优先占位）**：按 cards 顺序，把 `pinned && lockRow >= 0 && lockCol >= 0`
  * 的卡放到它的锁定槽位 `(lockRow, lockCol)` 上。`lockCol` 先收敛到
- * `0..COLUMNS-colSpan`（防手工改 JSON 越界）；若该区域已被前面的钉住卡占走，
+ * `0..columns-colSpan`（防手工改 JSON 越界）；若该区域已被前面的钉住卡占走，
  * 则**沿同一列向下顺延**到最近可用行（列表靠前的钉住卡优先）。
  *
  * **第二轮（自由卡首次适配）**：按 cards 顺序，对其余卡（非 pinned，或 pinned 但 lock 未设定）
  * 自上而下、自左向右扫描，取**第一个能完整容纳 `colSpan × rowSpan` 的空位**放进去并占位。
  * 扫描逐格判定，跨行卡留下的空洞会被后续较矮的卡绕行填补。
  *
- * 复杂度 O(n × rows × COLUMNS)，卡片数量很小，无需优化。
+ * 复杂度 O(n × rows × columns)，卡片数量很小，无需优化。
  *
+ * @param columns 网格列数，需与调用方绘制时用的列数**一致**，否则拖拽换位会整体错位。
  * @return cardId → `intArrayOf(row, col)`（左上角格坐标）
  */
-internal fun layoutSlots(cards: List<HomeLayoutStore.Card>): Map<String, IntArray> {
+internal fun layoutSlots(
+    cards: List<HomeLayoutStore.Card>,
+    columns: Int = HomeLayoutStore.COLUMNS
+): Map<String, IntArray> {
+    val cols = columns.coerceAtLeast(1)
     val out = LinkedHashMap<String, IntArray>(cards.size)
-    // 占用表：每行一个 BooleanArray(COLUMNS)，按需向下增长
+    // 占用表：每行一个 BooleanArray(cols)，按需向下增长
     val grid = mutableListOf<BooleanArray>()
     fun ensureRows(n: Int) {
-        while (grid.size < n) grid.add(BooleanArray(HomeLayoutStore.COLUMNS))
+        while (grid.size < n) grid.add(BooleanArray(cols))
     }
     fun fits(row: Int, col: Int, colSpan: Int, rowSpan: Int): Boolean {
-        if (col < 0 || col + colSpan > HomeLayoutStore.COLUMNS) return false
+        if (col < 0 || col + colSpan > cols) return false
         for (r in row until row + rowSpan) {
             for (c in col until col + colSpan) {
                 if (grid[r][c]) return false
@@ -198,7 +208,7 @@ internal fun layoutSlots(cards: List<HomeLayoutStore.Card>): Map<String, IntArra
             HomeLayoutStore.MIN_ROW_SPAN, HomeLayoutStore.MAX_ROW_SPAN
         )
         val lockCol = card.lockCol.coerceIn(
-            0, (HomeLayoutStore.COLUMNS - colSpan).coerceAtLeast(0)
+            0, (cols - colSpan).coerceAtLeast(0)
         )
         var row = card.lockRow.coerceIn(0, maxRow)
         // 先试锁定槽位，被占则沿同列向下顺延
@@ -227,7 +237,7 @@ internal fun layoutSlots(cards: List<HomeLayoutStore.Card>): Map<String, IntArra
         var row = 0
         scan@ while (true) {
             ensureRows(row + rowSpan)
-            for (col in 0..HomeLayoutStore.COLUMNS - colSpan) {
+            for (col in 0..cols - colSpan) {
                 if (fits(row, col, colSpan, rowSpan)) {
                     placedRow = row
                     placedCol = col
@@ -261,15 +271,17 @@ internal fun resolveDrop(
     cards: List<HomeLayoutStore.Card>,
     dragged: HomeLayoutStore.Card,
     targetRow: Int,
-    targetCol: Int
+    targetCol: Int,
+    columns: Int = HomeLayoutStore.COLUMNS
 ): List<HomeLayoutStore.Card> {
+    val cols = columns.coerceAtLeast(1)
     val fromIndex = cards.indexOfFirst { it.id == dragged.id }
     if (fromIndex < 0) return cards
     val others = cards.filterNot { it.id == dragged.id }
     if (others.isEmpty()) return cards
 
     // 视觉布局：与用户拖动时看到的一致（原地守卫与占位者判定都用它）
-    val slots = layoutSlots(cards)
+    val slots = layoutSlots(cards, cols)
 
     // 原地放回：目标格就是自己原来的槽位 → 直接不动作。
     // 否则「拿起又放下」会因为列表重排而误触发一次交换。
@@ -296,7 +308,7 @@ internal fun resolveDrop(
     // ② 空位：找网格距离最近的卡，按阅读顺序插到它前 / 后
     val nearest = others.minByOrNull { c ->
         val s = slots[c.id] ?: return@minByOrNull Int.MAX_VALUE
-        abs(s[0] - targetRow) * HomeLayoutStore.COLUMNS + abs(s[1] - targetCol)
+        abs(s[0] - targetRow) * cols + abs(s[1] - targetCol)
     } ?: return cards
     val nSlot = slots[nearest.id] ?: return cards
     val insertBefore =
@@ -310,7 +322,7 @@ internal fun resolveDrop(
  * 钉住的卡被拖动后的落位（纯函数，可单测）。
  *
  * 语义与自由卡不同：钉住的卡**不是**去换别人的顺序，而是把自己**重新钉到落点格**——
- * 也就是把 `lockRow/lockCol` 改写成落点格（`lockCol` 收敛到 `0..COLUMNS-colSpan`，
+ * 也就是把 `lockRow/lockCol` 改写成落点格（`lockCol` 收敛到 `0..columns-colSpan`，
  * 防止 `lockCol + colSpan` 越界），列表顺序保持不变。
  *
  * **落点被另一张钉住的卡占着时两张卡真正换位**：被占卡挪到 [dragged] 原来的锁定格。
@@ -326,8 +338,10 @@ internal fun resolvePinnedDrop(
     cards: List<HomeLayoutStore.Card>,
     dragged: HomeLayoutStore.Card,
     targetRow: Int,
-    targetCol: Int
+    targetCol: Int,
+    columns: Int = HomeLayoutStore.COLUMNS
 ): List<HomeLayoutStore.Card> {
+    val cols = columns.coerceAtLeast(1)
     if (cards.none { it.id == dragged.id }) return cards
     val colSpan = dragged.colSpan.coerceIn(
         HomeLayoutStore.MIN_COL_SPAN, HomeLayoutStore.MAX_COL_SPAN
@@ -337,7 +351,7 @@ internal fun resolvePinnedDrop(
     )
     val maxRow = cards.size * HomeLayoutStore.MAX_ROW_SPAN
     val lockCol = targetCol.coerceIn(
-        0, (HomeLayoutStore.COLUMNS - colSpan).coerceAtLeast(0)
+        0, (cols - colSpan).coerceAtLeast(0)
     )
     // 行号同样设上界，避免落点算出极端值时把锁定坐标写坏
     val lockRow = targetRow.coerceIn(0, maxRow)
@@ -365,7 +379,7 @@ internal fun resolvePinnedDrop(
         )
         val swapUsable = swapRow >= 0 && swapRow <= maxRow &&
             swapCol >= 0 &&
-            swapCol + blockerColSpan <= HomeLayoutStore.COLUMNS &&
+            swapCol + blockerColSpan <= cols &&
             // 换完不能落在它当前的位置（否则等于没换，还会造出两个相同的 lock）
             !(swapRow == blocker.lockRow && swapCol == blocker.lockCol)
         if (swapUsable) {
@@ -440,6 +454,9 @@ private suspend fun PointerInputScope.dragAfterSlop(
  * - **编辑态**：卡片正文上方盖一层拖拽遮罩（拖动换位），四角分别是
  *   左上下「笔 / 大头针」、右上「红叉删除」、右下「拉伸手柄」，顶部中央「+」。
  *
+ * 列数固定为 [HomeLayoutStore.COLUMNS]（2）：卡片尺寸是绝对列数语义，列数一变就会破坏
+ * `colSpan` 的含义（详见下方 columns 处的说明）。
+ *
  * 拖动 / 缩放期间只改本地预览态，**松手才回写** [onCardsChange]，保证一次手势一次提交。
  *
  * @param onPinToggle 点大头针。回传该卡**当前实际槽位** `(row, col)`，
@@ -474,6 +491,22 @@ fun HomeCardCanvas(
     // （用户反馈：长按添加文章卡→进导入页 / 文章卡→详情页 / 最近使用行→详情页）。
     val currentEditMode by rememberUpdatedState(editMode)
 
+    // ---------------------------------------------------------------------
+    // 列数**固定**为 HomeLayoutStore.COLUMNS（2），不随可用宽度变化。
+    //
+    // ⚠️ 这里曾经改成「按可用宽度动态增列」（gridColumnsFor），那是个错误，已回退：
+    // 卡片尺寸是**绝对列数**语义 —— `colSpan` 默认值就是 2（= 2 列画布上的「满宽」，
+    // 见 HomeLayoutStore.Card），而 `MAX_COL_SPAN` 同样是 2。
+    // 一旦列数 > 2，默认卡立刻只剩 2/3 宽，且**永远无法再拉回满宽**
+    // （右侧多出的那一列没有任何卡能占），属于可见的功能退化。
+    //
+    // 当初想解决的「横屏 2 列卡片被拉成超宽扁条」其实并不存在：
+    // 画布外层本来就有 600dp 上限（见 HomeScreen），2 列时单卡最宽约 294dp。
+    // 真要让平板用满宽度，得先把尺寸模型从「绝对列数」换成「比例」，
+    // 那是独立的一次数据迁移，不该顺手塞进布局里做。
+    // ---------------------------------------------------------------------
+    val columns = HomeLayoutStore.COLUMNS
+
     val density = LocalDensity.current
     // 统一强触感：长按进编辑、拖动/缩放开始都用同一套“咔嗒”（各机型一致、明显）
     val confirmHaptic = rememberConfirmHaptic()
@@ -496,7 +529,7 @@ fun HomeCardCanvas(
             if (it.id == id) it.copy(colSpan = resizeColSpan, rowSpan = resizeRowSpan) else it
         }
     }
-    val slots = remember(effectiveCards) { layoutSlots(effectiveCards) }
+    val slots = remember(effectiveCards, columns) { layoutSlots(effectiveCards, columns) }
     val currentCards by rememberUpdatedState(cards)
     val currentSlots by rememberUpdatedState(slots)
 
@@ -580,8 +613,8 @@ fun HomeCardCanvas(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val safeWidth = if (maxWidth.value.isFinite()) maxWidth else 0.dp
             val cellW = (
-                (safeWidth - COLUMN_GAP * (HomeLayoutStore.COLUMNS - 1).toFloat()) /
-                    HomeLayoutStore.COLUMNS.toFloat()
+                (safeWidth - COLUMN_GAP * (columns - 1).toFloat()) /
+                    columns.toFloat()
                 ).coerceAtLeast(0.dp)
             val cellPitch = cellW + COLUMN_GAP
             val cellWpx = with(density) { cellW.toPx() }
@@ -770,7 +803,7 @@ fun HomeCardCanvas(
                                                             .toInt()
                                                             .coerceIn(
                                                                 0,
-                                                                (HomeLayoutStore.COLUMNS - c.colSpan)
+                                                                (columns - c.colSpan)
                                                                     .coerceAtLeast(0)
                                                             )
                                                         val tRow = floor(centerY / rowUnitPx)
@@ -782,9 +815,9 @@ fun HomeCardCanvas(
                                                             )
                                                         // 钉住的卡：重新钉到落点格（改 lock）；自由卡：交换 / 就近插入
                                                         val next = if (c.pinned) {
-                                                            resolvePinnedDrop(currentCards, c, tRow, tCol)
+                                                            resolvePinnedDrop(currentCards, c, tRow, tCol, columns)
                                                         } else {
-                                                            resolveDrop(currentCards, c, tRow, tCol)
+                                                            resolveDrop(currentCards, c, tRow, tCol, columns)
                                                         }
                                                         if (next != currentCards) cbCardsChange(next)
                                                     }
@@ -913,13 +946,14 @@ fun HomeCardCanvas(
                                                         (cellWpx * 0.5f).coerceAtLeast(1f)
                                                     val halfRow =
                                                         (rowUnitPx * 0.5f).coerceAtLeast(1f)
-                                                    resizeColSpan = (
-                                                        resizeBaseCol +
-                                                            (resizeTotal.x / halfCell).toInt()
-                                                        ).coerceIn(
-                                                        HomeLayoutStore.MIN_COL_SPAN,
-                                                        HomeLayoutStore.MAX_COL_SPAN
-                                                    )
+    resizeColSpan = (
+        resizeBaseCol +
+            (resizeTotal.x / halfCell).toInt()
+        ).coerceIn(
+        HomeLayoutStore.MIN_COL_SPAN,
+        // 不能超过当前网格总列数（否则 colSpan > columns 会占格越界）
+        minOf(HomeLayoutStore.MAX_COL_SPAN, columns)
+    )
                                                     // 文章卡片内容少，限制最大尺寸（最多 2 行高）——
                                                     // 拉太大只会剩大片空白；其余卡片自由缩放（用户要求）
                                                     val maxRowSpan =
@@ -946,7 +980,7 @@ fun HomeCardCanvas(
                                                                     it.lockCol.coerceIn(
                                                                         0,
                                                                         (
-                                                                            HomeLayoutStore.COLUMNS -
+                                                                            columns -
                                                                                 resizeColSpan
                                                                             ).coerceAtLeast(0)
                                                                     )

@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 
@@ -51,7 +52,9 @@ enum class AppIconKind {
     Home, Articles, Insights, MoreVert, SwapHoriz, TrackChanges, ViewAgenda, Pdf, Share, Library, ChevronRight,
     SearchHint,
     /** 撤销 / 重做（编辑器顶栏用；AutoMirrored 保证 RTL 下箭头方向正确） */
-    Undo, Redo
+    Undo, Redo,
+    /** 手写笔（切换手写输入 / 键盘输入） */
+    Stylus
 }
 
 /** 将存储 key 解析为 [AppIconKind]（未知 / 空 → [AppIconKind.Logo]） */
@@ -110,12 +113,60 @@ fun AppIcon(
         AppIconKind.SearchHint -> Icons.Outlined.Search
         AppIconKind.Undo -> Icons.AutoMirrored.Outlined.Undo
         AppIconKind.Redo -> Icons.AutoMirrored.Outlined.Redo
+        AppIconKind.Stylus -> null
         AppIconKind.Logo -> null
     }
     if (image != null) {
         Icon(imageVector = image, contentDescription = contentDescription, tint = tint, modifier = modifier)
+    } else if (kind == AppIconKind.Stylus) {
+        StylusIcon(modifier = modifier, tint = tint)
     } else {
         BlancallLogoIcon(modifier = modifier, tint = tint)
+    }
+}
+
+/**
+ * 自绘手写笔图标：45° 斜置笔杆 + 笔尖 + 底部书写基线。
+ * Material 核心图标集没有笔形，引入 `material-icons-extended` 只为一个小图标不划算，
+ * 且自绘能与其他自绘图标（[BlancallLogoIcon]、设置齿轮）保持同一套描边语言。
+ */
+@Composable
+fun StylusIcon(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = (w * 0.09f).coerceAtLeast(1.2f)
+        val s = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+        // 笔杆：从右上到左下的一段粗线（留出笔尖）
+        val tipX = w * 0.22f
+        val tipY = h * 0.78f
+        val tailX = w * 0.78f
+        val tailY = h * 0.22f
+        // 笔尖（下半段）实心三角，视觉上交代「尖」
+        val path = Path().apply {
+            moveTo(tailX, tailY)
+            lineTo(tipX, tipY)
+        }
+        drawPath(path, tint, style = s)
+        // 笔尖小三角
+        val nib = Path().apply {
+            moveTo(tipX, tipY)
+            lineTo(tipX + w * 0.10f, tipY - h * 0.03f)
+            lineTo(tipX + w * 0.03f, tipY - h * 0.10f)
+            close()
+        }
+        drawPath(nib, tint)
+        // 书写基线
+        val ly = h * 0.90f
+        drawPath(
+            Path().apply { moveTo(w * 0.12f, ly); lineTo(w * 0.88f, ly) },
+            tint,
+            style = Stroke(width = stroke * 0.8f, cap = StrokeCap.Round)
+        )
     }
 }
 

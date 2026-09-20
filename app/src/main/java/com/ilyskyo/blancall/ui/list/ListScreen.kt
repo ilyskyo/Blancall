@@ -56,6 +56,9 @@ import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.DeleteConfirmDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.GridMaxWidth
+import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.gridColumnsFor
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -167,7 +170,9 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 600.dp)
+                // 大屏放宽上限：原先固定 600dp 上限在平板上会白白浪费一半横向空间，
+                // 卡片网格本就可以多列铺开。窄屏仍由 max 上限自然约束（<600dp 时等于铺满）。
+                .widthIn(max = if (LocalIsLargeScreen) GridMaxWidth else 600.dp)
                 .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
         Row(
@@ -265,11 +270,14 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 }
             }
         } else {
-            val isWide = LocalConfiguration.current.screenWidthDp >= 600
-            if (isWide) {
+            // 列数按可用宽度动态决定：600–839dp 时 2–4 列，≥840dp 时更多。
+            // 原先固定 GridCells.Fixed(2) 在平板横屏会把两张卡各拉成 500dp 宽的扁条。
+            val gridWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
+            val gridColumns = gridColumnsFor(gridWidthDp, cardMinWidthDp = 260f)
+            if (gridColumns > 1) {
                 LazyVerticalGrid(
                     modifier = Modifier.fillMaxWidth().weight(1f),
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(gridColumns),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 12.dp)

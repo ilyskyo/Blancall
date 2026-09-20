@@ -21,8 +21,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -77,6 +75,9 @@ import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.ImmersiveSystemBarsEffect
+import com.ilyskyo.blancall.ui.common.ReadingMaxWidth
+import com.ilyskyo.blancall.ui.common.pinchZoomByTouch
+import com.ilyskyo.blancall.ui.common.tapGesturesPenAware
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.theme.ThemeManager
@@ -469,14 +470,19 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                 if (bodyLayoutMode == 0) {
                                     // 整篇滚动：一屏滚到底，全文完整可达（默认模式）。
                                     // 遮挡模式下正文段落接管点按（揭示遮块/切换控件），容器不再抢手势
+                                    Box(Modifier.fillMaxSize()) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .verticalScroll(scrollState)
+                                            // 大屏限宽：平板横屏下单行会到 100+ 字符，眼睛回扫极易串行。
+                                            // 限宽后左右留白、正文居中，符合中文排版 25–35 字/行的舒适区。
+                                            .widthIn(max = ReadingMaxWidth)
+                                            .align(Alignment.TopCenter)
                                             .then(
-                                                if (!bodyOcclusionActive) Modifier.pointerInput(Unit) {
-                                                    detectTapGestures { controlsVisible = !controlsVisible }
-                                                } else Modifier
+                                                if (!bodyOcclusionActive) Modifier.tapGesturesPenAware {
+                                                        controlsVisible = !controlsVisible
+                                                    } else Modifier
                                             )
                                     ) {
                                         // 文章标题、作者统一显示在顶部液态玻璃控件（LiquidGlassPill 内），
@@ -504,17 +510,24 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                             )
                                         }
                                     }
+                                    }
                                 } else {
-                                    // 章节翻页：按段聚合分节，左右滑动
+                                    // 章节翻页：按段聚合分节，左右滑动。
+                                    // 大屏下同样限宽（翻页模式正文更不该铺满超宽屏）。
+                                    Box(Modifier.fillMaxSize()) {
                                     HorizontalPager(
                                         state = pagerState,
                                         beyondViewportPageCount = 1,
                                         modifier = Modifier
                                             .fillMaxSize()
+                                            // 大屏限宽：平板横屏下单行会到 100+ 字符，眼睛回扫极易串行。
+                                            // 限宽后左右留白、正文居中，符合中文排版 25–35 字/行的舒适区。
+                                            .widthIn(max = ReadingMaxWidth)
+                                            .align(Alignment.TopCenter)
                                             .then(
-                                                if (!bodyOcclusionActive) Modifier.pointerInput(Unit) {
-                                                    detectTapGestures { controlsVisible = !controlsVisible }
-                                                } else Modifier
+                                                if (!bodyOcclusionActive) Modifier.tapGesturesPenAware {
+                                                        controlsVisible = !controlsVisible
+                                                    } else Modifier
                                             )
                                     ) { page ->
                                         ReadingSectionPage(
@@ -544,6 +557,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                                 }
                                             } else null
                                         )
+                                    }
                                     }
                                 }
                             }
@@ -917,31 +931,14 @@ private fun weightLabel(weight: Int): String = when (weight) {
 private fun LgCornerPx(dp: Float): Float = with(LocalDensity.current) { dp.dp.toPx() }
 
 /**
- * 双指捏合缩放（与练习页同款）：仅当屏幕上有 ≥2 个触点时按缩放增量回调 [onZoomChange]，
- * 单指滑动完全交给下层滚动/翻页容器处理，不产生任何手势冲突。
+ * 双指捏合缩放（**仅手指**）。实现统一在 [com.ilyskyo.blancall.ui.common.pinchZoomByTouch]。
+ *
+ * 修复要点：旧实现 `pressed.size >= 2` 未区分 PointerType，平板上
+ * 「扶屏的手指 + 书写的手写笔」会被误判成双指捏合，导致正文字号乱跳。
+ * 现在只有手指参与捏合；手写笔的落笔走书写通道（见 HandwritingInput）。
  */
-private fun Modifier.pinchZoom(onZoomChange: (Float) -> Unit): Modifier = pointerInput(Unit) {
-    awaitEachGesture {
-        awaitFirstDown(requireUnconsumed = false)
-        var prevDist = -1f
-        do {
-            val event = awaitPointerEvent()
-            val pressed = event.changes.filter { it.pressed }
-            if (pressed.size >= 2) {
-                val a = pressed[0].position
-                val b = pressed[1].position
-                val dx = a.x - b.x
-                val dy = a.y - b.y
-                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                if (prevDist > 0f && dist > 0f) {
-                    val factor = dist / prevDist
-                    if (factor.isFinite()) onZoomChange(factor)
-                }
-                prevDist = dist
-            }
-        } while (event.changes.any { it.pressed })
-    }
-}
+private fun Modifier.pinchZoom(onZoomChange: (Float) -> Unit): Modifier =
+    this.pinchZoomByTouch(onZoomChange = onZoomChange)
 
 // ========== 正文渲染（整篇滚动 / 章节翻页共用） ==========
 

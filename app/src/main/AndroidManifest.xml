@@ -11,6 +11,13 @@
     <!-- AI 对话需要网络 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 硬件能力声明（全部 required=false，不排除任何设备，仅用于大屏/手写笔分发的筛选与优化） -->
+    <!-- 触摸屏非必需：允许极少数无触摸设备安装（外接笔 / 键鼠场景） -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <!-- 手写笔：声明为「可选」。声明后应用可进入平板/手写笔类设备的推荐位；
+         应用在无笔设备上功能完整（笔输入入口自动隐藏，键盘输入不受影响）。 -->
+    <uses-feature android:name="android.hardware.stylus" android:required="false" />
+
     <application
         android:name=".BlancallApp"
         android:enableOnBackInvokedCallback="true"
@@ -24,12 +31,14 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Blancall">
-        <!-- 锁定竖屏：全部界面（首页卡片网格 / 阅读 / 练习 / 统计）都是竖屏单列设计，
-             横屏下首页内容区仅 406dp 高，卡片网格会被压成一行半，明显劣于竖屏。 -->
+        <!-- 屏幕方向：不再锁定竖屏，交给系统 + 自适应布局处理。
+             平板横屏是手写笔（S Pen / M-Pencil）最佳使用姿态，锁竖屏等于放弃这部分用户。
+             曾经锁竖屏的理由是「横屏下首页内容区仅 406dp 高，卡片网格被压成一行半」，
+             该问题已由按可用宽度动态计算网格列数解决（见 ui/common/Adaptive.kt）。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="portrait"
+            android:resizeableActivity="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.Blancall.Splash"
             android:windowSoftInputMode="adjustResize"

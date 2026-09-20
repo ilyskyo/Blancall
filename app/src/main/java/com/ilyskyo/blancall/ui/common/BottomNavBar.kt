@@ -9,8 +9,10 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -94,6 +99,207 @@ private const val LgSliderDispersion = 0f
  *
  * 全部不用 Modifier.layout 自定义 measure，避免与 View 生命周期竞速。
  */
+
+/**
+ * 导航项定义（底栏与侧栏共用）：
+ * [AppIconKind] 是应用自有图标集，避免引入 material-icons-extended 的额外体积。
+ */
+private val BaseNavTabs: List<Pair<String, AppIconKind>> = listOf(
+    "首页" to AppIconKind.Home,
+    "我的文章" to AppIconKind.Articles,
+    "数据" to AppIconKind.Insights,
+)
+
+private fun navTabsFor(showLibraryTab: Boolean): List<Pair<String, AppIconKind>> =
+    if (showLibraryTab) BaseNavTabs + ("素材库" to AppIconKind.Library) else BaseNavTabs
+
+/**
+ * 大屏侧边导航栏（Tablet / 折叠屏展开 / 横屏，Material 3 NavigationRail 规范）。
+ *
+ * **为什么横屏要用侧栏**：底部导航栏在横屏下有三个硬伤 ——
+ * ① 高度本就紧张（横屏可用高度常低于 500dp），一条 64dp 的底栏再切掉一块；
+ * ② 手指在横屏握持时离底部更远，横向滑动比纵向点击更贴近拇指活动区；
+ * ③ 平板横屏宽高比接近 3:2，竖向空间是最稀缺资源，横向空间反而富余。
+ * Material 3 规范因此规定：宽度 ≥ 600dp 用 NavigationRail，≥ 840dp 可上持久抽屉。
+ *
+ * 视觉上沿用同一套液态玻璃：竖向 76dp 宽玻璃条 + 半透明胶囊指示器，
+ * 与底栏保持一致的材质语言（不引入第二套设计）。
+ *
+ * @param host 液态玻璃折射采样源（页面容器），与 [BottomNavBar] 同款。
+ */
+@Composable
+fun NavRail(
+    currentTab: Int,
+    onSelect: (Int) -> Unit,
+    showLibraryTab: Boolean = false,
+    host: FrameLayout? = null
+) {
+    val tabs = navTabsFor(showLibraryTab)
+    val isDark = isBlancallDark()
+    val accent = MaterialTheme.colorScheme.primary
+    val subTint = MaterialTheme.colorScheme.onSurfaceVariant
+    val density = LocalDensity.current
+
+    val navGlass by AppPrefs.navLiquidGlassFlow.collectAsState()
+    val railGlassAlpha by animateFloatAsState(if (navGlass) 1f else 0f, label = "railGlassAlpha")
+
+    val railWidthDp = NavRailWidth
+    val railCornerDp = 28.dp
+    val railCornerPx = with(density) { railCornerDp.toPx() }
+    val railShape = RoundedCornerShape(railCornerDp)
+
+    val railGlassRef = remember { AtomicReference<LiquidGlassView?>(null) }
+
+    // 同为「玻璃 View 创建竞速」：等就绪再 bind，与底栏一致
+    LaunchedEffect(host) {
+        val target = host ?: return@LaunchedEffect
+        repeat(400) {
+            val rail = railGlassRef.get()
+            if (rail != null) {
+                rail.bind(target)
+                return@LaunchedEffect
+            }
+            delay(16)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(railWidthDp)
+            .windowInsetsPadding(WindowInsets.systemBars)
+            .padding(vertical = 14.dp, horizontal = 10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            // ① 玻璃底
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                AndroidView(
+                    factory = { ctx ->
+                        LiquidGlassView(ctx).apply {
+                            setBackgroundColor(
+                                if (isDark) android.graphics.Color.argb(230, 26, 26, 26)
+                                else android.graphics.Color.argb(230, 255, 255, 255)
+                            )
+                            setCornerRadius(railCornerPx)
+                            setRefractionHeight(with(density) { 20.dp.toPx() })
+                            setRefractionOffset(with(density) { 70.dp.toPx() })
+                            setBlurRadius(LgBarBlur)
+                            setDispersion(LgBarDispersion)
+                            if (isDark) {
+                                setTintColorRed(0f); setTintColorGreen(0f); setTintColorBlue(0f)
+                                setTintAlpha(0.25f)
+                            } else {
+                                setTintColorRed(1f); setTintColorGreen(1f); setTintColorBlue(1f)
+                                setTintAlpha(0.12f)
+                            }
+                            setDraggableEnabled(false)
+                            setElasticEnabled(false)
+                            setTouchEffectEnabled(false)
+                            railGlassRef.set(this)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(0f)
+                        .graphicsLayer { alpha = railGlassAlpha }
+                        .shadow(
+                            elevation = 14.dp,
+                            shape = railShape,
+                            ambientColor = Color.Black.copy(alpha = 0.18f),
+                            spotColor = Color.Black.copy(alpha = 0.24f),
+                            clip = false
+                        )
+                        .clip(railShape)
+                )
+                if (!navGlass) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .zIndex(0.05f)
+                            .clip(railShape)
+                            .background(if (isDark) Color(0xE61A1A1A) else Color(0xC8FFFFFF))
+                    )
+                }
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(railShape)
+                        .background(if (isDark) Color(0xE61A1A1A) else Color(0xC8FFFFFF))
+                )
+            }
+
+            // ② 1dp 描边饰面（与底栏同款）
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .zIndex(0.1f)
+                    .clip(railShape)
+                    .drawBehind {
+                        drawRoundRect(
+                            color = if (isDark) Color(0x59FFFFFF) else Color(0xE0FFFFFF),
+                            size = size,
+                            cornerRadius = CornerRadius(railCornerPx, railCornerPx),
+                            style = Stroke(width = 1.dp.toPx())
+                        )
+                    }
+            )
+
+            // ③ 导航项（竖向排布，选中项带胶囊指示器）
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(2f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top
+            ) {
+                tabs.forEachIndexed { index, (label, kind) ->
+                    val selected = index == currentTab
+                    val tint = if (selected) accent else subTint
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .padding(vertical = 3.dp)
+                            .clip(RoundedCornerShape(50))
+                            .then(
+                                if (selected) {
+                                    Modifier.background(
+                                        accent.copy(alpha = if (isDark) 0.22f else 0.16f)
+                                    )
+                                } else Modifier
+                            )
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { onSelect(index) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                        ) {
+                            AppIcon(kind = kind, tint = tint, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.size(3.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = tint,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun BottomNavBar(
     currentTab: Int,
@@ -101,12 +307,7 @@ fun BottomNavBar(
     showLibraryTab: Boolean = false,
     host: FrameLayout? = null
 ) {
-    val baseTabs = listOf(
-        "首页" to AppIconKind.Home,
-        "我的文章" to AppIconKind.Articles,
-        "数据" to AppIconKind.Insights,
-    )
-    val tabs = if (showLibraryTab) baseTabs + ("素材库" to AppIconKind.Library) else baseTabs
+    val tabs = navTabsFor(showLibraryTab)
     val tabCount = tabs.size
     val isDark = isBlancallDark()
     val accent = MaterialTheme.colorScheme.primary
