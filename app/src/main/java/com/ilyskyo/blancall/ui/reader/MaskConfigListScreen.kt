@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
+import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
@@ -111,9 +112,11 @@ fun MaskConfigListScreen(
     fun useConfig(cfg: MaskConfigStore.MaskConfig) {
         scope.launch {
             withContext(Dispatchers.IO) { store.setSelected(articleId, cfg.id) }
-            AppPrefs.readingOcclusionCustomConfigId = cfg.id
-            AppPrefs.readingOcclusionMode = "custom"
-            AppPrefs.readingOcclusionEnabled = true
+            // 只写本文章的阅读设置（按文章独立；原写全局会污染其它文章）
+            updateArticleReaderPrefs(
+                ReaderPrefsStore.getInstance(context),
+                articleId
+            ) { it.copy(occlusionCustomConfigId = cfg.id, occlusionMode = "custom", occlusionEnabled = true) }
             Toast.makeText(context, "已使用「${cfg.name}」", Toast.LENGTH_SHORT).show()
             onBack()
         }
@@ -345,9 +348,14 @@ fun MaskConfigListScreen(
                     deleteTarget = null
                     scope.launch {
                         withContext(Dispatchers.IO) { store.deleteConfig(articleId, target.id) }
-                        // 删除「使用中」配置时同步清掉 AppPrefs 指向，阅读页 custom 粒度自然回退为无遮挡
-                        if (AppPrefs.readingOcclusionCustomConfigId == target.id) {
-                            AppPrefs.readingOcclusionCustomConfigId = -1L
+                        // 删除「使用中」配置时同步清掉本文章的指向，阅读页 custom 粒度自然回退为无遮挡
+                        val prefsStore = ReaderPrefsStore.getInstance(context)
+                        if (loadArticleReaderPrefs(prefsStore, articleId).occlusionCustomConfigId == target.id) {
+                            withContext(Dispatchers.IO) {
+                                updateArticleReaderPrefs(prefsStore, articleId) {
+                                    it.copy(occlusionCustomConfigId = -1L)
+                                }
+                            }
                         }
                         reload()
                         Toast.makeText(context, "已删除", Toast.LENGTH_SHORT).show()

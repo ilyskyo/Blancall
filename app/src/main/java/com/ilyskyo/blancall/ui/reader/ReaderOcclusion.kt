@@ -105,10 +105,53 @@ object ReaderOcclusion {
     private const val SHORT_MAX_CHARS = 3
     private const val SHORT_THRESHOLD = 0.35f
 
+    /** 短遮挡（英文）：每分句选取的「长难词」上限；短于 [LATIN_MIN_WORD_LEN] 的词不值一遮 */
+    private const val SHORT_MAX_WORDS = 2
+    private const val LATIN_MIN_WORD_LEN = 3
+
     /** [s, e) 内是否包含至少一个汉字 */
     private fun hasChineseInRange(text: String, s: Int, e: Int): Boolean {
         for (i in s until e) if (isChinese(text[i])) return true
         return false
+    }
+
+    /** [s, e) 内是否包含至少一个「值得遮挡」的拉丁单词（≥ [LATIN_MIN_WORD_LEN] 个字母）。
+     *  修英文文章「算法遮挡不生效」（真机反馈）：旧实现三种模式全依赖汉字判定，
+     *  纯英文段落直接跳过，只能手画自定义遮挡。 */
+    private fun hasLatinWordInRange(text: String, s: Int, e: Int): Boolean {
+        var run = 0
+        for (i in s until e) {
+            val c = text[i]
+            if (c.isLetter() && !isChinese(c)) {
+                run++
+                if (run >= LATIN_MIN_WORD_LEN) return true
+            } else {
+                run = 0
+            }
+        }
+        return false
+    }
+
+    /**
+     * 短遮挡（英文）：在 [s, e) 内挑最长的至多 [SHORT_MAX_WORDS] 个拉丁单词，
+     * 每词各成一个独立遮块。与中文版「挑最难的字」同构——英文的「难」用**词长**度量
+     * （长词更难）；太短的词（a/is/to…）不遮（对背词无意义）。
+     */
+    private fun pickHardWords(text: String, s: Int, e: Int): List<OcclusionSpan> {
+        val words = mutableListOf<OcclusionSpan>()
+        var i = s
+        while (i < e) {
+            val c = text[i]
+            if (c.isLetter() && !isChinese(c)) {
+                var j = i
+                while (j < e && text[j].isLetter() && !isChinese(text[j])) j++
+                if (j - i >= LATIN_MIN_WORD_LEN) words += OcclusionSpan(i, j)
+                i = j
+            } else {
+                i++
+            }
+        }
+        return words.sortedByDescending { it.end - it.start }.take(SHORT_MAX_WORDS)
     }
 
     /**
@@ -159,14 +202,18 @@ object ReaderOcclusion {
         for ((s, e) in clausesOf(para)) {
             if (e - s <= 0) continue
             when (mode) {
-                "long" -> if (hasChineseInRange(para, s, e)) out += OcclusionSpan(s, e)
-                "short" -> out += pickHardChars(para, s, e)
-                "mixed" -> if (mixedUseLong(s, para.length)) {
-                    if (hasChineseInRange(para, s, e)) out += OcclusionSpan(s, e)
-                } else {
-                    out += pickHardChars(para, s, e)
+                "long" -> if (hasChineseInRange(para, s, e) || hasLatinWordInRange(para, s, e)) {
+                    out += OcclusionSpan(s, e)
                 }
-                else -> out += pickHardChars(para, s, e)
+                "short" -> out += pickHardChars(para, s, e) + pickHardWords(para, s, e)
+                "mixed" -> if (mixedUseLong(s, para.length)) {
+                    if (hasChineseInRange(para, s, e) || hasLatinWordInRange(para, s, e)) {
+                        out += OcclusionSpan(s, e)
+                    }
+                } else {
+                    out += pickHardChars(para, s, e) + pickHardWords(para, s, e)
+                }
+                else -> out += pickHardChars(para, s, e) + pickHardWords(para, s, e)
             }
         }
         return out.distinctBy { it.start }

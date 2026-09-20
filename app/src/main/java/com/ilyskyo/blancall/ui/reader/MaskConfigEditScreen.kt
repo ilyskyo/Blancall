@@ -73,6 +73,7 @@ import com.ilyskyo.blancall.algorithm.ContentFingerprint
 import com.ilyskyo.blancall.algorithm.MaskSpanOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
+import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
@@ -343,9 +344,11 @@ fun MaskConfigEditScreen(
             if (isNew) {
                 // 仅新建：标记为本文使用中的配置，并把阅读遮挡切到自定义，保存即见效果
                 withContext(Dispatchers.IO) { store.setSelected(article.id, newId) }
-                AppPrefs.readingOcclusionCustomConfigId = newId
-                AppPrefs.readingOcclusionMode = "custom"
-                AppPrefs.readingOcclusionEnabled = true
+                // 只写本文章的阅读设置（按文章独立；原写全局会污染其它文章）
+                updateArticleReaderPrefs(
+                    ReaderPrefsStore.getInstance(context),
+                    article.id
+                ) { it.copy(occlusionCustomConfigId = newId, occlusionMode = "custom", occlusionEnabled = true) }
             }
             dirty = false
             savedSnapshot = snap

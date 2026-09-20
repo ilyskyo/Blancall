@@ -72,6 +72,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
+import com.ilyskyo.blancall.data.repository.ReaderPrefs
+import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.ImmersiveSystemBarsEffect
@@ -143,21 +145,52 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     }
     val appBeige by AppPrefs.lightBeigeBackgroundFlow.collectAsState()
 
-    // ── 排版设置 ──
-    val fontPx by AppPrefs.readingFontFlow.collectAsState()
-    val lineHeight by AppPrefs.readingLineHeightFlow.collectAsState()
-    val bgMode by AppPrefs.readingBgModeFlow.collectAsState()
+    // ── 排版设置：**按文章独立保存**（ReaderPrefsStore）──
+    // 有存档用存档；没有则以全局 AppPrefs 的当前值作为起点（兼容既有偏好）。
+    // 所有改动只写本文章的存档，不再污染全局基线
+    // （真机反馈：在 A 文章调完「米白+霞雾文楷+超大+遮挡」，打开 B 也带同一套）。
+    val prefsStore = remember { ReaderPrefsStore.getInstance(context) }
+    val articleKey = article.id
+    // readerPrefsState 实例稳定、可被下方「正文独立 ComposeView」跨组合订阅（桥接）——
+    // 因此用 val State + by 委托，而不是把 State 藏在委托里。
+    val readerPrefsState = remember(articleKey) {
+        mutableStateOf(
+            prefsStore.get(articleKey) ?: ReaderPrefs(
+                bgMode = AppPrefs.readingBgMode,
+                fontId = AppPrefs.readingFontId,
+                fontWeight = AppPrefs.readingFontWeight,
+                fontPx = AppPrefs.readingFont,
+                lineHeight = AppPrefs.readingLineHeight,
+                layoutMode = AppPrefs.readingLayoutMode,
+                occlusionEnabled = AppPrefs.readingOcclusionEnabled,
+                occlusionMode = AppPrefs.readingOcclusionMode,
+                occlusionColor = AppPrefs.readingOcclusionColor,
+                occlusionCustomConfigId = AppPrefs.readingOcclusionCustomConfigId
+            )
+        )
+    }
+    var readerPrefs by readerPrefsState
+    fun updateReaderPrefs(transform: (ReaderPrefs) -> ReaderPrefs) {
+        val next = transform(readerPrefs)
+        readerPrefs = next
+        prefsStore.save(articleKey, next)
+    }
+
+    // ── 排版设置（读取自本文章存档）──
+    val fontPx = readerPrefs.fontPx
+    val lineHeight = readerPrefs.lineHeight
+    val bgMode = readerPrefs.bgMode
     // 阅读布局：0=整篇滚动（默认，一滚到底） 1=章节翻页（左右滑动）
-    val layoutMode by AppPrefs.readingLayoutModeFlow.collectAsState()
+    val layoutMode = readerPrefs.layoutMode
     // ── 阅读字体：预设 / 系统字体 / 导入字体（按 id 解析，见 ReaderFonts）──
-    val readingFontId by AppPrefs.readingFontIdFlow.collectAsState()
-    val readingFontWeight by AppPrefs.readingFontWeightFlow.collectAsState()
+    val readingFontId = readerPrefs.fontId
+    val readingFontWeight = readerPrefs.fontWeight
 
     // ── 背诵遮挡（物理遮挡背诵）设置 ──
-    val occlusionEnabled by AppPrefs.readingOcclusionEnabledFlow.collectAsState()
-    val occlusionMode by AppPrefs.readingOcclusionModeFlow.collectAsState()
+    val occlusionEnabled = readerPrefs.occlusionEnabled
+    val occlusionMode = readerPrefs.occlusionMode
     // 挡片颜色索引（正文体在独立 ComposeView 中自行订阅计算，见 body 内 bodyMaskColor）
-    val occlusionColorIndex by AppPrefs.readingOcclusionColorFlow.collectAsState()
+    val occlusionColorIndex = readerPrefs.occlusionColor
 
     // 阅读背景：深色永远纯黑；浅色按 跟随主题/米白/纯白 三选
     val bgColor = when {
@@ -208,8 +241,8 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     // 当前「使用中」的自定义遮挡配置名：供设置面板「自定义」chip 展示（如「自定义 · 我大一」）。
     // 配置列表/编辑器关闭或切换会话后重新读取（AppPrefs 存的是 configId，名字需从 store 反查）
     var maskConfigName by remember { mutableStateOf("") }
-    LaunchedEffect(maskOverlay, maskEditSession, article.id) {
-        val id = AppPrefs.readingOcclusionCustomConfigId
+    LaunchedEffect(maskOverlay, maskEditSession, article.id, readerPrefs.occlusionCustomConfigId) {
+        val id = readerPrefs.occlusionCustomConfigId
         maskConfigName = if (id > 0) {
             withContext(Dispatchers.IO) {
                 runCatching {
@@ -359,17 +392,21 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                     ThemeMode.LIGHT -> false
                                 }
                                 val bodyAppBeige by AppPrefs.lightBeigeBackgroundFlow.collectAsState()
-                                val bodyFontPx by AppPrefs.readingFontFlow.collectAsState()
-                                val bodyLineHeight by AppPrefs.readingLineHeightFlow.collectAsState()
-                                val bodyBgMode by AppPrefs.readingBgModeFlow.collectAsState()
+                                // 正文组合订阅「本文章的阅读设置」桥接 State：
+                                // 旧实现直接订阅 AppPrefs 全局流 —— 改文章后所有文章跟着变（真机反馈）；
+                                // 现读顶层 readerPrefsState（实例稳定，跨组合可用）。
+                                val bodyReaderPrefs by readerPrefsState
+                                val bodyFontPx = bodyReaderPrefs.fontPx
+                                val bodyLineHeight = bodyReaderPrefs.lineHeight
+                                val bodyBgMode = bodyReaderPrefs.bgMode
                                 val bodyAutoIndentEnabled by AppPrefs.autoIndentEnabledFlow.collectAsState()
-                                val bodyLayoutMode by AppPrefs.readingLayoutModeFlow.collectAsState()
-                                val bodyFontId by AppPrefs.readingFontIdFlow.collectAsState()
-                                val bodyFontWeight by AppPrefs.readingFontWeightFlow.collectAsState()
-                                val bodyOcclusionEnabled by AppPrefs.readingOcclusionEnabledFlow.collectAsState()
-                                val bodyOcclusionMode by AppPrefs.readingOcclusionModeFlow.collectAsState()
+                                val bodyLayoutMode = bodyReaderPrefs.layoutMode
+                                val bodyFontId = bodyReaderPrefs.fontId
+                                val bodyFontWeight = bodyReaderPrefs.fontWeight
+                                val bodyOcclusionEnabled = bodyReaderPrefs.occlusionEnabled
+                                val bodyOcclusionMode = bodyReaderPrefs.occlusionMode
                                 // 挡片颜色：正文组合内订阅，切换即时生效（ComposeView 不随外层重组）
-                                val bodyOcclusionColorIndex by AppPrefs.readingOcclusionColorFlow.collectAsState()
+                                val bodyOcclusionColorIndex = bodyReaderPrefs.occlusionColor
                                 val bodyMaskColor = when (bodyOcclusionColorIndex) {
                                     1 -> Macaron.continueP().fill
                                     2 -> Macaron.info().fill
@@ -386,7 +423,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                 // 自定义遮挡：custom 粒度时按文章读取使用中的配置，
                                 // 解析为「段落文本 → 遮块列表」查找器（段落口径 splitParagraphs，
                                 // 翻页/滚动两种布局下均按段文本匹配，重复段落取并集）
-                                val bodyCustomConfigId by AppPrefs.readingOcclusionCustomConfigIdFlow.collectAsState()
+                                val bodyCustomConfigId = bodyReaderPrefs.occlusionCustomConfigId
                                 var bodyCustomResolver by remember {
                                     mutableStateOf<((String) -> List<MaskConfigStore.MaskSpan>)?>(null)
                                 }
@@ -574,7 +611,8 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .pinchZoom { zoom ->
-                    AppPrefs.readingFont = (AppPrefs.readingFont * zoom).coerceIn(14f, 36f)
+                    // 字号改动同样只写本文章存档（原写全局：会让所有文章跟着变）
+                    updateReaderPrefs { p -> p.copy(fontPx = (p.fontPx * zoom).coerceIn(14f, 36f)) }
                 }
         )
 
@@ -782,29 +820,32 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
         sheetState = settingsSheetState,
         onDismiss = { settingsVisible = false },
         fontPx = fontPx,
-        onFontChange = { AppPrefs.readingFont = it },
+        onFontChange = { v -> updateReaderPrefs { p -> p.copy(fontPx = v) } },
         lineHeight = lineHeight,
-        onLineHeightChange = { AppPrefs.readingLineHeight = it },
+        onLineHeightChange = { v -> updateReaderPrefs { p -> p.copy(lineHeight = v) } },
         bgMode = bgMode,
-        onBgModeChange = { AppPrefs.readingBgMode = it },
+        onBgModeChange = { v -> updateReaderPrefs { p -> p.copy(bgMode = v) } },
         layoutMode = layoutMode,
-        onLayoutModeChange = { AppPrefs.readingLayoutMode = it },
+        onLayoutModeChange = { v -> updateReaderPrefs { p -> p.copy(layoutMode = v) } },
         fontId = readingFontId,
         onFontIdChange = { newId ->
-            AppPrefs.readingFontId = newId
             // 换字体后把字重收敛到新字体支持的档位（预设/导入/系统字体三条路径共用此入口）：
             // 例如从霞鹜文楷的「中等 500」切到单字重字体 → 取最近的「加粗 700」
-            AppPrefs.readingFontWeight =
-                ReaderFonts.snapWeight(AppPrefs.readingFontWeight, ReaderFonts.weightMode(newId))
+            updateReaderPrefs { p ->
+                p.copy(
+                    fontId = newId,
+                    fontWeight = ReaderFonts.snapWeight(p.fontWeight, ReaderFonts.weightMode(newId))
+                )
+            }
         },
         fontWeight = readingFontWeight,
-        onFontWeightChange = { AppPrefs.readingFontWeight = it },
+        onFontWeightChange = { v -> updateReaderPrefs { p -> p.copy(fontWeight = v) } },
         occlusionEnabled = occlusionEnabled,
-        onOcclusionEnabledChange = { AppPrefs.readingOcclusionEnabled = it },
+        onOcclusionEnabledChange = { v -> updateReaderPrefs { p -> p.copy(occlusionEnabled = v) } },
         occlusionMode = occlusionMode,
-        onOcclusionModeChange = { AppPrefs.readingOcclusionMode = it },
+        onOcclusionModeChange = { v -> updateReaderPrefs { p -> p.copy(occlusionMode = v) } },
         occlusionColorIndex = occlusionColorIndex,
-        onOcclusionColorChange = { AppPrefs.readingOcclusionColor = it },
+        onOcclusionColorChange = { v -> updateReaderPrefs { p -> p.copy(occlusionColor = v) } },
         onOpenMaskConfig = {
             // 只负责把浮层挂上（藏在面板后）；面板本身的关闭由调用方在 hide 动画完成后执行
             maskOverlay = "list"
