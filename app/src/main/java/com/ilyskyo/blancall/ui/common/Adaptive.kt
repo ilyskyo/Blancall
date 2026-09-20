@@ -163,6 +163,23 @@ fun gridColumnsFor(availableWidthDp: Float, cardMinWidthDp: Float = 168f): Int {
     return cols.coerceIn(2, 6)
 }
 
+/**
+ * 首页卡片画布的自适应**渲染列数**（大屏多列）。
+ *
+ * 与 [gridColumnsFor] 的区别：首页卡片的存储尺寸模型是「绝对列数」（colSpan 1–2，
+ * 满宽 = 2；见 HomeLayoutStore），因此渲染列数只影响**画布粒度**、不改存储语义：
+ * 卡仍然按 colSpan 占 1–2 列，列数越多卡越窄、一行能排的卡越多。
+ *
+ * 列数按「单卡最小舒适宽 ≈294dp」折算并取偶：拖动/缩放以整列为步进，
+ * 偶数保证半宽卡（1 列）与满宽卡（2 列）都能精确落位与并排对齐；上限 6 列。
+ * 真机反馈：平板全屏时固定 2 列把卡片拉成 600dp 级扁条，应随宽度增列。
+ */
+fun homeGridColumns(availableWidthDp: Float, cardMinWidthDp: Float = 294f): Int {
+    if (availableWidthDp <= 0f) return 2
+    val even = Math.round(availableWidthDp / cardMinWidthDp / 2f) * 2
+    return even.coerceIn(2, 6)
+}
+
 /** 多列网格内容最大宽度（统计/多卡片页面用），避免超宽屏下单卡被拉得极宽。 */
 val GridMaxWidth: Dp = 1100.dp
 
