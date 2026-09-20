@@ -19,9 +19,8 @@ import kotlin.math.min
  * 端侧离线单字手写识别器。
  *
  * ## 引擎
- * [Ismantic/Handwritten](https://github.com/Ismantic/Handwritten) —— MobileNetV2 转 NCNN INT8，
- * 3755 类 GB2312 一级字，CASIA HWDB1.1 测试集 top-1 95.47% / top-10 99.58%，
- * 模型 4.1MB，Apache-2.0。
+ * 自训练 MobileNetV2 转 NCNN，7356 类（HWDB1.0+1.2 全集：7185 汉字 + 171 字母数字符号），
+ * 自建测试集 top-1 95.75% / top-5 99.30%。训练数据为 CASIA-HWDB（学术研究用途）。
  *
  * ## 为什么不是 ML Kit
  * ML Kit 数字墨水的中文模型（`zh-Hani`，约 20MB）**必须运行时从 Google 服务器下载**，
@@ -33,13 +32,13 @@ import kotlin.math.min
  * 时才触发模型加载，避免拖慢冷启动。
  *
  * ## 已知边界
- * 只覆盖 GB2312 一级字 3755 个。古文素材中的生僻字（如「夔」「蠡」）不在表内，
- * 此时识别结果不会命中正确答案 —— 调用方必须依据 [HandwritingResult.isConfident]
+ * 覆盖 HWDB 全集 7356 类（含 GB2312 全部 6763 汉字，必背60篇缺字仅剩 19 个超纲字不在表内），
+ * 表外字由「生僻字守卫」引导键盘输入。调用方依据 [HandwritingResult.isConfident]
  * 决定是否自动判分，低置信时降级为「让用户从候选中点选」。
  */
 /** 手写识别的文种：决定用哪套模型与字符表。 */
 enum class HandwritingScript {
-    /** 中文（GB2312 一级字 3755 类） */
+    /** 中文（HWDB 全集 7356 类：7185 汉字 + 171 字母数字符号） */
     Chinese,
 
     /** 英文/拉丁（EMNIST Balanced 47 类：数字 + 大小写字母） */
@@ -56,6 +55,16 @@ enum class HandwritingScript {
          */
         fun forAnswer(answer: String): HandwritingScript =
             if (answer.isEmpty() || answer.any { it.code >= CJK_START }) Chinese else Latin
+
+        /**
+         * 该字符是否为「需要（也可能需要）手写拉丁输入」的字符：0-9 / A-Z / a-z。
+         *
+         * 用途：中文脚本下「拉丁模型回退救援」的开关 —— 只有待填字本身是拉丁字符
+         * （如混合答案「A 股」的 A）才允许回退；纯汉字答案禁用，防止字母/数字候选
+         * （真机出现过 A:0.85、5:0.43 混进候选条）干扰选字、诱导误点。
+         */
+        fun isLatinInputChar(c: Char): Boolean =
+            c in '0'..'9' || c in 'A'..'Z' || c in 'a'..'z'
     }
 }
 
@@ -143,7 +152,12 @@ class HandwritingRecognizer private constructor(
                 nativeRecognize(handles[script.ordinal], gray, bitmap.width, bitmap.height, topK)
             }
             val elapsed = (System.nanoTime() - t0) / 1_000_000
-            if (raw.isEmpty()) return@synchronized null
+            if (raw.isEmpty()) {
+                // 空结果几乎都是「预处理没找到前景」或「native 推理失败」，
+                // 与「识别成别的字」是两回事 —— 必须能从日志分开。
+                Log.w(TAG, "recognize empty (script=$script, bitmap=${bitmap.width}x${bitmap.height})")
+                return@synchronized null
+            }
 
             val classes = charsets[script.ordinal]
             val candidates = ArrayList<HandwritingResult.Candidate>(raw.size / 2)
@@ -242,16 +256,20 @@ class HandwritingRecognizer private constructor(
 
     /**
      * 读取字符表。格式见 [HandwritingCharset.parse]；中英两套字符表同构
-     * （`char_to_idx` 显式映射），仅目录与类数不同。
+     * （`char_to_idx` 显式映射），仅目录、文件名与类数不同。
+     *
+     * ⚠️ 文件名必须按文种分开：英文 assets 里的表叫 `charset_en.json`，
+     * 早期实现固定拼 `charset.json` ⇒ 打开即 FileNotFoundException，
+     * 被 [ensureLoaded] 的 catch 默默降级成「英文永远识别不出」且无显式报错。
      */
     private fun loadCharset(script: HandwritingScript): List<Char> {
-        val text = context.assets.open("${assetDirName(script)}/$CHARSET_NAME")
+        val text = context.assets.open("${assetDirName(script)}/${charsetFileName(script)}")
             .bufferedReader(Charsets.UTF_8)
             .use { it.readText() }
 
-        val parsed = HandwritingCharset.parse(text)
+        val parsed = HandwritingCharset.parse(text, expectedClassCount(script))
         if (parsed == null) {
-            Log.e(TAG, "charset.json 解析失败 ($script)，手写功能降级")
+            Log.e(TAG, "charset 解析失败 ($script)，手写功能降级")
             return emptyList()
         }
         return parsed
@@ -285,6 +303,13 @@ class HandwritingRecognizer private constructor(
     private fun assetDirName(script: HandwritingScript): String =
         if (script == HandwritingScript.Latin) ASSET_DIR_EN else ASSET_DIR
 
+    private fun charsetFileName(script: HandwritingScript): String =
+        if (script == HandwritingScript.Latin) CHARSET_NAME_EN else CHARSET_NAME
+
+    private fun expectedClassCount(script: HandwritingScript): Int =
+        if (script == HandwritingScript.Latin) HandwritingCharset.SIZE_LATIN
+        else HandwritingCharset.SIZE
+
     private fun paramFileName(script: HandwritingScript): String =
         if (script == HandwritingScript.Latin) "model_en.param" else PARAM_NAME
 
@@ -315,6 +340,9 @@ class HandwritingRecognizer private constructor(
         private const val PARAM_NAME_EN = "model_en.param"
         private const val BIN_NAME_EN = "model_en.bin"
         private const val CHARSET_NAME = "charset.json"
+
+        /** 拉丁模型的字符表文件名（与中文表不同名，早期写死的 `charset.json` 打不开）。 */
+        private const val CHARSET_NAME_EN = "charset_en.json"
         private const val DEFAULT_TOP_K = 5
 
         private val nativeLoaded = AtomicBoolean(false)
@@ -326,6 +354,48 @@ class HandwritingRecognizer private constructor(
             } catch (t: Throwable) {
                 false
             }
+
+        /** 中文字表缓存（不依赖模型加载；供「生僻字守卫」快速查询）。 */
+        @Volatile
+        private var cjkTableCache: Set<Char>? = null
+
+        /** 字表读取是否已尝试过（失败后不反复重读 assets）。 */
+        @Volatile
+        private var cjkTableLoadAttempted = false
+
+        /**
+         * 该汉字能否被中文手写模型识别（查 HWDB 全集 7356 项字表）。
+         *
+         * 供「生僻字守卫」使用：答案里的字不在表内时手写必然认不出（模型只能输出表内
+         * 类别），应引导键盘输入，而不是让模型「自信地」输出一个形近错字。
+         *
+         * ⚠️ 只针对 CJK 基本区汉字；标点/字母/空格的「不支持」归其他机制管（见
+         * [HandwritingCharset.isBasicHanziSupported] 的注释）。读表失败时保守返回 true。
+         * 首次调用会读一次 assets（约 123KB），有进程级缓存；建议在后台线程调用。
+         */
+        fun isCjkCharSupported(context: Context, ch: Char): Boolean {
+            if (ch.code < 0x4E00 || ch.code > 0x9FFF) return true
+            return HandwritingCharset.isBasicHanziSupported(ch, cjkTable(context))
+        }
+
+        private fun cjkTable(context: Context): Set<Char>? {
+            cjkTableCache?.let { return it }
+            synchronized(this) {
+                cjkTableCache?.let { return it }
+                if (cjkTableLoadAttempted) return null
+                cjkTableLoadAttempted = true
+                return try {
+                    val text = context.assets.open("$ASSET_DIR/$CHARSET_NAME")
+                        .bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    HandwritingCharset.parse(text, HandwritingCharset.SIZE)
+                        ?.toHashSet()
+                        ?.also { cjkTableCache = it }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "load cjk table for support check failed", t)
+                    null
+                }
+            }
+        }
 
         /** native 库是否可用。加载失败（如设备 ABI 不匹配）时手写功能整体降级。 */
         val isNativeAvailable: Boolean get() = nativeLoaded.get()

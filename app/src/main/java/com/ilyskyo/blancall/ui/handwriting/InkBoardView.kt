@@ -199,8 +199,16 @@ class InkBoardView @JvmOverloads constructor(
      *
      * [pressures] 与 [pts] **逐点同序**（含 historical 采样），只服务于压感显示，
      * 不参与识别 —— 送给模型的位图始终是等宽墨迹。
+     *
+     * [startMs]/[endMs] 为 `event.eventTime` 口径（uptimeMillis），供
+     * 「按书写停顿逐字切分」使用：字间停顿是比几何空隙更自然的分字信号。
      */
-    private class StrokeRec(val pts: List<Offset>, val pressures: List<Float>) {
+    private class StrokeRec(
+        val pts: List<Offset>,
+        val pressures: List<Float>,
+        val startMs: Long,
+        val endMs: Long
+    ) {
         val path = Path()
         val single = pts.size == 1
 
@@ -221,6 +229,9 @@ class InkBoardView @JvmOverloads constructor(
 
     /** 正在写的这一笔。用 ArrayList 直接攒点，**不产生任何 Compose 状态写入**。 */
     private val current = ArrayList<Offset>(256)
+
+    /** 正在写的这一笔的起笔时间（`event.eventTime` 口径），见 [StrokeRec.startMs]。 */
+    private var strokeStartMs = 0L
 
     /** 与 [current] **逐点同序**的压力采样。 */
     private val currentPress = ArrayList<Float>(256)
@@ -279,8 +290,30 @@ class InkBoardView @JvmOverloads constructor(
     /** 取当前墨迹快照（识别用）。返回的 List 是拷贝，调用方可安全跨线程使用。 */
     fun snapshotStrokes(): List<List<Offset>> = strokes.map { it.pts }
 
+    /**
+     * 带时间的墨迹快照（识别用）：除点集外还携带每笔的起止时间。
+     *
+     * ⚠️ [StrokeSnapshot.pts] 就是内部持有的 List 本身（非拷贝），
+     * 与 [snapshotStrokes] 一样可直接用于 [removeStrokes] 的引用匹配。
+     */
+    fun snapshotWithTiming(): List<StrokeSnapshot> =
+        strokes.map { StrokeSnapshot(it.pts, it.startMs, it.endMs) }
+
     /** 板上是否有已完成的笔画。 */
     fun hasInk(): Boolean = strokes.isNotEmpty()
+
+    /**
+     * 移除指定笔画（按**引用**匹配 —— [snapshotStrokes] 交出去的正是内部这些 list 本身）。
+     *
+     * 连写逐段确认靠它：已经上屏的那几段墨迹要从板上消失，
+     * 而「停在这一段等用户点候选」的那一段、以及它后面的段必须**留着** ——
+     * 用户要能看着自己写的字挑候选。
+     */
+    fun removeStrokes(exact: List<List<Offset>>) {
+        if (exact.isEmpty()) return
+        strokes.removeAll { rec -> exact.any { it === rec.pts } }
+        invalidate()
+    }
 
     /** 清空全部墨迹（「清空」按钮、识别成功后、划掉重写都走这里）。 */
     fun clearInk() {
@@ -303,13 +336,24 @@ class InkBoardView @JvmOverloads constructor(
             // 「一手扶屏 + 一手落笔」就永远开不了笔。
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val idx = event.actionIndex
-                if (!isPenPointer(event, idx)) {
+                val penDown = isPenPointer(event, idx)
+                // 诊断（仅 debug 包）：确认笔事件**到底有没有到达书写板**。
+                // 出现「完全没有墨迹」时，日志里有没有这一行可以立刻二分定位：
+                //   有这一行 ⇒ 事件已到达，问题在绘制/识别链路；
+                //   没有     ⇒ 事件被上层吃掉了（Compose pointerInput 消费 / 父级拦截 / 根本没命中本 View）。
+                if (isDebuggable) {
+                    Log.d(TAG, "touch down idx=$idx pen=$penDown enabled=$writingEnabled")
+                }
+                if (!penDown) {
                     // 手指/掌托落在板上。书写中一律吞掉（否则会穿透到正文与按钮），
                     // 空闲时放行 —— 返回 false，事件回到 Compose，页面照常滚动。
                     return StylusActivity.isWriting
                 }
                 if (penPointerId >= 0) return true // 理论上不会有第二支笔，保守只吞掉
                 penPointerId = event.getPointerId(idx)
+                // 起笔即告知父容器别再拦截：AndroidView 嵌在可滚动列表里时，父级的滚动
+                // 手势会在笔划到一半时把事件抢走（真机现象「写着写着页面跟着滚」）。
+                parent?.requestDisallowInterceptTouchEvent(true)
                 requestUnbufferedInput()
                 StylusActivity.isWriting = true
                 latSamples = 0
@@ -317,6 +361,7 @@ class InkBoardView @JvmOverloads constructor(
                 latMaxMs = 0L
                 onStrokeStart?.invoke()
                 current.clear()
+                strokeStartMs = event.eventTime
                 appendSamples(event, idx)
                 liveDirty = true
                 latLastEventMs = event.eventTime
@@ -340,7 +385,7 @@ class InkBoardView @JvmOverloads constructor(
                 if (penPointerId < 0) return false
                 val idx = event.findPointerIndex(penPointerId)
                 if (idx >= 0) appendSamples(event, idx)
-                finishStroke(drop = false)
+                finishStroke(drop = false, endMs = event.eventTime)
                 return true
             }
 
@@ -352,7 +397,7 @@ class InkBoardView @JvmOverloads constructor(
             MotionEvent.ACTION_POINTER_UP -> {
                 if (penPointerId >= 0 && event.getPointerId(event.actionIndex) == penPointerId) {
                     appendSamples(event, event.actionIndex)
-                    finishStroke(drop = false)
+                    finishStroke(drop = false, endMs = event.eventTime)
                     return true
                 }
                 return penPointerId >= 0
@@ -360,7 +405,7 @@ class InkBoardView @JvmOverloads constructor(
 
             MotionEvent.ACTION_CANCEL -> {
                 if (penPointerId < 0) return false
-                finishStroke(drop = true)
+                finishStroke(drop = true, endMs = event.eventTime)
                 return true
             }
 
@@ -508,9 +553,11 @@ class InkBoardView @JvmOverloads constructor(
         }
     }
 
-    private fun finishStroke(drop: Boolean) {
+    private fun finishStroke(drop: Boolean, endMs: Long) {
         StylusActivity.isWriting = false
         penPointerId = -1
+        // 收笔后把拦截权还给父容器，否则列表再也滚不动
+        parent?.requestDisallowInterceptTouchEvent(false)
 
         if (drop || current.isEmpty()) {
             current.clear()
@@ -522,13 +569,14 @@ class InkBoardView @JvmOverloads constructor(
 
         val pts = ArrayList(current)
         val pressures = ArrayList(currentPress)
+        val startMs = strokeStartMs
         current.clear()
         currentPress.clear()
         liveDirty = false
 
         // 同步交给上层判定：是字还是「划掉」手势。压力只留给显示，不进这个回调。
         val keep = onStrokeEnd?.invoke(pts, width, height) ?: false
-        if (keep) strokes.add(StrokeRec(pts, pressures))
+        if (keep) strokes.add(StrokeRec(pts, pressures, startMs, endMs))
 
         if (isDebuggable && latSamples > 0) {
             // 一起把刷新率打出来：屏幕刷新率决定墨迹延迟的**下限**（60Hz ⇒ 每帧 16.7ms）。
@@ -669,6 +717,16 @@ class InkBoardView @JvmOverloads constructor(
         private const val PRESSURE_ABSURD = 4f
     }
 }
+
+/**
+ * 一笔墨迹的带时间快照：点集 + 起止时间（`event.eventTime`，uptimeMillis）。
+ * 供「按书写停顿逐字切分」使用。[pts] 是 [InkBoardView] 内部的列表引用本身。
+ */
+data class StrokeSnapshot(
+    val pts: List<Offset>,
+    val startMs: Long,
+    val endMs: Long
+)
 
 /**
  * 把点串连成平滑笔画（二次贝塞尔取中点过渡），与改造前 Compose 版本**逐点一致**，

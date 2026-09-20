@@ -35,6 +35,39 @@ data class HandwritingResult(
             return second == null || top.confidence - second.confidence >= MARGIN
         }
 
+    /**
+     * 与另一文种模型的结果合并候选（跨文种回退展示用）。
+     *
+     * 规则：**本结果（主文种）的候选保持原顺序在前**；另一结果的候选去重后按原顺序
+     * 追加；截断到 [topK]。
+     *
+     * ⚠️ **刻意不按置信度混排**：不同模型的置信度未经校准，混排会让副文种的
+     * 巧合高置信候选（真机实例：在英文空里写潦草字母 'b'，中文模型输出「占」 0.73
+     * 高于拉丁模型的 b 0.56）排到用户预期候选之前 —— 用户第一眼看到的候选是错的。
+     *
+     * ⚠️ 仅用于**候选条展示/点选**：自动上屏仍要求单模型 [isConfident]。
+     */
+    fun merge(other: HandwritingResult?, topK: Int = Int.MAX_VALUE): HandwritingResult {
+        if (other == null) {
+            return if (candidates.size <= topK) this
+            else copy(candidates = candidates.take(topK))
+        }
+        val seen = HashSet<Char>()
+        val out = ArrayList<Candidate>(minOf(topK, candidates.size + other.candidates.size))
+        for (c in candidates) {
+            if (out.size >= topK) break
+            if (seen.add(c.char)) out.add(c)
+        }
+        for (c in other.candidates) {
+            if (out.size >= topK) break
+            if (seen.add(c.char)) out.add(c)
+        }
+        return HandwritingResult(
+            candidates = out,
+            elapsedMs = maxOf(elapsedMs, other.elapsedMs)
+        )
+    }
+
     data class Candidate(
         /** 字符表索引（0-based，对应 GB2312 一级字顺序） */
         val index: Int,

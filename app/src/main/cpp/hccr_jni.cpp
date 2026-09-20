@@ -4,7 +4,7 @@
 // 单字手写识别 JNI 桥接。
 //
 // 模型：Ismantic/Handwritten (Apache-2.0)，MobileNetV2 → NCNN INT8，
-//       3755 类 GB2312 一级字，top-1 95.47% / top-10 99.58%，INT8 约 4.1MB。
+//       7356 类（HWDB1.0+1.2 全集：7185 汉字 + 171 字母数字符号），自训练 MobileNetV2。
 // 推理：NCNN 纯 CPU，无 Google 服务、无网络请求，完全离线。
 //
 // 生命周期：NativeHandle 在 Kotlin 侧持有，load/net/oracle 的构造与析构配对，
@@ -31,8 +31,8 @@ namespace {
 constexpr int kInputSize = HCCR_CANVAS_SIZE;
 /** Latin（EMNIST）模型输入边长 */
 constexpr int kLatinInputSize = HCCR_LATIN_CANVAS_SIZE;
-/** 模型输出类别数（GB2312 一级字） */
-constexpr int kNumClasses = 3755;
+/** 模型输出类别数（HWDB 全集 7356 类） */
+constexpr int kNumClasses = 7356;
 
 /**
  * 识别器句柄。
@@ -146,7 +146,7 @@ Java_com_ilyskyo_blancall_data_handwriting_HandwritingRecognizer_nativeRecognize
         return env->NewFloatArray(0);
     }
 
-    // 3) 取 top-K：out 可能是 3755 长度的概率（已 softmax）或 logits。
+    // 3) 取 top-K：out 可能是 7356 长度的概率（已 softmax）或 logits。
     //    两种情况下「取最大」的选择都一致，故无需区分。
     int n = out.w;
     if (n > kNumClasses) n = kNumClasses;

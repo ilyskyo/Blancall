@@ -49,7 +49,11 @@ fun HandwritingAnswerSheet(
     blankLabel: String? = null,
     onAnswerChange: (String) -> Unit,
     onDismissRequest: () -> Unit,
-    script: HandwritingScript = HandwritingScript.Chinese
+    script: HandwritingScript = HandwritingScript.Chinese,
+    /** 下一个期望字符（生僻字守卫）；null = 不启用 */
+    expectedNextChar: Char? = null,
+    /** 英文默写的「答案先验」（剩余标准答案）；null = 不启用。 */
+    expectedWord: String? = null
 ) {
     GlassModalBottomSheet(onDismissRequest = onDismissRequest) {
         // ⚠️⚠️ 这里**绝不能再加 `verticalScroll`**：`GlassModalBottomSheet` 内部
@@ -125,7 +129,13 @@ fun HandwritingAnswerSheet(
                 autoCommit = true,
                 onCharsPicked = { chars -> onAnswerChange(answer + chars.joinToString("")) },
                 onUndoLast = { onAnswerChange(answer.dropLast(1)) },
-                script = script
+                script = script,
+                expectedNextChar = expectedNextChar,
+                // 汉字待填字 ⇒ 禁用拉丁回退（用户要求：答案只含汉字不做英文识别）
+                allowLatinFallback = expectedNextChar?.let {
+                    HandwritingScript.isLatinInputChar(it)
+                } != false,
+                expectedWord = expectedWord
             )
 
             Spacer(Modifier.height(8.dp))

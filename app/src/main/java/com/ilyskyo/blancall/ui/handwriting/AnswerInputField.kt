@@ -31,17 +31,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -51,6 +58,7 @@ import com.ilyskyo.blancall.data.handwriting.HandwritingRecognizer
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.penTapToHandwriting
 import com.ilyskyo.blancall.ui.common.suppressAsPalmMisTouch
 import com.ilyskyo.blancall.ui.practice.HintOutlinedField
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -104,7 +112,7 @@ fun AnswerInputField(
     handwritingCompact: Boolean = false,
     /**
      * 识别文种：由调用方按**该空的标准答案**自动选择（见 [HandwritingScript.forAnswer]）。
-     * 英文空走 EMNIST 拉丁模型，中文空走 3755 类汉字模型。
+     * 英文空走 EMNIST 拉丁模型，中文空走 7356 类（HWDB 全集）模型。
      */
     script: HandwritingScript = HandwritingScript.Chinese,
     /**
@@ -117,7 +125,25 @@ fun AnswerInputField(
      * **默认输入方式**，笔来了就写、笔走了回到默认样子；若笔点顺手改写开关，
      * 「默认」就不再是用户选的那个了。
      */
-    onPenTap: (() -> Unit)? = null
+    onPenTap: (() -> Unit)? = null,
+    /**
+     * 忽略「手写模式」开关，**本字段强制走手写态**。
+     *
+     * 用途：笔点在某个作答目标上时，把该目标临时变成书写区 ——
+     * 开关表示的是「没有笔时的默认输入方式」，笔来了就该能手写，
+     * 但不该因为这个动作去改写用户的默认设置。
+     */
+    forceHandwriting: Boolean = false,
+    /**
+     * 该空标准答案中「已输入内容之后的下一个期望字符」；null = 不生僻字守卫。
+     * 由调用方计算（`answer.getOrNull(当前输入长度)`），透传给 [HandwritingPanel]。
+     */
+    expectedNextChar: Char? = null,
+    /**
+     * 英文默写的「答案先验」：本空从当前位置起的剩余标准答案（如已写「L」则为「ove」）；
+     * 透传给 [HandwritingPanel] 做容错匹配（详见面板参数注释）。null = 不启用。
+     */
+    expectedWord: String? = null
 ) {
     // ⚠️⚠️ 这里**不能**只读 HandwritingRecognizer.isNativeAvailable 就完事 —— 那是一个死锁：
     //
@@ -150,7 +176,11 @@ fun AnswerInputField(
     // 「首次组合那次」的实例（与手写面板里踩过的回调陈旧坑同源）。
     val cbPenTap = rememberUpdatedState(onPenTap)
 
-    val useHandwriting = handwritingMode && enabled && allowHandwritingSwitch && engineAvailable
+    // 手写态显示区（内嵌可编辑文本）的焦点入口：
+    // 手指 tap ⇒ requestFocus ⇒ 系统键盘弹出（与键盘态 HintOutlinedField 同一条链路）。
+    val answerFocusRequester = remember { FocusRequester() }
+
+    val useHandwriting = (handwritingMode || forceHandwriting) && enabled && allowHandwritingSwitch && engineAvailable
     // 紧凑模式只在「手写模式开着 + 可用」时生效；否则一律走常规输入框
     val compactHandwriting = handwritingCompact && useHandwriting
 
@@ -175,21 +205,67 @@ fun AnswerInputField(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            if (value.isEmpty()) {
-                                Text(
-                                    placeholder.ifBlank { "用笔在下方书写" },
-                                    style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            } else {
-                                Text(
-                                    value,
-                                    style = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
-                                    maxLines = maxLines
-                                )
-                            }
+                        // 光标位置控制：BasicTextField(String) 的内部 selection 不可控，
+                        // 真机出现「聚焦后光标停在开头闪」；改用受控 TextFieldValue ——
+                        // 聚焦与外部更新（手写上屏 / 退格）时光标都落在串尾（下一个待输入处），
+                        // 点文字中间时由 BasicTextField 自身命中更新 selection。
+                        var tfv by remember {
+                            mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+                        }
+                        LaunchedEffect(value) {
+                            if (tfv.text != value) tfv = TextFieldValue(value, TextRange(value.length))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                // ── 笔点不弹键盘 ──
+                                // 手写态下显示区是「已写内容」，笔点它不应触发 IME 手写模式
+                                // （真机日志证实：系统会请求 IME 手写模式，而多数 IME 静默失败）。
+                                // 书写板就在下方，笔点这里只吞掉事件、不做任何事。
+                                .penTapToHandwriting(enabled = enabled) { /* 笔点无操作 */ }
+                                // ── 手指 tap → 唤出系统键盘，即时打字增删改 ──
+                                // 与「手写/键盘」胶囊（全局默认方式）互不干扰：这里只把焦点
+                                // 交给内嵌的 BasicTextField，键盘打字与手写上屏共用同一个 value。
+                                // 点文字由 BasicTextField 自身命中（光标落在点击处）；
+                                // 点文字以外的空白则聚焦（光标在串尾，适合补写）。
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    // 点空白：光标置尾再聚焦（补写场景），而不是默认留在开头
+                                    tfv = tfv.copy(selection = TextRange(tfv.text.length))
+                                    answerFocusRequester.requestFocus()
+                                }
+                        ) {
+                            BasicTextField(
+                                value = tfv,
+                                onValueChange = {
+                                    tfv = it
+                                    onValueChange(it.text)
+                                },
+                                enabled = enabled,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(answerFocusRequester),
+                                textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                singleLine = singleLine,
+                                maxLines = maxLines,
+                                keyboardOptions = KeyboardOptions(imeAction = imeAction),
+                                decorationBox = { innerTextField ->
+                                    Box {
+                                        if (value.isEmpty()) {
+                                            Text(
+                                                placeholder.ifBlank { "用笔在下方书写" },
+                                                style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                }
+                            )
                         }
                         if (value.isNotEmpty()) {
                             Spacer(Modifier.width(4.dp))
@@ -210,7 +286,15 @@ fun AnswerInputField(
                 onCharsPicked = { chars -> onValueChange(value + chars.joinToString("")) },
                 // 「划掉撤回」：删掉刚上屏的那个字（删到空串即为 no-op，不会越界）
                 onUndoLast = { onValueChange(value.dropLast(1)) },
-                script = script
+                script = script,
+                expectedNextChar = expectedNextChar,
+                // 答案这个位置是汉字 ⇒ 禁用拉丁回退（用户要求：答案只含汉字时不做英文识别，
+                // 防止 A/5 这类拉丁候选混进候选条诱导误点）；待填字是拉丁字符（「A 股」的 A）
+                // 或无待填字（null，自由书写）时保留回退救援。
+                allowLatinFallback = expectedNextChar?.let {
+                    HandwritingScript.isLatinInputChar(it)
+                } != false,
+                expectedWord = expectedWord
             )
         } else if (compactHandwriting) {
             // 手写态（非当前目标）：只呈现已写内容，把纵向空间让给真正的书写板
@@ -318,7 +402,11 @@ fun InlineHandwritingAnswer(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     onDone: (() -> Unit)? = null,
-    script: HandwritingScript = HandwritingScript.Chinese
+    script: HandwritingScript = HandwritingScript.Chinese,
+    /** 下一个期望字符（生僻字守卫，同 [AnswerInputField]）；null = 不启用 */
+    expectedNextChar: Char? = null,
+    /** 英文默写的「答案先验」（剩余标准答案）；null = 不启用。 */
+    expectedWord: String? = null
 ) {
     Column(modifier = modifier.animateContentSize()) {
         if (value.isNotEmpty()) {
@@ -357,7 +445,13 @@ fun InlineHandwritingAnswer(
             // 按批追加（同上面的说明：分多次写会因快照陈旧互相覆盖）
             onCharsPicked = { chars -> onValueChange(value + chars.joinToString("")) },
             onUndoLast = { onValueChange(value.dropLast(1)) },
-            script = script
+            script = script,
+            expectedNextChar = expectedNextChar,
+            // 汉字待填字 ⇒ 禁用拉丁回退（与上方内嵌面板同一规则）
+            allowLatinFallback = expectedNextChar?.let {
+                HandwritingScript.isLatinInputChar(it)
+            } != false,
+            expectedWord = expectedWord
         )
     }
 }
