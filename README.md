@@ -60,6 +60,8 @@ git clone https://github.com/ilyskyo/Blancall.git
 
 本项目源代码以 **MIT 许可证** 发布（见仓库根目录 LICENSE 文件）。
 
+> **许可范围说明**：MIT 许可证的商业使用授权适用于本项目源代码；唯一例外是应用内置的手写识别模型权重文件（`app/src/main/assets/hccr`、`hccr_en`），因训练数据授权限制不在商业授权范围内，仅供学习、研究用途（详见下方「手写识别模型」）。
+
 ### 字体
 
 应用内嵌字体 **Noto Sans SC**（Google 与 Adobe 联合开发，思源黑体 / Noto Sans CJK 系列），遵循 **SIL Open Font License 1.1** 协议，可免费商用、可随应用捆绑分发。
@@ -98,7 +100,7 @@ git clone https://github.com/ilyskyo/Blancall.git
 - **中文模型**：7356 类（HWDB 全集：7185 汉字 + 171 字母数字符号），训练数据为 **CASIA-HWDB**（中国科学院自动化研究所发布的手写汉字数据库，仅限非商业学术研究用途）。
 - **英文/拉丁模型**：47 类（EMNIST Balanced：数字 + 大小写字母），训练数据为 **EMNIST**（NIST 衍生的公开数据集）。
 
-> **用途声明**：因训练数据 CASIA-HWDB 仅限非商业学术研究用途，本手写识别模型仅供学习、研究用途，不得用于任何商业用途。
+> **用途声明**：因训练数据 CASIA-HWDB 仅限非商业学术研究用途，本手写识别模型（模型权重文件）不在 MIT 许可证的商业授权范围内，仅供学习、研究用途，不得用于任何商业用途。
 
 ## 免责声明
 

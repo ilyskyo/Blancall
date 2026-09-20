@@ -52,6 +52,28 @@ Blancall 使用了以下第三方开源组件。本项目自身以 MIT 许可证
    limitations under the License.
 
 ================================================================================
+3. CASIA-HWDB（手写识别模型训练数据，非开源组件）
+   - 数据集：CASIA Online and Offline Chinese Handwriting Databases（CASIA-HWDB）
+   - 发布方：中国科学院自动化研究所（Institute of Automation, CAS）·
+            模式识别国家重点实验室（NLPR）
+   - 用途：本项目内置中文手写识别模型（app/src/main/assets/hccr）的训练数据
+   - 版权：数据库全部样本数据的版权归中国科学院自动化研究所所有
+   - 数据集主页：https://nlpr.ia.ac.cn/databases/handwriting/Home.html
+   - 使用条款要点（学术用途条件）：
+     1. 数据库免费用于学术研究；所有样本不得用于任何商业目的（包括产品开发）；
+     2. 样本数据版权归中国科学院自动化研究所所有；
+     3. 基于该数据库发表研究成果时应适当致谢（推荐引用见下）。
+   - 商业使用：受费用约束，商业授权请联系中科院自动化所
+            （Cheng-Lin Liu，liucl@nlpr.ia.ac.cn）
+   - 推荐引用（数据集官方指定格式）：
+     C.-L. Liu, F. Yin, D.-H. Wang, Q.-F. Wang, "CASIA online and offline Chinese
+     handwriting databases," Proc. 11th International Conference on Document
+     Analysis and Recognition (ICDAR), Beijing, China, 2011, pp. 37-41.
+
+   注：基于该数据训练的手写识别模型权重（assets/hccr、hccr_en）随本项目分发时，
+   同样遵循上述非商业限制（详见 README「手写识别模型」用途声明）。
+
+================================================================================
 
 ================================================================================
 补充合规说明（许可证保留要求）
@@ -61,3 +83,5 @@ Blancall 使用了以下第三方开源组件。本项目自身以 MIT 许可证
   作为 Gradle 依赖原样引用，本项目未修改其源码。
 - 本文件所载版权与许可声明随本仓库一并分发；任何再分发本仓库（或其重要部分）时，
   须一并保留本文件内容。
+- CASIA-HWDB（手写模型训练数据）：样本数据版权归中国科学院自动化研究所所有，仅限
+  学术研究用途；本项目手写识别模型权重随仓库与 APK 分发时，同样不得用于任何商业目的。
