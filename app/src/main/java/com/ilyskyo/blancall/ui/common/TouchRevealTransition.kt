@@ -6,6 +6,13 @@ package com.ilyskyo.blancall.ui.common
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -17,8 +24,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,14 +37,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
+import androidx.navigation.NavOptionsBuilder
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.Flow
 
 /**
- * 触点为源的反向展开页面转场动画（生产级）。
+ * 触点为源的页面展开转场动画（生产级）。
  *
- * 适用：列表元素 / 圆形按钮 → 对应详情页（如首页圆形入口 → 文章列表 / 学习统计）。
- * 禁止用于：底部 Tab 切换、无关联页面跳转、搜索弹窗、Toast/Dialog 等系统覆盖层。
+ * 同一套体系的两条实现路径（共用 [TouchAnchor] / [toTouchAnchor] 触点锚点）：
+ * 1. **[TouchRevealHost]**（覆盖层变体）：目标内容以叠加层形式从触点展开（无导航栈场景 / 弹层展开）；
+ * 2. **[RevealNav]** + [revealEnter] / [revealPopExit] 等（页面路由变体，当前主用）：接入 Compose Navigation
+ *    转场，保留既有返回栈、预测性返回与状态恢复，点击位置 = 页面放大浮出的起点。
+ *
+ * 适用：列表元素 / 卡片 / 圆形按钮 → 对应详情页。
+ * 禁止用于：底部 Tab 切换（无单触点）、任务流页面（练习/跨文，保持滑入）、无触发源的自动跳转。
  *
  * 核心原则：用户点击的位置 = 页面展开的起点。
  * - 进入：scale 0.8→1, alpha 0→1, 圆角 圆(50%)→直(0%)，以触点为 scale 中心，easeOut 320ms。
@@ -211,5 +232,216 @@ fun TouchRevealHost(
         ) {
             target()
         }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 页面路由浮起转场（Nav 驱动，与覆盖层变体共用触点锚点）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 页面浮起转场的锚点登记表（进程内单例，主线程访问）。
+ *
+ * 生命周期：配置变更（旋转）后仍在 → 转场状态可恢复；进程重建即空表 → 转场自动回退默认动画（不会错乱）。
+ *
+ * 协议：
+ * 1. 点击方导航前调用 [NavController.navigateReveal] 登记「基础路由 → 触点锚点」；
+ * 2. 目标页 enterTransition 用 [consume] 消费锚点并绑定到该返回栈条目（[bound]）；
+ * 3. 返回时 popExit 用 [bound] 取回锚点做反向缩回；条目销毁时由 [RevealPageShell] 的 onDispose [forget]。
+ */
+object RevealNav {
+    /** 锚点有效期：防止导航被拦（如同路由 launchSingleTop 命中）后残留锚点污染后续普通导航 */
+    private const val PENDING_TTL_MS = 2_000L
+
+    /** 时间源（测试可注入） */
+    internal var clock: () -> Long = { System.currentTimeMillis() }
+
+    private var pendingRoute: String? = null
+    private var pendingAnchor: TouchAnchor? = null
+    private var pendingAt: Long = 0L
+
+    /** 已浮起展开的返回栈条目（entryId → 锚点），供 popExit 反向缩回 */
+    private val boundByEntry = mutableStateMapOf<String, TouchAnchor>()
+    /** 入场圆角动画已播放的条目（防旋转/重组重放） */
+    private val playedByEntry = mutableStateMapOf<String, Boolean>()
+
+    /** 导航表面尺寸（window px）与内容横向偏移（大屏侧栏让位 px）：把 window 坐标换算为归一化变换原点 */
+    private var surfaceWidth = 0
+    private var surfaceHeight = 0
+    private var surfaceOffsetX = 0f
+
+    /** 路由基础段（跳过参数与查询串）：'reader/12?x=1' → 'reader' */
+    fun baseRoute(route: String): String = route.substringBefore('/').substringBefore('?')
+
+    /** AppNavigation 每次组合同步表面尺寸/大屏让位偏移（旋转、侧栏切换会自动更新） */
+    fun updateSurface(width: Int, height: Int, offsetX: Float) {
+        surfaceWidth = width
+        surfaceHeight = height
+        surfaceOffsetX = offsetX
+    }
+
+    /** 登记下一次浮起导航的锚点（由 [NavController.navigateReveal] 调用） */
+    fun post(route: String, anchor: TouchAnchor) {
+        pendingRoute = baseRoute(route)
+        pendingAnchor = anchor
+        pendingAt = clock()
+    }
+
+    /**
+     * 非消耗探测：该路由当前是否有待用锚点（供源页 exit 判断，可能在 [consume] 前后被调用）。
+     * 过期返回 null（不清理；真正的清理由 [consume] 或下一次 [post] 完成）。
+     */
+    fun pendingFor(routePattern: String): TouchAnchor? {
+        val pr = pendingRoute ?: return null
+        val pa = pendingAnchor ?: return null
+        if (clock() - pendingAt > PENDING_TTL_MS) return null
+        return if (pr == baseRoute(routePattern)) pa else null
+    }
+
+    /**
+     * 入口转场消费：路由匹配且未过期 → 绑定到条目并返回锚点；
+     * 否则清除待用状态并返回 null（后续按普通导航回退默认动画）。
+     */
+    fun consume(routePattern: String, entryId: String): TouchAnchor? {
+        val pr = pendingRoute
+        val pa = pendingAnchor
+        val at = pendingAt
+        pendingRoute = null
+        pendingAnchor = null
+        if (pr == null || pa == null || pr != baseRoute(routePattern)) return null
+        if (clock() - at > PENDING_TTL_MS) return null
+        boundByEntry[entryId] = pa
+        return pa
+    }
+
+    /** 该条目是否以浮起方式进入（及其锚点）；普通进入返回 null */
+    fun bound(entryId: String): TouchAnchor? = boundByEntry[entryId]
+
+    /** 入场圆角动画完成标记（防止旋转/重组重放） */
+    fun markPlayed(entryId: String) {
+        playedByEntry[entryId] = true
+    }
+
+    fun hasPlayed(entryId: String): Boolean = playedByEntry[entryId] == true
+
+    /** 条目销毁后清理（[RevealPageShell] onDispose 调用），避免注册表无限增长 */
+    fun forget(entryId: String) {
+        boundByEntry.remove(entryId)
+        playedByEntry.remove(entryId)
+    }
+
+    /** 测试用：清空全部状态 */
+    internal fun reset() {
+        pendingRoute = null
+        pendingAnchor = null
+        pendingAt = 0L
+        boundByEntry.clear()
+        playedByEntry.clear()
+        surfaceWidth = 0
+        surfaceHeight = 0
+        surfaceOffsetX = 0f
+    }
+
+    /** 触点 → 归一化 TransformOrigin（扣除大屏侧栏让位偏移；尺寸未知时退化为屏幕中心） */
+    fun originOf(anchor: TouchAnchor): TransformOrigin {
+        if (surfaceWidth <= 0 || surfaceHeight <= 0) return TransformOrigin.Center
+        val x = ((anchor.centerX - surfaceOffsetX) / surfaceWidth).coerceIn(0f, 1f)
+        val y = (anchor.centerY / surfaceHeight).coerceIn(0f, 1f)
+        return TransformOrigin(x, y)
+    }
+}
+
+/** 记录元素中心的实时 window 坐标（点击时取用；滚动/布局变化自动更新）。不改变任何点击行为 */
+fun Modifier.trackTouchAnchor(state: MutableState<TouchAnchor?>): Modifier =
+    onGloballyPositioned { state.value = it.boundsInWindow().toTouchAnchor() }
+
+/** 创建触点锚点状态（与 [trackTouchAnchor] 配套） */
+@Composable
+fun rememberTouchAnchor(): MutableState<TouchAnchor?> = remember { mutableStateOf(null) }
+
+/**
+ * 浮起导航：登记触点锚点后执行常规 navigate。
+ * 锚点为 null 时等价于普通 navigate——目标路由的浮起转场会自动回退默认动画（不会错乱）。
+ */
+fun NavController.navigateReveal(
+    route: String,
+    anchor: TouchAnchor?,
+    builder: NavOptionsBuilder.() -> Unit = {},
+) {
+    if (anchor != null) RevealNav.post(route, anchor)
+    navigate(route, builder)
+}
+
+/** 浮起进入：有待用锚点 → 从触点放大浮出（scale 0.84→1 + 渐显）；否则 [fallback]（保持既有观感） */
+fun AnimatedContentTransitionScope<NavBackStackEntry>.revealEnter(fallback: EnterTransition): EnterTransition {
+    val anchor = RevealNav.consume(targetState.destination.route ?: "", targetState.id) ?: return fallback
+    return scaleIn(
+        animationSpec = tween(320, easing = FastOutSlowInEasing),
+        initialScale = 0.84f,
+        transformOrigin = RevealNav.originOf(anchor),
+    ) + fadeIn(tween(220))
+}
+
+/**
+ * 源页退出：本轮为浮起导航（目标页有待用/已绑定锚点）→ 仅轻淡出，
+ * 不与浮起页的放大互相打架；否则 [fallback]。
+ */
+fun AnimatedContentTransitionScope<NavBackStackEntry>.revealExit(fallback: ExitTransition): ExitTransition {
+    val revealed = RevealNav.pendingFor(targetState.destination.route ?: "") != null ||
+        RevealNav.bound(targetState.id) != null
+    return if (revealed) fadeOut(tween(200)) else fallback
+}
+
+/** 返回退出（被弹出的浮起页）：缩放回触点 + 渐隐；非浮起进入的页面回退 [fallback] */
+fun AnimatedContentTransitionScope<NavBackStackEntry>.revealPopExit(fallback: ExitTransition): ExitTransition {
+    val anchor = RevealNav.bound(initialState.id) ?: RevealNav.bound(targetState.id) ?: return fallback
+    return scaleOut(
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        targetScale = 0.84f,
+        transformOrigin = RevealNav.originOf(anchor),
+    ) + fadeOut(tween(160))
+}
+
+/** 返回进入（下方页面重新露出）：上方是浮起页 → 轻渐显（不回滑）；否则 [fallback] */
+fun AnimatedContentTransitionScope<NavBackStackEntry>.revealPopEnter(fallback: EnterTransition): EnterTransition {
+    val fromReveal = RevealNav.bound(initialState.id) != null
+    return if (fromReveal) fadeIn(tween(180)) else fallback
+}
+
+/**
+ * 浮起页面的外壳：入场时圆角 24dp → 0 收束（与 scaleIn 并行，绘相位动画、无逐帧重组）。
+ *
+ * - 仅对「浮起进入」的条目包一层（普通条目零包装、零开销）；
+ * - 包裹与否只看首次组合时的绑定结果（remember 锁存），避免绑定晚到导致包裹层切换、子树重建丢状态；
+ * - 旋转后依赖 [RevealNav.hasPlayed] 不再重放圆角动画（结构保持同一，无缩放比例错乱）；
+ * - 条目销毁时清理注册表（防泄漏）。
+ */
+@Composable
+fun RevealPageShell(entryId: String, content: @Composable () -> Unit) {
+    val revealed = remember { RevealNav.bound(entryId) != null }
+    DisposableEffect(entryId) {
+        onDispose { RevealNav.forget(entryId) }
+    }
+    if (!revealed) {
+        content()
+        return
+    }
+    val animateEntry = remember { !RevealNav.hasPlayed(entryId) }
+    val radiusDp = remember { Animatable(if (animateEntry) 24f else 0f) }
+    LaunchedEffect(Unit) {
+        if (animateEntry) {
+            radiusDp.animateTo(0f, tween(300, easing = FastOutSlowInEasing))
+            RevealNav.markPlayed(entryId)
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                shape = RoundedCornerShape(radiusDp.value.dp)
+                clip = true
+            }
+    ) {
+        content()
     }
 }

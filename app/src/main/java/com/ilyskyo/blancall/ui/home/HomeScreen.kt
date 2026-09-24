@@ -66,12 +66,16 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
+import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.repository.CustomClozeStore
+import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.data.repository.SentenceCardStore
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
@@ -83,9 +87,14 @@ import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GridMaxWidth
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.TouchAnchor
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.iconKeyFromKind
+import com.ilyskyo.blancall.ui.common.navigateReveal
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.toTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.homeGridColumns
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
@@ -302,6 +311,33 @@ fun HomeScreen(
         articles.filter { article ->
             val records = recordsByArticle[article.id].orEmpty()
             EbbinghausScheduler.getReviewStatus(fsrsStates[article.id], records) is EbbinghausScheduler.ReviewStatus.DUE
+        }
+    }
+
+    // ── 句子卡片（每日一句）：到期优先抽句、同日幂等落盘 ──
+    // 抽句与状态推导全部在 IO 线程；随文章加载与 FSRS 状态加载完成自动刷新
+    // （produceState 换 key 会取消上一轮，setTodayIfAbsent 保证同日只抽一次不重复落盘）
+    val sentenceStore = remember { SentenceCardStore.getInstance(context.filesDir) }
+    val sentenceUi by produceState<SentenceDailyUi?>(null, articles, fsrsStates) {
+        if (articles.isEmpty()) {
+            value = null
+            return@produceState
+        }
+        fsrsStore.awaitLoaded()
+        value = withContext(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            val states = fsrsStore.allSentenceStates()
+            val snapshot = DailySentenceCoordinator.ensureToday(sentenceStore, articles, states, now)
+                ?: return@withContext null
+            val title = articles.firstOrNull { it.id == snapshot.articleId }?.title
+                ?.takeIf { it.isNotBlank() } ?: snapshot.title
+            val pendingDue = states.count { (k, s) -> k != snapshot.key && FsrsEngine.isDue(s, now) }
+            SentenceDailyUi(
+                text = snapshot.text,
+                articleTitle = title,
+                statusLine = sentenceStatusLine(states[snapshot.key], now),
+                pendingDueCount = pendingDue,
+            )
         }
     }
 
@@ -670,9 +706,11 @@ fun HomeScreen(
                             )
                         }
                     }
+                    val settingsAnchor = rememberTouchAnchor()
                     GlassButton(
-                        onClick = { navController.navigate("settings") },
+                        onClick = { navController.navigateReveal("settings", settingsAnchor.value) },
                         modifier = Modifier
+                            .trackTouchAnchor(settingsAnchor)
                             // 与搜索栏右侧「添加」按钮等宽对齐
                             .width(if (addButtonWidth > 0.dp) addButtonWidth else 44.dp)
                             .height(40.dp)
@@ -685,7 +723,7 @@ fun HomeScreen(
 
             // ── 搜索栏：常驻显示（不参与折叠），右侧「添加」直导入 ──
             HomeSearchBar(
-                onSearch = { navController.navigate("search") },
+                onSearch = { anchor -> navController.navigateReveal("search", anchor) },
                 onAdd = { navController.navigate("import") },
                 onAddWidthMeasured = { addButtonWidth = it }
             )
@@ -764,7 +802,7 @@ fun HomeScreen(
                         when (card.type) {
                             HomeLayoutStore.CardType.CUSTOM_CLOZE -> {
                                 val aid = withContext(Dispatchers.IO) {
-                                    findClozeConfigArticle(context.filesDir, card.refId)
+                                    findClozeConfigArticle(context.filesDir, card.articleId, card.refId)
                                 }
                                 if (aid != null) {
                                     navController.navigate("custom_cloze_edit/$aid?configId=${card.refId}")
@@ -772,7 +810,7 @@ fun HomeScreen(
                             }
                             HomeLayoutStore.CardType.CUSTOM_MASK -> {
                                 val aid = withContext(Dispatchers.IO) {
-                                    findMaskConfigArticle(context.filesDir, card.refId)
+                                    findMaskConfigArticle(context.filesDir, card.articleId, card.refId)
                                 }
                                 if (aid != null) {
                                     withContext(Dispatchers.IO) {
@@ -830,19 +868,23 @@ fun HomeScreen(
                             onResumePractice = { item ->
                                 navController.navigate("practice/${item.articleId}?resume=true")
                             },
-                            onOpenArticle = { article ->
-                                navController.navigate("reader/${article.id}")
+                            onOpenArticle = { article, anchor ->
+                                navController.navigateReveal("reader/${article.id}", anchor)
                             },
                             onViewAllArticles = { navController.navigateToTab("list") },
                             onAddArticle = { navController.navigate("import") },
                             onOpenClozeConfig = { articleId, configId ->
                                 navController.navigate("practice/$articleId?configId=$configId")
                             },
-                            onOpenMaskConfig = { articleId, _ ->
-                                navController.navigate("reader/$articleId")
+                            onOpenMaskConfig = { articleId, _, anchor ->
+                                navController.navigateReveal("reader/$articleId", anchor)
                             },
                             stats = homeStats,
                             onOpenStats = { navController.navigateToTab("overview") },
+                            sentenceUi = sentenceUi,
+                            onOpenSentenceCard = { anchor ->
+                                navController.navigateReveal("sentence_cards", anchor)
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -861,6 +903,7 @@ fun HomeScreen(
                     Triple(HomeLayoutStore.CardType.CONTINUE, "继续做", "未完成的练习进度"),
                     Triple(HomeLayoutStore.CardType.RECENT, "最近文章", "最近打开过的文章"),
                     Triple(HomeLayoutStore.CardType.ARTICLE, "文章卡片", "把某一篇文章单独放成一张卡"),
+                    Triple(HomeLayoutStore.CardType.SENTENCE, "句子卡片", "每天一句 · 间隔复习"),
                     Triple(HomeLayoutStore.CardType.STATS, "学习数据", "练习次数与正确率"),
                     Triple(HomeLayoutStore.CardType.GLOBAL_STATS, "全局数据", "累计统计概览"),
                     Triple(HomeLayoutStore.CardType.ADD_ARTICLE, "添加文章", "导入新文章的入口")
@@ -874,9 +917,13 @@ fun HomeScreen(
                         homeCards.none { it.type == t }
                     }
                 }
-                val customAddable by produceState<List<HomeLayoutStore.Card>>(emptyList(), homeCards) {
+                val customAddable by produceState<List<HomeLayoutStore.Card>>(emptyList(), homeCards, articles) {
                     value = withContext(Dispatchers.IO) {
-                        collectAddableCustomCards(context.filesDir, homeCards.map { it.id }.toSet())
+                        collectAddableCustomCards(
+                            context.filesDir,
+                            homeCards.map { it.id }.toSet(),
+                            articles.map { it.id }.toSet()
+                        )
                     }
                 }
                 HomeAddCardSheet(
@@ -894,6 +941,7 @@ fun HomeScreen(
                                 HomeLayoutStore.CardType.DUE -> HomeLayoutStore.CARD_ID_DUE
                                 HomeLayoutStore.CardType.CONTINUE -> HomeLayoutStore.CARD_ID_CONTINUE
                                 HomeLayoutStore.CardType.RECENT -> HomeLayoutStore.CARD_ID_RECENT
+                                HomeLayoutStore.CardType.SENTENCE -> HomeLayoutStore.CARD_ID_SENTENCE
                                 HomeLayoutStore.CardType.STATS -> HomeLayoutStore.CARD_ID_STATS
                                 HomeLayoutStore.CardType.GLOBAL_STATS -> HomeLayoutStore.CARD_ID_GLOBAL_STATS
                                 else -> HomeLayoutStore.CARD_ID_ADD
@@ -1076,7 +1124,10 @@ fun HomeScreen(
                     is PickerSelection.Base ->
                         navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
                     PickerSelection.Custom ->
-                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}?pick=true")
+                        navController.navigateReveal(
+                            "custom_cloze_list/${pendingPracticeArticleId}?pick=true",
+                            practiceButtonRect.takeIf { it != Rect.Zero }?.toTouchAnchor(),
+                        )
                 }
             }
         }
@@ -1089,7 +1140,7 @@ fun HomeScreen(
  */
 @Composable
 private fun HomeSearchBar(
-    onSearch: () -> Unit,
+    onSearch: (anchor: TouchAnchor?) -> Unit,
     onAdd: () -> Unit,
     modifier: Modifier = Modifier,
     onAddWidthMeasured: (androidx.compose.ui.unit.Dp) -> Unit = {}
@@ -1099,6 +1150,8 @@ private fun HomeSearchBar(
     val container = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
     val shape = RoundedCornerShape(14.dp)
     val density = LocalDensity.current
+    // 触点锚点：点击时以搜索框中心作为搜索页浮起转场的起点
+    val searchAnchor = rememberTouchAnchor()
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -1112,7 +1165,8 @@ private fun HomeSearchBar(
                 .clip(shape)
                 .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
                 .background(container)
-                .clickable(onClick = onSearch),
+                .trackTouchAnchor(searchAnchor)
+                .clickable { onSearch(searchAnchor.value) },
             contentAlignment = Alignment.CenterStart
         ) {
             Row(
@@ -1501,89 +1555,62 @@ private fun ManageArticleRow(title: String, subtitle: String, onRemove: () -> Un
     }
 }
 
-/** 从 custom_cloze.json 反查某个配置属于哪篇文章（失败返回 null） */
-private fun findClozeConfigArticle(filesDir: java.io.File, configId: Long): Long? = runCatching {
-    val f = java.io.File(filesDir, "custom_cloze.json")
-    if (!f.exists()) return@runCatching null
-    val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching null
-    arts.keys().forEach { key ->
-        val aid = key.toLongOrNull()
-        val arr = arts.optJSONArray(key)
-        if (aid != null && arr != null) {
-            for (i in 0 until arr.length()) {
-                if (arr.optJSONObject(i)?.optLong("id") == configId) return@runCatching aid
-            }
-        }
-    }
-    null
-}.getOrNull()
+/**
+ * 反查挖空配置所属文章（编辑入口）。
+ * 卡片自带 articleId 时按双键精确命中（不跨文章、不串篇）；旧卡（无 articleId）退化为全库扫描兼容。
+ * 读盘语义（含主文件损坏回读 .bak）统一收敛到 [CustomClozeStore]，与卡片反查/添加面板保持一致。
+ */
+private fun findClozeConfigArticle(filesDir: java.io.File, articleId: Long, configId: Long): Long? =
+    runCatching { CustomClozeStore.getInstance(filesDir).findArticleIdByConfigId(configId, articleId) }.getOrNull()
 
-/** 从 mask_config.json 反查某个遮挡配置属于哪篇文章（失败返回 null） */
-private fun findMaskConfigArticle(filesDir: java.io.File, configId: Long): Long? = runCatching {
-    val f = java.io.File(filesDir, "mask_config.json")
-    if (!f.exists()) return@runCatching null
-    val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching null
-    arts.keys().forEach { key ->
-        val aid = key.toLongOrNull()
-        val arr = arts.optJSONArray(key)
-        if (aid != null && arr != null) {
-            for (i in 0 until arr.length()) {
-                if (arr.optJSONObject(i)?.optLong("id") == configId) return@runCatching aid
-            }
-        }
-    }
-    null
-}.getOrNull()
+/** 反查遮挡配置所属文章（与 [findClozeConfigArticle] 同语义） */
+private fun findMaskConfigArticle(filesDir: java.io.File, articleId: Long, configId: Long): Long? =
+    runCatching { MaskConfigStore.getInstance(filesDir).findArticleIdByConfigId(configId, articleId) }.getOrNull()
 
-/** 收集「尚未加入画布」的自定义挖空 / 遮挡卡片（供添加卡片弹窗使用） */
-private fun collectAddableCustomCards(filesDir: java.io.File, taken: Set<String>): List<HomeLayoutStore.Card> {
+/**
+ * 收集「尚未加入画布」的自定义挖空 / 遮挡卡片（供添加卡片弹窗使用）。
+ *
+ * 卡片 id 与 articleId 均带上所属文章：不同文章的同 configId 配置可同时添加且互不串篇；
+ * [validArticleIds] 过滤掉已删除文章的孤儿配置。旧格式卡片 id（无 articleId）仍视为已加入，避免重复添加。
+ */
+private fun collectAddableCustomCards(
+    filesDir: java.io.File,
+    taken: Set<String>,
+    validArticleIds: Set<Long>
+): List<HomeLayoutStore.Card> {
     val out = mutableListOf<HomeLayoutStore.Card>()
     // 自定义挖空
     runCatching {
-        val f = java.io.File(filesDir, "custom_cloze.json")
-        if (!f.exists()) return@runCatching
-        val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching
-        arts.keys().forEach { key ->
-            val arr = arts.optJSONArray(key) ?: return@forEach
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val cid = o.optLong("id")
-                if (cid <= 0) continue
-                val id = HomeLayoutStore.clozeCardId(cid)
-                if (id in taken) continue
-                out += HomeLayoutStore.Card(
-                    id = id,
-                    type = HomeLayoutStore.CardType.CUSTOM_CLOZE,
-                    refId = cid,
-                    colSpan = 1,
-                    rowSpan = 1,
-                    title = o.optString("name", "自定义挖空")
-                )
-            }
+        CustomClozeStore.getInstance(filesDir).listAll().forEach { (aid, cfg) ->
+            if (aid !in validArticleIds) return@forEach
+            val id = HomeLayoutStore.clozeCardId(aid, cfg.id)
+            if (id in taken || "cloze:${cfg.id}" in taken) return@forEach
+            out += HomeLayoutStore.Card(
+                id = id,
+                type = HomeLayoutStore.CardType.CUSTOM_CLOZE,
+                refId = cfg.id,
+                articleId = aid,
+                colSpan = 1,
+                rowSpan = 1,
+                title = cfg.name
+            )
         }
     }
     // 自定义遮挡
     runCatching {
-        val f = java.io.File(filesDir, "mask_config.json")
-        if (!f.exists()) return@runCatching
-        val arts = JSONObject(f.readText()).optJSONObject("articles") ?: return@runCatching
-        arts.keys().forEach { key ->
-            val arr = arts.optJSONArray(key) ?: return@forEach
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val cid = o.optLong("id")
-                if (cid <= 0) continue
-                val id = HomeLayoutStore.maskCardId(cid)
-                if (id in taken) continue
-                out += HomeLayoutStore.Card(
-                    id = id,
-                    type = HomeLayoutStore.CardType.CUSTOM_MASK,
-                    refId = cid,
-                    colSpan = 1,
-                    rowSpan = 1,
-                    title = o.optString("name", "自定义遮挡")
-                )
-            }
+        MaskConfigStore.getInstance(filesDir).listAll().forEach { (aid, cfg) ->
+            if (aid !in validArticleIds) return@forEach
+            val id = HomeLayoutStore.maskCardId(aid, cfg.id)
+            if (id in taken || "mask:${cfg.id}" in taken) return@forEach
+            out += HomeLayoutStore.Card(
+                id = id,
+                type = HomeLayoutStore.CardType.CUSTOM_MASK,
+                refId = cfg.id,
+                articleId = aid,
+                colSpan = 1,
+                rowSpan = 1,
+                title = cfg.name
+            )
         }
     }
     return out

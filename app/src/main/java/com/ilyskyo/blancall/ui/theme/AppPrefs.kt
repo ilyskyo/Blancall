@@ -228,6 +228,16 @@ object AppPrefs {
             }
         }
 
+    /**
+     * 「句子卡片」大卡片的划卡手势提示是否已展示过：仅首次使用时提示一次，之后不再出现。
+     * 进入大卡片即落标记（不等首次划卡）——提示只为新手发现手势，看过一次即可收起，避免长期占位。
+     */
+    var sentenceHintSeen: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("sentence_hint_seen", false) else false
+        set(value) {
+            if (::prefs.isInitialized) prefs.edit { putBoolean("sentence_hint_seen", value) }
+        }
+
     /** 浅色模式米黄底色开关（深色模式始终纯黑） */
     var lightBeigeBackgroundEnabled: Boolean
         get() = if (::prefs.isInitialized) prefs.getBoolean("light_beige_background", false) else false

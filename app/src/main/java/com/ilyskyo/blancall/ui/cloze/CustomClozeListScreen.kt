@@ -44,6 +44,9 @@ import com.ilyskyo.blancall.data.repository.ArticleRepository
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
@@ -162,21 +165,21 @@ fun CustomClozeListScreen(
                 Text("文章不存在或已被删除", color = MaterialTheme.colorScheme.error)
             } else if (configs.isEmpty()) {
                 Spacer(Modifier.height(24.dp))
+                val emptyAnchor = rememberTouchAnchor()
                 Text(
                     "还没有自定义配置，点此创建",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .trackTouchAnchor(emptyAnchor)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
                         .combinedClickable(
                             onClick = {
-                                if (pick) {
-                                    navController.navigate("custom_cloze_edit/$articleId?pick=true")
-                                } else {
-                                    navController.navigate("custom_cloze_edit/$articleId")
-                                }
+                                val route = if (pick) "custom_cloze_edit/$articleId?pick=true"
+                                else "custom_cloze_edit/$articleId"
+                                navController.navigateReveal(route, emptyAnchor.value)
                             }
                         )
                         .padding(16.dp)
@@ -188,10 +191,12 @@ fun CustomClozeListScreen(
                 ) {
                     items(configs.size, key = { configs[it].id }) { idx ->
                         val cfg = configs[idx]
+                        val rowAnchor = rememberTouchAnchor()
                         Box {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .trackTouchAnchor(rowAnchor)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                                     .combinedClickable(
@@ -200,7 +205,10 @@ fun CustomClozeListScreen(
                                                 // 练一把流程：点配置直接开始练习
                                                 navController.navigate("practice/$articleId?configId=${cfg.id}")
                                             } else {
-                                                navController.navigate("custom_cloze_edit/$articleId?configId=${cfg.id}")
+                                                navController.navigateReveal(
+                                                    "custom_cloze_edit/$articleId?configId=${cfg.id}",
+                                                    rowAnchor.value,
+                                                )
                                             }
                                         },
                                         onLongClick = { confirmHaptic(); menuForId = cfg.id }

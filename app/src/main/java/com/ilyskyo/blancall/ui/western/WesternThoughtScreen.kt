@@ -81,6 +81,10 @@ import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.TouchAnchor
+import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
@@ -137,8 +141,8 @@ fun WesternThoughtScreen(navController: NavController) {
             modifier = Modifier.fillMaxSize()
         ) {
             items(BUILT_IN_LIBRARIES.filter { it.id in enabledLibraries }) { lib ->
-                LibraryCard(lib = lib) {
-                    navController.navigate("philo_content/${lib.id}")
+                LibraryCard(lib = lib) { anchor ->
+                    navController.navigateReveal("philo_content/${lib.id}", anchor)
                 }
             }
         }
@@ -156,10 +160,12 @@ fun WesternThoughtScreen(navController: NavController) {
 @Composable
 private fun LibraryCard(
     lib: BuiltInLibrary,
-    onClick: () -> Unit
+    onClick: (TouchAnchor?) -> Unit
 ) {
     val isDark = isBlancallDark()
     val accent = Color(lib.accentColor)
+    // 触点锚点：点击时以卡片中心作为内容页浮起转场的起点
+    val anchor = rememberTouchAnchor()
 
     // 毛玻璃底（与顶栏 / 菜单 0.72 一致）
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
@@ -184,12 +190,13 @@ private fun LibraryCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(104.dp)
+            .trackTouchAnchor(anchor)
             .clip(shape)
             .border(1.dp, hairline, shape)
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
-                onClick = onClick
+                onClick = { onClick(anchor.value) }
             ),
         shape = shape,
         color = if (isPressed) pressedBg else bgColor,

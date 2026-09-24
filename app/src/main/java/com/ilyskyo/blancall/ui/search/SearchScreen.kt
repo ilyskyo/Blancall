@@ -54,6 +54,10 @@ import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.TouchAnchor
+import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
@@ -149,7 +153,9 @@ fun SearchScreen(navController: NavController) {
                                 article = article,
                                 query = trimmed,
                                 dateFmt = dateFmtDash,
-                                onClick = { navController.navigate("reader/${article.id}") }
+                                onClick = { anchor ->
+                                    navController.navigateReveal("reader/${article.id}", anchor)
+                                }
                             )
                         }
                     }
@@ -229,12 +235,14 @@ private fun SearchResultCard(
     article: Article,
     query: String,
     dateFmt: SimpleDateFormat,
-    onClick: () -> Unit
+    onClick: (TouchAnchor?) -> Unit
 ) {
     val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
     val bgColor = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
     val shape = RoundedCornerShape(16.dp)
+    // 触点锚点：点击时以结果卡中心作为阅读页浮起转场的起点
+    val anchor = rememberTouchAnchor()
 
     Box(
         modifier = Modifier
@@ -243,7 +251,8 @@ private fun SearchResultCard(
             .clip(shape)
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
             .background(bgColor)
-            .clickable(onClick = onClick)
+            .trackTouchAnchor(anchor)
+            .clickable { onClick(anchor.value) }
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)

@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,7 +60,14 @@ import com.ilyskyo.blancall.ui.common.BottomNavBar
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.NavRail
 import com.ilyskyo.blancall.ui.common.NavRailWidth
+import com.ilyskyo.blancall.ui.common.RevealNav
+import com.ilyskyo.blancall.ui.common.RevealPageShell
+import com.ilyskyo.blancall.ui.common.revealEnter
+import com.ilyskyo.blancall.ui.common.revealExit
+import com.ilyskyo.blancall.ui.common.revealPopEnter
+import com.ilyskyo.blancall.ui.common.revealPopExit
 import com.ilyskyo.blancall.ui.home.HomeScreen
+import com.ilyskyo.blancall.ui.home.SentenceCardScreen
 import com.ilyskyo.blancall.ui.import.ImportScreen
 import com.ilyskyo.blancall.ui.list.ListScreen
 import com.ilyskyo.blancall.ui.ai.AiConfigScreen
@@ -202,6 +212,18 @@ fun AppNavigation() {
     val railWidthState = remember { mutableStateOf(0.dp) }
     val railReserved = if (isLargeScreen && currentTab >= 0) NavRailWidth else 0.dp
 
+    // 浮起转场：把当前导航表面尺寸（窗口 px）与大屏侧栏让位偏移同步给 RevealNav，
+    // 用于把触点 window 坐标换算为归一化变换原点（旋转 / 侧栏切换自动更新）
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    SideEffect {
+        RevealNav.updateSurface(
+            windowInfo.containerSize.width,
+            windowInfo.containerSize.height,
+            with(density) { railReserved.toPx() },
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -325,13 +347,15 @@ fun AppNavigation() {
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType }
             ),
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            ReaderScreen(navController, articleId)
+            RevealPageShell(backStackEntry.id) {
+                ReaderScreen(navController, articleId)
+            }
         }
 
         // 自定义挖空配置列表页（新建 / 点击编辑或直接开练 / 长按开始练习·重命名·删除）
@@ -345,14 +369,16 @@ fun AppNavigation() {
                     defaultValue = "false"
                 }
             ),
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
             val pick = backStackEntry.arguments?.getString("pick") == "true"
-            CustomClozeListScreen(navController, articleId, pick)
+            RevealPageShell(backStackEntry.id) {
+                CustomClozeListScreen(navController, articleId, pick)
+            }
         }
 
         // 自定义挖空模板编辑页（按文章保存多套配置）；pick=true：保存后直接开始练习
@@ -369,15 +395,17 @@ fun AppNavigation() {
                     defaultValue = "false"
                 }
             ),
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
             val configId = backStackEntry.arguments?.getLong("configId") ?: -1L
             val pick = backStackEntry.arguments?.getString("pick") == "true"
-            CustomClozeEditScreen(navController, articleId, configId, pick)
+            RevealPageShell(backStackEntry.id) {
+                CustomClozeEditScreen(navController, articleId, configId, pick)
+            }
         }
 
         composable(
@@ -456,23 +484,40 @@ fun AppNavigation() {
 
         composable(
             "settings",
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
-        ) {
-            SettingsScreen(navController)
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+        ) { backStackEntry ->
+            RevealPageShell(backStackEntry.id) {
+                SettingsScreen(navController)
+            }
         }
 
         // 首页搜索页（搜索标题 / 正文 / 添加日期）
         composable(
             "search",
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
-        ) {
-            SearchScreen(navController)
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+        ) { backStackEntry ->
+            RevealPageShell(backStackEntry.id) {
+                SearchScreen(navController)
+            }
+        }
+
+        // 句子卡片大卡片界面（首页小卡片点入；华为堆叠形态：划卡 + 三键评级）
+        composable(
+            "sentence_cards",
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+        ) { backStackEntry ->
+            RevealPageShell(backStackEntry.id) {
+                SentenceCardScreen(navController)
+            }
         }
 
         // 首次使用引导页（首启自动进入；设置里可从「帮助」重看）
@@ -488,12 +533,14 @@ fun AppNavigation() {
 
         composable(
             "help",
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
-        ) {
-            HelpScreen(navController)
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+        ) { backStackEntry ->
+            RevealPageShell(backStackEntry.id) {
+                HelpScreen(navController)
+            }
         }
 
         // 内置素材库卡片页（底部「素材库」tab 进入，同级根页面，无返回键）
@@ -514,13 +561,15 @@ fun AppNavigation() {
             arguments = listOf(
                 navArgument("libraryId") { type = NavType.StringType }
             ),
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
             val libraryId = backStackEntry.arguments?.getString("libraryId") ?: "western"
-            LibraryContentPage(navController, libraryId)
+            RevealPageShell(backStackEntry.id) {
+                LibraryContentPage(navController, libraryId)
+            }
         }
 
         // 内置 PDF 预览页（点开素材库单篇 PDF 在 app 内预览）
@@ -545,13 +594,15 @@ fun AppNavigation() {
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType }
             ),
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            StatisticsScreen(navController, articleId)
+            RevealPageShell(backStackEntry.id) {
+                StatisticsScreen(navController, articleId)
+            }
         }
 
         composable(

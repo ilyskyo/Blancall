@@ -5,6 +5,7 @@ package com.ilyskyo.blancall.data.repository
 
 import android.util.Log
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.SentenceSelector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -17,10 +18,19 @@ import java.util.concurrent.CountDownLatch
  *
  * 以文章 id 为键保存 [FsrsEngine.CardState]，练习完成时更新、页面查询时读取。
  * 文件格式：{"articleId": {"difficulty":..,"stability":..,"due":..,"lastReview":..,"reviewCount":..,"lapses":..}}
+ *
+ * 「句子卡片」的句子级状态复用同一文件、同一把锁与同一套备份机制，
+ * 以字符串命名空间键 `s:<articleId>:<hash16>` 区分（见 [sentenceStates]）：
+ * - 数值键 → 文章级 states（原读写路径与语义完全不变，[allStates] 只含文章级）；
+ * - `s:` 前缀键 → 句子级 sentenceStates；
+ * - 其余键静默忽略（前后兼容：旧版本读非数值键会忽略，写回只丢句子键、不回损文章状态）。
  */
 class FsrsStateStore private constructor(private val file: File) {
 
     private val states = ConcurrentHashMap<Long, FsrsEngine.CardState>()
+
+    /** 句子级记忆状态：键 = `s:<articleId>:<hash16>`（hash16 = SHA-256(句文) 前 8 字节 hex） */
+    private val sentenceStates = ConcurrentHashMap<String, FsrsEngine.CardState>()
     // 加载完成门闩：后台加载完成后 countDown；save/remove 前需等加载完成，避免 persist 覆盖丢旧状态
     private val loadLatch = CountDownLatch(1)
     // 落盘互斥：persist() 是「全量序列化 → 写 tmp → rename」。
@@ -29,6 +39,9 @@ class FsrsStateStore private constructor(private val file: File) {
     private val persistLock = Any()
 
     companion object {
+        /** 句子键前缀（命名空间分隔）；单一来源在 [SentenceSelector.SENTENCE_KEY_PREFIX] */
+        const val SENTENCE_KEY_PREFIX = SentenceSelector.SENTENCE_KEY_PREFIX
+
         @Volatile
         private var instance: FsrsStateStore? = null
 
@@ -82,13 +95,12 @@ class FsrsStateStore private constructor(private val file: File) {
         }
     }
 
-    /** 解析 JSON 并灌入内存状态（单条损坏不影响其余，逐键容忍） */
+    /** 解析 JSON 并灌入内存状态（单条损坏不影响其余，逐键容忍；句子键与文章键按前缀分流） */
     private fun parseInto(json: String) {
         val obj = JSONObject(json)
         obj.keys().forEach { key ->
-            val id = key.toLongOrNull() ?: return@forEach
             val o = obj.optJSONObject(key) ?: return@forEach
-            states[id] = FsrsEngine.CardState(
+            val state = FsrsEngine.CardState(
                 difficulty = o.optDouble("difficulty", 0.0),
                 stability = o.optDouble("stability", 0.0),
                 due = o.optLong("due", 0L),
@@ -96,19 +108,33 @@ class FsrsStateStore private constructor(private val file: File) {
                 reviewCount = o.optInt("reviewCount", 0),
                 lapses = o.optInt("lapses", 0)
             )
+            if (key.startsWith(SENTENCE_KEY_PREFIX)) {
+                if (isSentenceKey(key)) sentenceStates[key] = state
+            } else {
+                val id = key.toLongOrNull() ?: return@forEach
+                states[id] = state
+            }
         }
     }
+
+    /** 句子键合法性：`s:<数字articleId>:<非空hash>`，防止脏键污染句子表 */
+    private fun isSentenceKey(key: String): Boolean {
+        val parts = key.split(':')
+        return parts.size == 3 && parts[1].toLongOrNull() != null && parts[2].isNotBlank()
+    }
+
+    private fun stateToJson(s: FsrsEngine.CardState): JSONObject = JSONObject()
+        .put("difficulty", s.difficulty).put("stability", s.stability)
+        .put("due", s.due).put("lastReview", s.lastReview)
+        .put("reviewCount", s.reviewCount).put("lapses", s.lapses)
 
     private fun persist() {
         try {
             file.parentFile?.mkdirs()
             val json = JSONObject()
-            states.forEach { (id, s) ->
-                json.put(id.toString(), JSONObject()
-                    .put("difficulty", s.difficulty).put("stability", s.stability)
-                    .put("due", s.due).put("lastReview", s.lastReview)
-                    .put("reviewCount", s.reviewCount).put("lapses", s.lapses))
-            }
+            states.forEach { (id, s) -> json.put(id.toString(), stateToJson(s)) }
+            // 句子级状态与文章级同文件共存，键即命名空间（旧版本读非数值键时忽略）
+            sentenceStates.forEach { (key, s) -> json.put(key, stateToJson(s)) }
             val tmp = File(file.parentFile, file.name + ".tmp")
             tmp.writeText(json.toString())
             val mainFile = file
@@ -147,6 +173,38 @@ class FsrsStateStore private constructor(private val file: File) {
         }
     }
 
-    /** 全部状态（只读视图，供预测与列表页面使用） */
+    /** 全部状态（只读视图，供预测与列表页面使用）；仅文章级，语义与历史一致 */
     fun allStates(): Map<Long, FsrsEngine.CardState> = states.toMap()
+
+    // ────────────────────────────────────────────────
+    // 句子级状态（「句子卡片」专用；与文章级互不影响）
+    // ────────────────────────────────────────────────
+
+    /** 获取某句子的记忆状态；未练习过返回 null */
+    fun getSentence(key: String): FsrsEngine.CardState? = sentenceStates[key]
+
+    /** 保存（更新）某句子的记忆状态；键不合法时直接忽略（防脏键写入） */
+    fun saveSentence(key: String, state: FsrsEngine.CardState) {
+        if (!isSentenceKey(key)) return
+        loadLatch.await()
+        synchronized(persistLock) {
+            sentenceStates[key] = state
+            persist()
+        }
+    }
+
+    /** 删除某文章的全部句子状态（文章删除时连带清理，避免孤儿状态） */
+    fun removeSentencesForArticle(articleId: Long) {
+        loadLatch.await()
+        synchronized(persistLock) {
+            val prefix = "$SENTENCE_KEY_PREFIX$articleId:"
+            val removed = sentenceStates.keys.filter { it.startsWith(prefix) }
+            if (removed.isEmpty()) return
+            removed.forEach { sentenceStates.remove(it) }
+            persist()
+        }
+    }
+
+    /** 全部句子级状态（只读视图，供到期判定与句子记忆统计使用） */
+    fun allSentenceStates(): Map<String, FsrsEngine.CardState> = sentenceStates.toMap()
 }

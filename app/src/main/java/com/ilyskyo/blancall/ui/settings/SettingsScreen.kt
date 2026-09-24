@@ -42,6 +42,9 @@ import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.data.ai.AiConfigStore
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.theme.AccentPresets
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderFrequency
@@ -573,10 +576,13 @@ fun SettingsScreen(navController: NavController) {
                     Modifier.padding(horizontal = 16.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                 )
+                val helpAnchor = rememberTouchAnchor()
                 Surface(
-                    onClick = { navController.navigate("help") },
+                    onClick = { navController.navigateReveal("help", helpAnchor.value) },
                     color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .trackTouchAnchor(helpAnchor)
                 ) {
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),

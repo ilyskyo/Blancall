@@ -17,10 +17,12 @@ import java.io.File
  * - **pinned**：左上角大头针。固定的卡片在重排（新增/拖拽其他卡）时保持其槽位不被移动
  *
  * 卡片 id 约定：
- * - 系统卡：`"due"` / `"continue"` / `"recent"`（内容由系统提供，可删除后重新添加）
+ * - 系统卡：`"due"` / `"continue"` / `"recent"` / `"sentence"`（内容由系统提供，可删除后重新添加）
  * - 入口卡：`"add"`（添加文章）
  * - 文章卡：`"article:<articleId>"`（单独把某一篇文章放成一张卡，refId = 文章 id）
- * - 自定义卡：`"cloze:<configId>"` / `"mask:<configId>"`（关联用户的自定义挖空/遮挡配置）
+ * - 自定义卡：`"cloze:<articleId>:<configId>"` / `"mask:<articleId>:<configId>"`（关联用户的自定义挖空/遮挡配置；
+ *   配置 id 仅文章内自增、非全局唯一，必须带文章 id 才能唯一定位。旧格式 `"cloze:<configId>"` 仍可读，
+ *   反查时按 configId 全库兼容扫描）
  *
  * 持久化：filesDir/home_layout.json
  * {"version":1,"cards":[{"id":"due","type":"DUE","refId":-1,"colSpan":2,"rowSpan":1,"pinned":false,"title":""}]}
@@ -60,7 +62,13 @@ class HomeLayoutStore private constructor(private val file: File) {
          * 文章卡片：把某一篇具体文章单独放成一张卡（`refId` = 文章 id）。
          * 与「最近文章」不同：内容固定为指定文章，不随最近打开变化。
          */
-        ARTICLE
+        ARTICLE,
+
+        /**
+         * 句子卡片（每日一句）：每天自动抽一个完整句子展示，点入大卡片做句子级 FSRS 复习。
+         * 内容由系统提供（无 refId），与其它系统卡一样可删除后从「添加卡片」重新加回。
+         */
+        SENTENCE
     }
 
     /** 一张首页卡片 */
@@ -70,6 +78,8 @@ class HomeLayoutStore private constructor(private val file: File) {
         val type: CardType,
         /** 关联的配置 id（仅 CUSTOM_CLOZE / CUSTOM_MASK 有意义） */
         val refId: Long = -1L,
+        /** 关联配置所属文章 id（仅 CUSTOM_CLOZE / CUSTOM_MASK 有意义；-1 = 旧数据未知，反查时兼容扫描） */
+        val articleId: Long = -1L,
         /** 占列数（1~2） */
         val colSpan: Int = 2,
         /** 占行数（1~4） */
@@ -101,7 +111,8 @@ class HomeLayoutStore private constructor(private val file: File) {
 
     /**
      * 读取根节点。与 MaskConfigStore 同款安全语义：
-     * ① 主文件损坏 → 回读 .bak；② 备份也不可用 → 置 loadFailed 并拒绝写盘。
+     * ① 主文件损坏 → 先另存 .corrupt-<ts>（供事后人工恢复）再回读 .bak；
+     * ② 备份也不可用 → 置 loadFailed 并拒绝写盘。
      */
     private fun readRoot(): JSONObject {
         if (file.exists()) {
@@ -109,7 +120,8 @@ class HomeLayoutStore private constructor(private val file: File) {
                 loadFailed = false
                 return migrate(JSONObject(file.readText()))
             } catch (_: Exception) {
-                // 落到下方备份分支
+                // 主文件损坏：保留现场后落到下方备份分支
+                preserveCorruptFile()
             }
         }
         val bak = File(file.parentFile, file.name + ".bak")
@@ -124,6 +136,17 @@ class HomeLayoutStore private constructor(private val file: File) {
         // 文件确实不存在（首次使用）→ 空库；文件存在却读不出来且无备份 → 危险状态，禁止写盘
         loadFailed = file.exists()
         return freshRoot()
+    }
+
+    /**
+     * 主文件解析失败时另存一份 .corrupt-<ts>（尽力而为）：
+     * 否则后续写盘会以 bak 快照 + 新改动覆盖主文件，损坏现场无法人工找回。
+     */
+    private fun preserveCorruptFile() {
+        try {
+            val dst = File(file.parentFile, file.name + ".corrupt-" + System.currentTimeMillis())
+            if (!file.renameTo(dst)) file.copyTo(dst, overwrite = true)
+        } catch (_: Exception) { /* 保留失败不影响主流程 */ }
     }
 
     /** 版本迁移钩子 */
@@ -177,6 +200,7 @@ class HomeLayoutStore private constructor(private val file: File) {
                     id = id,
                     type = type,
                     refId = o.optLong("refId", -1L),
+                    articleId = o.optLong("articleId", -1L),
                     colSpan = clampCol(o.optInt("colSpan", 2)),
                     rowSpan = clampRow(o.optInt("rowSpan", 1)),
                     pinned = o.optBoolean("pinned", false),
@@ -199,6 +223,7 @@ class HomeLayoutStore private constructor(private val file: File) {
                     .put("id", c.id)
                     .put("type", c.type.name)
                     .put("refId", c.refId)
+                    .put("articleId", c.articleId)
                     .put("colSpan", clampCol(c.colSpan))
                     .put("rowSpan", clampRow(c.rowSpan))
                     .put("pinned", c.pinned)
@@ -227,9 +252,11 @@ class HomeLayoutStore private constructor(private val file: File) {
         const val CARD_ID_ADD = "add"
         const val CARD_ID_STATS = "stats"
         const val CARD_ID_GLOBAL_STATS = "global_stats"
+        const val CARD_ID_SENTENCE = "sentence"
 
-        fun clozeCardId(configId: Long) = "cloze:$configId"
-        fun maskCardId(configId: Long) = "mask:$configId"
+        /** 自定义卡 id：含文章 id（配置 id 仅文章内自增，不带文章 id 会跨文章遮蔽/串篇） */
+        fun clozeCardId(articleId: Long, configId: Long) = "cloze:$articleId:$configId"
+        fun maskCardId(articleId: Long, configId: Long) = "mask:$articleId:$configId"
         fun articleCardId(articleId: Long) = "article:$articleId"
 
         @Volatile
@@ -240,11 +267,12 @@ class HomeLayoutStore private constructor(private val file: File) {
                 instance ?: HomeLayoutStore(File(filesDir, "home_layout.json")).also { instance = it }
             }
 
-        /** 首次使用的默认布局：待复习 + 继续做 + 最近文章 + 添加文章入口 */
+        /** 首次使用的默认布局：待复习 + 继续做 + 最近文章 + 句子卡片 + 添加文章入口 */
         fun defaultCards(): List<Card> = listOf(
             Card(CARD_ID_DUE, CardType.DUE),
             Card(CARD_ID_CONTINUE, CardType.CONTINUE),
             Card(CARD_ID_RECENT, CardType.RECENT),
+            Card(CARD_ID_SENTENCE, CardType.SENTENCE),
             Card(CARD_ID_ADD, CardType.ADD_ARTICLE)
         )
     }

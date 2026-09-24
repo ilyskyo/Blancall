@@ -52,12 +52,17 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.AchievementManager
 import com.ilyskyo.blancall.algorithm.CsvExporter
 import com.ilyskyo.blancall.algorithm.ForgettingPredictor
+import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.toTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
@@ -114,6 +119,19 @@ private data class OverviewStats(
     val totalDuration: Long,
     val dailyCounts: List<Int>,   // 近84天每日练习次数
     val todayCount: Int            // 今日已练习次数
+)
+
+/**
+ * 「句子记忆」统计快照：全部取自句子级 FSRS 状态（不写练习记录，与练习统计口径隔离）。
+ * - 遗忘率 = Σlapses / ΣreviewCount（记住率的补数）
+ * - 平均留存 = mean([FsrsEngine.retentionRate])，与文章记忆留存率同函数同参数
+ */
+private data class SentenceMemoryStats(
+    val learnedCount: Int,
+    val reviews: Int,
+    val lapseRate: Float,
+    val avgRetention: Float,
+    val dueCount: Int,
 )
 
 /** 弱点画像五维度占比 */
@@ -181,7 +199,8 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         val overallRate = if (totalBlanks > 0) totalCorrect.toFloat() / totalBlanks else 0f
 
         val byArticle = allRecords.groupBy { it.articleId }
-        val articleCount = byArticle.size
+        // 覆盖文章数不含跨文练习（articleId=-1，无单篇归属）
+        val articleCount = byArticle.keys.count { it > 0L }
 
         // 各模式统计（含反向默写）
         val sentenceRecords = allRecords.filter { it.mode == "SENTENCE" }
@@ -205,13 +224,14 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         val olderBlanks = olderRecords.sumOf { it.totalBlanks }
         val olderRate = if (olderBlanks > 0) olderCorrect.toFloat() / olderBlanks else 0f
 
-        // 易错文章（正确率最低的3篇）
+        // 易错文章（正确率最低的3篇；不含跨文练习——articleId=-1 无单篇统计页）
         val weakestArticles = byArticle.entries
             .map { (articleId, records) ->
                 val c = records.sumOf { it.correctCount }
                 val t = records.sumOf { it.totalBlanks }
                 Triple(articleId, if (t > 0) c.toFloat() / t else 0f, records.size)
             }
+            .filter { it.first > 0L }
             .sortedBy { it.second }
             .take(3)
 
@@ -280,14 +300,33 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     }
     // FSRS 状态后台加载：首帧先渲染，加载完成后刷新，避免同步读文件卡顿导致预测短暂失真
     var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
+    // 句子卡片（每日一句）的句子级状态：同源加载，供「句子记忆」统计块使用
+    var sentenceStates by remember { mutableStateOf(fsrsStore.allSentenceStates()) }
     LaunchedEffect(Unit) {
         fsrsStore.awaitLoaded()
         fsrsStates = fsrsStore.allStates()
+        sentenceStates = fsrsStore.allSentenceStates()
     }
     val predictions = remember(articles, allRecords, template, fsrsStates) {
         ForgettingPredictor.predict(articles, allRecords, template, fsrsStates)
     }
     val dueSoon = remember(predictions) { ForgettingPredictor.dueSoon(predictions).take(5) }
+
+    // ── 句子记忆统计：取自句子级 FSRS 状态，留存率口径与文章一致（同函数同参数）──
+    val sentenceStats = remember(sentenceStates) {
+        val seen = sentenceStates.values.filter { it.reviewCount > 0 }
+        val reviews = seen.sumOf { it.reviewCount }
+        val lapses = seen.sumOf { it.lapses }
+        val nowTs = System.currentTimeMillis()
+        SentenceMemoryStats(
+            learnedCount = seen.size,
+            reviews = reviews,
+            lapseRate = if (reviews > 0) lapses.toFloat() / reviews else 0f,
+            avgRetention = if (seen.isEmpty()) 0f
+            else (seen.sumOf { FsrsEngine.retentionRate(it, nowTs) } / seen.size).toFloat(),
+            dueCount = seen.count { nowTs >= it.due },
+        )
+    }
 
     // ── 弱点画像：四维度错误占比 ──
     val weakness = remember(mistakeAgg) {
@@ -606,6 +645,35 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 }
             }
 
+            // ── 句子记忆（首页「句子卡片」有数据时显示；不写练习记录，与练习统计口径隔离） ──
+            if (sentenceStats.learnedCount > 0) {
+                item {
+                    AnimatedOverviewCard {
+                        GlassCard {
+                            Column(Modifier.padding(16.dp)) {
+                                Text("句子记忆", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(Modifier.height(10.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                    StatItem("已记句子", "${sentenceStats.learnedCount}句", fontSize = 16.sp)
+                                    StatItem("累计复习", "${sentenceStats.reviews}次", fontSize = 16.sp)
+                                    StatItem("遗忘率", "${(sentenceStats.lapseRate * 100).toInt()}%", fontSize = 16.sp)
+                                    StatItem("平均留存", "${(sentenceStats.avgRetention * 100).toInt()}%", fontSize = 16.sp)
+                                }
+                                if (sentenceStats.dueCount > 0) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "今日待复习 ${sentenceStats.dueCount} 句",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── 趋势分析分组 ──
             item {
                 Text("趋势分析", style = MaterialTheme.typography.titleSmall,
@@ -749,10 +817,13 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             for ((articleId, rate, count) in stats.weakestArticles) {
+                                val anchor = rememberTouchAnchor()
                                 GlassCard(
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .trackTouchAnchor(anchor),
                                     containerColor = Macaron.neutral().fill,
-                                    onClick = { navController.navigate("statistics/$articleId") }
+                                    onClick = { navController.navigateReveal("statistics/$articleId", anchor.value) }
                                 ) {
                                     Row(
                                         Modifier.padding(12.dp).fillMaxWidth(),
@@ -778,10 +849,13 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     }
                 } else {
                     items(stats.weakestArticles, key = { it.first }) { (articleId, rate, count) ->
+                        val anchor = rememberTouchAnchor()
                         GlassCard(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .trackTouchAnchor(anchor),
                             containerColor = Macaron.neutral().fill,
-                            onClick = { navController.navigate("statistics/$articleId") }
+                            onClick = { navController.navigateReveal("statistics/$articleId", anchor.value) }
                         ) {
                             Row(
                                 Modifier.padding(12.dp).fillMaxWidth(),
@@ -822,7 +896,10 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     is PickerSelection.Base ->
                         navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
                     PickerSelection.Custom ->
-                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}?pick=true")
+                        navController.navigateReveal(
+                            "custom_cloze_list/${pendingPracticeArticleId}?pick=true",
+                            practiceButtonRect.takeIf { it != Rect.Zero }?.toTouchAnchor(),
+                        )
                 }
             }
         }

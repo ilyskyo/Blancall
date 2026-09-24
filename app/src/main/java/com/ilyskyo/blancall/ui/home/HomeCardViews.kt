@@ -48,13 +48,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.TouchAnchor
 import com.ilyskyo.blancall.ui.common.listItemEnter
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
@@ -64,7 +68,6 @@ import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 /**
  * 首页画布「卡片内容」层。
@@ -83,6 +86,21 @@ import org.json.JSONObject
 
 /** 窄卡阈值：宽度小于该值（典型为 colSpan=1）时收紧内边距、隐藏次要信息 */
 private val NARROW_CARD_WIDTH = 168.dp
+
+/**
+ * 首页「句子卡片」的数据快照。
+ * 由宿主在 HomeScreen 里抽句并算好后传入，卡片自身不做抽句与状态推导。
+ */
+data class SentenceDailyUi(
+    /** 句文（展示主体） */
+    val text: String,
+    /** 来源文章标题（实时取文章列表，缺失回落快照标题） */
+    val articleTitle: String,
+    /** 状态行：第一次记忆 / 待复习 · 上次 N 天前 / 已记录 · 下次 M 天后 */
+    val statusLine: String,
+    /** 今日句之外还有多少到期句（>0 时卡片尾部补「还有 N 句待复习」） */
+    val pendingDueCount: Int = 0,
+)
 
 /**
  * 首页「学习数据 / 全局数据」卡片的数据快照。
@@ -161,22 +179,26 @@ fun HomeCardContent(
     onPracticeArticle: (articleId: Long) -> Unit,
     /** 点「继续」→ 宿主按 mode 恢复练习 */
     onResumePractice: (item: ResumableItem) -> Unit,
-    /** 点最近文章卡 → 打开阅读页 */
-    onOpenArticle: (article: Article) -> Unit,
+    /** 点最近文章卡 → 打开阅读页（第二参为点击时的触点锚点，供页面浮起转场定位） */
+    onOpenArticle: (article: Article, anchor: TouchAnchor?) -> Unit,
     /** 「查看全部」→ 宿主跳文章列表 tab */
     onViewAllArticles: () -> Unit,
     /** 点「添加文章」入口卡 → 宿主跳导入页 */
     onAddArticle: () -> Unit,
     /** 点自定义挖空卡 → 宿主跳 `practice/<articleId>?configId=<configId>` */
     onOpenClozeConfig: (articleId: Long, configId: Long) -> Unit,
-    /** 点自定义遮挡卡 → 宿主跳阅读页（写状态由本组件完成，见 [CustomMaskCard]） */
-    onOpenMaskConfig: (articleId: Long, configId: Long) -> Unit,
+    /** 点自定义遮挡卡 → 宿主跳阅读页（写状态由本组件完成，见 [CustomMaskCard]；第三参为触点锚点） */
+    onOpenMaskConfig: (articleId: Long, configId: Long, anchor: TouchAnchor?) -> Unit,
     /** 自定义配置的外部修订号：配置被重命名/删除后宿主自增即可触发重新反查 */
     configRevision: Long = 0L,
     /** 学习数据 / 全局数据卡片的统计快照（由宿主算好传入） */
     stats: HomeStatsData = HomeStatsData(),
     /** 点学习数据 / 全局数据卡 → 宿主跳统计页 */
     onOpenStats: () -> Unit = {},
+    /** 「句子卡片」的今日句快照（宿主抽句后传入；null = 空态） */
+    sentenceUi: SentenceDailyUi? = null,
+    /** 点句子卡片 → 宿主打开大卡片界面（参数为触点锚点，供浮起转场定位） */
+    onOpenSentenceCard: (TouchAnchor?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // 卡片尺寸由画布固定。这里统一量一次实际宽高，供各卡做「窄 / 矮 / 高」三档自适应；
@@ -258,6 +280,13 @@ fun HomeCardContent(
             HomeLayoutStore.CardType.GLOBAL_STATS -> GlobalStatsCard(
                 stats = stats,
                 onOpenStats = onOpenStats,
+                m = m,
+                modifier = cardModifier,
+            )
+
+            HomeLayoutStore.CardType.SENTENCE -> SentenceDailyCard(
+                ui = sentenceUi,
+                onOpen = onOpenSentenceCard,
                 m = m,
                 modifier = cardModifier,
             )
@@ -483,7 +512,7 @@ private fun RecentCard(
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
     onPracticeArticle: (Long) -> Unit,
-    onOpenArticle: (Article) -> Unit,
+    onOpenArticle: (Article, TouchAnchor?) -> Unit,
     onViewAllArticles: () -> Unit,
     m: CardMetrics,
     modifier: Modifier,
@@ -571,7 +600,7 @@ private fun RecentCard(
                                 dateFormat = dateFormat,
                                 compact = m.compact,
                                 dense = m.short,
-                                onClick = { onOpenArticle(article) },
+                                onClick = { anchor -> onOpenArticle(article, anchor) },
                                 onPractice = { onPracticeArticle(article.id) },
                                 practiceModifier = practiceAnchorModifier(
                                     articleId = article.id,
@@ -595,6 +624,9 @@ private fun RecentCard(
  * [slim]（超紧凑三行）：给「文章卡片」的矮卡用 —— 标题+字符数 / 摘要 / 日期+小按钮，
  * 间距减半，完整信息也能塞进 1 行高的卡里（用户要求「小小的、像图 2 这样」）。
  * 两者都 false 时为标准三行（标题+字符数 / 摘要 / 日期 + 按钮）。
+ *
+ * [onClick] 携带点击时的触点锚点（行中心 window 坐标）：供阅读页浮起转场定位，
+ * 不关心锚点的调用方可直接忽略参数。
  */
 @Composable
 private fun RecentArticleRow(
@@ -602,17 +634,19 @@ private fun RecentArticleRow(
     dateFormat: SimpleDateFormat,
     compact: Boolean,
     dense: Boolean,
-    onClick: () -> Unit,
+    onClick: (TouchAnchor?) -> Unit,
     onPractice: () -> Unit,
     practiceModifier: Modifier,
     slim: Boolean = false,
 ) {
+    val anchor = rememberTouchAnchor()
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .trackTouchAnchor(anchor)
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .clickable(onClick = onClick)
+            .clickable { onClick(anchor.value) }
             .padding(
                 start = if (compact || slim) 10.dp else 12.dp,
                 end = if (compact || slim) 10.dp else 12.dp,
@@ -769,7 +803,7 @@ private fun ArticleCard(
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
     onPracticeArticle: (Long) -> Unit,
-    onOpenArticle: (Article) -> Unit,
+    onOpenArticle: (Article, TouchAnchor?) -> Unit,
     m: CardMetrics,
     modifier: Modifier,
 ) {
@@ -814,7 +848,7 @@ private fun ArticleCard(
                     compact = m.compact,
                     dense = false,
                     slim = m.short,
-                    onClick = { onOpenArticle(article) },
+                    onClick = { anchor -> onOpenArticle(article, anchor) },
                     onPractice = { onPracticeArticle(article.id) },
                     practiceModifier = practiceAnchorModifier(
                         articleId = article.id,
@@ -844,9 +878,10 @@ private fun CustomClozeCard(
     val resolved by produceState<ConfigLookup>(
         initialValue = ConfigLookup.Loading,
         card.refId,
+        card.articleId,
         configRevision,
     ) {
-        value = withContext(Dispatchers.IO) { resolveCloze(context.filesDir, card.refId) }
+        value = withContext(Dispatchers.IO) { resolveCloze(context.filesDir, card.articleId, card.refId) }
     }
     val hue = Macaron.lavender()
     val found = resolved as? ConfigLookup.Found
@@ -874,7 +909,7 @@ private fun CustomClozeCard(
 private fun CustomMaskCard(
     card: HomeLayoutStore.Card,
     configRevision: Long,
-    onOpenMaskConfig: (Long, Long) -> Unit,
+    onOpenMaskConfig: (Long, Long, TouchAnchor?) -> Unit,
     m: CardMetrics,
     modifier: Modifier,
 ) {
@@ -884,12 +919,15 @@ private fun CustomMaskCard(
     val resolved by produceState<ConfigLookup>(
         initialValue = ConfigLookup.Loading,
         card.refId,
+        card.articleId,
         configRevision,
     ) {
-        value = withContext(Dispatchers.IO) { resolveMask(context.filesDir, card.refId) }
+        value = withContext(Dispatchers.IO) { resolveMask(context.filesDir, card.articleId, card.refId) }
     }
     val hue = Macaron.info()
     val found = resolved as? ConfigLookup.Found
+    // 触点锚点：点击时以卡片中心作为阅读页浮起转场的起点
+    val anchor = rememberTouchAnchor()
     // 与 MaskConfigListScreen「使用」一致：标记选中配置 + 遮挡粒度切自定义 + 打开遮挡开关，再进阅读页
     val onClick: (() -> Unit)? = if (found == null) null else {
         {
@@ -903,7 +941,7 @@ private fun CustomMaskCard(
                         found.articleId
                     ) { it.copy(occlusionCustomConfigId = card.refId, occlusionMode = "custom", occlusionEnabled = true) }
                 }
-                onOpenMaskConfig(found.articleId, card.refId)
+                onOpenMaskConfig(found.articleId, card.refId, anchor.value)
             }
         }
     }
@@ -916,7 +954,7 @@ private fun CustomMaskCard(
         containerColor = hue.fill,
         onClick = onClick,
         m = m,
-        modifier = modifier,
+        modifier = modifier.trackTouchAnchor(anchor),
     )
 }
 
@@ -1384,6 +1422,116 @@ private fun GlobalStatRow(label: String, value: String, dense: Boolean) {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// SENTENCE —— 句子卡片（每日一句）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 句子卡片：每天自动抽一个完整句子展示（无按键），整卡点击进入大卡片界面做 FSRS 复习。
+ *
+ * - 标准/高卡：标题「每日一句」+ 句文（卡内滚动）+ 底部「文章标题 · 状态」；
+ * - 矮卡（1 行高）：无标题，句文 2 行截断 + 淡色状态尾巴（延续「矮卡只留主干」规则）；
+ * - 空态（无文章/无合格句）：引导导入文章。
+ */
+@Composable
+private fun SentenceDailyCard(
+    ui: SentenceDailyUi?,
+    onOpen: (TouchAnchor?) -> Unit,
+    m: CardMetrics,
+    modifier: Modifier,
+) {
+    val hue = Macaron.info()
+    // 触点锚点：点击时以卡片中心作为大卡片界面浮起转场的起点
+    val anchor = rememberTouchAnchor()
+    GlassCard(
+        modifier = modifier.trackTouchAnchor(anchor),
+        shape = HOME_CARD_SHAPE,
+        onClick = { onOpen(anchor.value) },
+    ) {
+        if (ui == null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(m.pad),
+            ) {
+                CardHeader(dotColor = hue.accent, title = "每日一句")
+                CardEmptyState(
+                    icon = AppIconKind.Library,
+                    title = "今天没有可记的句子",
+                    subtitle = "导入文章后，每天送你一句",
+                    accent = hue.accent,
+                    compact = m.compact,
+                    short = m.short,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
+            }
+        } else {
+            val meta = buildString {
+                if (ui.articleTitle.isNotBlank()) append("《").append(ui.articleTitle).append("》 · ")
+                append(ui.statusLine)
+                if (ui.pendingDueCount > 0) append(" · 还有 ").append(ui.pendingDueCount).append(" 句待复习")
+            }
+            if (m.short) {
+                // 矮卡（1 行高）：句文截 2 行 + 状态尾巴；标题行会被顶出可视区，不展示
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        ui.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        meta,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                ) {
+                    CardHeader(dotColor = hue.accent, title = "每日一句")
+                    Spacer(Modifier.height(if (m.compact) 2.dp else 4.dp))
+                    CardBody(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = if (m.tall) Arrangement.Center else Arrangement.Top,
+                    ) {
+                        Text(
+                            ui.text,
+                            style = if (m.compact) MaterialTheme.typography.bodySmall
+                            else MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Spacer(Modifier.height(if (m.compact) 2.dp else 4.dp))
+                    Text(
+                        meta,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
 // 共用小件
 // ══════════════════════════════════════════════════════════════════
 
@@ -1575,72 +1723,40 @@ private sealed class ConfigLookup {
 }
 
 /**
- * 按 configId 反查自定义挖空配置所属文章。
+ * 按 (articleId, configId) 反查自定义挖空配置。
  *
- * store 未提供「按 configId 反查文章」的方法，故此处直接读全量 JSON 再查（只读，不写盘）。
- * 主文件损坏时回读 .bak，与 store 的读盘语义保持一致。
+ * 配置 id 仅文章内自增、非全局唯一：卡片自带 articleId 时严格精确命中（不跨文章，
+ * 配置被删即 NotFound）；旧卡（articleId 缺失）退化为按 configId 全库扫描兼容。
+ * 读盘语义（含主文件损坏回读 .bak）统一收敛到 CustomClozeStore，避免各入口不一致。
  */
-private fun resolveCloze(filesDir: File, configId: Long): ConfigLookup {
+private fun resolveCloze(filesDir: File, articleId: Long, configId: Long): ConfigLookup {
     if (configId <= 0L) return ConfigLookup.NotFound
-    val root = readJsonWithBackup(filesDir, "custom_cloze.json") ?: return ConfigLookup.NotFound
-    val articles = root.optJSONObject("articles") ?: return ConfigLookup.NotFound
-    val keys = articles.keys()
-    while (keys.hasNext()) {
-        val key = keys.next()
-        val arr = articles.optJSONArray(key) ?: continue
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            if (o.optLong("id") != configId) continue
-            val articleId = key.toLongOrNull() ?: return ConfigLookup.NotFound
-            val name = o.optString("name", "").ifBlank { "自定义挖空" }
-            val blankCount = o.optJSONArray("blanks")?.length() ?: 0
-            val mode = clozeModeLabel(o.optString("mode", "WORD"))
-            return ConfigLookup.Found(articleId, name, "$blankCount 空 · $mode")
-        }
+    val store = CustomClozeStore.getInstance(filesDir)
+    val aid = if (articleId > 0L) {
+        if (store.getConfig(articleId, configId) == null) return ConfigLookup.NotFound
+        articleId
+    } else {
+        store.findArticleIdByConfigId(configId) ?: return ConfigLookup.NotFound
     }
-    return ConfigLookup.NotFound
+    val cfg = store.getConfig(aid, configId) ?: return ConfigLookup.NotFound
+    val name = cfg.name.ifBlank { "自定义挖空" }
+    val mode = clozeModeLabel(cfg.mode)
+    return ConfigLookup.Found(aid, name, "${cfg.blanks.size} 空 · $mode")
 }
 
-/** 按 configId 反查自定义遮挡配置所属文章（读全量 JSON，只读） */
-private fun resolveMask(filesDir: File, configId: Long): ConfigLookup {
+/** 按 (articleId, configId) 反查自定义遮挡配置（与 [resolveCloze] 同语义） */
+private fun resolveMask(filesDir: File, articleId: Long, configId: Long): ConfigLookup {
     if (configId <= 0L) return ConfigLookup.NotFound
-    val root = readJsonWithBackup(filesDir, "mask_config.json") ?: return ConfigLookup.NotFound
-    val articles = root.optJSONObject("articles") ?: return ConfigLookup.NotFound
-    val keys = articles.keys()
-    while (keys.hasNext()) {
-        val key = keys.next()
-        val arr = articles.optJSONArray(key) ?: continue
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            if (o.optLong("id") != configId) continue
-            val articleId = key.toLongOrNull() ?: return ConfigLookup.NotFound
-            val name = o.optString("name", "").ifBlank { "自定义遮挡" }
-            val spanCount = o.optJSONArray("spans")?.length() ?: 0
-            return ConfigLookup.Found(articleId, name, "$spanCount 块遮挡")
-        }
+    val store = MaskConfigStore.getInstance(filesDir)
+    val aid = if (articleId > 0L) {
+        if (store.getConfig(articleId, configId) == null) return ConfigLookup.NotFound
+        articleId
+    } else {
+        store.findArticleIdByConfigId(configId) ?: return ConfigLookup.NotFound
     }
-    return ConfigLookup.NotFound
-}
-
-/** 读 JSON：主文件优先，损坏回读同名 .bak；都不可用返回 null */
-private fun readJsonWithBackup(filesDir: File, name: String): JSONObject? {
-    val main = File(filesDir, name)
-    if (main.exists()) {
-        try {
-            return JSONObject(main.readText())
-        } catch (_: Exception) {
-            // 落到备份分支
-        }
-    }
-    val bak = File(filesDir, name + ".bak")
-    if (bak.exists()) {
-        try {
-            return JSONObject(bak.readText())
-        } catch (_: Exception) {
-            // 备份也不可用
-        }
-    }
-    return null
+    val cfg = store.getConfig(aid, configId) ?: return ConfigLookup.NotFound
+    val name = cfg.name.ifBlank { "自定义遮挡" }
+    return ConfigLookup.Found(aid, name, "${cfg.spans.size} 块遮挡")
 }
 
 private fun clozeModeLabel(mode: String): String = when (mode) {
