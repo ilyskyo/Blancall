@@ -60,7 +60,11 @@ data class PracticeRecord(
     // 句子索引"与"全文句子索引"整体错位。字符位置是唯一跨口径稳定的锚点。
     //
     // 兼容：旧记录的 answeredSentences（索引语义）字段已废弃，本字段缺失时热力图回退整篇统计。
-    val answeredSentenceStarts: List<Int> = emptyList()
+    val answeredSentenceStarts: List<Int> = emptyList(),
+    // 本次判分【答错】的句子在【全文切句】中的句子索引（相对单篇文章/当次练习全文口径）。
+    // 供句级错误画像聚合（薄弱优先策略、薄弱集训段落排序）；跨文练习不落此字段
+    // （混合坐标仅对当次 mix 有效，换组合无法复用）；旧记录缺失 → 空列表（句级统计视为无数据）。
+    val mistakeSentenceIndices: List<Int> = emptyList()
 )
 
 data class MistakeDetail(

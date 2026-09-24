@@ -134,13 +134,20 @@ object BlancallGenerator {
         // 策略驱动选择要挖的分句
         val selectedClauseIndices = when (strategy) {
             Strategy.WEAKNESS_FOCUS -> {
-                // 按错误率加权排序，优先选薄弱分句
-                val weighted = allClauses.indices.map { idx ->
-                    val sentIdx = allClauses[idx].sentenceIdx
-                    val errorRate = errorProfile.sentenceErrorRates[sentIdx] ?: 0f
-                    idx to (errorRate + 0.1f)  // 基础权重 0.1 避免零概率
-                }.sortedByDescending { it.second }
-                weighted.take(actualCount).map { it.first }.toMutableSet()
+                // 按错误率加权排序，优先选薄弱分句。
+                // 句级错误率尚无数据链路（sentenceErrorRates 恒空）时，若仍按排序 take 会退化为
+                // "永远挖文章开头 N 句"；无数据时改为随机选取，保持策略语义中性。
+                val hasSentenceData = allClauses.any { (errorProfile.sentenceErrorRates[it.sentenceIdx] ?: 0f) > 0f }
+                if (!hasSentenceData) {
+                    allClauses.indices.shuffled().take(actualCount).toMutableSet()
+                } else {
+                    val weighted = allClauses.indices.map { idx ->
+                        val sentIdx = allClauses[idx].sentenceIdx
+                        val errorRate = errorProfile.sentenceErrorRates[sentIdx] ?: 0f
+                        idx to (errorRate + 0.1f)  // 基础权重 0.1 避免零概率
+                    }.sortedByDescending { it.second }
+                    weighted.take(actualCount).map { it.first }.toMutableSet()
+                }
             }
             Strategy.FULL_COVERAGE -> {
                 // 均匀分布，每个分句都有机会（用 toMutableSet 去重后补足）
@@ -572,26 +579,14 @@ object BlancallGenerator {
         rangesBySentence: Map<Int, List<IntRange>>
     ): SentenceClozeResult {
         val sentences = SentenceSplitter.split(content)
-        // 规范化：越界过滤 + 相邻/重叠合并。
+        // 规范化：越界过滤 + 相邻/重叠合并（统一收敛到 RangeOps，保存/应用共用同一口径）。
         // 注意：区间 first/last 是【句内字符偏移】，而句子索引是 map 的 key，两者不可混用。
         // 历史 bug：用 r.first（句内偏移）去索引 sentences 取长度 —— 短文章会取到空串，
         // 使 (r.last+1).coerceIn(a+1, 0) 抛出 "Cannot coerce to an empty range" 崩溃；
         // 长文章则拿到别的句子长度做裁剪，导致挖空范围与用户所选不符（静默错位）。
         val normalized = rangesBySentence.mapValues { (sentenceIndex, ranges) ->
             val len = sentences.getOrElse(sentenceIndex) { "" }.length
-            if (len == 0) emptyList()          // 句子不存在：整组丢弃
-            else ranges.mapNotNull { r ->
-                val a = r.first.coerceIn(0, len - 1)
-                val b = (r.last + 1).coerceIn(a + 1, len)
-                if (b > a) a until b else null
-            }.sortedBy { it.first }
-                .fold(mutableListOf<IntRange>()) { acc, r ->
-                    val last = acc.lastOrNull()
-                    if (last != null && r.first <= last.last + 1) {
-                        acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
-                    } else acc.add(r)
-                    acc
-                }
+            RangeOps.normalizeClampedRanges(len, ranges)   // 句子不存在（len==0）时返回空
         }.filterValues { it.isNotEmpty() }
 
         data class Sel(val sIdx: Int, val range: IntRange, val text: String)

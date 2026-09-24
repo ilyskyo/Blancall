@@ -56,7 +56,8 @@ class MaskConfigStore private constructor(private val file: File) {
      *
      * 安全语义（重要）：解析失败时**不能**当作「空配置库」——旧实现直接返回 freshRoot()，
      * 之后的保存会以空 root 覆盖写盘，把其他文章的全部遮挡配置静默抹除。
-     * 现在：① 主文件损坏 → 先回读 .bak；② 备份也不可用 → 置 loadFailed 并在 writeRoot 拒绝写盘。
+     * 现在：① 主文件损坏 → 先另存 .corrupt-<ts>（供事后人工恢复）再回读 .bak；
+     * ② 备份也不可用 → 置 loadFailed 并在 writeRoot 拒绝写盘。
      */
     private fun readRoot(): JSONObject {
         if (file.exists()) {
@@ -64,7 +65,8 @@ class MaskConfigStore private constructor(private val file: File) {
                 loadFailed = false
                 return migrate(JSONObject(file.readText()))
             } catch (_: Exception) {
-                // 落到下方备份分支
+                // 主文件损坏：保留现场后落到下方备份分支
+                preserveCorruptFile()
             }
         }
         val bak = File(file.parentFile, file.name + ".bak")
@@ -79,6 +81,17 @@ class MaskConfigStore private constructor(private val file: File) {
         // 文件确实不存在（首次使用）→ 正常空库；文件存在却读不出来且无备份 → 危险状态，禁止写盘
         loadFailed = file.exists()
         return freshRoot()
+    }
+
+    /**
+     * 主文件解析失败时另存一份 .corrupt-<ts>（尽力而为）：
+     * 否则后续写盘会以 bak 快照 + 新改动覆盖主文件，损坏现场（可能含比 bak 更新的配置）无法人工找回。
+     */
+    private fun preserveCorruptFile() {
+        try {
+            val dst = File(file.parentFile, file.name + ".corrupt-" + System.currentTimeMillis())
+            if (!file.renameTo(dst)) file.copyTo(dst, overwrite = true)
+        } catch (_: Exception) { /* 保留失败不影响主流程 */ }
     }
 
     /** 版本迁移钩子：未来 schema 变更在此逐级迁移（当前无可迁移步骤，仅就位结构） */
@@ -122,31 +135,105 @@ class MaskConfigStore private constructor(private val file: File) {
     private fun selectedObj(root: JSONObject): JSONObject =
         root.optJSONObject("selected") ?: JSONObject().also { root.put("selected", it) }
 
+    /** 解析单个配置对象（getConfigs / listAll / getConfig 共用，保证字段口径一致） */
+    private fun parseConfig(o: JSONObject): MaskConfig {
+        val spans = mutableListOf<MaskSpan>()
+        val sArr = o.optJSONArray("spans")
+        if (sArr != null) {
+            for (j in 0 until sArr.length()) {
+                val s = sArr.optJSONObject(j) ?: continue
+                spans.add(MaskSpan(s.optInt("p"), s.optInt("a"), s.optInt("e"), s.optInt("c")))
+            }
+        }
+        return MaskConfig(
+            id = o.optLong("id"),
+            name = o.optString("name", "自定义"),
+            createdAt = o.optLong("createdAt"),
+            spans = spans,
+            contentHash = o.optString("contentHash", "").ifEmpty { null }
+        )
+    }
+
     /** 读取某篇文章的全部遮挡配置（按创建时间升序） */
     fun getConfigs(articleId: Long): List<MaskConfig> = synchronized(lock) {
         val arr = articlesObj(readRoot()).optJSONArray(articleId.toString()) ?: return emptyList()
         val out = mutableListOf<MaskConfig>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            val spans = mutableListOf<MaskSpan>()
-            val sArr = o.optJSONArray("spans")
-            if (sArr != null) {
-                for (j in 0 until sArr.length()) {
-                    val s = sArr.optJSONObject(j) ?: continue
-                    spans.add(MaskSpan(s.optInt("p"), s.optInt("a"), s.optInt("e"), s.optInt("c")))
-                }
-            }
-            out.add(
-                MaskConfig(
-                    id = o.optLong("id"),
-                    name = o.optString("name", "自定义"),
-                    createdAt = o.optLong("createdAt"),
-                    spans = spans,
-                    contentHash = o.optString("contentHash", "").ifEmpty { null }
-                )
-            )
+            out.add(parseConfig(o))
         }
         out.sortedBy { it.createdAt }
+    }
+
+    /** 按 (articleId, configId) 精确取单套配置（不存在返回 null；不含跨文章扫描） */
+    fun getConfig(articleId: Long, configId: Long): MaskConfig? = synchronized(lock) {
+        if (articleId <= 0L || configId <= 0L) return null
+        val arr = articlesObj(readRoot()).optJSONArray(articleId.toString()) ?: return null
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (o.optLong("id") == configId) return parseConfig(o)
+        }
+        null
+    }
+
+    /**
+     * 反查某配置所属文章。
+     * - [articleId] > 0：按 (articleId, configId) 精确命中（不跨文章），不存在返回 null；
+     * - [articleId] <= 0：全库扫描按 configId 找第一个（仅供无 articleId 的历史卡片兼容）。
+     * configId 仅文章内自增，非全局唯一，新调用方一律传 articleId。
+     */
+    fun findArticleIdByConfigId(configId: Long, articleId: Long = -1L): Long? = synchronized(lock) {
+        if (configId <= 0L) return null
+        val articles = articlesObj(readRoot())
+        if (articleId > 0L) {
+            val arr = articles.optJSONArray(articleId.toString()) ?: return null
+            for (i in 0 until arr.length()) {
+                if (arr.optJSONObject(i)?.optLong("id") == configId) return articleId
+            }
+            return null
+        }
+        val keys = articles.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val aid = key.toLongOrNull() ?: continue
+            val arr = articles.optJSONArray(key) ?: continue
+            for (i in 0 until arr.length()) {
+                if (arr.optJSONObject(i)?.optLong("id") == configId) return aid
+            }
+        }
+        return null
+    }
+
+    /** 全部配置（文章 id + 配置），供首页「添加卡片」等枚举（主文件损坏时回读 .bak，与 getConfigs 同语义） */
+    fun listAll(): List<Pair<Long, MaskConfig>> = synchronized(lock) {
+        val articles = articlesObj(readRoot())
+        val out = mutableListOf<Pair<Long, MaskConfig>>()
+        val keys = articles.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val aid = key.toLongOrNull() ?: continue
+            val arr = articles.optJSONArray(key) ?: continue
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                if (o.optLong("id") <= 0L) continue
+                out.add(aid to parseConfig(o))
+            }
+        }
+        out
+    }
+
+    /** 删除某篇文章的全部配置（文章删除时级联清理）；该文章的使用标记一并清除 */
+    fun removeArticle(articleId: Long) = synchronized(lock) {
+        val root = readRoot()
+        val articles = articlesObj(root)
+        val key = articleId.toString()
+        val had = articles.has(key) || selectedObj(root).has(key)
+        if (articles.has(key)) articles.remove(key)
+        selectedObj(root).remove(key)
+        if (had) {
+            revision++
+            writeRoot(root)
+        }
     }
 
     /** 保存配置：id<=0 视为新建（自动分配 id），否则按 id 覆盖更新。返回实际 id */

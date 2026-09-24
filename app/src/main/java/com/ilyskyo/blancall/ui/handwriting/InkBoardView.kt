@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.ui.handwriting
 
+import android.animation.Animator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Canvas
@@ -18,6 +20,7 @@ import android.util.Log
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.PathInterpolator
 import androidx.compose.ui.geometry.Offset
 import com.ilyskyo.blancall.ui.common.StylusActivity
 
@@ -239,6 +242,26 @@ class InkBoardView @JvmOverloads constructor(
     private val livePath = Path()
     private var liveDirty = false
 
+    // ───────────────────────── 退场动画（自动上屏的墨迹「收拢→淡出」） ─────────────────────────
+    //
+    // 只服务「自动上屏」这一个时刻：判定高置信/整词通过、字已提交的那批墨迹不再瞬时消失，
+    // 而是围绕**各自包围盒重心**收拢、上飘、淡出（约 200ms），与目标字落到内容区在
+    // 同一动画窗口内衔接 —— 让用户看懂「刚才写的这团墨迹 → 就是现在出现的这个字」。
+    // 低置信点选、标点、清空、划掉等路径**不经过这里**（仍走 removeStrokes/clearInk 瞬时清除）。
+    //
+    // 三条正确性约束：
+    // ① 退场笔画先从 strokes 摘出、放进独立列表 ⇒ snapshot* 与 hasInk() 都看不到它们，
+    //    绝不会被二次识别、二次上屏，也不改变「划掉撤回」的判定；
+    // ② 动画只重绘本 View（invalidate），不写任何 Compose 状态 ⇒ 不阻塞书写与下一次识别；
+    // ③ 新落的笔（current/strokes）与退场互不影响 ⇒ 动画期间继续书写不会被吞掉。
+
+    /** 一组正在退场的笔画：[recs] + 该组包围盒重心（收拢的缩放轴心，动画开始时算好）。 */
+    private class ExitGroup(val recs: List<StrokeRec>, val cx: Float, val cy: Float)
+
+    private val exitGroups = ArrayList<ExitGroup>()
+    private var exitProgress = 0f
+    private var exitAnimator: ValueAnimator? = null
+
     // ───────────────────────── 压感（自适应） ─────────────────────────
     //
     // ⚠️ 压感**只用于屏上显示**：`HandwritingPanel.renderInk()` 仍然按固定笔宽渲染位图，
@@ -315,8 +338,92 @@ class InkBoardView @JvmOverloads constructor(
         invalidate()
     }
 
-    /** 清空全部墨迹（「清空」按钮、识别成功后、划掉重写都走这里）。 */
+    /**
+     * 把指定笔画从板上「收拢淡出」后移除（自动上屏的退场动画）。匹配规则与 [removeStrokes]
+     * 完全一致（按引用），区别只有多一段约 200ms 的视觉退场（见「退场动画」状态区注释）。
+     *
+     * [groups]：一次上屏的墨迹分组（连写/整词按「一个字/一段」分组；单字上屏为一组）。
+     * 各组围绕自身包围盒重心收拢，**同一动画窗口内一起播放**：批量提交的落字是同时的，
+     * 不做错峰，既避免与落字时序脱节，也天然不会互相覆盖/闪烁。
+     *
+     * ⚠️ 必须在主线程、与上屏写入（commitChars）同帧调用；动画只负责「墨迹消失」
+     * 这一半，绝不延迟上屏。系统「移除动画」（Animator 时长缩放 = 0）时安全降级为
+     * 瞬时移除（[removeStrokes]），与改造前逐帧一致。
+     */
+    fun animateStrokesOut(groups: List<List<List<Offset>>>) {
+        val refs = groups.flatten()
+        if (refs.isEmpty()) return
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            // 系统「移除动画」/ 动画器被禁用：直接瞬时清除
+            removeStrokes(refs)
+            return
+        }
+        // 按引用摘出匹配的笔画（与 removeStrokes 同规则）；找不到（已被移除）就收工
+        val matched = strokes.filter { rec -> refs.any { it === rec.pts } }
+        if (matched.isEmpty()) return
+        // 上一批退场还没播完又来了新一批（正常节奏下两次提交间隔 > 550ms，到不了这里；
+        // 这里需要 <200ms 的连击）。两批共用一个进度值，先即时了结旧的 —— 否则旧笔画
+        // 会「回光返照」跳到新进度上。
+        clearExitNow()
+        strokes.removeAll(matched)
+        groups.forEach { g ->
+            val recs = g.mapNotNull { ptsRef -> matched.firstOrNull { it.pts === ptsRef } }
+            if (recs.isEmpty()) return@forEach
+            // 包围盒重心：收拢缩放的轴心（动画期间不变，先算好）
+            var minX = Float.MAX_VALUE
+            var maxX = -Float.MAX_VALUE
+            var minY = Float.MAX_VALUE
+            var maxY = -Float.MAX_VALUE
+            recs.forEach { rec ->
+                rec.pts.forEach { p ->
+                    if (p.x < minX) minX = p.x
+                    if (p.x > maxX) maxX = p.x
+                    if (p.y < minY) minY = p.y
+                    if (p.y > maxY) maxY = p.y
+                }
+            }
+            exitGroups.add(ExitGroup(recs, (minX + maxX) / 2f, (minY + maxY) / 2f))
+        }
+        exitProgress = 0f
+        exitAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = INK_EXIT_DURATION_MS
+            // Material standard 缓动（FastOutSlowIn，与 Compose tween 默认一致）
+            interpolator = PathInterpolator(0.4f, 0f, 0.2f, 1f)
+            addUpdateListener { va ->
+                exitProgress = (va.animatedValue as Float).coerceIn(0f, 1f)
+                invalidate()
+            }
+            addListener(object : Animator.AnimatorListener {
+                override fun onAnimationStart(animation: Animator) {}
+                override fun onAnimationRepeat(animation: Animator) {}
+                override fun onAnimationCancel(animation: Animator) {}
+                override fun onAnimationEnd(animation: Animator) {
+                    // 正常播完（或 cancel）后：退场笔画到此真正消失
+                    exitGroups.clear()
+                    exitAnimator = null
+                    invalidate()
+                }
+            })
+            start()
+        }
+    }
+
+    /** 立即终止退场动画（清空退场笔画并置空动画器）。 */
+    private fun clearExitNow() {
+        exitAnimator?.let { animator ->
+            exitAnimator = null
+            animator.cancel()
+        }
+        exitGroups.clear()
+        exitProgress = 0f
+    }
+
+    /**
+     * 清空全部墨迹（「清空」按钮、划掉重写走这里；自动上屏的墨迹退场见 [animateStrokesOut]）。
+     * 正在播的退场动画一并终止。
+     */
     fun clearInk() {
+        clearExitNow()
         strokes.clear()
         current.clear()
         currentPress.clear()
@@ -443,6 +550,8 @@ class InkBoardView @JvmOverloads constructor(
         super.onDetachedFromWindow()
         penPointerId = -1
         StylusActivity.isWriting = false
+        // 退场动画不能跟着视图一起留下（ValueAnimator 还持有监听、会继续 invalidate）
+        clearExitNow()
     }
 
     /** 仅手写笔（含笔尾橡皮）算「笔」。 */
@@ -594,6 +703,39 @@ class InkBoardView @JvmOverloads constructor(
 
     // ───────────────────────── 绘制 ─────────────────────────
 
+    /** 画一条已完成笔画。live 与退场墨迹共用同一套绘制分支，保证两种墨迹逐点一致。 */
+    private fun drawStrokeRec(canvas: Canvas, s: StrokeRec) {
+        if (s.single) {
+            canvas.drawCircle(s.pts[0].x, s.pts[0].y, widthFor(s.pressureAt(0)) / 2f, dotPaint)
+        } else if (pressureActive) {
+            val ribbon = s.ribbon ?: buildRibbon(s.pts, s.pressures).also { s.ribbon = it }
+            drawBands(canvas, ribbon)
+        } else {
+            canvas.drawPath(s.path, inkPaint)
+        }
+    }
+
+    /** 绘制退场墨迹：每组围绕自身重心收拢、整体上飘、渐隐。画完把共享画笔的 alpha 复原。 */
+    private fun drawExitGroups(canvas: Canvas, h: Float) {
+        val p = exitProgress
+        val scale = 1f - INK_EXIT_SHRINK * p
+        val dy = -h * INK_EXIT_RISE * p
+        // alpha 基于画笔**原有** alpha 乘性衰减（strokeColor 理论可能带 alpha，不能写死 255）
+        val inkAlpha = inkPaint.alpha
+        val dotAlpha = dotPaint.alpha
+        inkPaint.alpha = (inkAlpha * (1f - p)).toInt().coerceIn(0, 255)
+        dotPaint.alpha = (dotAlpha * (1f - p)).toInt().coerceIn(0, 255)
+        for (g in exitGroups) {
+            canvas.save()
+            canvas.translate(0f, dy)
+            canvas.scale(scale, scale, g.cx, g.cy)
+            for (rec in g.recs) drawStrokeRec(canvas, rec)
+            canvas.restore()
+        }
+        inkPaint.alpha = inkAlpha
+        dotPaint.alpha = dotAlpha
+    }
+
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
@@ -607,16 +749,10 @@ class InkBoardView @JvmOverloads constructor(
         canvas.drawLine(0f, midY, w, midY, gridPaint)
 
         // ── 已完成的笔画 ──
-        for (s in strokes) {
-            if (s.single) {
-                canvas.drawCircle(s.pts[0].x, s.pts[0].y, widthFor(s.pressureAt(0)) / 2f, dotPaint)
-            } else if (pressureActive) {
-                val ribbon = s.ribbon ?: buildRibbon(s.pts, s.pressures).also { s.ribbon = it }
-                drawBands(canvas, ribbon)
-            } else {
-                canvas.drawPath(s.path, inkPaint)
-            }
-        }
+        for (s in strokes) drawStrokeRec(canvas, s)
+
+        // ── 退场墨迹（自动上屏）：收拢、上飘、淡出，与落字同窗口 ──
+        if (exitGroups.isNotEmpty()) drawExitGroups(canvas, h)
 
         // ── 正在写的这一笔（每帧重建 path，只重建这一条）──
         if (current.isNotEmpty()) {
@@ -650,7 +786,8 @@ class InkBoardView @JvmOverloads constructor(
         }
 
         // ── 空板提示 ──
-        if (strokes.isEmpty() && current.isEmpty() && hintText.isNotEmpty()) {
+        // ⚠️ 退场墨迹也算「板上有东西」：否则自动上屏动画的 200ms 里提示文字会提前浮现
+        if (strokes.isEmpty() && current.isEmpty() && exitGroups.isEmpty() && hintText.isNotEmpty()) {
             val fm = hintPaint.fontMetrics
             canvas.drawText(hintText, 0, hintText.length, midX, midY - (fm.ascent + fm.descent) / 2f, hintPaint)
         }
@@ -687,6 +824,18 @@ class InkBoardView @JvmOverloads constructor(
     companion object {
         private const val TAG = "BlancallInk"
         private const val INK_WIDTH_PX = 6f
+
+        /**
+         * 自动上屏时墨迹「收拢淡出」退场动画的时长（毫秒）。
+         * 150–250ms 是「看得清但不用等候」的区间；按真机手感微调。
+         */
+        private const val INK_EXIT_DURATION_MS = 200L
+
+        /** 退场墨迹的收拢幅度：结束时缩放 = 1 - 该值（0.75 ⇒ 缩到 0.25 倍）。 */
+        private const val INK_EXIT_SHRINK = 0.75f
+
+        /** 退场墨迹的上飘距离（板高的比例）：四个调用方的内容区都在面板上方。 */
+        private const val INK_EXIT_RISE = 0.10f
 
         /**
          * 田字格 alpha：空闲淡、悬停深（「笔已被识别」的即时反馈）。

@@ -95,6 +95,10 @@ class RecordRepository(private val filePath: String) {
                     // 在此刻意不读取，确保旧数据走回退分支而不被误判为字符位置。
                     answeredSentenceStarts = obj.optJSONArray("answeredSentenceStarts")
                         ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
+                        ?: emptyList(),
+                    // 旧记录无此字段 → 空列表（句级错误画像视为无数据）
+                    mistakeSentenceIndices = obj.optJSONArray("mistakeSentenceIndices")
+                        ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
                         ?: emptyList()
                 )
                 loaded.add(record)
@@ -160,6 +164,7 @@ class RecordRepository(private val filePath: String) {
                         obj.put("weakHints", record.weakHints)
                         obj.put("strongHints", record.strongHints)
                         obj.put("answeredSentenceStarts", JSONArray(record.answeredSentenceStarts))
+                        obj.put("mistakeSentenceIndices", JSONArray(record.mistakeSentenceIndices))
                         val mistakesArr = JSONArray()
                         for (m in record.mistakes) {
                             val mObj = JSONObject()

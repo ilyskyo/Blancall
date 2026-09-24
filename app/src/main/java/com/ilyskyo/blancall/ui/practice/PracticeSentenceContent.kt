@@ -81,6 +81,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
+import com.ilyskyo.blancall.algorithm.CrossTextReview
 import com.ilyskyo.blancall.algorithm.PdfExporter
 import com.ilyskyo.blancall.algorithm.SectionSplitter
 import com.ilyskyo.blancall.algorithm.ShareImageGenerator
@@ -112,6 +113,8 @@ internal fun SentenceClozeContent(
     checkResults: Map<Int, AnswerChecker.CheckDetail>,
     isSubmitted: Boolean,
     hintChars: Map<Int, Char> = emptyMap(),
+    /** 跨文复习：混合句序 → 每句来源（尺寸与 sentences 一致时逐句标注；非跨文为空表） */
+    crossSourceInfo: List<CrossTextReview.SourceInfo> = emptyList(),
     weakHints: Int = 0,
     strongHints: Int = 0,
     analysis: String? = null,
@@ -137,6 +140,10 @@ internal fun SentenceClozeContent(
         val blanksBySentence = remember(blanks) {
             blanks.groupBy { it.sentenceIndex }
                 .mapValues { (_, list) -> list.sortedBy { it.startInSentence } }
+        }
+        // 跨文句源标注表：尺寸与句子数一致才启用（防止错标到错误的句子）
+        val crossTags: List<CrossTextReview.SourceInfo>? = remember(crossSourceInfo, result) {
+            crossSourceInfo.takeIf { it.size == result.sentences.size }
         }
 
         if (totalBlanks == 0) {
@@ -188,6 +195,7 @@ internal fun SentenceClozeContent(
                 ) {
                     itemsIndexed(result.sentences, key = { idx, _ -> "s_$idx" }) { sIdx, sentence ->
                         val sentenceBlanks = blanksBySentence[sIdx].orEmpty()
+                        Column {
                         if (sentenceBlanks.isEmpty()) {
                             Text(sentence, style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onBackground,
@@ -224,6 +232,18 @@ internal fun SentenceClozeContent(
                                         color = MaterialTheme.colorScheme.onBackground)
                                 }
                             }
+                        }
+                        // 跨文句源标注（仅尺寸一致时启用）
+                        crossTags?.getOrNull(sIdx)?.let { src ->
+                            if (src.articleTitle.isNotBlank()) {
+                                Text(
+                                    "— ${src.articleTitle}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                    modifier = Modifier.padding(start = 4.dp, top = 1.dp)
+                                )
+                            }
+                        }
                         }
                     }
                 }
@@ -278,6 +298,7 @@ internal fun SentenceClozeContent(
                     }
                     itemsIndexed(result.sentences, key = { idx, _ -> "s_$idx" }) { sIdx, sentence ->
                         val sentenceBlanks = blanksBySentence[sIdx].orEmpty()
+                        Column {
                         if (sentenceBlanks.isEmpty()) {
                             Text(sentence, style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onBackground,
@@ -317,6 +338,18 @@ internal fun SentenceClozeContent(
                                         color = MaterialTheme.colorScheme.onBackground)
                                 }
                             }
+                        }
+                        // 跨文句源标注（仅尺寸一致时启用）
+                        crossTags?.getOrNull(sIdx)?.let { src ->
+                            if (src.articleTitle.isNotBlank()) {
+                                Text(
+                                    "— ${src.articleTitle}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                    modifier = Modifier.padding(start = 4.dp, top = 1.dp)
+                                )
+                            }
+                        }
                         }
                     }
                 }

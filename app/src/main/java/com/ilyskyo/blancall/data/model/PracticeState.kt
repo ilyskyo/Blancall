@@ -29,5 +29,8 @@ data class PracticeState(
     val dictationInput: String = "",
     // 上次挖好的空（当前模式的挖空结果 JSON 序列化），供「继续练习」精确恢复，无需重新生成/选难度
     val clozeJson: String? = null,
+    // 本次练习来自哪套自定义挖空配置（仅自定义练习有值；0 = 非自定义/旧数据），
+    // 供「继续练习」恢复后重新挂上配置身份（锁定模式/策略/段落）
+    val configId: Long = 0L,
     val lastPracticeTime: Long = System.currentTimeMillis()
 )

@@ -290,18 +290,11 @@ fun CustomClozeEditScreen(
             else -> {
                 selected.forEach { (s, ranges) ->
                     if (s !in sentences.indices) return@forEach
-                    val merged = ranges.sortedBy { it.first }
-                        .fold(mutableListOf<IntRange>()) { acc, r ->
-                            val last = acc.lastOrNull()
-                            if (last != null && r.first <= last.last + 1) {
-                                acc[acc.size - 1] = last.first..maxOf(last.last, r.last)
-                            } else acc.add(r)
-                            acc
-                        }
-                    merged.forEach { r ->
-                        val a = r.first.coerceIn(0, sentences[s].length)
-                        val b = (r.last + 1).coerceIn(a + 1, sentences[s].length)
-                        blanks.add(CustomClozeStore.BlankSpec(s, a, b))
+                    // 统一口径 RangeOps.normalizeClampedRanges：裁剪越界 + 合并相邻/重叠。
+                    // 旧实现 a 可被 coerce 到句长 → (r.last+1).coerceIn(a+1, len) 抛"空区间"崩溃
+                    // （文章变短后恢复旧配置直接保存即触发）
+                    RangeOps.normalizeClampedRanges(sentences[s].length, ranges).forEach { r ->
+                        blanks.add(CustomClozeStore.BlankSpec(s, r.first, r.last + 1))
                     }
                 }
                 blanks.sortWith(compareBy({ it.s }, { it.a }))

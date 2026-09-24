@@ -71,7 +71,8 @@ import kotlin.math.min
  * - **只有手写笔（[PointerType.Stylus]）落笔才进入书写**：手指保留原有滚动/点按行为。
  *   这样「一手扶屏固定 + 一手握笔书写」不会互相打断。
  * - 抬笔后自动触发识别，约 2–5ms 出结果（模型实测），因此无需"识别"按钮。
- * - 高置信（top-1 ≥ 0.80 且领先 top-2 ≥ 0.15）时**自动上屏**；
+ * - 高置信（top-1 ≥ 0.80 且领先 top-2 ≥ 0.15）时**自动上屏**，且该批墨迹以
+ *   「收拢→淡出」退场动画消失（[InkBoardView.animateStrokesOut]），与落字同窗口衔接；
  *   否则只展示候选，等用户点选 —— 宁可多一次点选，也不误判。
  *
  * ## 与挖空/输入框的关系
@@ -256,6 +257,7 @@ fun HandwritingPanel(
     /**
      * 从第 [from] 段开始逐段推进：高置信的段累积成**一批**上屏并抹掉它们的墨迹；
      * 遇到第一个低置信（或整段没认出来）的段就停下，把它的候选交给用户。
+     * 识别侧自动推进（[prefix] 为空）时抹墨走退场动画；点选路径仍为瞬时清除。
      *
      * ⚠️ 上屏必须**按批**（一次 [commitChars] 带多个字）：调用方的 `value + 新增`
      * 是组合期快照，同一帧里分多次写会互相覆盖、只剩最后一个字。
@@ -281,6 +283,8 @@ fun HandwritingPanel(
         val commit = ArrayList<Char>(prefix.size + segs.size)
         commit.addAll(prefix)
         val consumed = ArrayList<List<Offset>>()
+        // 每段自己的笔画（供「自动上屏」路径的退场动画按段分组收拢）；与 consumed 同源
+        val consumedGroups = ArrayList<List<List<Offset>>>()
         var i = from
         while (i < segs.size) {
             val r = results.getOrNull(i)
@@ -289,13 +293,20 @@ fun HandwritingPanel(
             // 「石|水」，「石」高置信上屏成错字）——但候选仍照常展示供用户点选。
             if (r != null && best != null && r.isConfident && !pendingRareBlock) {
                 commit.add(best.char)
+                consumedGroups.add(segs[i])
                 segs[i].forEach { consumed.add(it) }
                 i++
             } else {
                 break
             }
         }
-        if (consumed.isNotEmpty()) inkRef.get()?.removeStrokes(consumed)
+        if (consumed.isNotEmpty()) {
+            val view = inkRef.get()
+            // 只有识别侧自动推进（prefix 为空）才播退场动画；点选路径（prefix 非空，
+            // 含其后续自动推进的段）与改动前逐帧一致，不引入任何新动画。
+            if (prefix.isEmpty() && autoCommit && enabled) view?.animateStrokesOut(consumedGroups)
+            else view?.removeStrokes(consumed)
+        }
         if (commit.isNotEmpty()) commitChars(commit)
         if (i < segs.size) {
             // 停在这一段等用户点候选；板上只留下「这一段 + 后面的段」
@@ -526,7 +537,13 @@ fun HandwritingPanel(
                             }
                             val consumed = ArrayList<List<Offset>>()
                             segments.forEach { seg -> seg.forEach { consumed.add(it) } }
-                            if (consumed.isNotEmpty()) inkRef.get()?.removeStrokes(consumed)
+                            if (consumed.isNotEmpty()) {
+                                val view = inkRef.get()
+                                // 整词自动上屏同样播退场动画（逐段各自收拢，与批量落字同窗口）；
+                                // 两个特性开关关闭时保持原有的瞬时清除行为。
+                                if (autoCommit && enabled) view?.animateStrokesOut(segments)
+                                else view?.removeStrokes(consumed)
+                            }
                             commitChars(word)
                             pendingSegments = emptyList()
                             pendingResults = emptyList()
@@ -580,7 +597,11 @@ fun HandwritingPanel(
                 }
                 if (whole != null && whole.isConfident && autoCommit && !guarded) {
                     commitChars(listOf(whole.best!!.char))
-                    inkRef.get()?.clearInk()
+                    val view = inkRef.get()
+                    // 自动上屏：墨迹「收拢→淡出」退场（只动识别快照里的那批笔画，
+                    // 不误清动画期间新落的笔）；enabled=false 时保持原来的瞬时清板。
+                    if (enabled) view?.animateStrokesOut(listOf(inkStrokes))
+                    else view?.clearInk()
                     return@launch
                 }
                 if (whole != null && whole.candidates.isNotEmpty()) {
