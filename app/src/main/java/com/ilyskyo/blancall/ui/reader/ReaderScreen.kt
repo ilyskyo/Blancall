@@ -48,16 +48,23 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.DeleteConfirmDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.TagChipRow
+import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
+import com.ilyskyo.blancall.ui.tag.TagPickerSheet
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ReaderScreen(navController: NavController, articleId: Long) {
@@ -82,6 +89,16 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     // 阅读模式返回跟手进度：侧滑返回时驱动阅读界面缩退淡出
     var readingBackProgress by remember { mutableStateOf(0f) }
     val scope = rememberCoroutineScope()
+
+    // ── 文章标签：编辑态标签行（即时生效）+ 选择面板 ──
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
+    val tagData by tagStore.data.collectAsState()
+    // 首次进入 priming：IO 读盘 → 发布 StateFlow（跨页面改动即时反映）
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
+    val chipTagsByArticle = remember(tagData) {
+        TagOps.tagsByArticle(tagData).mapValues { (_, list) -> list.toChipUis() }
+    }
+    var showTagPicker by remember { mutableStateOf(false) }
 
     // 兜底（先注册、优先级低）：PredictiveBackHandler 在个别系统/场景下可能不拦截，
     // 保证编辑/阅读模式下返回键一定能退出当前模式，而不是直接退出页面
@@ -376,6 +393,50 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 shape = RoundedCornerShape(10.dp)
                             )
 
+                            // ── 标签行：点击打开选择面板；标签**即时生效**，
+                            // 不随正文「保存/取消」回滚（与正文编辑语义解耦，防漏保存）──
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "标签",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                val myTags = chipTagsByArticle[articleId].orEmpty()
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { showTagPicker = true }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (myTags.isEmpty()) {
+                                        Text(
+                                            "点击选择标签",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    } else {
+                                        TagChipRow(tags = myTags, maxChips = 3)
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    AppIcon(
+                                        kind = AppIconKind.Add,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(10.dp))
 
                             OutlinedTextField(
@@ -560,6 +621,21 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
             }
         }
     )
+
+    // 标签选择面板（单篇）：标签即时落盘；取消/完成都只收起面板
+    if (showTagPicker) {
+        val target = article
+        if (target != null) {
+            TagPickerSheet(
+                targets = listOf(target),
+                onDismiss = { showTagPicker = false },
+                onApplied = { showTagPicker = false },
+            )
+        } else {
+            // 文章尚未加载完成（极端时序）：直接收起，避免空目标面板
+            showTagPicker = false
+        }
+    }
 
     // 全屏编辑对话框
     if (showFullscreenEdit) {

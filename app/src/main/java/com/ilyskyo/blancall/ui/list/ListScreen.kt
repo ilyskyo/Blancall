@@ -8,13 +8,13 @@ import androidx.activity.compose.PredictiveBackHandler
 
 import android.util.Log
 import android.widget.Toast
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -28,6 +28,7 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.font.FontWeight
@@ -49,23 +51,26 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.algorithm.PdfExporter
+import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.BackButton
-import com.ilyskyo.blancall.ui.common.TouchAnchor
-import com.ilyskyo.blancall.ui.common.navigateReveal
-import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
-import com.ilyskyo.blancall.ui.common.toTouchAnchor
-import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.DeleteConfirmDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GridMaxWidth
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
-import com.ilyskyo.blancall.ui.common.gridColumnsFor
+import com.ilyskyo.blancall.ui.common.NavBarAutoHide
+import com.ilyskyo.blancall.ui.common.TagChipRow
+import com.ilyskyo.blancall.ui.common.TagChipUi
+import com.ilyskyo.blancall.ui.common.TagDot
+import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
+import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
+import com.ilyskyo.blancall.ui.tag.TagPickerSheet
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +144,19 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // 跨文复习多选模式（F7）
     var crossSelectMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+
+    // 长按进多选 = 「长按操作」：自动收起悬浮底部导航栏 —— 多选操作栏（删除/打标签/跨文复习）
+    // 紧贴屏幕底部，导航栏还在时按钮会落进它的覆盖区、点不到（真机反馈）。
+    // 退出多选（完成后 / 取消 / 返回手势）自动恢复；页面销毁时 onDispose 兜底释放。
+    DisposableEffect(crossSelectMode) {
+        if (crossSelectMode) NavBarAutoHide.request(NavBarAutoHide.KEY_LIST_MULTI_SELECT)
+        onDispose {
+            if (crossSelectMode) NavBarAutoHide.release(NavBarAutoHide.KEY_LIST_MULTI_SELECT)
+        }
+    }
+    // 滚动驱动的导航栏自动收起：内容前进（手指上滑）时导航栏让位、回滚时恢复 ——
+    // 列表因此不再需要为导航栏预留底部留白（见 NavBarAutoHide 文档）
+    val navBarScrollConn = rememberAutoHideNavBarOnScroll()
     // 模式选择弹窗
     var showModePicker by remember { mutableStateOf(false) }
     var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
@@ -146,10 +164,37 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     var showExportDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    // ── 文章标签：筛选 / 卡片徽标 / 批量打标签 ──
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
+    val tagData by tagStore.data.collectAsState()
+    // 首次进入 priming：IO 读盘 → 发布 StateFlow（跨页面改动即时反映）
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
+    val selectedTagIds by AppPrefs.articleTagFilterFlow.collectAsState()
+    val includeUntagged by AppPrefs.articleTagIncludeUntaggedFlow.collectAsState()
+    // 与现有标签对账：已删除标签的筛选 id 仅本次视图忽略（不强制写回）
+    val validTagFilter = remember(selectedTagIds, tagData) {
+        selectedTagIds.filterTo(mutableSetOf()) { id -> tagData.tags.any { it.id == id } }
+    }
+    val chipTagsByArticle = remember(tagData) {
+        TagOps.tagsByArticle(tagData).mapValues { (_, list) -> list.toChipUis() }
+    }
+    // 标签筛选结果（并集 +「未分类」；无筛选条件时原样返回）
+    val filteredArticles = remember(sortedArticles, tagData, validTagFilter, includeUntagged) {
+        TagOps.filterArticles(sortedArticles, tagData, validTagFilter, includeUntagged)
+    }
+    // 批量打标签面板的目标文章（非空即显示面板）
+    var tagPickTargets by remember { mutableStateOf<List<Article>>(emptyList()) }
+
     // 退出多选模式时清空选择
     fun exitCrossSelect() {
         crossSelectMode = false
         selectedIds = emptySet()
+    }
+
+    // 筛选变更统一入口：多选模式下先退出多选（避免"选中了看不见的文章"）
+    fun applyTagFilter(nextSelected: Set<Long>, nextUntagged: Boolean) {
+        AppPrefs.setArticleTagFilter(nextSelected, nextUntagged)
+        if (crossSelectMode) exitCrossSelect()
     }
 
     // 多选模式下拦截返回手势（侧滑/系统返回）：先退出多选回到文章列表，
@@ -167,7 +212,10 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            // 系统导航条（手势条/三键）让位：多选操作栏紧贴屏幕底部，
+            // 不能落进系统栏区域（导航栏自动收起后，此处就是真正的屏幕底）
+            .navigationBarsPadding(),
         contentAlignment = Alignment.TopCenter
     ) {
         // 氛围光斑背景（与首页统一玻璃语言）
@@ -197,8 +245,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 if (crossSelectMode) {
                     OutlinedButton(
                         onClick = {
-                            selectedIds = if (selectedIds.size == articles.size) emptySet()
-                            else articles.map { it.id }.toSet()
+                            selectedIds = if (selectedIds.size == filteredArticles.size) emptySet()
+                            else filteredArticles.map { it.id }.toSet()
                         },
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -246,6 +294,43 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // ── 标签筛选行（有标签时出现）：全部 / 各标签 / 未分类；多选 = 并集 ──
+        if (tagData.tags.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    FilterChip(
+                        selected = validTagFilter.isEmpty() && !includeUntagged,
+                        onClick = { applyTagFilter(emptySet(), false) },
+                        label = { Text("全部") },
+                    )
+                }
+                items(tagData.tags, key = { "tag_${it.id}" }) { tag ->
+                    FilterChip(
+                        selected = tag.id in validTagFilter,
+                        onClick = {
+                            val next = validTagFilter.toMutableSet()
+                            if (!next.add(tag.id)) next.remove(tag.id)
+                            applyTagFilter(next, includeUntagged)
+                        },
+                        label = { Text(tag.name) },
+                        leadingIcon = { TagDot(tag = TagChipUi(tag.name, tag.color), size = 8.dp) },
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = includeUntagged,
+                        onClick = { applyTagFilter(validTagFilter, !includeUntagged) },
+                        label = { Text("未分类") },
+                    )
+                }
+            }
+        }
+
         if (articles.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -274,32 +359,54 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     }
                 }
             }
+        } else if (filteredArticles.isEmpty()) {
+            // 筛选后无结果：给出清除入口（避免"文章凭空消失"的困惑）
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "当前筛选下没有文章",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(onClick = { applyTagFilter(emptySet(), false) }) {
+                        Text("清除筛选")
+                    }
+                }
+            }
         } else {
-            // 列数按可用宽度动态决定：600–839dp 时 2–4 列，≥840dp 时更多。
-            // 原先固定 GridCells.Fixed(2) 在平板横屏会把两张卡各拉成 500dp 宽的扁条。
-            val gridWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
-            val gridColumns = gridColumnsFor(gridWidthDp, cardMinWidthDp = 260f)
+            // 列数按窗口档位自适应（与底栏/侧栏同一 M3 边界 600dp）：
+            // 手机（<600dp）单列 —— 双列时卡片过窄、标题不易读；平板（≥600dp，含横屏）双列。
+            // ⚠️ 旧实现 gridColumnsFor(width, 260f) 内部 coerceIn(2, 6) 把下限锁死为 2 列，
+            // 手机也排成双列、标题被截断（真机反馈）；该函数下限已放通到 1 列（见 Adaptive.kt）。
+            val gridColumns = if (LocalIsLargeScreen) 2 else 1
             if (gridColumns > 1) {
                 LazyVerticalGrid(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
                     columns = GridCells.Fixed(gridColumns),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 12.dp)
                 ) {
-                gridItems(sortedArticles, key = { it.id }, contentType = { "article" }) { article ->
+                gridItems(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
                     ArticleCard(
                         article = article,
+                        tags = chipTagsByArticle[article.id].orEmpty(),
                         dateFormat = dateFormat,
                         reviewStatus = reviewStatusByArticle[article.id]
                             ?: EbbinghausScheduler.ReviewStatus.NOT_STARTED,
-                            onClick = { anchor ->
+                            onClick = {
                                 if (crossSelectMode) {
                                     selectedIds = if (article.id in selectedIds)
                                         selectedIds - article.id
                                     else selectedIds + article.id
                                 } else {
-                                    navController.navigateReveal("reader/${article.id}", anchor)
+                                    navController.navigate("reader/${article.id}")
                                 }
                             },
                             onLongClick = {
@@ -327,24 +434,26 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    // 底部留白：悬浮导航栏覆盖屏幕底部约 100dp，避免最后内容被遮挡
-                    contentPadding = PaddingValues(bottom = 120.dp)
+                    // 底部只需呼吸留白：导航栏改为「滚动/长按自动收起」，滚到底时已让位，
+                    // 不再需要 120dp 的避让留白（用户要求：取消一切为导航栏预留的底距）
+                    contentPadding = PaddingValues(bottom = 12.dp)
                 ) {
-                items(sortedArticles, key = { it.id }, contentType = { "article" }) { article ->
+                items(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
                     ArticleCard(
                         article = article,
+                        tags = chipTagsByArticle[article.id].orEmpty(),
                         dateFormat = dateFormat,
                         reviewStatus = reviewStatusByArticle[article.id]
                             ?: EbbinghausScheduler.ReviewStatus.NOT_STARTED,
-                            onClick = { anchor ->
+                            onClick = {
                                 if (crossSelectMode) {
                                     selectedIds = if (article.id in selectedIds)
                                         selectedIds - article.id
                                     else selectedIds + article.id
                                 } else {
-                                    navController.navigateReveal("reader/${article.id}", anchor)
+                                    navController.navigate("reader/${article.id}")
                                 }
                             },
                             onLongClick = {
@@ -396,6 +505,15 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 ) {
                     AdaptiveButtonLabel("删除选中（${selectedIds.size}）")
                 }
+                // 打标签（批量绑定；≥1 篇可用）
+                OutlinedButton(
+                    onClick = { tagPickTargets = articles.filter { it.id in selectedIds } },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = selectedIds.isNotEmpty()
+                ) {
+                    AdaptiveButtonLabel("打标签")
+                }
                 // 发给 AI（启用 AI 功能时显示，≥1 篇即可）
                 if (aiEnabled && selectedIds.isNotEmpty()) {
                     OutlinedButton(
@@ -430,6 +548,18 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             }
             Spacer(modifier = Modifier.height(8.dp))
         }
+    }
+
+    // 批量打标签面板：完成 → 应用并退出多选；取消 → 保留多选与选择
+    if (tagPickTargets.isNotEmpty()) {
+        TagPickerSheet(
+            targets = tagPickTargets,
+            onDismiss = { tagPickTargets = emptyList() },
+            onApplied = {
+                tagPickTargets = emptyList()
+                exitCrossSelect()
+            },
+        )
     }
 
     // 删除确认对话框（引用公共组件）
@@ -561,10 +691,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     is PickerSelection.Base ->
                         navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
                     PickerSelection.Custom ->
-                        navController.navigateReveal(
-                            "custom_cloze_list/${pendingPracticeArticleId}?pick=true",
-                            practiceButtonRect.takeIf { it != Rect.Zero }?.toTouchAnchor(),
-                        )
+                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}?pick=true")
                 }
             }
         }
@@ -575,9 +702,11 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 @Composable
 private fun ArticleCard(
     article: Article,
+    /** 已绑定标签（卡片左上角徽标；最多 2 枚 + 「+N」） */
+    tags: List<TagChipUi> = emptyList(),
     dateFormat: SimpleDateFormat,
     reviewStatus: EbbinghausScheduler.ReviewStatus = EbbinghausScheduler.ReviewStatus.NOT_STARTED,
-    onClick: (TouchAnchor?) -> Unit,
+    onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onPractice: () -> Unit,
     showCheckbox: Boolean = false,
@@ -590,11 +719,9 @@ private fun ArticleCard(
         is EbbinghausScheduler.ReviewStatus.PENDING -> "${s.daysLeft}天后复习" to MaterialTheme.colorScheme.outline
         is EbbinghausScheduler.ReviewStatus.COMPLETED -> "已掌握" to MaterialTheme.colorScheme.primary
     }
-    val anchor = rememberTouchAnchor()
     GlassCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .trackTouchAnchor(anchor),
+            .fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         // 列表含数十张卡片：关闭逐卡毛玻璃模糊背板，改用半透明染色层，
         // 既保留玻璃观感又彻底消除进入列表时的 GPU 模糊卡顿
@@ -602,10 +729,15 @@ private fun ArticleCard(
         containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else null,
         containerAlpha = if (isSelected) 0.30f else null,
         borderColor = if (isSelected) MaterialTheme.colorScheme.primary else null,
-        onClick = { onClick(anchor.value) },
+        onClick = { onClick() },
         onLongClick = onLongClick
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // 标签徽标：卡片左上角（标题上方独立一行；不换行，不遮挡既有元素）
+            if (tags.isNotEmpty()) {
+                TagChipRow(tags = tags, maxChips = 2)
+                Spacer(modifier = Modifier.height(4.dp))
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -614,7 +746,7 @@ private fun ArticleCard(
                 if (showCheckbox) {
                     Checkbox(
                         checked = isSelected,
-                        onCheckedChange = { onClick(anchor.value) },
+                        onCheckedChange = { onClick() },
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -624,13 +756,13 @@ private fun ArticleCard(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // 标题**必须完整显示**（硬性要求）：不设行数上限、不省略 ——
+                        // 长标题换行撑高卡片，绝不截断、不以省略号收尾
                         Text(
                             text = article.title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
                         if (statusText != null) {

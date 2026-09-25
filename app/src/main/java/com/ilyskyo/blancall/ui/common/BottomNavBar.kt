@@ -464,6 +464,11 @@ fun BottomNavBar(
 ) {
     val tabs = navTabsFor(showLibraryTab)
     val tabCount = tabs.size
+    // 手势层经 rememberUpdatedState 始终调用最新 onSelect（与 NavRail 同款陷阱防护）：
+    // pointerInput(tabCount) 的闭包只创建一次，直接捕获 onSelect 会冻结为首次实现 ——
+    // AppNavigation.selectTab 读取的 currentTab 也会随之冻结，使「点击当前 tab 直接忽略」
+    // 的判定误拦（历史真机坑：点回首页永久失效）。
+    val onSelectLatest by rememberUpdatedState(onSelect)
     val isDark = isBlancallDark()
     val accent = MaterialTheme.colorScheme.primary
     val subTint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -582,7 +587,7 @@ fun BottomNavBar(
                                             spring(dampingRatio = 0.6f, stiffness = 380f)
                                         )
                                     }
-                                    onSelect(targetTab)
+                                    onSelectLatest(targetTab)
                                     sliderPressed = false
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     change.consume()

@@ -80,15 +80,27 @@ object DailySentenceCoordinator {
     }
 
     /**
-     * 构建大卡片会话队列：今日句置顶 + 全部到期句（按 due 升序）。
-     * 到期句的句文按"文章全文切句 → 键命中"反查（每篇文章只切一次）；
-     * 反查失败（文章被删/句文被编辑）的项跳过展示（状态保留，不静默删数据）。
+     * 构建大卡片会话队列：今日句置顶 → 全部到期句（按逾期升序）→ **全部未学过的新句**
+     * （文章顺序 × 句序）。
+     *
+     * 新句必须入队（用户要求：所有句子都要能抽到，「记完一个还有下一个直到全记完」）——
+     * 旧实现只排「今日 + 到期」，首次使用 / 新文章反复打开都只有 1 张卡，复习推进不下去。
+     * 已学过的句子不在此列（等 FSRS 到期再入队，即间隔复习语义）；文章范围由调用方过滤
+     * （标签筛选 = 用户选定的抽句范围）。
+     *
+     * 到期句/新句的句文均按「文章全文切句」反查（每篇文章只切一次）；
+     * 反查失败（文章被删/句文被编辑）的到期项跳过展示（状态保留，不静默删数据）。
+     *
+     * @param includeAllLearned 主动复习（用户自己点「复习」/ 完成页「再复习一轮」）：true 时改为
+     *   **全量队列**（已学过含未到期的句子按「最久未复习优先」排前，新句按文章顺序接后）；
+     *   false（默认）= 日常间隔复习语义。
      */
     fun buildQueue(
         store: SentenceCardStore,
         articles: List<Article>,
         sentenceStates: Map<String, FsrsEngine.CardState>,
         now: Long = System.currentTimeMillis(),
+        includeAllLearned: Boolean = false,
     ): List<QueueItem> {
         val out = ArrayList<QueueItem>()
         val today = store.today()?.takeIf { validate(it, articles) }
@@ -104,23 +116,27 @@ object DailySentenceCoordinator {
             )
         }
 
+        // 每篇文章只切一次句（到期反查 / 新句入队 / 主动复习轮共用）
+        val candCache = HashMap<Long, List<SentenceSelector.Pick>>()
+        fun candsOf(article: Article): List<SentenceSelector.Pick> =
+            candCache.getOrPut(article.id) { SentenceSelector.candidates(article) }
+
+        // 主动复习轮：全量入队（含已学过未到期），提前返回（无「今日句」特殊位置）
+        if (includeAllLearned) {
+            return buildReviewAllQueue(articles, sentenceStates) { candsOf(it) }
+        }
+
         val due = sentenceStates.entries
             .filter {
                 it.key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) &&
                     FsrsEngine.isDue(it.value, now)
             }
             .sortedBy { it.value.due }
-        if (due.isEmpty()) return out
-
-        val textCache = HashMap<Long, Map<String, String>>()
         for (e in due) {
             if (e.key == today?.key) continue
             val aid = SentenceSelector.articleIdOf(e.key) ?: continue
             val article = articles.firstOrNull { it.id == aid } ?: continue
-            val texts = textCache.getOrPut(aid) {
-                SentenceSelector.candidates(article).associateBy({ it.key }, { it.text })
-            }
-            val text = texts[e.key] ?: continue
+            val text = candsOf(article).firstOrNull { it.key == e.key }?.text ?: continue
             out += QueueItem(
                 key = e.key,
                 articleId = aid,
@@ -128,6 +144,69 @@ object DailySentenceCoordinator {
                 text = text,
                 isToday = false,
             )
+        }
+
+        // ── 新句（从未学过）：全部入队直到记完 ──
+        // 今日句若本身是新句，已在队首占位；已学过的句子由 FSRS 到期机制召回。
+        val seen = HashSet<String>(out.size * 2 + 16)
+        out.forEach { seen.add(it.key) }
+        for (article in articles) {
+            for (cand in candsOf(article)) {
+                if (cand.key in sentenceStates) continue
+                if (!seen.add(cand.key)) continue
+                out += QueueItem(
+                    key = cand.key,
+                    articleId = article.id,
+                    title = article.title,
+                    text = cand.text,
+                    isToday = false,
+                )
+            }
+        }
+        return out
+    }
+
+    /**
+     * 主动复习轮队列（用户主动发起的「再学一轮」）：**范围内全部合格句** ——
+     * 已学过的按 lastReview 升序（最久没复习的排最前，key 次序保证确定性），
+     * 未学过的新句按文章顺序 × 句序接在其后。
+     * 文章被删 / 句文被编辑的旧键自然查不到（跳过，状态保留）。
+     */
+    private fun buildReviewAllQueue(
+        articles: List<Article>,
+        sentenceStates: Map<String, FsrsEngine.CardState>,
+        candsOf: (Article) -> List<SentenceSelector.Pick>,
+    ): List<QueueItem> {
+        val out = ArrayList<QueueItem>()
+        val learned = sentenceStates.entries
+            .filter { it.key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) }
+            .sortedWith(compareBy({ it.value.lastReview }, { it.key }))
+        val seen = HashSet<String>(learned.size * 2 + 16)
+        for (e in learned) {
+            val aid = SentenceSelector.articleIdOf(e.key) ?: continue
+            val article = articles.firstOrNull { it.id == aid } ?: continue
+            val text = candsOf(article).firstOrNull { it.key == e.key }?.text ?: continue
+            if (!seen.add(e.key)) continue
+            out += QueueItem(
+                key = e.key,
+                articleId = aid,
+                title = article.title,
+                text = text,
+                isToday = false,
+            )
+        }
+        for (article in articles) {
+            for (cand in candsOf(article)) {
+                if (cand.key in sentenceStates) continue
+                if (!seen.add(cand.key)) continue
+                out += QueueItem(
+                    key = cand.key,
+                    articleId = article.id,
+                    title = article.title,
+                    text = cand.text,
+                    isToday = false,
+                )
+            }
         }
         return out
     }

@@ -32,10 +32,6 @@ object AppPrefs {
     /** 段落首行自动缩进开关（导入时给未缩进段落补两格；关闭后不再新增缩进） */
     val autoIndentEnabledFlow: StateFlow<Boolean> = _autoIndentEnabledFlow.asStateFlow()
 
-    private val _homeBrandExpandedFlow = MutableStateFlow(false)
-    /** 首页品牌栏(Blancall 栏)展开状态：拉下后跨页面(如前往设置再返回)保持，直到用户再次下拉/上滑手动收起 */
-    val homeBrandExpandedFlow: StateFlow<Boolean> = _homeBrandExpandedFlow.asStateFlow()
-
     private val _accentColorFlow = MutableStateFlow(0)
     /** 主题色索引（0=靛蓝 1=海蓝 2=翠绿 3=暖橙 4=玫红 5=石墨） */
     val accentColorFlow: StateFlow<Int> = _accentColorFlow.asStateFlow()
@@ -114,20 +110,36 @@ object AppPrefs {
     /** PDF 预览视图模式：text=纯文本排版，image=原 PDF 图片渲染；跨篇目持久记忆 */
     val pdfViewModeFlow: StateFlow<String> = _pdfViewModeFlow.asStateFlow()
 
+    /** 保留错题手写墨迹（错题回顾）：默认开启；关闭后新练习不再存档，已存数据保留 */
+    private val _keepInkEnabledFlow = MutableStateFlow(true)
+    val keepInkEnabledFlow: StateFlow<Boolean> = _keepInkEnabledFlow.asStateFlow()
+
     private val _handwritingInputEnabledFlow = MutableStateFlow(false)
     /**
      * 作答输入方式：false=键盘输入（默认），true=手写输入。
      *
      * 用户明确要求「选了笔就一直用笔，直到自己切回键盘」——因此这是**跨页面、跨启动持久**的偏好，
-     * 而不是每次进练习页都要重新点一次的一次性开关。切换入口是答题输入框右上角的笔图标。
+     * 而不是每次进练习页都要重新点一次的一次性开关。切换入口是答题输入框**内部右下角**的
+     * 「手写/键盘」按钮。
      */
     val handwritingInputEnabledFlow: StateFlow<Boolean> = _handwritingInputEnabledFlow.asStateFlow()
+
+    private val _articleTagFilterFlow = MutableStateFlow<Set<Long>>(emptySet())
+    /** 文章列表标签筛选：选中的标签 id 集合（空且 includeUntagged=false 时 = 不筛选「全部」） */
+    val articleTagFilterFlow: StateFlow<Set<Long>> = _articleTagFilterFlow.asStateFlow()
+
+    private val _articleTagIncludeUntaggedFlow = MutableStateFlow(false)
+    /** 文章列表标签筛选：是否同时包含「未分类」（无标签）文章 */
+    val articleTagIncludeUntaggedFlow: StateFlow<Boolean> = _articleTagIncludeUntaggedFlow.asStateFlow()
+
+    private val _sentenceTagFilterFlow = MutableStateFlow<Set<Long>>(emptySet())
+    /** 句子卡片抽句范围标签筛选：选中的标签 id 集合（空 = 全部文章） */
+    val sentenceTagFilterFlow: StateFlow<Set<Long>> = _sentenceTagFilterFlow.asStateFlow()
 
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         _autoIndentEnabledFlow.value = prefs.getBoolean("auto_indent_enabled", true)
-        _homeBrandExpandedFlow.value = prefs.getBoolean("home_brand_expanded", false)
         _accentColorFlow.value = prefs.getInt("accent_color", 0)
         _homeIconKeyFlow.value = prefs.getString("emoji_icon", "logo")?.takeIf { it in KNOWN_ICON_KEYS } ?: "logo"
         _subtitleFlow.value = prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge."
@@ -148,6 +160,12 @@ object AppPrefs {
         _libraryDisclaimerSeenFlow.value = prefs.getStringSet("library_disclaimer_seen", emptySet())?.toSet() ?: emptySet()
         _pdfViewModeFlow.value = prefs.getString("pdf_view_mode", "text") ?: "text"
         _handwritingInputEnabledFlow.value = prefs.getBoolean("handwriting_input_enabled", false)
+        _keepInkEnabledFlow.value = prefs.getBoolean("keep_ink_enabled", true)
+        _articleTagFilterFlow.value = prefs.getStringSet("article_tag_filter", emptySet())
+            ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
+        _articleTagIncludeUntaggedFlow.value = prefs.getBoolean("article_tag_include_untagged", false)
+        _sentenceTagFilterFlow.value = prefs.getStringSet("sentence_tag_filter", emptySet())
+            ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 36f)
         _readingLineHeightFlow.value = prefs.getFloat("reading_line_height", 2.0f).coerceIn(1.4f, 2.4f)
         _readingBgModeFlow.value = prefs.getInt("reading_bg_mode", 0)
@@ -175,16 +193,6 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("auto_indent_enabled", value) }
                 _autoIndentEnabledFlow.value = value
-            }
-        }
-
-    /** 首页品牌栏(Blancall 栏)展开状态：展开后跨页面/跨启动保持，直到用户手动收起 */
-    var homeBrandExpanded: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("home_brand_expanded", false) else false
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putBoolean("home_brand_expanded", value) }
-                _homeBrandExpandedFlow.value = value
             }
         }
 
@@ -412,6 +420,37 @@ object AppPrefs {
                 _handwritingInputEnabledFlow.value = value
             }
         }
+
+    /** 保留错题手写墨迹（错题回顾）：默认开启 */
+    var keepInkEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("keep_ink_enabled", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("keep_ink_enabled", value) }
+                _keepInkEnabledFlow.value = value
+            }
+        }
+
+    /**
+     * 设置文章列表标签筛选（[selectedTagIds] 空且 [includeUntagged] = false 时表示「全部」）。
+     * 以字符串存 Long 集合（SP StringSet），读取容错解析（非法项丢弃）。
+     */
+    fun setArticleTagFilter(selectedTagIds: Set<Long>, includeUntagged: Boolean) {
+        if (!::prefs.isInitialized) return
+        prefs.edit {
+            putStringSet("article_tag_filter", selectedTagIds.map { it.toString() }.toSet())
+            putBoolean("article_tag_include_untagged", includeUntagged)
+        }
+        _articleTagFilterFlow.value = selectedTagIds
+        _articleTagIncludeUntaggedFlow.value = includeUntagged
+    }
+
+    /** 设置句子卡片抽句范围标签筛选（空集 = 全部文章） */
+    fun setSentenceTagFilter(selectedTagIds: Set<Long>) {
+        if (!::prefs.isInitialized) return
+        prefs.edit { putStringSet("sentence_tag_filter", selectedTagIds.map { it.toString() }.toSet()) }
+        _sentenceTagFilterFlow.value = selectedTagIds
+    }
 
     // ── 沉浸阅读模式设置 ──
 

@@ -244,9 +244,9 @@ fun TouchRevealHost(
  *
  * 生命周期：配置变更（旋转）后仍在 → 转场状态可恢复；进程重建即空表 → 转场自动回退默认动画（不会错乱）。
  *
- * 协议：
+ * 协议（转场 lambda 会被框架在同一导航内多次求值，所有接口必须幂等、无破坏性副作用）：
  * 1. 点击方导航前调用 [NavController.navigateReveal] 登记「基础路由 → 触点锚点」；
- * 2. 目标页 enterTransition 用 [consume] 消费锚点并绑定到该返回栈条目（[bound]）；
+ * 2. 目标页 enterTransition 用 [anchorFor] 解析锚点：首次命中即幂等绑定到该返回栈条目，重复求值结果一致；
  * 3. 返回时 popExit 用 [bound] 取回锚点做反向缩回；条目销毁时由 [RevealPageShell] 的 onDispose [forget]。
  */
 object RevealNav {
@@ -259,6 +259,9 @@ object RevealNav {
     private var pendingRoute: String? = null
     private var pendingAnchor: TouchAnchor? = null
     private var pendingAt: Long = 0L
+
+    /** 待用锚点已被哪个返回栈条目认领（防止有效期内被其它导航误用；[post] 重置） */
+    private var pendingEntryId: String? = null
 
     /** 已浮起展开的返回栈条目（entryId → 锚点），供 popExit 反向缩回 */
     private val boundByEntry = mutableStateMapOf<String, TouchAnchor>()
@@ -285,31 +288,38 @@ object RevealNav {
         pendingRoute = baseRoute(route)
         pendingAnchor = anchor
         pendingAt = clock()
+        pendingEntryId = null
     }
 
-    /**
-     * 非消耗探测：该路由当前是否有待用锚点（供源页 exit 判断，可能在 [consume] 前后被调用）。
-     * 过期返回 null（不清理；真正的清理由 [consume] 或下一次 [post] 完成）。
-     */
-    fun pendingFor(routePattern: String): TouchAnchor? {
+    /** 待用锚点对该条目是否可用：路由匹配、未过期、未被其它条目认领（只读） */
+    private fun claimable(routePattern: String, entryId: String): TouchAnchor? {
         val pr = pendingRoute ?: return null
         val pa = pendingAnchor ?: return null
         if (clock() - pendingAt > PENDING_TTL_MS) return null
-        return if (pr == baseRoute(routePattern)) pa else null
+        if (pr != baseRoute(routePattern)) return null
+        val owner = pendingEntryId
+        if (owner != null && owner != entryId) return null
+        return pa
     }
 
     /**
-     * 入口转场消费：路由匹配且未过期 → 绑定到条目并返回锚点；
-     * 否则清除待用状态并返回 null（后续按普通导航回退默认动画）。
+     * 非破坏探测：该条目此刻能否解析到浮起锚点（已绑定命中或待用锚点可认领）。
+     * 供源页 exit 判断使用——幂等，重复调用不改任何状态。
      */
-    fun consume(routePattern: String, entryId: String): TouchAnchor? {
-        val pr = pendingRoute
-        val pa = pendingAnchor
-        val at = pendingAt
-        pendingRoute = null
-        pendingAnchor = null
-        if (pr == null || pa == null || pr != baseRoute(routePattern)) return null
-        if (clock() - at > PENDING_TTL_MS) return null
+    fun peek(routePattern: String, entryId: String): TouchAnchor? =
+        boundByEntry[entryId] ?: claimable(routePattern, entryId)
+
+    /**
+     * 入口转场解析：命中则幂等绑定到该条目并返回锚点。
+     *
+     * 一次导航中框架会对转场 lambda 多次求值（源页退出、目标页进入各一次），
+     * 旧版「消费即清空」会让先求值的那次拿走锚点，真正生效的目标页求值只剩 fallback
+     * （旧右侧滑入）——故所有解析必须可重复、结果一致。
+     */
+    fun anchorFor(routePattern: String, entryId: String): TouchAnchor? {
+        boundByEntry[entryId]?.let { return it }
+        val pa = claimable(routePattern, entryId) ?: return null
+        pendingEntryId = entryId
         boundByEntry[entryId] = pa
         return pa
     }
@@ -335,6 +345,7 @@ object RevealNav {
         pendingRoute = null
         pendingAnchor = null
         pendingAt = 0L
+        pendingEntryId = null
         boundByEntry.clear()
         playedByEntry.clear()
         surfaceWidth = 0
@@ -372,9 +383,9 @@ fun NavController.navigateReveal(
     navigate(route, builder)
 }
 
-/** 浮起进入：有待用锚点 → 从触点放大浮出（scale 0.84→1 + 渐显）；否则 [fallback]（保持既有观感） */
+/** 浮起进入：可解析锚点 → 从触点放大浮出（scale 0.84→1 + 渐显；同一导航重复求值结果一致）；否则 [fallback]（保持既有观感） */
 fun AnimatedContentTransitionScope<NavBackStackEntry>.revealEnter(fallback: EnterTransition): EnterTransition {
-    val anchor = RevealNav.consume(targetState.destination.route ?: "", targetState.id) ?: return fallback
+    val anchor = RevealNav.anchorFor(targetState.destination.route ?: "", targetState.id) ?: return fallback
     return scaleIn(
         animationSpec = tween(320, easing = FastOutSlowInEasing),
         initialScale = 0.84f,
@@ -387,8 +398,7 @@ fun AnimatedContentTransitionScope<NavBackStackEntry>.revealEnter(fallback: Ente
  * 不与浮起页的放大互相打架；否则 [fallback]。
  */
 fun AnimatedContentTransitionScope<NavBackStackEntry>.revealExit(fallback: ExitTransition): ExitTransition {
-    val revealed = RevealNav.pendingFor(targetState.destination.route ?: "") != null ||
-        RevealNav.bound(targetState.id) != null
+    val revealed = RevealNav.peek(targetState.destination.route ?: "", targetState.id) != null
     return if (revealed) fadeOut(tween(200)) else fallback
 }
 

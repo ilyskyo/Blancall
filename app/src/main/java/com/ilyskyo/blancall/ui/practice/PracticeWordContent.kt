@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -115,7 +116,9 @@ internal fun WordClozeContent(
     onRetryAnalysis: () -> Unit = {},
     onViewArticleData: (() -> Unit)? = null,
     onBlankFocus: (Int) -> Unit = {},
-    onAnswerChange: (Int, String) -> Unit
+    onAnswerChange: (Int, String) -> Unit,
+    /** 墨迹上报（错题回顾）：手写被消费时回调（blankIdx 已在内部绑定）；透传给内嵌书写板 */
+    onInkCommitted: ((Int, List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     blancall?.let {
         // 提示计时目标 = 第一个未填完的空：即使从未输入，满足无操作时长也提示
@@ -184,6 +187,11 @@ internal fun WordClozeContent(
                                     originalAnswer = blank.originalChar,
                                     // 文种按该空的标准答案自动选（英文空走 EMNIST 模型）
                                     script = HandwritingScript.forAnswer(blank.originalChar),
+                                    // 墨迹上报（错题回顾）：按该空 index 绑定上报
+                                    // （面板切换/卸载不影响已上报数据）
+                                    onInkCommitted = { s, w, h ->
+                                        onInkCommitted?.invoke(blankIdx, s, w, h)
+                                    },
                                     onValueChange = { onAnswerChange(blankIdx, it) }
                                 )
                                 Spacer(Modifier.height(4.dp))
@@ -252,7 +260,9 @@ internal fun BlankCard(
     originalAnswer: String = "",
     /** 该空的识别文种（按标准答案自动选） */
     script: HandwritingScript = HandwritingScript.Chinese,
-    onValueChange: (String) -> Unit
+    onValueChange: (String) -> Unit,
+    /** 墨迹上报（错题回顾）：透传给内嵌书写板（blankIdx 由调用方绑定） */
+    onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     // 只有「非目标」卡才需要整卡点击切目标（点输入框仍能正常打字，互不冲突）
     val activatable = !handwritingTarget && !isSubmitted && onActivate != null
@@ -306,7 +316,8 @@ internal fun BlankCard(
                 expectedNextChar = originalAnswer.getOrNull(value.length),
                 // 英文默写的答案先验：剩余答案（容错匹配 o/0、1/l 等混淆后整词提交）
                 expectedWord = originalAnswer.drop(value.length).takeIf { it.isNotEmpty() },
-                script = script
+                script = script,
+                onInkCommitted = onInkCommitted
             )
             if (isSubmitted && checkDetail != null) {
                 Spacer(Modifier.height(4.dp))

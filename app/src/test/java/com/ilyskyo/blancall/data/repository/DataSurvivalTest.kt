@@ -12,7 +12,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -37,6 +39,20 @@ class RecordRepositorySurvivalTest {
         correctCount = 1,
     )
 
+    /** 读盘断言用：按文件实际格式解析（兼容旧数组与 JSONL）。 */
+    private fun readDiskObjects(path: File): List<JSONObject> {
+        val text = path.readText()
+        if (text.trimStart().startsWith("[")) {
+            val arr = JSONArray(text)
+            return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+        }
+        return text.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { runCatching { JSONObject(it) }.getOrNull() }
+            .toList()
+    }
+
     @Test
     fun `并发 insert 不丢记录且磁盘与内存一致`() {
         val path = File(Files.createTempDirectory("blancall-records-concurrency").toFile(), "records.json")
@@ -55,9 +71,9 @@ class RecordRepositorySurvivalTest {
         }
         val expected = threads * perThread
         assertEquals("内存条数", expected, repo.records.value.size)
-        val arr = JSONArray(path.readText())
-        assertEquals("磁盘条数", expected, arr.length())
-        val diskIds = (0 until arr.length()).map { arr.getJSONObject(it).getLong("id") }.toSet()
+        val disk = readDiskObjects(path)
+        assertEquals("磁盘条数", expected, disk.size)
+        val diskIds = disk.map { it.getLong("id") }.toSet()
         assertEquals("磁盘 id 不应重复", expected, diskIds.size)
     }
 
@@ -68,15 +84,19 @@ class RecordRepositorySurvivalTest {
         runBlocking {
             val repo = RecordRepository(path.absolutePath)
             repo.awaitLoaded()
-            repo.insert(record(articleId = 1)) // v1（首写，无备份）
-            repo.insert(record(articleId = 2)) // v2；v1 轮换入 .bak
+            repo.insert(record(articleId = 1))
+            repo.insert(record(articleId = 2))
+            // 追加路径不轮换 .bak：触发一次整体重写（删除不存在的文章）
+            // 让当前全量内容轮换入 .bak；再追加一条，使 .bak 与主文件拉开差异
+            repo.deleteByArticleId(9999)
+            repo.insert(record(articleId = 3))
         }
         path.writeText("{ 不是合法 JSON")
         runBlocking {
             val repo2 = RecordRepository(path.absolutePath)
             repo2.awaitLoaded()
-            // 回读到的是上一版（只含 articleId=1）
-            assertEquals(setOf(1L), repo2.records.value.map { it.articleId }.toSet())
+            // 回读到的是上一版整体重写内容（articleId 1 与 2；不含后来追加的 3）
+            assertEquals(setOf(1L, 2L), repo2.records.value.map { it.articleId }.toSet())
         }
     }
 
@@ -88,7 +108,7 @@ class RecordRepositorySurvivalTest {
             val repo = RecordRepository(path.absolutePath)
             repo.awaitLoaded()
             repo.insert(record(articleId = 1))
-            repo.insert(record(articleId = 2)) // 生成 .bak
+            repo.insert(record(articleId = 2))
         }
         path.writeText("{ broken")
         File(dir, "records.json.bak").writeText("{{ also broken")
@@ -98,7 +118,9 @@ class RecordRepositorySurvivalTest {
             assertTrue("全损坏应空起步", repo2.records.value.isEmpty())
             repo2.insert(record(articleId = 9))
             assertEquals(1, repo2.records.value.size)
-            assertEquals("损坏文件应被新内容覆盖", 1, JSONArray(path.readText()).length())
+            // 损坏文件应被整体重写覆盖（而不是被追加成「垃圾 + 有效行」的混合体）
+            assertFalse("重写后不应是旧数组格式", path.readText().trimStart().startsWith("["))
+            assertEquals("损坏文件应被新内容覆盖", 1, readDiskObjects(path).size)
         }
     }
 }

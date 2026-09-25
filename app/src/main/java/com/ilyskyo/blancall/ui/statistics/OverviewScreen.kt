@@ -29,13 +29,19 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.MarkdownText
+import com.ilyskyo.blancall.ui.common.TagChipUi
+import com.ilyskyo.blancall.ui.common.TagDot
+import com.ilyskyo.blancall.algorithm.TagOps
+import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.ai.AiAnalysisItem
 import com.ilyskyo.blancall.ui.ai.loadAiAnalyses
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
@@ -60,6 +66,7 @@ import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
 import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
 import com.ilyskyo.blancall.ui.common.toTouchAnchor
 import com.ilyskyo.blancall.ui.common.trackTouchAnchor
@@ -162,6 +169,15 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     val dailyGoal by ReminderPrefs.dailyPracticeGoalFlow.collectAsState()
     val templateId by AppPrefs.reviewTemplateFlow.collectAsState()
     val scope = rememberCoroutineScope()
+
+    // ── 文章标签：「标签分布」聚合（多标签文章计入各自标签；跨文练习−1 无单篇归属自然排除）──
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
+    val tagData by tagStore.data.collectAsState()
+    // 首次进入 priming：IO 读盘 → 发布 StateFlow
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
+    val tagStats = remember(articles, allRecords, tagData) {
+        TagOps.aggregateTagStats(articles, allRecords, tagData)
+    }
 
     // 最近一条训练分析（Pro：退出批改页后仍可回看）
     var latestAnalysis by remember { mutableStateOf<AiAnalysisItem?>(null) }
@@ -491,11 +507,13 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 
         val isWide = LocalConfiguration.current.screenWidthDp >= 600
 
+        // 滚动驱动的底栏自动收起：内容前进时导航栏让位、回滚时恢复（不再需要避让留白）
+        val navBarScrollConn = rememberAutoHideNavBarOnScroll()
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            // 底部留白：悬浮导航栏会覆盖屏幕底部约 100dp，避免最后内容被遮挡
-            contentPadding = PaddingValues(bottom = 120.dp)
+            // 底部只留呼吸留白：导航栏改为「滚动自动收起」后不再需要 120dp 避让底距
+            contentPadding = PaddingValues(bottom = 12.dp)
         ) {
             // ── 最近训练分析（有则显示） ──
             latestAnalysis?.let { item ->
@@ -879,6 +897,27 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     }
                 }
             }
+
+            // ── 标签分布（按标签聚合学习数据；无标签时整块隐藏）──
+            if (tagStats.isNotEmpty()) {
+                item {
+                    Text("标签分布", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(top = 4.dp))
+                }
+                item {
+                    GlassCard {
+                        Column(Modifier.padding(16.dp)) {
+                            val maxArticles = tagStats.maxOf { it.articleCount }.coerceAtLeast(1)
+                            tagStats.forEachIndexed { index, stat ->
+                                if (index > 0) Spacer(Modifier.height(12.dp))
+                                TagStatRow(stat = stat, maxArticles = maxArticles)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     }
@@ -948,6 +987,56 @@ private fun AnimatedOverviewCard(content: @Composable () -> Unit) {
                 translationY = (1f - progress) * 20.dp.toPx()
             }
     ) { content() }
+}
+
+/**
+ * 标签分布单行：色点/中性点 + 名称 + 「N 篇 · 练习 X 次 · 正确率 Y%」+ 占比条（条长 ∝ 文章数）。
+ * 多标签文章计入各自标签（各标签之和会大于总量）；「未分类」= 无任何标签的文章。
+ */
+@Composable
+private fun TagStatRow(stat: TagOps.TagStat, maxArticles: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (stat.tag != null) {
+            TagDot(tag = TagChipUi(stat.tag.name, stat.tag.color), size = 10.dp)
+        } else {
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            stat.tag?.name ?: "未分类",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            "${stat.articleCount} 篇 · 练习 ${stat.practices} 次 · 正确率 ${(stat.rate * 100).toInt()}%",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    Spacer(Modifier.height(4.dp))
+    val barColor = stat.tag?.let { Color(0xFF000000.toInt() or (it.color and 0xFFFFFF)) }
+        ?: MaterialTheme.colorScheme.outlineVariant
+    val fraction = (stat.articleCount.toFloat() / maxArticles).coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(3.dp))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction)
+                .fillMaxHeight()
+                .background(barColor, RoundedCornerShape(3.dp))
+        )
+    }
 }
 
 // ════════════════════════════════════════════════════════

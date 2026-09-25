@@ -39,6 +39,7 @@ import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,7 @@ import com.ilyskyo.blancall.data.handwriting.HandwritingRecognizer
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.StylusPresence
 import com.ilyskyo.blancall.ui.common.penTapToHandwriting
 import com.ilyskyo.blancall.ui.common.suppressAsPalmMisTouch
 import com.ilyskyo.blancall.ui.practice.HintOutlinedField
@@ -143,7 +145,12 @@ fun AnswerInputField(
      * 英文默写的「答案先验」：本空从当前位置起的剩余标准答案（如已写「L」则为「ove」）；
      * 透传给 [HandwritingPanel] 做容错匹配（详见面板参数注释）。null = 不启用。
      */
-    expectedWord: String? = null
+    expectedWord: String? = null,
+    /**
+     * 墨迹上报（错题回顾）：透传给内嵌 [HandwritingPanel]（见其参数注释）；
+     * 回调参数为（被消费的笔画, 板宽 px, 板高 px）。
+     */
+    onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     // ⚠️⚠️ 这里**不能**只读 HandwritingRecognizer.isNativeAvailable 就完事 —— 那是一个死锁：
     //
@@ -171,6 +178,9 @@ fun AnswerInputField(
     else remember(script) { HandwritingRecognizer.hasLatinModel(engineContext) }
     val engineAvailable = libReady && scriptModelAvailable
     val handwritingMode by AppPrefs.handwritingInputEnabledFlow.collectAsStateWithLifecycle()
+    // 笔设备存在性：无笔 ⇒ 手指书写（触屏仿造）。仅用于文案；书写行为由 InkBoardView
+    // 在落笔时刻读取 StylusPresence.isPresent 判定（热插拔下一笔生效）。
+    val stylusPresent by StylusPresence.present.collectAsStateWithLifecycle()
 
     // 笔点回调必须兜住：`pointerInput` 只在 key 变化时重启，直接捕获会冻成
     // 「首次组合那次」的实例（与手写面板里踩过的回调陈旧坑同源）。
@@ -189,6 +199,9 @@ fun AnswerInputField(
     // 若在这里也拦截，会出现「笔点了 A 卡、书写板却出现在 B 卡」的错位。
     val penToHandwriting = engineAvailable && enabled && allowHandwritingSwitch && !handwritingCompact
 
+    // 「手写/键盘」切换按钮：紧凑卡不渲染（十几个空各挂一个胶囊既是噪音，也撑高每张卡）
+    val showModeSwitch = allowHandwritingSwitch && engineAvailable && !compactHandwriting
+
     Column(modifier = modifier.animateContentSize()) {
         // ── 输入区：键盘 / 手写（完整书写板）/ 手写（紧凑只读行）──
         if (useHandwriting && !compactHandwriting) {
@@ -203,7 +216,11 @@ fun AnswerInputField(
                     if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
                 )
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(top = 10.dp, bottom = if (showModeSwitch) 8.dp else 10.dp)
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // 光标位置控制：BasicTextField(String) 的内部 selection 不可控，
                         // 真机出现「聚焦后光标停在开头闪」；改用受控 TextFieldValue ——
@@ -256,7 +273,9 @@ fun AnswerInputField(
                                     Box {
                                         if (value.isEmpty()) {
                                             Text(
-                                                placeholder.ifBlank { "用笔在下方书写" },
+                                                placeholder.ifBlank {
+                                                    if (stylusPresent) "用笔在下方书写" else "用手指在下方书写"
+                                                },
                                                 style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
@@ -270,6 +289,20 @@ fun AnswerInputField(
                         if (value.isNotEmpty()) {
                             Spacer(Modifier.width(4.dp))
                             BackspaceButton(onClick = { onValueChange(value.dropLast(1)) })
+                        }
+                    }
+                    // ── 模式切换：输入框内右下角（与键盘态同位置；紧凑卡不渲染）──
+                    if (showModeSwitch) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            ModeSwitchChip(
+                                handwriting = true,
+                                enabled = enabled,
+                                onToggle = { AppPrefs.handwritingInputEnabled = false }
+                            )
                         }
                     }
                 }
@@ -294,7 +327,8 @@ fun AnswerInputField(
                 allowLatinFallback = expectedNextChar?.let {
                     HandwritingScript.isLatinInputChar(it)
                 } != false,
-                expectedWord = expectedWord
+                expectedWord = expectedWord,
+                onInkCommitted = onInkCommitted
             )
         } else if (compactHandwriting) {
             // 手写态（非当前目标）：只呈现已写内容，把纵向空间让给真正的书写板
@@ -363,28 +397,18 @@ fun AnswerInputField(
                 maxLines = maxLines,
                 minHeight = minHeight,
                 textStyle = textStyle,
-                imeAction = imeAction
-            )
-            }
-        }
-
-        // ── 模式切换行 ──
-        // 紧凑模式（非当前作答目标）不渲染：十几个空各挂一个「手写/键盘」胶囊，
-        // 既是噪音，也会把每张卡再撑高一行。
-        if (allowHandwritingSwitch && engineAvailable && !compactHandwriting) {
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ModeSwitchChip(
-                    handwriting = useHandwriting,
-                    enabled = enabled,
-                    onToggle = {
-                        AppPrefs.handwritingInputEnabled = !useHandwriting
+                imeAction = imeAction,
+                // 模式切换按钮：输入框**内部右下角**（不再占输入框下方一整行）
+                bottomTrailing = if (showModeSwitch) {
+                    {
+                        ModeSwitchChip(
+                            handwriting = useHandwriting,
+                            enabled = enabled,
+                            onToggle = { AppPrefs.handwritingInputEnabled = !useHandwriting }
+                        )
                     }
-                )
+                } else null
+            )
             }
         }
     }
@@ -406,7 +430,9 @@ fun InlineHandwritingAnswer(
     /** 下一个期望字符（生僻字守卫，同 [AnswerInputField]）；null = 不启用 */
     expectedNextChar: Char? = null,
     /** 英文默写的「答案先验」（剩余标准答案）；null = 不启用。 */
-    expectedWord: String? = null
+    expectedWord: String? = null,
+    /** 墨迹上报（错题回顾）：透传给面板（见 [HandwritingPanel] 参数注释）。 */
+    onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     Column(modifier = modifier.animateContentSize()) {
         if (value.isNotEmpty()) {
@@ -451,7 +477,8 @@ fun InlineHandwritingAnswer(
             allowLatinFallback = expectedNextChar?.let {
                 HandwritingScript.isLatinInputChar(it)
             } != false,
-            expectedWord = expectedWord
+            expectedWord = expectedWord,
+            onInkCommitted = onInkCommitted
         )
     }
 }

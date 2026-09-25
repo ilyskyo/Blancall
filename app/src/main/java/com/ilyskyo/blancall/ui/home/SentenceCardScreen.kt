@@ -7,6 +7,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,15 +16,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,11 +63,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
+import com.ilyskyo.blancall.data.repository.TagStore
+import com.ilyskyo.blancall.ui.common.AppIcon
+import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.TagChipUi
+import com.ilyskyo.blancall.ui.common.TagDot
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import kotlin.math.roundToInt
@@ -72,15 +87,20 @@ import kotlinx.coroutines.withContext
 /**
  * 「句子卡片」大卡片界面（华为堆叠卡片形态的应用内复刻）。
  *
- * - 队列 = 今日句置顶 + 全部到期句（[DailySentenceCoordinator.buildQueue]），一次加载不重排；
+ * - 队列 = 今日句置顶 + 全部到期句 + **全部未学过的新句**（[DailySentenceCoordinator.buildQueue]），
+ *   一次加载不重排：记完一个还有下一个，直到全部记完（新文章/首次使用不会只有 1 张卡）；
+ *   范围由筛选（标签）限定；
  * - 手势：上滑 = 下一张（不评级），下滑 = 回看上一张（已评只读盖章），不足阈值回弹；
  *   边界（首张下滑/末张上滑）与飞出动画期间的输入一律回弹/忽略，卡不会停在半途；
  * - 三键评级（忘记/不熟/记住了 → AGAIN/HARD/GOOD）写入句子级 FSRS 状态（[FsrsStateStore.saveSentence]），
  *   评完自动前进；完成页展示本次会话的评级分布（会话内记录，不落盘）；
+ * - 主动复习：顶栏「复习」按钮用户可随时自行点击，进入全量再学一轮（含已学过未到期的句子，
+ *   可对任意一张重复评级），「结束复习」回到日常间隔复习；完成页另有「再复习一轮」入口；
  * - 评级只更新本地状态用于展示，落盘在 IO 线程，失败不影响继续记忆。
  *
  * 视图组件见 [SentenceCardViews]（卡片脸/按钮/空态/完成页）；文案与时间口径见 [SentenceCardTexts]。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SentenceCardScreen(navController: NavController) {
     val context = LocalContext.current
@@ -91,11 +111,39 @@ fun SentenceCardScreen(navController: NavController) {
     }
     val sentenceStore = remember { SentenceCardStore.getInstance(context.filesDir) }
 
+    // ── 抽句范围标签筛选（AppPrefs 持久化；空 = 全部文章）──
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
+    val tagData by tagStore.data.collectAsState()
+    // 首次进入 priming：IO 读盘 → 发布 StateFlow
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
+    val rawSentenceFilter by AppPrefs.sentenceTagFilterFlow.collectAsState()
+    var showFilterSheet by remember { mutableStateOf(false) }
+    // 与现有标签对账：已删标签的筛选 id 仅本次忽略
+    val validSentenceFilter = remember(rawSentenceFilter, tagData) {
+        rawSentenceFilter.filterTo(mutableSetOf()) { id -> tagData.tags.any { it.id == id } }
+    }
+    // 筛选后的文章池：筛选为空或命中为空 → 回退全部文章（防「每日一句」凭空消失）
+    val sentencePool = remember(articles, tagData, validSentenceFilter) {
+        if (validSentenceFilter.isEmpty()) articles
+        else TagOps.filterArticles(articles, tagData, validSentenceFilter, includeUntagged = false)
+            .ifEmpty { articles }
+    }
+    // 来源文章 id → 标签 chips（句卡展示）
+    val chipByArticle = remember(tagData) {
+        TagOps.tagsByArticle(tagData).mapValues { (_, list) -> list.toChipUis() }
+    }
+
     // 队列（一次加载）；评级态 = states 快照 + 是否今天已评（从状态重 derive，旋转后可恢复）
     var queue by remember { mutableStateOf<List<DailySentenceCoordinator.QueueItem>?>(null) }
     var states by remember { mutableStateOf<Map<String, FsrsEngine.CardState>>(emptyMap()) }
     var currentIndex by rememberSaveable { mutableIntStateOf(0) }
     var positioned by rememberSaveable { mutableStateOf(false) }
+    // ── 主动复习（用户自行发起）──
+    // reviewAll = true：本轮为「全量复习轮」——全部句子入队（含已学过未到期），
+    // 且允许对任意一张（含今天已评的）再次评级；顶栏「复习 / 结束复习」可随时切换。
+    // reviewRound 自增触发队列重建（点「复习」/「结束复习」/ 完成页「再复习一轮」）。
+    var reviewAll by rememberSaveable { mutableStateOf(false) }
+    var reviewRound by rememberSaveable { mutableIntStateOf(0) }
     // 本次会话评级记录（完成页分布用；rememberSaveable 仅用于旋转恢复，不落盘）
     val sessionRatings = rememberSaveable(saver = SessionRatingsSaver) {
         mutableStateMapOf<String, FsrsEngine.Rating>()
@@ -106,19 +154,26 @@ fun SentenceCardScreen(navController: NavController) {
         if (!AppPrefs.sentenceHintSeen) AppPrefs.sentenceHintSeen = true
     }
 
-    LaunchedEffect(articles) {
-        if (articles.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(sentencePool, reviewRound) {
+        if (sentencePool.isEmpty()) return@LaunchedEffect
         fsrsStore.awaitLoaded()
+        val allLearned = reviewAll
         val (loadedStates, loadedQueue) = withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
             val s = fsrsStore.allSentenceStates()
             // 直接开屏兜底：确保今日句已抽（通常从首页进入时已抽过，此处幂等）
-            DailySentenceCoordinator.ensureToday(sentenceStore, articles, s, now)
-            s to DailySentenceCoordinator.buildQueue(sentenceStore, articles, s, now)
+            DailySentenceCoordinator.ensureToday(sentenceStore, sentencePool, s, now)
+            s to DailySentenceCoordinator.buildQueue(
+                sentenceStore, sentencePool, s, now, includeAllLearned = allLearned,
+            )
         }
         states = loadedStates
         queue = loadedQueue
-        if (!positioned) {
+        if (allLearned) {
+            // 主动复习：从头过一遍（不论今天是否已评）
+            positioned = true
+            currentIndex = 0
+        } else if (!positioned) {
             positioned = true
             // 打开即定位到第一个未评（今日句已评则跳到下一张；全部已评 → 完成页）
             val firstUnrated = loadedQueue.indexOfFirst { item ->
@@ -162,7 +217,8 @@ fun SentenceCardScreen(navController: NavController) {
 
     /** 三键评级：FSRS 更新 → 本地即时展示 → IO 落盘 → 自动前进 */
     fun rate(item: DailySentenceCoordinator.QueueItem, rating: FsrsEngine.Rating) {
-        if (ratedToday(item.key) || animating) return
+        // 主动复习轮允许对任意一张再次评级（含今天已评的）；日常模式保持「今天已评只读」
+        if (animating || (!reviewAll && ratedToday(item.key))) return
         haptic()
         val ts = System.currentTimeMillis()
         val next = FsrsEngine.review(states[item.key] ?: FsrsEngine.CardState(), rating, ts)
@@ -208,7 +264,72 @@ fun SentenceCardScreen(navController: NavController) {
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.width(10.dp))
+                    // 抽句范围筛选入口（多选标签；背后句子池实时刷新）
+                    GlassButton(
+                        onClick = { showFilterSheet = true },
+                        modifier = Modifier.height(34.dp),
+                    ) {
+                        AppIcon(
+                            kind = AppIconKind.Filter,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            if (validSentenceFilter.isEmpty()) "筛选" else "已筛选",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // 主动复习入口：用户随时可自行点击「复习」再学一轮（全量、可重复评级）；
+                    // 复习中再点「结束复习」回到日常间隔复习并重新定位到第一个未评
+                    GlassButton(
+                        onClick = {
+                            sessionRatings.clear()
+                            if (reviewAll) {
+                                reviewAll = false
+                                positioned = false
+                            } else {
+                                reviewAll = true
+                            }
+                            reviewRound++
+                        },
+                        modifier = Modifier.height(34.dp),
+                    ) {
+                        AppIcon(
+                            kind = AppIconKind.Refresh,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            if (reviewAll) "结束复习" else "复习",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
+            }
+
+            // 筛选生效指示（透明可见的一行小字，避免"句子突然变少"无从解释）
+            if (validSentenceFilter.isNotEmpty()) {
+                Text(
+                    "已按标签筛选抽句范围（${validSentenceFilter.size} 个标签）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+                )
+            }
+            // 主动复习指示（让「复习」按钮的状态与可重复评级行为可解释）
+            if (reviewAll) {
+                Text(
+                    "主动复习中：全部句子均已入队，可对任意一张再次评级",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+                )
             }
 
             when {
@@ -231,6 +352,12 @@ fun SentenceCardScreen(navController: NavController) {
                         hardCount = sessionRatings.values.count { it == FsrsEngine.Rating.HARD },
                         goodCount = sessionRatings.values.count { it == FsrsEngine.Rating.GOOD },
                         firstUnrated = firstUnrated,
+                        // 再复习一轮：全量重新排队并从头过一遍（用户主动复习的主入口之一）
+                        onReviewAgain = {
+                            sessionRatings.clear()
+                            reviewAll = true
+                            reviewRound++
+                        },
                         onContinue = { currentIndex = firstUnrated },
                         onBack = { navController.popBackStack() },
                     )
@@ -254,6 +381,7 @@ fun SentenceCardScreen(navController: NavController) {
                                     item = behind,
                                     state = states[behind.key],
                                     now = now,
+                                    tags = chipByArticle[behind.articleId].orEmpty(),
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer {
@@ -271,6 +399,7 @@ fun SentenceCardScreen(navController: NavController) {
                                     item = behind,
                                     state = states[behind.key],
                                     now = now,
+                                    tags = chipByArticle[behind.articleId].orEmpty(),
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer {
@@ -288,6 +417,7 @@ fun SentenceCardScreen(navController: NavController) {
                                 item = current,
                                 state = states[current.key],
                                 now = now,
+                                tags = chipByArticle[current.articleId].orEmpty(),
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .offset { IntOffset(0, dragY.value.roundToInt()) }
@@ -365,7 +495,7 @@ fun SentenceCardScreen(navController: NavController) {
                     }
 
                     // ── 三键评级（左→右：忘记 / 不熟 / 记住了，记住了主色强调） ──
-                    val canRate = !ratedToday(current.key) && !animating
+                    val canRate = (reviewAll || !ratedToday(current.key)) && !animating
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -398,6 +528,88 @@ fun SentenceCardScreen(navController: NavController) {
                             enabled = canRate,
                             modifier = Modifier.weight(1f),
                         ) { rate(current, FsrsEngine.Rating.GOOD) }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 抽句范围筛选面板（多选标签；即时写入 AppPrefs，背后句子池实时刷新）──
+    if (showFilterSheet) {
+        GlassModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 6.dp, bottom = 20.dp),
+            ) {
+                Text(
+                    "抽句范围",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "只从所选标签的文章中抽句；不选 = 全部文章",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+
+                if (tagData.tags.isEmpty()) {
+                    Text(
+                        "还没有标签，可在「设置 → 文章标签」中创建",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    )
+                } else {
+                    tagData.tags.forEach { tag ->
+                        val checked = tag.id in validSentenceFilter
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val next = validSentenceFilter.toMutableSet()
+                                    if (!next.add(tag.id)) next.remove(tag.id)
+                                    AppPrefs.setSentenceTagFilter(next)
+                                }
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = checked, onCheckedChange = null)
+                            Spacer(Modifier.width(4.dp))
+                            TagDot(tag = TagChipUi(tag.name, tag.color))
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                tag.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                "${articles.count { a -> tagData.links[a.id]?.contains(tag.id) == true }} 篇",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { AppPrefs.setSentenceTagFilter(emptySet()) }) {
+                        Text("清除筛选")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Button(onClick = { showFilterSheet = false }) {
+                        Text("完成")
                     }
                 }
             }

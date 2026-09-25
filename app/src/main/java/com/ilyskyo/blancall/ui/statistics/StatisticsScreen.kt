@@ -31,15 +31,20 @@ import com.ilyskyo.blancall.algorithm.MemoryHeatmap
 import com.ilyskyo.blancall.data.model.MistakeDetail
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.data.repository.ArticleRepository
+import com.ilyskyo.blancall.data.repository.BlankInk
+import com.ilyskyo.blancall.data.repository.InkBatch
+import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.common.DailyTrendChart
 import com.ilyskyo.blancall.ui.common.GaugeProgress
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.StatItem
+import com.ilyskyo.blancall.ui.handwriting.InkThumbnail
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import java.text.SimpleDateFormat
@@ -479,6 +484,21 @@ private fun RecordCard(
     dateFormat: SimpleDateFormat,
     onErrorClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    // 错题墨迹（错题回顾）：惰性加载 —— 仅可见行读一次文件；无存档=空表，静默隐藏
+    val inkStore = remember { InkStore.getInstance(context.filesDir.resolve("ink").absolutePath) }
+    var inkByBlank by remember(record.id) {
+        mutableStateOf<Map<Int, List<InkBatch>>>(emptyMap())
+    }
+    var enlarged by remember(record.id) { mutableStateOf<BlankInk?>(null) }
+    LaunchedEffect(record.id) {
+        inkByBlank = withContext(Dispatchers.IO) {
+            if (!inkStore.has(record.id)) return@withContext emptyMap<Int, List<InkBatch>>()
+            inkStore.load(record.id)?.blanks
+                ?.associate { it.blankIndex to it.batches }
+                ?: emptyMap()
+        }
+    }
     val modeLabel = when (record.mode) {
         "SENTENCE" -> "句子挖空"
         "WORD" -> "字词挖空"
@@ -527,21 +547,51 @@ private fun RecordCard(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                 Spacer(Modifier.height(6.dp))
                 record.mistakes.forEach { m ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onErrorClick() }
-                            .padding(vertical = 3.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Text(
-                            mistakeDescription(m),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text("复习 ›", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary)
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onErrorClick() }
+                                .padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                mistakeDescription(m),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("复习 ›", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                        // 错题回顾：该空有手写墨迹存档时，展示「当时写的」缩略图，点击放大对照
+                        val batches = inkByBlank[m.blankIndex]
+                        if (!batches.isNullOrEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp, bottom = 2.dp, start = 4.dp, end = 4.dp)
+                                    .clickable { enlarged = BlankInk(m.blankIndex, batches) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("当时写的", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.width(8.dp))
+                                    InkThumbnail(
+                                        batches = batches,
+                                        modifier = Modifier.weight(1f).height(36.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("放大 ›", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -565,6 +615,35 @@ private fun RecordCard(
                 }
             }
         }
+    }
+    // 放大对照：大图墨迹 + 你填的/应为 对照（内容与错误行一致，避免来回滚动）
+    enlarged?.let { blank ->
+        val m = record.mistakes.firstOrNull { it.blankIndex == blank.blankIndex }
+        BlancallAlertDialog(
+            onDismissRequest = { enlarged = null },
+            title = { Text("当时的笔迹 · 第 ${blank.blankIndex + 1} 空") },
+            text = {
+                Column {
+                    InkThumbnail(
+                        batches = blank.batches,
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        strokeWidth = 2.dp
+                    )
+                    if (m != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            mistakeDescription(m),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { enlarged = null }) { Text("关闭") }
+            }
+        )
     }
 }
 

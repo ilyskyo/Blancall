@@ -12,9 +12,11 @@ import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
+import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
+import com.ilyskyo.blancall.data.repository.TagStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -102,6 +104,11 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
                         // （下次进入首页会自动重抽，不出现指向已删文章的句子卡）
                         fsrsStore.removeSentencesForArticle(article.id)
                         SentenceCardStore.getInstance(filesDir).clearIfArticle(article.id)
+                        // 文章标签：级联解绑该文章的全部标签（标签本体保留）
+                        TagStore.getInstance(filesDir).removeArticle(article.id)
+                        // 错题墨迹存档：按文章联动清理（同一步 IO 内完成，避免主线程扫描目录）
+                        InkStore.getInstance(filesDir.resolve("ink").absolutePath)
+                            .deleteByArticleId(article.id)
                     } catch (e: Exception) {
                         Log.e("ArticleViewModel", "deleteArticle cascade cleanup failed", e)
                     }

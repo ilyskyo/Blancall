@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,18 +41,22 @@ import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.TagChipRow
+import com.ilyskyo.blancall.ui.common.TagChipUi
 
 /**
  * 「句子卡片」大卡片界面的视图层（自 SentenceCardScreen 拆出，组织方式对齐 HomeCardViews）。
  * 全部为无状态组件，状态与手势由 SentenceCardScreen 持有与组装。
  */
 
-/** 一张句子卡：来源标题（今日句带角标）+ 句文（内滚居中）+ 底部状态行 */
+/** 一张句子卡：来源标题（今日句带角标）+ 来源文章标签 + 句文（内滚居中）+ 底部状态行 */
 @Composable
 internal fun SentenceCardFace(
     item: DailySentenceCoordinator.QueueItem,
     state: FsrsEngine.CardState?,
     now: Long,
+    /** 来源文章的标签（最多 2 枚 + 「+N」；空列表不占位） */
+    tags: List<TagChipUi> = emptyList(),
     modifier: Modifier,
 ) {
     val rated = isRatedToday(state, now)
@@ -93,6 +98,10 @@ internal fun SentenceCardFace(
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
+            }
+            if (tags.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                TagChipRow(tags = tags, maxChips = 2)
             }
             Box(
                 modifier = Modifier
@@ -200,10 +209,12 @@ internal fun SentenceEmptyView(onBack: () -> Unit) {
 }
 
 /**
- * 队列评完（或滑到末尾）时的完成页：本次会话评级分布小结 + 未评时提供"继续记忆"。
+ * 队列评完（或滑到末尾）时的完成页：本次会话评级分布小结 + 未评时提供"继续记忆"
+ * + 主动复习「再复习一轮」。
  *
  * @param ratedCount   队列中今天已评的句子数（含进入本次界面前已评的）
  * @param againCount   本次会话三键评级分布（忘记 / 不熟 / 记住了）；无会话评级时以 ratedCount 文案兜底
+ * @param onReviewAgain 再复习一轮：全量重新排队（含已学过未到期的句子），从头再学
  */
 @Composable
 internal fun SentenceDoneView(
@@ -212,6 +223,7 @@ internal fun SentenceDoneView(
     hardCount: Int,
     goodCount: Int,
     firstUnrated: Int,
+    onReviewAgain: () -> Unit,
     onContinue: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -236,7 +248,8 @@ internal fun SentenceDoneView(
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            "今天的句子都记完了",
+            // 队列 = 今日 + 到期 + 全部新句：排空即「所有句子都记完了一轮」，而非仅今日句
+            "本轮的句子都记完了",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -253,8 +266,19 @@ internal fun SentenceDoneView(
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         )
         Spacer(Modifier.height(24.dp))
+        // 主动复习：学完了可以再学一轮（全量重新排队，含已学过未到期的句子）
+        Button(
+            onClick = onReviewAgain,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Text("再复习一轮", style = MaterialTheme.typography.labelLarge)
+        }
+        Spacer(Modifier.height(10.dp))
         if (firstUnrated >= 0) {
-            Button(
+            OutlinedButton(
                 onClick = onContinue,
                 modifier = Modifier
                     .fillMaxWidth()

@@ -82,6 +82,7 @@ import com.ilyskyo.blancall.algorithm.SectionSplitter
 import com.ilyskyo.blancall.algorithm.ShareImageGenerator
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
+import com.ilyskyo.blancall.ui.common.StylusPresence
 import com.ilyskyo.blancall.ui.common.penTapToHandwriting
 import com.ilyskyo.blancall.ui.handwriting.AnswerInputField
 import com.ilyskyo.blancall.ui.handwriting.HandwritingPanel
@@ -138,6 +139,8 @@ internal fun DictationContent(
     }
     val context = LocalContext.current
     val handwritingMode by AppPrefs.handwritingInputEnabledFlow.collectAsStateWithLifecycle()
+    // 笔设备存在性：手写区入口与兜底文案按有无笔设备区分（见下方 writingVisible 分支）
+    val stylusPresent by StylusPresence.present.collectAsStateWithLifecycle()
     // ⚠️ 手写文种必须按**原文**选：整段默写的目标就是原文，而 AnswerInputField 默认走中文模型 ——
     // 英文文章下会一个字都认不出（真机反馈「反向默写的手写没法用」的直接原因之一）。
     val dictationText = remember(dictation.clauses) { dictation.clauses.joinToString("") }
@@ -219,8 +222,14 @@ internal fun DictationContent(
                         expectedWord = dictationExpectedWord
                     )
                 } else {
+                    // 无笔设备：「拿笔点作答区」的入口不可达（笔点手势只对笔生效），
+                    // 改为引导从「手写」模式开关进入（开关在字词/句子页的输入框内）。
                     Text(
-                        "拿笔点上面的作答区，这里就会出现手写区；写出的字直接落到上面。",
+                        if (stylusPresent) {
+                            "拿笔点上面的作答区，这里就会出现手写区；写出的字直接落到上面。"
+                        } else {
+                            "开启「手写」后，这里常驻手写区；写出的字直接落到上面。"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

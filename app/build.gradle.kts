@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "7.1"
+        versionCode = 36
+        versionName = "7.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -151,6 +151,9 @@ dependencies {
 
     // Markdown 解析（AI 对话 / 训练分析文本渲染）
     implementation(libs.commonmark)
+
+    // 手写笔运动预测（书写板低延迟补间；不可用时 predict() 返回 null，静默降级）
+    implementation(libs.androidx.input.motionprediction)
 
     // 液态玻璃（阅读模式悬浮栏真实折射/色散效果，iOS26 LiquidGlass 风格）
     implementation("com.qmdeve.liquidglass:core:1.0.5")

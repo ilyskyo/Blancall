@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,6 +22,8 @@ import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.appIconKindFromKey
+import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import androidx.compose.ui.Alignment
@@ -36,10 +39,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.ilyskyo.blancall.MainActivity
 import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.data.ai.AiConfigStore
+import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.navigateReveal
@@ -58,6 +65,9 @@ fun SettingsScreen(navController: NavController) {
     // 首页副标题编辑弹窗（首页品牌栏收起时也可从这里修改）
     var showSubtitleDialog by remember { mutableStateOf(false) }
     val homeSubtitle by AppPrefs.subtitleFlow.collectAsState()
+    // 首页图标选择弹窗（下拉揭示区的品牌图标；首页顶栏移除后编辑入口收归设置）
+    var showIconPickerDialog by remember { mutableStateOf(false) }
+    val homeIconKey by AppPrefs.homeIconKeyFlow.collectAsState()
 
     Box(
         modifier = Modifier
@@ -186,6 +196,28 @@ fun SettingsScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.primary)
                     }
 
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    // ── 首页图标（下拉首页时展示的品牌图标；点击更换）──
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { showIconPickerDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("首页图标", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("下拉首页时展示的品牌图标，点击更换",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("更换 ›", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+
                     // 内置素材库已移至下方「拓展功能」分组
                 }
             }
@@ -268,7 +300,7 @@ fun SettingsScreen(navController: NavController) {
                     Column(Modifier.weight(1f)) {
                         Text("首页显示表情图标", style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("开启该功能后，首页左上角显示表情图标",
+                        Text("开启后，下拉首页时在顶部揭示区显示品牌图标",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -304,6 +336,61 @@ fun SettingsScreen(navController: NavController) {
                     )
                 }
 
+                HorizontalDivider(
+                    Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
+
+                // 错题墨迹保留（错题回顾）：学习统计的练习历史中回看答错空的手写笔迹
+                val keepInk by AppPrefs.keepInkEnabledFlow.collectAsState()
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("保留错题手写墨迹", style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Text("手写作答的错题笔迹会存档，可在学习统计的练习历史中回看「当时写的」；仅存本机",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 16.dp))
+                    }
+                    GlassSwitch(
+                        checked = keepInk,
+                        onCheckedChange = { AppPrefs.keepInkEnabled = it }
+                    )
+                }
+
+                HorizontalDivider(
+                    Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
+
+                // 清空已存墨迹（开关只拦新增，已存数据需手动清）
+                val inkContext = LocalContext.current
+                val inkScope = rememberCoroutineScope()
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("清空已存的错题墨迹", style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        inkScope.launch {
+                            withContext(Dispatchers.IO) {
+                                InkStore.getInstance(
+                                    inkContext.filesDir.resolve("ink").absolutePath
+                                ).clearAll()
+                            }
+                            Toast.makeText(inkContext, "已清空错题墨迹", Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Text("清空")
+                    }
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -603,6 +690,52 @@ fun SettingsScreen(navController: NavController) {
 
             Spacer(Modifier.height(8.dp))
 
+            // ── 内容管理 ──
+            Text("内容管理", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary)
+
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                // 触点锚点：点击时以该行中心作为标签管理页浮起转场的起点
+                val tagAnchor = rememberTouchAnchor()
+                Surface(
+                    onClick = { navController.navigateReveal("tag_manager", tagAnchor.value) },
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .trackTouchAnchor(tagAnchor)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AppIcon(
+                                kind = AppIconKind.Tag,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("文章标签", style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("为文章分类、配色，卡片徽标展示",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Text("→", style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             // ── 拓展功能 ──
             Text("拓展功能", style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
@@ -764,6 +897,66 @@ fun SettingsScreen(navController: NavController) {
             },
             dismissButton = {
                 TextButton(onClick = { showSubtitleDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    // ── 首页图标选择弹窗（下拉揭示区的品牌图标）──
+    if (showIconPickerDialog) {
+        val iconOptions = listOf(
+            AppIconKind.Logo, AppIconKind.Celebrate, AppIconKind.Edit, AppIconKind.Inbox,
+            AppIconKind.ArrowForward, AppIconKind.OpenInFull, AppIconKind.Check
+        )
+        BlancallAlertDialog(
+            onDismissRequest = { showIconPickerDialog = false },
+            title = { Text("选择首页图标") },
+            text = {
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    iconOptions.forEach { kind ->
+                        val selected = kind == appIconKindFromKey(homeIconKey)
+                        val optionName = when (kind) {
+                            AppIconKind.Logo -> "默认图标"
+                            AppIconKind.Celebrate -> "庆祝"
+                            AppIconKind.Edit -> "编辑"
+                            AppIconKind.Inbox -> "收件箱"
+                            AppIconKind.ArrowForward -> "前进箭头"
+                            AppIconKind.OpenInFull -> "全屏展开"
+                            AppIconKind.Check -> "对勾"
+                            else -> "图标"
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clickable {
+                                    AppPrefs.homeIconKey = iconKeyFromKind(kind)
+                                    showIconPickerDialog = false
+                                },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (selected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                AppIcon(
+                                    kind = kind,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    contentDescription = optionName
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showIconPickerDialog = false }) { Text("取消") }
             }
         )
     }

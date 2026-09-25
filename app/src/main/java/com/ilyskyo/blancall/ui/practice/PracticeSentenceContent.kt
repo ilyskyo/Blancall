@@ -67,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -123,7 +124,9 @@ internal fun SentenceClozeContent(
     onRetryAnalysis: () -> Unit = {},
     onViewArticleData: (() -> Unit)? = null,
     onBlankFocus: (Int) -> Unit = {},
-    onAnswerChange: (Int, String) -> Unit
+    onAnswerChange: (Int, String) -> Unit,
+    /** 墨迹上报（错题回顾）：手写被消费时回调（blankIdx 已在内部绑定）；透传给书写板与底部弹层 */
+    onInkCommitted: ((Int, List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     blancall?.let { result ->
         var currentBlankIndex by remember { mutableIntStateOf(0) }
@@ -370,6 +373,10 @@ internal fun SentenceClozeContent(
                             ?.drop((userAnswers[currentBlankIndex] ?: "").length)
                             ?.takeIf { it.isNotEmpty() },
                         script = currentScript,
+                        // 墨迹上报（错题回顾）：该空的手写被消费时按当前空 index 上报
+                        onInkCommitted = { s, w, h ->
+                            onInkCommitted?.invoke(currentBlankIndex, s, w, h)
+                        },
                         // 笔点作答区同样直接进书写（临时行为，不改「默认输入方式」）
                         onPenTap = { sheetBlankIndex = currentBlankIndex }
                     )
@@ -407,7 +414,9 @@ internal fun SentenceClozeContent(
                 // 英文默写的答案先验：同样按「这个空」的进度给剩余答案
                 expectedWord = blanks.getOrNull(sheetIdx)?.originalText
                     ?.drop((userAnswers[sheetIdx] ?: "").length)
-                    ?.takeIf { it.isNotEmpty() }
+                    ?.takeIf { it.isNotEmpty() },
+                // 墨迹上报（错题回顾）：弹层是「这个空」的书写区，按 sheetIdx 绑定上报
+                onInkCommitted = { s, w, h -> onInkCommitted?.invoke(sheetIdx, s, w, h) }
             )
         }
     }
@@ -539,6 +548,9 @@ internal fun HintGhost(hintChar: Char?, show: Boolean = true, modifier: Modifier
  * 带弱提示字的输入框（与 OutlinedTextField 同外观）。
  * 用 BasicTextField 的 decorationBox 把提示字放在已输入文字之后（紧跟光标位），
  * 而非输入框右端 overlay，满足"提示字紧贴已输入文字"的体验。
+ *
+ * [bottomTrailing]：附件控件（如「手写/键盘」切换按钮），渲染在输入框**内部的
+ * 右下角**（独立一行、靠右对齐）；null 时保持与旧版完全一致的布局与高度。
  */
 @Composable
 internal fun HintOutlinedField(
@@ -553,7 +565,8 @@ internal fun HintOutlinedField(
     maxLines: Int = Int.MAX_VALUE,
     minHeight: Dp = 56.dp,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
-    imeAction: ImeAction = ImeAction.Default
+    imeAction: ImeAction = ImeAction.Default,
+    bottomTrailing: (@Composable () -> Unit)? = null
 ) {
     Surface(
         modifier = modifier,
@@ -575,25 +588,40 @@ internal fun HintOutlinedField(
             maxLines = maxLines,
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
             decorationBox = { innerTextField ->
-                Row(
-                    modifier = Modifier.heightIn(min = minHeight).padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(modifier = Modifier.weight(1f, fill = false)) {
-                        if (value.isEmpty()) {
-                            Text(
-                                placeholder,
-                                style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            )
+                Column(modifier = Modifier.heightIn(min = minHeight)) {
+                    Row(
+                        modifier = Modifier
+                            .padding(start = 16.dp, top = 14.dp, end = 16.dp)
+                            .padding(bottom = if (bottomTrailing != null) 4.dp else 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.weight(1f, fill = false)) {
+                            if (value.isEmpty()) {
+                                Text(
+                                    placeholder,
+                                    style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                )
+                            }
+                            innerTextField()
                         }
-                        innerTextField()
+                        // 提示字紧跟已输入文字（与 inner 同一行）；动画常驻，仅由 show 控制淡入
+                        HintGhost(
+                            hintChar,
+                            show = hintChar != null,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
                     }
-                    // 提示字紧跟已输入文字（与 inner 同一行）；动画常驻，仅由 show 控制淡入
-                    HintGhost(
-                        hintChar,
-                        show = hintChar != null,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
+                    if (bottomTrailing != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = 10.dp)
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            bottomTrailing()
+                        }
+                    }
                 }
             }
         )

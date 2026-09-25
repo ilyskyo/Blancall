@@ -131,16 +131,16 @@ fun CustomClozeListScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
+                // 触点锚点：点击时以按钮中心作为编辑页浮起转场的起点
+                val newAnchor = rememberTouchAnchor()
                 Button(
                     onClick = {
-                        if (pick) {
-                            // 练一把流程：新建后进编辑页（带 pick，保存即开练）
-                            navController.navigate("custom_cloze_edit/$articleId?pick=true")
-                        } else {
-                            navController.navigate("custom_cloze_edit/$articleId")
-                        }
+                        val route = if (pick) "custom_cloze_edit/$articleId?pick=true"
+                        else "custom_cloze_edit/$articleId"
+                        navController.navigateReveal(route, newAnchor.value)
                     },
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.trackTouchAnchor(newAnchor)
                 ) {
                     Text("新建")
                 }

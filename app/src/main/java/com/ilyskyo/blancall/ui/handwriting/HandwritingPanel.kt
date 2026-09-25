@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,9 +51,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ilyskyo.blancall.data.handwriting.HandwritingRecognizer
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.data.handwriting.HandwritingResult
+import com.ilyskyo.blancall.ui.common.StylusPresence
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -68,8 +71,10 @@ import kotlin.math.min
  * 手写输入面板：在手写区写完一个字 → 自动识别 → 候选字上屏。
  *
  * ## 交互设计（对齐 Windows 手写板手感）
- * - **只有手写笔（[PointerType.Stylus]）落笔才进入书写**：手指保留原有滚动/点按行为。
- *   这样「一手扶屏固定 + 一手握笔书写」不会互相打断。
+ * - **有笔设备**：只有手写笔（[PointerType.Stylus]）落笔才进入书写，手指保留原有
+ *   滚动/点按行为 —— 「一手扶屏固定 + 一手握笔书写」不会互相打断；
+ * - **无笔设备**：手指落笔即书写（「手写输入」触屏模式），笔宽由轨迹速度仿造
+ *   （见 [InkWidthSim]），不读压感。
  * - 抬笔后自动触发识别，约 2–5ms 出结果（模型实测），因此无需"识别"按钮。
  * - 高置信（top-1 ≥ 0.80 且领先 top-2 ≥ 0.15）时**自动上屏**，且该批墨迹以
  *   「收拢→淡出」退场动画消失（[InkBoardView.animateStrokesOut]），与落字同窗口衔接；
@@ -136,10 +141,27 @@ fun HandwritingPanel(
      * 整词提交 —— 不依赖置信度阈值，也不怕数字/字母混淆。仅拉丁脚本下生效；
      * null = 不启用（自由书写 / 无标准答案场景）。
      */
-    expectedWord: String? = null
+    expectedWord: String? = null,
+    /**
+     * 墨迹上报（错题回顾）：每次**消费墨迹的提交**把被消费的笔画连同当时板面尺寸
+     * 一起上报（strokes, boardW, boardH）；点标点快捷键、键盘路径不消费墨迹，不回调。
+     *
+     * ⚠️ 上报发生在笔画被 removeStrokes/animateStrokesOut 移除的同一帧 ——
+     * 这是「这批墨迹存在过」的唯一可捕获时刻（事后快照已拿不到）。
+     * 实现方只应轻量暂存（引用），禁止在主线程做序列化与磁盘 IO。
+     */
+    onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 笔设备存在性：挂载期间保持监听（热插拔实时更新）——有笔 ⇒「手写笔」模式；
+    // 无笔 ⇒「手写输入」模式（手指书写 + 仿造笔迹，见 InkBoardView / InkWidthSim）。
+    DisposableEffect(Unit) {
+        StylusPresence.attach(context)
+        onDispose { StylusPresence.detach() }
+    }
+    val stylusPresent by StylusPresence.present.collectAsStateWithLifecycle()
 
     // 统一强触感（与首页长按/拖拽同一套「咔嗒」）：划掉是破坏性手势，必须有确认感
     val confirmHaptic = rememberConfirmHaptic()
@@ -159,6 +181,7 @@ fun HandwritingPanel(
     val cbCharsPicked by rememberUpdatedState(onCharsPicked)
     val cbRecognized by rememberUpdatedState(onRecognized)
     val cbUndoLast by rememberUpdatedState(onUndoLast)
+    val cbInkCommitted by rememberUpdatedState(onInkCommitted)
 
     // 最近一次「字上屏」的时间戳：把「划掉撤回」限制在刚写完的几秒内，
     // 避免误划把很久以前写的答案删掉。普通持有对象，不参与重组。
@@ -225,11 +248,19 @@ fun HandwritingPanel(
      * 自动上屏与点候选**都走这里**，保证两条路径的行为与「可撤回窗口」判定一致。
      *
      * 一定要按批传：调用方的更新是 `value + 新内容`，同一帧里分多次写会互相覆盖。
+     *
+     * @param strokes 本次提交**被消费**的笔画（自动上屏 / 整词 / 逐段推进传入；
+     *   标点快捷键与键盘路径为空）。同帧上报给 [onInkCommitted]，供错题墨迹存档。
      */
-    fun commitChars(chars: List<Char>) {
+    fun commitChars(chars: List<Char>, strokes: List<List<Offset>> = emptyList()) {
         if (chars.isEmpty()) return
         lastCommitAtMs.set(System.currentTimeMillis())
-        cbCharsPicked(chars)
+        // 墨迹上报（错题回顾）：被消费的笔画必须在此刻交出 —— 紧接着就会被移除/退场
+        if (strokes.isNotEmpty() && canvasSize.width > 0 && canvasSize.height > 0) {
+            cbInkCommitted?.invoke(strokes, canvasSize.width, canvasSize.height)
+        }
+        // 中文标点半角→全角（模型只有半角类；英文空保持原样），与候选展示同映射
+        cbCharsPicked(localizePunct(script, chars))
     }
 
     // ── 连写逐段确认 ──
@@ -266,13 +297,19 @@ fun HandwritingPanel(
      *   **合并成同一批**提交——若先单独 commit 一次再走本函数，同帧两次写入会互相覆盖，
      *   点选的字会被后一批（旧快照 + 后续段）覆盖丢失（真机：连写「谁说你」→ 点「谁」
      *   候选 → 只上屏「说你」）。
+     * @param prefixStrokes 与 [prefix] 同批被消费的笔画（点选那一段的墨迹）——
+     *   供错题墨迹存档，必须与后续段合并成同一份上报（否则存档缺「点选的那一段」）。
      */
-    fun advancePending(from: Int, prefix: List<Char> = emptyList()) {
+    fun advancePending(
+        from: Int,
+        prefix: List<Char> = emptyList(),
+        prefixStrokes: List<List<Offset>> = emptyList()
+    ) {
         val segs = pendingSegments
         val results = pendingResults
         if (from >= segs.size) {
             // 无后续段时，prefix（点选字）也必须上屏——单独按批提交后收尾
-            if (prefix.isNotEmpty()) commitChars(prefix)
+            if (prefix.isNotEmpty()) commitChars(prefix, prefixStrokes)
             pendingSegments = emptyList()
             pendingResults = emptyList()
             pendingAt = 0
@@ -307,7 +344,7 @@ fun HandwritingPanel(
             if (prefix.isEmpty() && autoCommit && enabled) view?.animateStrokesOut(consumedGroups)
             else view?.removeStrokes(consumed)
         }
-        if (commit.isNotEmpty()) commitChars(commit)
+        if (commit.isNotEmpty()) commitChars(commit, prefixStrokes + consumed)
         if (i < segs.size) {
             // 停在这一段等用户点候选；板上只留下「这一段 + 后面的段」
             pendingAt = i
@@ -458,6 +495,113 @@ fun HandwritingPanel(
 
         scope.launch {
             try {
+                // ⓪ 拉丁（英语）多词：先按「词间大空隙」把墨迹聚成词组（如连写「give up」）。
+                //
+                // 词间空隙明显大于字母间距 ⇒ 先分组、再逐词跑下面的切段/识别逻辑：
+                // 词界宽度不会污染「估字数」（整体切段时 n = round(总宽/单字宽) 会把
+                // 词间空地也算成一个字），且提交时能在词间插入空格。
+                // 全部词都达到「整词提交」标准时一次上屏（带空格）；任一词没认全或
+                // 不达标 ⇒ 整体回落下面原有单组路径（逐段确认、无空格，行为与改造前一致）。
+                if (script == HandwritingScript.Latin) {
+                    val wordGroups = withContext(Dispatchers.Default) {
+                        splitInkIntoWords(inkStrokes, aspect)
+                    }
+                    if (wordGroups != null) {
+                        if (isDebuggable) {
+                            // 词间空隙占字高比例：真机校准 WORD_GAP_UNIT_RATIO 用
+                            val ys = inkStrokes.flatten().map { it.y }
+                            val hAll = (ys.maxOrNull() ?: 0f) - (ys.minOrNull() ?: 0f)
+                            val ratios = wordGroups.zipWithNext { a, b ->
+                                val aMax = a.flatten().maxOf { it.x }
+                                val bMin = b.flatten().minOf { it.x }
+                                if (hAll > 0f) "%.2f".format((bMin - aMax) / hAll) else "?"
+                            }
+                            Log.d(
+                                TAG_INK,
+                                "latin-words: n=${wordGroups.size} gapRatios=${ratios.joinToString(",")}"
+                            )
+                        }
+                        val unitW = canvasSize.height * aspect
+                        val wordSegs = ArrayList<List<List<List<Offset>>>>(wordGroups.size)
+                        val wordResults = ArrayList<List<HandwritingResult?>>(wordGroups.size)
+                        val wordDouble = ArrayList<List<Boolean>>(wordGroups.size)
+                        var allRecognized = true
+                        for (group in wordGroups) {
+                            // 词内笔画按**引用**与时间快照对齐（保序，供时间停顿切分）
+                            val snaps = ink.filter { s -> group.any { it === s.pts } }
+                            val segs = withContext(Dispatchers.Default) {
+                                splitInkSmart(snaps, aspect)
+                            } ?: listOf(group)
+                            val results = withContext(Dispatchers.Default) {
+                                segs.map { seg -> renderInk(seg)?.let { recognizeBitmapWithFallback(it) } }
+                            }
+                            wordSegs.add(segs)
+                            wordResults.add(results)
+                            wordDouble.add(segs.map { seg ->
+                                val xs = seg.flatten()
+                                xs.isNotEmpty() &&
+                                    (xs.maxOf { it.x } - xs.minOf { it.x }) > unitW * 1.6f
+                            })
+                            if (results.any { it == null }) {
+                                allRecognized = false
+                                break
+                            }
+                        }
+                        if (allRecognized) {
+                            // 答案先验按词切分对齐（词数一致才启用；否则不带先验）
+                            val expectedWords = expectedWord?.trim()
+                                ?.split(Regex("\\s+"))
+                                ?.takeIf { it.size == wordGroups.size }
+                            val wordChars = ArrayList<List<Char>>(wordGroups.size)
+                            var allCommit = true
+                            for (i in wordGroups.indices) {
+                                val chars = latinWordChars(
+                                    wordResults[i], expectedWords?.get(i), wordDouble[i]
+                                )
+                                if (chars == null) {
+                                    allCommit = false
+                                    break
+                                }
+                                wordChars.add(chars)
+                            }
+                            if (allCommit) {
+                                val joined = ArrayList<Char>()
+                                wordChars.forEachIndexed { i, w ->
+                                    if (i > 0) joined.add(' ')
+                                    joined.addAll(w)
+                                }
+                                val consumed = ArrayList<List<Offset>>()
+                                wordSegs.forEach { ws ->
+                                    ws.forEach { seg -> seg.forEach { consumed.add(it) } }
+                                }
+                                if (consumed.isNotEmpty()) {
+                                    val view = inkRef.get()
+                                    // 整词（组）自动上屏同样播退场动画（逐段收拢，与落字同窗口）
+                                    if (autoCommit && enabled) view?.animateStrokesOut(wordSegs.flatten())
+                                    else view?.removeStrokes(consumed)
+                                }
+                                if (isDebuggable) {
+                                    Log.d(
+                                        TAG_INK,
+                                        "latin-words commit: " +
+                                            wordChars.joinToString(" ") { it.joinToString("") }
+                                    )
+                                }
+                                commitChars(joined, wordSegs.flatten().flatten())
+                                pendingSegments = emptyList()
+                                pendingResults = emptyList()
+                                pendingAt = 0
+                                result = null
+                                statusText = null
+                                return@launch
+                            }
+                        }
+                        if (isDebuggable) {
+                            Log.d(TAG_INK, "latin-words fallback: recognized=$allRecognized")
+                        }
+                    }
+                }
+
                 // ① 墨迹明显偏宽 ⇒ 优先按「连写多字」切段逐字识别。
                 //
                 // ⚠️⚠️ 绝不能用「整板识别的置信度」来决定要不要切段：
@@ -513,9 +657,6 @@ fun HandwritingPanel(
                     // 作为**一批**一次上屏；否则回落到逐段安全推进（高置信段批上屏、
                     // 低置信段停下等点选）。
                     if (script == HandwritingScript.Latin) {
-                        // ① 答案先验优先：剩余答案已知且「逐段识别列」与其容错匹配（0↔o、1↔l…）
-                        //    ⇒ 直接按答案形式提交（真机：写 Love 输出 L0Ve，靠这条救回）。
-                        val letters = segResults.mapNotNull { it?.best?.char }
                         // 双宽段标记：段宽 ≳ 2 倍单字宽 ⇒ 两个同字母连写被并成一段
                         // （真机：hello 的「ll」被并段，模型必然认不出——该段按答案吃两位）
                         val unitW = canvasSize.height * aspect
@@ -523,16 +664,17 @@ fun HandwritingPanel(
                             val xs = seg.flatten()
                             xs.isNotEmpty() && (xs.maxOf { it.x } - xs.minOf { it.x }) > unitW * 1.6f
                         }
-                        val byAnswer = if (letters.size == segResults.size) {
-                            expectedWord?.let { matchLatinWordToAnswer(letters, it, doubleFlags) }
-                        } else null
-                        // ② 常规整词提交：各段置信度达标（个别字母稍低不阻塞）
-                        val word: List<Char>? = byAnswer?.toList() ?: latinWordCommitChars(segResults)
+                        // 答案先验优先（0↔o、1↔l… 容错匹配，真机：写 Love 输出 L0Ve 靠这条救回），
+                        // 失败回落整词置信判据（个别字母稍低不阻塞，明显不可信则不提交）。
+                        // 两路逻辑与多词组路径共用 [latinWordChars]，保证提交语义一致。
+                        val word: List<Char>? = latinWordChars(segResults, expectedWord, doubleFlags)
                         if (word != null) {
-                            if (isDebuggable && byAnswer != null) {
+                            if (isDebuggable) {
                                 Log.d(
                                     TAG_INK,
-                                    "latin-answer-match: ${letters.joinToString("")} -> $byAnswer"
+                                    "latin-word: " +
+                                        segResults.mapNotNull { it?.best?.char }.joinToString("") +
+                                        " -> ${word.joinToString("")} (expected=$expectedWord)"
                                 )
                             }
                             val consumed = ArrayList<List<Offset>>()
@@ -544,7 +686,7 @@ fun HandwritingPanel(
                                 if (autoCommit && enabled) view?.animateStrokesOut(segments)
                                 else view?.removeStrokes(consumed)
                             }
-                            commitChars(word)
+                            commitChars(word, consumed)
                             pendingSegments = emptyList()
                             pendingResults = emptyList()
                             pendingAt = 0
@@ -760,7 +902,14 @@ fun HandwritingPanel(
                 v.paperColor = paperColor.toArgbInt()
                 v.gridColor = gridColor.toArgbInt()
                 v.hintColor = hintColor.toArgbInt()
-                v.hintText = if (script == HandwritingScript.Latin) HINT_TEXT_LATIN else HINT_TEXT
+                // 空板提示按书写模式切换：有笔「用笔…」；无笔改「用手指…」，
+                // 否则手上只有手指的用户会以为写不了。
+                v.hintText = when {
+                    script == HandwritingScript.Latin && stylusPresent -> HINT_TEXT_LATIN
+                    script == HandwritingScript.Latin -> HINT_TEXT_LATIN_TOUCH
+                    stylusPresent -> HINT_TEXT
+                    else -> HINT_TEXT_TOUCH
+                }
                 v.hintTextSizePx = with(density) { 14.sp.toPx() }
                 v.cornerRadiusPx = with(density) { 10.dp.toPx() }
                 v.isRecognizing = recognizing
@@ -803,10 +952,9 @@ fun HandwritingPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // ── 标点一键插入 ──
-            // 两套识别模型的字符表**都不含标点**（中文 7356 项为汉字与字母数字符号、
-            // 拉丁 EMNIST 47 类 = 数字 + 字母），所以手写标点永远认不出来。
-            // 这是模型能力边界，不是 bug ⇒ 在这里给一条零成本的出路，
-            // 别让用户为了写一个逗号切回键盘。
+            // 中文 7356 类模型含 14 个标点类（`!"(),.:;?…、。《》`，半角写会映射为全角，
+            // 见 [localizePunct]）；但全角 ，？！：； 不在类表内、无法「写」出，
+            // 且高频标点一键插入本就更快 —— 这里与手写识别并存，并非唯一出路。
             //
             // ⚠️ 用 FlowRow 而不是 Row：常用标点扩充后一行放不下时自动折行，
             // 不会把右侧「清空/收起」挤变形（手机窄屏尤其明显）。
@@ -868,8 +1016,9 @@ fun HandwritingPanel(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         r.candidates.take(CANDIDATE_BAR_SIZE).forEach { c ->
+                            // 展示与提交同映射（「看到即所得」，见 [localizePunct]）
                             CandidateChip(
-                                char = c.char,
+                                char = localizePunct(script, c.char),
                                 confidence = c.confidence,
                                 highlighted = c === r.best,
                                 onClick = {
@@ -885,10 +1034,18 @@ fun HandwritingPanel(
                                         // 连写逐段确认：抹掉这一段的墨迹后继续往后推
                                         // （后面的段该自动上屏就上屏，该继续停就继续停）
                                         inkRef.get()?.removeStrokes(seg)
-                                        advancePending(pendingAt + 1, prefix = listOf(c.char))
+                                        advancePending(
+                                            pendingAt + 1,
+                                            prefix = listOf(c.char),
+                                            prefixStrokes = seg
+                                        )
                                     } else {
-                                        // 非连写（单字识别）路径：独立一次提交后清板
-                                        commitChars(listOf(c.char))
+                                        // 非连写（单字识别）路径：独立一次提交后清板。
+                                        // 快照须在 clearAll 前取 —— 那正是「这批墨迹还在」的时刻
+                                        commitChars(
+                                            listOf(c.char),
+                                            inkRef.get()?.snapshotStrokes().orEmpty()
+                                        )
                                         clearAll()
                                     }
                                 }
@@ -986,8 +1143,14 @@ private const val ALT_TAKEOVER_WEAK_PRIMARY = 0.45f
  */
 private const val HINT_TEXT = "用笔在这里写一个字"
 
+/** 触屏书写（无笔设备）的空板提示。 */
+private const val HINT_TEXT_TOUCH = "用手指在这里写一个字"
+
 /** 拉丁（英语单词）空板提示：强调「整词连写」，与整词识别策略一致。 */
 private const val HINT_TEXT_LATIN = "用笔连着写完这个单词"
+
+/** 触屏书写（无笔设备）的拉丁空板提示。 */
+private const val HINT_TEXT_LATIN_TOUCH = "用手指连着写完这个单词"
 
 /**
  * 「划掉撤回」的有效窗口（毫秒）。
@@ -1034,10 +1197,10 @@ private const val RECOGNIZE_DELAY_LATIN_MS = 900L
 /**
  * 手写态下可一键插入的常用标点（中文）。
  *
- * ⚠️ **标点不可能靠手写识别出来**：中文模型是 7356 项（HWDB 全集，不含标点类），
- * 拉丁模型是 EMNIST 47 类（数字 + 大小写字母），**两套字符表都没有标点类**。
- * 想让标点也能"写"出来，只能换/补一个含标点的识别模型，属于模型侧工作。
- * 在此之前，把最高频的几个标点放在手边是唯一零成本的出路。
+ * 现状（2026-09 模型升级后）：中文 7356 类模型**含** 14 个标点类
+ * （`! " ( ) , . : ; ? … 、 。 《 》`），写半角会被映射为全角（见 [localizePunct]）；
+ * 但下列全角标点（，？！：；）不在模型类表内、无法「写」出，
+ * 且高频标点一键插入本就更快 —— 因此保留这排快捷入口与手写识别并存。
  */
 private val PUNCT_CJK = listOf('，', '。', '、', '？', '！', '：', '；')
 
@@ -1083,6 +1246,23 @@ internal fun latinWordCommitChars(
     val minConf = bests.minOf { it.confidence }
     val avgConf = bests.map { it.confidence }.average().toFloat()
     return if (minConf >= minSeg && avgConf >= minAvg) bests.map { it.char } else null
+}
+
+/**
+ * 单个拉丁词的可提交字符列：**答案先验优先**（容错匹配、不依赖置信度阈值），
+ * 失败回落 [latinWordCommitChars] 的整词置信判据；两路都不成立返回 null。
+ *
+ * 这是「整词提交」的统一入口（单组路径与多词组路径共用），保证两条路径的
+ * 提交语义完全一致。任一段无结果直接返回 null —— 缺字的词不提交。
+ */
+internal fun latinWordChars(
+    results: List<HandwritingResult?>,
+    expected: String?,
+    doubleFlags: List<Boolean>
+): List<Char>? {
+    val letters = results.map { it?.best?.char ?: return null }
+    val byAnswer = expected?.let { matchLatinWordToAnswer(letters, it, doubleFlags) }
+    return byAnswer?.toList() ?: latinWordCommitChars(results)
 }
 
 // ============ 答案先验：拉丁词容错匹配（EMNIST 数字/字母混淆） ============

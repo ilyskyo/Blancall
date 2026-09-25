@@ -26,6 +26,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -35,9 +36,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +60,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,6 +69,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
@@ -76,9 +79,11 @@ import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
+import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
@@ -87,10 +92,11 @@ import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GridMaxWidth
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.NavBarAutoHide
 import com.ilyskyo.blancall.ui.common.TouchAnchor
 import com.ilyskyo.blancall.ui.common.appIconKindFromKey
-import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
 import com.ilyskyo.blancall.ui.common.toTouchAnchor
@@ -99,7 +105,6 @@ import com.ilyskyo.blancall.ui.common.homeGridColumns
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
-import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
@@ -144,89 +149,44 @@ fun HomeScreen(
     val articlePickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showArticlePickerSheet by remember { mutableStateOf(false) }
 
-    // 搜索栏右侧「添加」按钮实测宽度；供品牌栏「设置」按钮等宽对齐
-    var addButtonWidth by remember { mutableStateOf(0.dp) }
-
-    // ── 首页顶部品牌头部：默认收起（仅搜索框），下拉(滚到顶再拉)时展开 ──
+    // ── 首页滚动手势（无顶栏）：下拉揭示品牌区 ──
     val homeScrollState = rememberScrollState()
-    // 展开比例 0..1（0=收起，仅显示搜索框；1=全开，显示 logo+导入+设置）
-    val brandProgress = remember { Animatable(if (AppPrefs.homeBrandExpanded) 1f else 0f) }
-    // 品牌栏下拉固定状态：true=展开固定，false=收起；每次下拉松手即切换，不依赖松手位置
-    // 状态持久化到 AppPrefs：一旦展开，跨页面(如前往设置再返回)保持展开，直到用户再次下拉/上滑手动收起
-    var brandExpanded by remember { mutableStateOf(AppPrefs.homeBrandExpanded) }
-    // 品牌栏(logo+设置)全展开高度；搜索栏常驻不折叠，故无需计入头部展开预算
-    val brandHeight = 72.dp
-    val headerScope = rememberCoroutineScope()
-    // 品牌栏「拉满」所需的行程（4 倍品牌栏高度 = 288dp）：轻扫一两厘米完全不够，
-    // 必须刻意长时间下拉才能逼近阈值 —— 收/放只认阈值，不受快速短滑影响（用户反馈「手滑一下就收放」）
-    val brandPullPx = with(LocalDensity.current) { (brandHeight * 4f).toPx() }
-    // ── 品牌栏下拉手感状态 ──
-    // brandPull：**本次拖动**的累计下拉量 0..1。与 brandProgress 不同：展开状态下拉时，
-    // brandProgress 恒为 1（栏已满），只能靠 brandPull 反映“拉向收起”的进度 ——
-    // 阈值判定与提示条均以它为准。
-    var brandPull by remember { mutableFloatStateOf(0f) }
-    // 手指正在拖品牌栏（提示条只在拖动中出现）
-    var brandPullActive by remember { mutableStateOf(false) }
-    // 提示条内容**快照**：方向在本次拖动开始时锁定、达标状态在拖动中实时更新，
-    // 松手后两者都冻结。否则松手瞬间 brandExpanded 已切换 / brandPull 已清零，
-    // 提示条淡出期间会闪出一帧反向文案（用户反馈「最后一帧显示继续下滑收起顶栏」）。
-    var brandHintExpand by remember { mutableStateOf(true) }
-    var brandHintReach by remember { mutableStateOf(false) }
-    // 统一触感反馈：下拉跨过阈值时“咔嗒”一下（与长按/拖拽同一套强反馈）
-    val brandHaptic = rememberConfirmHaptic()
-    // 品牌栏开合用带回弹的弹簧动画（略 overshoot，收尾更有弹性）
-    val bounceSpring = spring<Float>(
-        dampingRatio = Spring.DampingRatioMediumBouncy,
-        stiffness = Spring.StiffnessMediumLow
-    )
-    val topBarConnection = remember(homeScrollState, brandProgress, brandExpanded, bounceSpring, brandPullPx) {
+    // 下拉位移（px）：滚到顶再继续下拉 → 内容整体**跟手**下移，顶部露出空白区显示
+    // 「Blancall + 副标题」；松手回弹复位。Animatable：拖动 snapTo 跟手、松手 animateTo 回弹。
+    val homePullOffset = remember { Animatable(0f) }
+    val homePullScope = rememberCoroutineScope()
+    val homePullMaxPx = with(LocalDensity.current) { HOME_PULL_MAX.toPx() }
+    val homePullConnection = remember(homeScrollState, homePullMaxPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val dy = available.y
-                // 滚到顶再继续下拉：只累计本次下拉量 brandPull（阈值判定 + 提示条），
-                // 顶栏本身纹丝不动 —— 松手时越过阈值才收/放（无跟手预览，避免轻扫误触）
                 if (dy > 0f && homeScrollState.value <= 0f) {
-                    // 只累计下拉量（阈值判定 + 提示条用）——**不做跟手预览**：
-                    // 轻扫一下不会把顶栏拉出来，只有松手时越过阈值才会收/放（用户反馈「轻扫也能收放」）
-                    headerScope.launch {
-                        if (!brandPullActive) {
-                            // 本次拖动开始：锁定提示方向（松手后不再随 brandExpanded 翻转）
-                            brandHintExpand = !brandExpanded
-                            brandPullActive = true
-                        }
-                        val damped = dy / brandPullPx * (1f - brandPull * 0.35f)
-                        brandPull = (brandPull + damped).coerceIn(0f, 1f)
-                        val wasReach = brandHintReach
-                        brandHintReach = brandPull >= BRAND_TOGGLE_THRESHOLD
-                        // 跨过阈值的一刻给一次触感反馈（告知“可以松手了”，不重复振动）
-                        if (!wasReach && brandHintReach) brandHaptic()
+                    // 滚到顶再继续下拉：内容跟手下移（阻尼渐重——越拉越沉、行程封顶）
+                    homePullScope.launch {
+                        val damping = 1f -
+                            (homePullOffset.value / homePullMaxPx).coerceIn(0f, 1f) * 0.65f
+                        homePullOffset.snapTo(
+                            (homePullOffset.value + dy * damping).coerceIn(0f, homePullMaxPx)
+                        )
                     }
+                    // 消费本段下拉：内容由上面自行下移，不触发系统过度滚动光效
                     return Offset(0f, dy)
                 }
-                return Offset.Zero
-            }
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                // 品牌栏展开/收起完全由「下拉到阈值后松手」决定，滚动内容不自动收起
+                if (dy != 0f && homePullOffset.value > 0f) {
+                    // 任何其它滚动（含回滚）立即复位
+                    homePullScope.launch { homePullOffset.snapTo(0f) }
+                }
                 return Offset.Zero
             }
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (homeScrollState.value <= 0f && brandPullActive) {
-                    // 松手结算：**只认阈值** —— 拉过阈值才收/放顶栏，未达阈值什么都不做
-                    // （无跟手预览，也不回弹：轻扫一下顶栏纹丝不动，避免误触）
-                    val reached = brandPull >= BRAND_TOGGLE_THRESHOLD
-                    brandPullActive = false
-                    brandPull = 0f
-                    if (reached) {
-                        brandExpanded = !brandExpanded
-                        AppPrefs.homeBrandExpanded = brandExpanded
-                        if (brandExpanded) {
-                            brandProgress.animateTo(1f, bounceSpring)
-                        } else {
-                            brandProgress.animateTo(0f, tween(durationMillis = 280))
-                        }
-                    }
-                    return available
-                }
+                // 松手：平滑回弹复位（无过冲，避免内容越顶露缝）
+                homePullOffset.animateTo(
+                    0f,
+                    spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                )
                 return Velocity.Zero
             }
         }
@@ -236,6 +196,18 @@ fun HomeScreen(
     val homeLayoutStore = remember { HomeLayoutStore.getInstance(context.filesDir) }
     var homeCards by remember { mutableStateOf(homeLayoutStore.getCards()) }
     var cardEditMode by remember { mutableStateOf(false) }
+
+    // 长按卡片 = 「长按操作」：自动收起悬浮底部导航栏（与「我的文章」多选同一机制），
+    // 底部空间让给悬浮「完成」按钮；退出编辑态自动恢复，页面销毁时 onDispose 兜底释放。
+    DisposableEffect(cardEditMode) {
+        if (cardEditMode) NavBarAutoHide.request(NavBarAutoHide.KEY_HOME_CARD_EDIT)
+        onDispose {
+            if (cardEditMode) NavBarAutoHide.release(NavBarAutoHide.KEY_HOME_CARD_EDIT)
+        }
+    }
+    val navBarAutoHidden by NavBarAutoHide.hidden.collectAsState()
+    // 滚动驱动的导航栏自动收起：内容前进时导航栏让位、回滚时恢复（首页不再需要避让留白）
+    val navBarScrollConn = rememberAutoHideNavBarOnScroll()
     var showAddCardSheet by remember { mutableStateOf(false) }
     // 学习数据弹窗显隐（悬浮于底部导航栏之上，不随内容滚动）
     var showStatsPopup by remember { mutableStateOf(false) }
@@ -293,6 +265,15 @@ fun HomeScreen(
     // 按更新时间倒序排列（最近操作过的在前），过滤掉首页隐藏的文章
     val recentArticles = remember(articles, hiddenArticleIds) {
         articles.filter { it.id !in hiddenArticleIds }.sortedByDescending { it.updatedAt }
+    }
+
+    // ── 文章标签：首页「最近使用 / 文章卡片」徽标展示 ──
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
+    val tagData by tagStore.data.collectAsState()
+    // 首次进入 priming：IO 读盘 → 发布 StateFlow（跨页面改动即时反映）
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
+    val chipTagsByArticle = remember(tagData) {
+        TagOps.tagsByArticle(tagData).mapValues { (_, list) -> list.toChipUis() }
     }
 
     // ── 复习检测：FSRS 自适应调度（无 FSRS 状态的文章回退模板间隔）──
@@ -369,10 +350,8 @@ fun HomeScreen(
     // 从 ImportScreen 保存成功后返回时接收信号
     var showSaveSuccessDialog by remember { mutableStateOf(false) }
     var savedArticleId by remember { mutableLongStateOf(0L) }
-    var showEmojiPicker by remember { mutableStateOf(false) }
     val homeIconKey by AppPrefs.homeIconKeyFlow.collectAsState()
     val showHomeEmoji by AppPrefs.showHomeEmojiFlow.collectAsState()
-    var showSubtitleEditor by remember { mutableStateOf(false) }
     val subtitle by AppPrefs.subtitleFlow.collectAsState()
     // 模式选择弹窗
     var showModePicker by remember { mutableStateOf(false) }
@@ -485,130 +464,7 @@ fun HomeScreen(
         )
     }
 
-    // 图标选择器（精选矢量图标）：复用同款 UI 结构、选中高亮、点击切换、持久化。
-    // 移除「自由输入任意 emoji」入口，仅从 AppIconKind 精选集选择（与「铲掉 emoji」目标一致）。
-    if (showEmojiPicker) {
-        val iconOptions = listOf(
-            AppIconKind.Logo, AppIconKind.Celebrate, AppIconKind.Edit, AppIconKind.Inbox,
-            AppIconKind.ArrowForward, AppIconKind.OpenInFull, AppIconKind.Check
-        )
-        BlancallAlertDialog(
-            onDismissRequest = { showEmojiPicker = false },
-            title = { Text("选择图标") },
-            text = {
-                @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    iconOptions.forEach { kind ->
-                        val selected = kind == appIconKindFromKey(homeIconKey)
-                        val optionName = when (kind) {
-                            AppIconKind.Logo -> "默认图标"
-                            AppIconKind.Celebrate -> "庆祝"
-                            AppIconKind.Edit -> "编辑"
-                            AppIconKind.Inbox -> "收件箱"
-                            AppIconKind.ArrowForward -> "前进箭头"
-                            AppIconKind.OpenInFull -> "全屏展开"
-                            AppIconKind.Check -> "对勾"
-                            else -> "图标"
-                        }
-                        Surface(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clickable {
-                                    AppPrefs.homeIconKey = iconKeyFromKind(kind)
-                                    showEmojiPicker = false
-                                },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (selected)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                AppIcon(
-                                    kind = kind,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    contentDescription = optionName
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showEmojiPicker = false }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-
-    // 副标题编辑
-    if (showSubtitleEditor) {
-        var editText by remember(subtitle) { mutableStateOf(subtitle) }
-        BlancallAlertDialog(
-            onDismissRequest = { showSubtitleEditor = false },
-            shape = RoundedCornerShape(28.dp),
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 编辑图标（与提取标题弹窗同规格）
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
-                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AppIcon(
-                            kind = AppIconKind.Edit,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "编辑副标题",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = editText,
-                        // 默认副标题 38 字 > 旧 30 字限制，编辑会被拦截；取消限制
-                        onValueChange = { editText = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("自定义副标题") },
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        AppPrefs.subtitle = editText.ifBlank { subtitle }
-                        showSubtitleEditor = false
-                    },
-                    shape = RoundedCornerShape(14.dp)
-                ) { Text("保存") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSubtitleEditor = false }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
+    // （图标选择与副标题编辑弹窗已收归设置页：首页顶栏移除后由设置页承担编辑入口）
 
     Box(
         modifier = Modifier
@@ -624,148 +480,72 @@ fun HomeScreen(
                 .statusBarsPadding(),
             contentAlignment = Alignment.TopCenter
         ) {
+        // ── 下拉揭示层：内容跟手下移后露出的顶部空白区（位于内容层之下，被内容盖住）──
+        // 高度 = 当前下拉位移；品牌文字从顶部渐显，随下拉逐步完整露出。
+        val homePullPx = homePullOffset.value
+        if (homePullPx > 0.5f) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(with(LocalDensity.current) { homePullPx.toDp() })
+                    .clipToBounds()
+                    .graphicsLayer { alpha = (homePullPx / homePullMaxPx).coerceIn(0f, 1f) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(16.dp))
+                if (showHomeEmoji) {
+                    AppIcon(
+                        kind = appIconKindFromKey(homeIconKey),
+                        modifier = Modifier.size(26.dp),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(
+                    text = "Blancall",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    letterSpacing = 0.5.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Surface(
             modifier = Modifier
                 .fillMaxSize()
                 // 内容宽上限：窄屏保持 600dp；宽屏放宽到 [GridMaxWidth]。（大屏自适应列数
                 // 需要更宽画布，上限过窄会把卡片拉成 600dp 级扁条——真机反馈。）
-                .widthIn(max = if (LocalIsLargeScreen) GridMaxWidth else 600.dp),
+                .widthIn(max = if (LocalIsLargeScreen) GridMaxWidth else 600.dp)
+                // 下拉跟手：内容整体下移，顶部露出品牌揭示区（揭示层在其下层绘制）
+                .graphicsLayer { translationY = homePullOffset.value },
             color = MaterialTheme.colorScheme.background
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(topBarConnection)
+                    .nestedScroll(homePullConnection)
+                    .nestedScroll(navBarScrollConn)
                     .verticalScroll(homeScrollState)
                     .padding(horizontal = 20.dp)
             ) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // ── 品牌栏：logo + 设置，默认收起；下拉(滚到顶再拉)时滑出。
-            //    此处不再放「添加」按钮（搜索栏右侧已有），避免重复 ──
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(brandHeight * brandProgress.value)
-                    .clipToBounds()
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(brandHeight),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Logo 图标（可点击换 emoji）：设置中可关闭显示
-                        if (showHomeEmoji) {
-                            Surface(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .semantics { contentDescription = "应用图标，点击更换" }
-                                    .clickable { showEmojiPicker = true },
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    AppIcon(
-                                        kind = appIconKindFromKey(homeIconKey),
-                                        modifier = Modifier.size(24.dp),
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(12.dp))
-                        }
-                        Column {
-                            Text(
-                                text = "Blancall",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 1
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            // 副标题：单行显示，设备放不下时自适应缩小字号
-                            val labelSmallFontSize = MaterialTheme.typography.labelSmall.fontSize
-                            var subtitleFontSize by remember(subtitle) {
-                                mutableStateOf(labelSmallFontSize)
-                            }
-                            Text(
-                                text = subtitle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = subtitleFontSize),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                letterSpacing = 0.5.sp,
-                                onTextLayout = { result ->
-                                    if (result.hasVisualOverflow && subtitleFontSize.value > 8f) {
-                                        subtitleFontSize = (subtitleFontSize.value - 0.5f).sp
-                                    }
-                                },
-                                modifier = Modifier.clickable { showSubtitleEditor = true }
-                            )
-                        }
-                    }
-                    val settingsAnchor = rememberTouchAnchor()
-                    GlassButton(
-                        onClick = { navController.navigateReveal("settings", settingsAnchor.value) },
-                        modifier = Modifier
-                            .trackTouchAnchor(settingsAnchor)
-                            // 与搜索栏右侧「添加」按钮等宽对齐
-                            .width(if (addButtonWidth > 0.dp) addButtonWidth else 44.dp)
-                            .height(40.dp)
-                            .semantics { contentDescription = "设置" }
-                    ) {
-                        SettingsGearIcon(color = MaterialTheme.colorScheme.onSurface)
-                    }
-                }
-            }
-
-            // ── 搜索栏：常驻显示（不参与折叠），右侧「添加」直导入 ──
+            // ── 搜索栏：常驻显示；右侧为「设置」入口（原「添加」键位）──
+            // 首页不再有「添加」键：添加卡片由画布「＋」卡片承接，导入可从设置/文章列表页进入。
             HomeSearchBar(
-                onSearch = { anchor -> navController.navigateReveal("search", anchor) },
-                onAdd = { navController.navigate("import") },
-                onAddWidthMeasured = { addButtonWidth = it }
+                onSearch = { navController.navigate("search") },
+                onSettings = { navController.navigate("settings") },
             )
-
-            // ── 下拉提示条（参考下拉刷新手感）：仅拖动品牌栏时出现 ──
-            //    收起态：“继续下滑 展开顶栏”；展开态：“继续下滑 收起顶栏”。
-            //    拉到阈值后文案变为“松开手指”，并加深颜色/字重，明确告知“可以松手了”。
-            //    文案/颜色均取自拖动开始时锁定的快照，松手淡出期间不会闪出反向内容。
-            AnimatedVisibility(
-                visible = brandPullActive && brandPull > 0.05f,
-                enter = fadeIn(tween(120)) + expandVertically(tween(140)),
-                exit = fadeOut(tween(120)) + shrinkVertically(tween(140)),
-            ) {
-                val brandHintColor = if (brandHintExpand) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    Macaron.warn().accent
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(brandHintColor.copy(alpha = if (brandHintReach) 0.14f else 0.08f))
-                        .padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = buildString {
-                            append("↓ ")
-                            append(if (brandHintReach) "松开手指" else "继续下滑")
-                            append("，")
-                            append(if (brandHintExpand) "展开顶栏" else "收起顶栏")
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (brandHintReach) FontWeight.SemiBold else FontWeight.Normal,
-                        color = brandHintColor,
-                        maxLines = 1,
-                    )
-                }
-            }
 
             Spacer(Modifier.height(14.dp))
             HorizontalDivider(
@@ -847,6 +627,7 @@ fun HomeScreen(
                         HomeCardContent(
                             card = card,
                             articles = articles,
+                            tagsByArticle = chipTagsByArticle,
                             dueArticles = dueArticles,
                             resumables = resumables,
                             recentArticles = recentArticles,
@@ -891,10 +672,9 @@ fun HomeScreen(
                 }
             )
             } // close BoxWithConstraints（画布列数测量）
-            // 底部留白：避开底部导航栏与左下角悬浮按钮组。
-            // 编辑态再多留一段，避免悬浮的「完成」压住最后一行卡片（旧版「完成」内联在下方，
-            // 需要滚到底才能点到、还会被导航栏顶到屏外 —— 用户反馈「跑到导航栏下面」）。
-            Spacer(Modifier.height(if (cardEditMode) 168.dp else 96.dp))
+            // 底部只留呼吸间距：导航栏改为「滚动/长按自动收起」（滚到底时已让位），
+            // 不再需要 96/168dp 的避让留白（用户要求：取消一切为导航栏预留的底距）。
+            Spacer(Modifier.height(16.dp))
 
             // ── 添加卡片：由画布顶部「+」唤起，列出未加入的系统卡与全部自定义配置 ──
             if (showAddCardSheet) {
@@ -959,9 +739,14 @@ fun HomeScreen(
 
         } // 内层首页内容 Box 闭合
 
-        // ── 悬浮层：固定在底部导航栏之上，不随首页内容滚动 ──
-        // 安全底距 = 导航栏高(64dp) + 栏底距(14dp) + 间距(12dp) = 90dp，再叠加 navigationBarsPadding()
-        // 适配手势导航条 —— 任何设备上都不会掉到导航栏下面（用户反馈「完成键跑到导航栏下面」）。
+        // ── 悬浮层：不随首页内容滚动（底栏可见时自动落在其上方）──
+
+        // 编辑态底栏已自动收起（见 NavBarAutoHide）：底距从「栏上安全距」收缩为贴底小距，
+        // 用动画过渡避免按钮跳变；统计弹窗（非编辑态，底栏可见）仍按安全底距避让。
+        val doneButtonBottom by animateDpAsState(
+            targetValue = if (navBarAutoHidden) 16.dp else FLOATING_BOTTOM_PADDING,
+            label = "doneButtonBottom",
+        )
 
         // ① 编辑态「完成」：旧版内联在画布下方，要滚到底才能看到、还会被导航栏遮住
         AnimatedVisibility(
@@ -971,7 +756,7 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 20.dp)
-                .padding(bottom = FLOATING_BOTTOM_PADDING)
+                .padding(bottom = doneButtonBottom)
                 .navigationBarsPadding(),
         ) {
             Button(
@@ -1124,10 +909,7 @@ fun HomeScreen(
                     is PickerSelection.Base ->
                         navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
                     PickerSelection.Custom ->
-                        navController.navigateReveal(
-                            "custom_cloze_list/${pendingPracticeArticleId}?pick=true",
-                            practiceButtonRect.takeIf { it != Rect.Zero }?.toTouchAnchor(),
-                        )
+                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}?pick=true")
                 }
             }
         }
@@ -1140,18 +922,14 @@ fun HomeScreen(
  */
 @Composable
 private fun HomeSearchBar(
-    onSearch: (anchor: TouchAnchor?) -> Unit,
-    onAdd: () -> Unit,
-    modifier: Modifier = Modifier,
-    onAddWidthMeasured: (androidx.compose.ui.unit.Dp) -> Unit = {}
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
     val container = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
     val shape = RoundedCornerShape(14.dp)
-    val density = LocalDensity.current
-    // 触点锚点：点击时以搜索框中心作为搜索页浮起转场的起点
-    val searchAnchor = rememberTouchAnchor()
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -1165,8 +943,7 @@ private fun HomeSearchBar(
                 .clip(shape)
                 .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
                 .background(container)
-                .trackTouchAnchor(searchAnchor)
-                .clickable { onSearch(searchAnchor.value) },
+                .clickable { onSearch() },
             contentAlignment = Alignment.CenterStart
         ) {
             Row(
@@ -1188,20 +965,15 @@ private fun HomeSearchBar(
             }
         }
         Spacer(Modifier.width(10.dp))
-        // 添加按钮（实测宽度上报，供品牌栏「设置」按钮等宽对齐）
+        // 设置按钮（占据原「添加」键的位置与尺寸）：点击进入设置页。
+        // 首页不再有「添加」键——添加卡片由画布「＋」卡片承接。
         GlassButton(
-            onClick = onAdd,
+            onClick = { onSettings() },
             modifier = Modifier
                 .height(46.dp)
-                .onGloballyPositioned {
-                    onAddWidthMeasured(with(density) { it.size.width.toDp() })
-                }
+                .semantics { contentDescription = "设置" }
         ) {
-            Text(
-                text = "添加",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            SettingsGearIcon(color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -1624,11 +1396,8 @@ private val FLOATING_BOTTOM_PADDING = 90.dp
 /** 学习数据弹窗自动收起延时（点详情 / 关闭可提前） */
 private const val STATS_POPUP_AUTO_DISMISS_MS = 6000L
 
-/**
- * 品牌栏下拉切换阈值（0~1）：本次下拉量达到该比例后松手才执行展开/收起，
- * 未达阈值松手回弹恢复原状（参考下拉刷新的「继续下滑 → 松开手指」手感）。
- */
-private const val BRAND_TOGGLE_THRESHOLD = 0.6f
+/** 下拉揭示区最大行程：滚到顶再继续下拉这么多即到顶（跟手 + 阻尼渐重）。 */
+private val HOME_PULL_MAX = 140.dp
 
 /**
  * 「学习数据」悬浮弹窗：仅当用户**刚做完一次练习**且首页没有学习数据卡片时弹出。

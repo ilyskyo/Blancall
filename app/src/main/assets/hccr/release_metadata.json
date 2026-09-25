@@ -1,19 +1,15 @@
 {
   "name": "Handwritten",
-  "source_checkpoint": "runs/mbv2_phase1_aug/best.pt",
-  "source_ncnn_param": "save/output/mbv2_aug.int8.ncnn.param",
-  "source_ncnn_bin": "save/output/mbv2_aug.int8.ncnn.bin",
-  "source_charset": "data/processed/charset.json",
   "model": "mobilenet_v2",
-  "classes": 3755,
+  "classes": 7356,
   "metrics": {
-    "top1": 0.9547,
-    "top10": 0.9958
+    "top1": 0.9575,
+    "top5": 0.993
   },
+  "note": "2026-09 起为用户自训 7356 类模型（HWDB 全集：7185 汉字 + 171 符号，含 14 个标点类）；本文件按当前 assets 资产重新生成，旧版 3755 类记录已废弃。",
   "sha256": {
-    "best.pt": "151f32b03c49dbed77f3b8076035d28ce050d70a1a102e12581274a44cb10460",
-    "ncnn/model.ncnn.param": "8c4d0e594d8a4644fb97411d2b6335f55fed2e1b37057bc88fced724295902a3",
-    "ncnn/model.ncnn.bin": "86a4802e3c8b2ddf1180f3de361546517d708674381e58b3d10b766dc8fba49e",
-    "ncnn/charset.json": "31f5700027c8692122cec5281d12c6382506b36d56075331cd73718f624d4ed2"
+    "ncnn/model.ncnn.param": "488713410ee1ffbc86fc1beeb6795d82cbcefa704ba15739655b8f3538bb333a",
+    "ncnn/model.ncnn.bin": "3e37efe9b94c78ca5c853d934a1f31dcd6c37991cfe85f42853ee3df2b37ebf2",
+    "ncnn/charset.json": "f480c9f951a8ebb80c5482d2f9b507054320b99a55e63fe12e2ca65a38e7d3d2"
   }
 }

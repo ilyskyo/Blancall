@@ -20,7 +20,14 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 
 /**
- * 练习记录仓库（JSON 文件持久化版）
+ * 练习记录仓库。
+ *
+ * ## 存储格式与落盘策略
+ * - 主文件为 **JSONL**（一行一条记录）：insert 只追加一行（O(1) + fsync），
+ *   不再每次全量重写；deleteByArticleId 等低频路径才整体重写（含 .bak 轮换）。
+ * - 兼容旧版「JSON 数组」文件：加载时自动识别，首次写入时整体转写为 JSONL；
+ *   主文件解析失败（损坏）时同样置位「下次整体重写」，不会把新记录追加进垃圾堆。
+ * - 内存维护 articleId 索引，getByArticleId 由 O(n) 过滤降为 O(k)。
  */
 class RecordRepository(private val filePath: String) {
 
@@ -33,6 +40,12 @@ class RecordRepository(private val filePath: String) {
     private val stateLock = Any()
     // 加载完成的门闩；init 后台加载完成后 countDown，写操作需先 await 以防加载覆盖新增数据
     private val loadLatch = CountDownLatch(1)
+    // articleId → 该文章的记录（与 _records 同在 stateLock 内维护；getByArticleId 走这里）
+    private var articleIndex: Map<Long, List<PracticeRecord>> = emptyMap()
+    // 主文件需要「下次落盘整体重写」：旧数组格式（不能直接追加）/ 主文件损坏空起步。
+    // 置位后首次写盘走 AtomicFiles.writeTextAtomic（含 .bak 轮换与转格式），成功后清除。
+    @Volatile
+    private var fileNeedsFullRewrite = false
 
     init {
         // 异步加载，避免冷启动阻塞 UI 线程；加载完成后释放门闩
@@ -51,88 +64,131 @@ class RecordRepository(private val filePath: String) {
     }
 
     /**
-     * 解析 JSON 字符串为记录列表与最大 id。
-     * 单条损坏不会拖垮全部记录：用 optXxx 降级 + 单条 try/catch 跳过。
-     * @return Pair(记录列表, 最大 id)；空列表时 maxId=0
+     * 解析单条记录 JSON（JSONL 的一行 / 旧数组的一个元素共用）。
+     * 单条损坏不会拖垮全部记录：optXxx 降级 + 本条 try/catch 返回 null（调用方跳过）。
+     *
+     * @param where 损坏日志的定位描述（如「第 3 条」「行 12」）
      */
-    private fun parseRecords(jsonStr: String): Pair<List<PracticeRecord>, Long> {
-        val jsonArray = JSONArray(jsonStr)
-        val loaded = mutableListOf<PracticeRecord>()
-        var maxId = 0L
-        for (i in 0 until jsonArray.length()) {
-            try {
-                val obj = jsonArray.optJSONObject(i) ?: continue
-                val id = obj.optLong("id", 0L)
-                if (id <= 0L) continue
-                val mistakesArr = obj.optJSONArray("mistakes") ?: JSONArray()
-                val mistakes = mutableListOf<MistakeDetail>()
-                for (j in 0 until mistakesArr.length()) {
-                    val m = mistakesArr.optJSONObject(j) ?: continue
-                    mistakes.add(
-                        MistakeDetail(
-                            blankIndex = m.optInt("blankIndex", 0),
-                            correctAnswer = m.optString("correctAnswer", ""),
-                            userAnswer = m.optString("userAnswer", ""),
-                            errorType = m.optString("errorType", "")
-                        )
+    private fun parseRecord(obj: JSONObject, where: String): PracticeRecord? {
+        return try {
+            val id = obj.optLong("id", 0L)
+            if (id <= 0L) return null
+            val mistakesArr = obj.optJSONArray("mistakes") ?: JSONArray()
+            val mistakes = mutableListOf<MistakeDetail>()
+            for (j in 0 until mistakesArr.length()) {
+                val m = mistakesArr.optJSONObject(j) ?: continue
+                mistakes.add(
+                    MistakeDetail(
+                        blankIndex = m.optInt("blankIndex", 0),
+                        correctAnswer = m.optString("correctAnswer", ""),
+                        userAnswer = m.optString("userAnswer", ""),
+                        errorType = m.optString("errorType", "")
                     )
-                }
-                val record = PracticeRecord(
-                    id = id,
-                    articleId = obj.optLong("articleId", 0L),
-                    mode = obj.optString("mode", ""),
-                    totalBlanks = obj.optInt("totalBlanks", 0),
-                    correctCount = obj.optInt("correctCount", 0),
-                    mistakes = mistakes,
-                    timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
-                    duration = obj.optLong("duration", 0L),
-                    similarity = obj.optDouble("similarity", 0.0).toFloat(),
-                    rating = obj.optInt("rating", 0),
-                    weakHints = obj.optInt("weakHints", 0),
-                    strongHints = obj.optInt("strongHints", 0),
-                    // 旧记录无此字段 → 空列表（热力图回退整篇统计）。
-                    // 注意：废弃字段 answeredSentences（句子索引语义，段落模式下与全文错位）
-                    // 在此刻意不读取，确保旧数据走回退分支而不被误判为字符位置。
-                    answeredSentenceStarts = obj.optJSONArray("answeredSentenceStarts")
-                        ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
-                        ?: emptyList(),
-                    // 旧记录无此字段 → 空列表（句级错误画像视为无数据）
-                    mistakeSentenceIndices = obj.optJSONArray("mistakeSentenceIndices")
-                        ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
-                        ?: emptyList()
                 )
+            }
+            PracticeRecord(
+                id = id,
+                articleId = obj.optLong("articleId", 0L),
+                mode = obj.optString("mode", ""),
+                totalBlanks = obj.optInt("totalBlanks", 0),
+                correctCount = obj.optInt("correctCount", 0),
+                mistakes = mistakes,
+                timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                duration = obj.optLong("duration", 0L),
+                similarity = obj.optDouble("similarity", 0.0).toFloat(),
+                rating = obj.optInt("rating", 0),
+                weakHints = obj.optInt("weakHints", 0),
+                strongHints = obj.optInt("strongHints", 0),
+                // 旧记录无此字段 → 空列表（热力图回退整篇统计）。
+                // 注意：废弃字段 answeredSentences（句子索引语义，段落模式下与全文错位）
+                // 在此刻意不读取，确保旧数据走回退分支而不被误判为字符位置。
+                answeredSentenceStarts = obj.optJSONArray("answeredSentenceStarts")
+                    ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
+                    ?: emptyList(),
+                // 旧记录无此字段 → 空列表（句级错误画像视为无数据）
+                mistakeSentenceIndices = obj.optJSONArray("mistakeSentenceIndices")
+                    ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
+                    ?: emptyList()
+            )
+        } catch (e: Exception) {
+            Log.w("RecordRepository", "跳过损坏的记录（$where）: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 解析整个记录文件：**兼容两种格式**——
+     * - 旧版：单个 JSON 数组（升级前的历史文件）；
+     * - 新版 JSONL：一行一条记录（insert 追加的落盘格式）。
+     *
+     * 逐行容错：进程在追加途中被杀只会留下残缺的最后一行，跳过即可。
+     * @return (记录列表, 最大 id, 是否旧数组格式)；空文件 maxId=0
+     */
+    private fun parseFile(text: String): Triple<List<PracticeRecord>, Long, Boolean> {
+        if (text.trimStart().startsWith("[")) {
+            val jsonArray = JSONArray(text)
+            val loaded = ArrayList<PracticeRecord>(jsonArray.length())
+            var maxId = 0L
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.optJSONObject(i) ?: continue
+                val record = parseRecord(obj, "第 ${i + 1} 条") ?: continue
                 loaded.add(record)
                 if (record.id > maxId) maxId = record.id
-            } catch (e: Exception) {
-                Log.w("RecordRepository", "跳过损坏的第 ${i + 1} 条记录: ${e.message}")
             }
+            return Triple(loaded, maxId, true)
         }
-        return loaded to maxId
+        val loaded = ArrayList<PracticeRecord>()
+        var maxId = 0L
+        var lineNo = 0
+        for (line in text.lineSequence()) {
+            lineNo++
+            val s = line.trim()
+            if (s.isEmpty()) continue
+            val obj = try {
+                JSONObject(s)
+            } catch (e: Exception) {
+                Log.w("RecordRepository", "跳过损坏的 JSONL 行 $lineNo: ${e.message}")
+                continue
+            }
+            val record = parseRecord(obj, "行 $lineNo") ?: continue
+            loaded.add(record)
+            if (record.id > maxId) maxId = record.id
+        }
+        return Triple(loaded, maxId, false)
     }
 
     private fun loadFromFile() {
         try {
             val file = File(filePath)
             if (!file.exists()) return
-            val jsonStr = file.readText()
-            if (jsonStr.isBlank()) return
-            val (loaded, maxId) = parseRecords(jsonStr)
+            val text = file.readText()
+            if (text.isBlank()) return
+            val (loaded, maxId, legacy) = parseFile(text)
+            // JSONL 文件有内容却一条都读不出（逐行解析全部失败）⇒ 视为损坏，走备份恢复
+            if (loaded.isEmpty() && !legacy) {
+                throw IllegalStateException("JSONL 无有效记录")
+            }
             synchronized(stateLock) {
                 _records.value = loaded
                 nextId = maxId.coerceAtLeast(0) + 1
+                articleIndex = loaded.groupBy { it.articleId }
+                fileNeedsFullRewrite = legacy
             }
         } catch (e: Exception) {
             Log.e("RecordRepository", "加载练习记录失败，文件可能已损坏", e)
+            // 主文件已不可信：下一次落盘必须整体重写（不能把新记录追加进损坏文件）
+            fileNeedsFullRewrite = true
             // 尝试从备份恢复
             try {
                 val bakFile = File(filePath + ".bak")
                 if (bakFile.exists()) {
                     val bakStr = bakFile.readText()
                     if (bakStr.isNotBlank()) {
-                        val (loaded, maxId) = parseRecords(bakStr)
+                        val (loaded, maxId, _) = parseFile(bakStr)
                         synchronized(stateLock) {
                             _records.value = loaded
                             nextId = maxId.coerceAtLeast(0) + 1
+                            articleIndex = loaded.groupBy { it.articleId }
                         }
                         Log.w("RecordRepository", "已从备份文件恢复 ${loaded.size} 条记录")
                     }
@@ -143,6 +199,10 @@ class RecordRepository(private val filePath: String) {
         }
     }
 
+    /**
+     * 全量整体重写（JSONL 内容，含 .bak 轮换）：删除等低频路径用；
+     * 新增走 [appendOrRewrite] 的 O(1) 追加，避免每次 insert 重写全文件。
+     */
     private suspend fun saveToFile() {
         fileMutex.withLock {
             // 快照必须在锁内读取：并发 insert 时锁外读取会拿到旧值，
@@ -151,36 +211,9 @@ class RecordRepository(private val filePath: String) {
             // 文件写入切 IO 线程，避免在 Main 线程上做磁盘 IO（调用方多为 viewModelScope）
             withContext(Dispatchers.IO) {
                 try {
-                    val jsonArray = JSONArray()
-                    for (record in snapshot) {
-                        val obj = JSONObject()
-                        obj.put("id", record.id)
-                        obj.put("articleId", record.articleId)
-                        obj.put("mode", record.mode)
-                        obj.put("totalBlanks", record.totalBlanks)
-                        obj.put("correctCount", record.correctCount)
-                        obj.put("timestamp", record.timestamp)
-                        obj.put("duration", record.duration)
-                        obj.put("similarity", record.similarity.toDouble())
-                        obj.put("rating", record.rating)
-                        obj.put("weakHints", record.weakHints)
-                        obj.put("strongHints", record.strongHints)
-                        obj.put("answeredSentenceStarts", JSONArray(record.answeredSentenceStarts))
-                        obj.put("mistakeSentenceIndices", JSONArray(record.mistakeSentenceIndices))
-                        val mistakesArr = JSONArray()
-                        for (m in record.mistakes) {
-                            val mObj = JSONObject()
-                            mObj.put("blankIndex", m.blankIndex)
-                            mObj.put("correctAnswer", m.correctAnswer)
-                            mObj.put("userAnswer", m.userAnswer)
-                            mObj.put("errorType", m.errorType)
-                            mistakesArr.put(mObj)
-                        }
-                        obj.put("mistakes", mistakesArr)
-                        jsonArray.put(obj)
-                    }
                     // 原子写 + fsync 统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
-                    AtomicFiles.writeTextAtomic(File(filePath), jsonArray.toString())
+                    AtomicFiles.writeTextAtomic(File(filePath), serializeRecords(snapshot))
+                    fileNeedsFullRewrite = false
                 } catch (e: Exception) {
                     Log.e("RecordRepository", "保存练习记录失败", e)
                     throw e
@@ -189,14 +222,77 @@ class RecordRepository(private val filePath: String) {
         }
     }
 
+    /**
+     * 新增记录的落盘路径：
+     * - 常规：JSONL 追加一行（O(1) + fsync），不再每插一条重写全文件；
+     * - 旧数组格式首次写入 / 主文件损坏空起步：整体重写一次（数组尾部不能直接
+     *   追加，会毁文件；损坏文件不能追加垃圾），写盘走 [AtomicFiles.writeTextAtomic]，
+     *   顺带完成 .bak 轮换。
+     */
+    private suspend fun appendOrRewrite(record: PracticeRecord) {
+        fileMutex.withLock {
+            // 锁内判断/读取：与全量重写路径互斥，保证转写与追加不会交叉
+            val needsRewrite = fileNeedsFullRewrite
+            val snapshot = _records.value
+            withContext(Dispatchers.IO) {
+                try {
+                    if (needsRewrite) {
+                        AtomicFiles.writeTextAtomic(File(filePath), serializeRecords(snapshot))
+                        fileNeedsFullRewrite = false
+                    } else {
+                        AtomicFiles.appendTextLine(File(filePath), recordToJson(record).toString())
+                    }
+                } catch (e: Exception) {
+                    Log.e("RecordRepository", "保存练习记录失败", e)
+                    throw e
+                }
+            }
+        }
+    }
+
+    /** JSONL 序列化：一行一条；[records] 为空时返回空串（读取端 blank 视为无数据）。 */
+    private fun serializeRecords(records: List<PracticeRecord>): String =
+        if (records.isEmpty()) ""
+        else records.joinToString(separator = "\n", postfix = "\n") { recordToJson(it).toString() }
+
+    /** 单条记录 → JSON（字段与旧数组格式逐字段一致，仅容器从数组改为行）。 */
+    private fun recordToJson(record: PracticeRecord): JSONObject {
+        val obj = JSONObject()
+        obj.put("id", record.id)
+        obj.put("articleId", record.articleId)
+        obj.put("mode", record.mode)
+        obj.put("totalBlanks", record.totalBlanks)
+        obj.put("correctCount", record.correctCount)
+        obj.put("timestamp", record.timestamp)
+        obj.put("duration", record.duration)
+        obj.put("similarity", record.similarity.toDouble())
+        obj.put("rating", record.rating)
+        obj.put("weakHints", record.weakHints)
+        obj.put("strongHints", record.strongHints)
+        obj.put("answeredSentenceStarts", JSONArray(record.answeredSentenceStarts))
+        obj.put("mistakeSentenceIndices", JSONArray(record.mistakeSentenceIndices))
+        val mistakesArr = JSONArray()
+        for (m in record.mistakes) {
+            val mObj = JSONObject()
+            mObj.put("blankIndex", m.blankIndex)
+            mObj.put("correctAnswer", m.correctAnswer)
+            mObj.put("userAnswer", m.userAnswer)
+            mObj.put("errorType", m.errorType)
+            mistakesArr.put(mObj)
+        }
+        obj.put("mistakes", mistakesArr)
+        return obj
+    }
+
     suspend fun insert(record: PracticeRecord): PracticeRecord {
         awaitLoaded()
         val newRecord = synchronized(stateLock) {
             val nr = record.copy(id = nextId++)
             _records.value = _records.value + nr
+            articleIndex = articleIndex + (nr.articleId to (articleIndex[nr.articleId].orEmpty() + nr))
             nr
         }
-        saveToFile()
+        appendOrRewrite(newRecord)
         return newRecord
     }
 
@@ -204,15 +300,16 @@ class RecordRepository(private val filePath: String) {
         awaitLoaded()
         synchronized(stateLock) {
             _records.value = _records.value.filter { it.articleId != articleId }
+            articleIndex = articleIndex - articleId
         }
         saveToFile()
     }
 
-    /** 挂起查询：先等待异步加载完成，避免冷启动时返回空结果 */
+    /** 挂起查询：先等待异步加载完成，避免冷启动时返回空结果；走内存索引 O(k) */
     suspend fun getByArticleId(articleId: Long): List<PracticeRecord> {
         awaitLoaded()
-        // O(n) 过滤；记录数量可控，暂不维护 articleId 索引 Map
-        return _records.value.filter { it.articleId == articleId }.sortedByDescending { it.timestamp }
+        return synchronized(stateLock) { articleIndex[articleId].orEmpty() }
+            .sortedByDescending { it.timestamp }
     }
 
     companion object {

@@ -17,11 +17,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.StylusPresence
 
 /**
  * 「就地书写」底部面板：对某个具体挖空作答。
@@ -53,8 +57,12 @@ fun HandwritingAnswerSheet(
     /** 下一个期望字符（生僻字守卫）；null = 不启用 */
     expectedNextChar: Char? = null,
     /** 英文默写的「答案先验」（剩余标准答案）；null = 不启用。 */
-    expectedWord: String? = null
+    expectedWord: String? = null,
+    /** 墨迹上报（错题回顾）：透传给面板（见 [HandwritingPanel] 参数注释）。 */
+    onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
+    // 书写模式提示：有笔设备说「用笔」；无笔设备说「用手指」（见 StylusPresence）
+    val stylusPresent by StylusPresence.present.collectAsStateWithLifecycle()
     GlassModalBottomSheet(onDismissRequest = onDismissRequest) {
         // ⚠️⚠️ 这里**绝不能再加 `verticalScroll`**：`GlassModalBottomSheet` 内部
         // （M3 `ModalBottomSheet`）已经把内容放进一个 `Column(verticalScroll)`，
@@ -135,12 +143,18 @@ fun HandwritingAnswerSheet(
                 allowLatinFallback = expectedNextChar?.let {
                     HandwritingScript.isLatinInputChar(it)
                 } != false,
-                expectedWord = expectedWord
+                expectedWord = expectedWord,
+                onInkCommitted = onInkCommitted
             )
 
             Spacer(Modifier.height(8.dp))
             Text(
-                "用笔在板上写一个字，认出的字会自动填进这个空；连续写就是连续填。手指划动不会误写。",
+                if (stylusPresent) {
+                    "用笔在板上写一个字，认出的字会自动填进这个空；连续写就是连续填。手指划动不会误写。"
+                } else {
+                    // 无笔设备：手指就是书写工具（触屏模式）——不能再写「手指划动不会误写」
+                    "在板上写一个字，认出的字会自动填进这个空；连续写就是连续填。"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

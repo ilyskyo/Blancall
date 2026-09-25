@@ -58,6 +58,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.ilyskyo.blancall.ui.common.BottomNavBar
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.NavBarAutoHide
 import com.ilyskyo.blancall.ui.common.NavRail
 import com.ilyskyo.blancall.ui.common.NavRailWidth
 import com.ilyskyo.blancall.ui.common.RevealNav
@@ -87,6 +88,7 @@ import com.ilyskyo.blancall.ui.statistics.OverviewScreen
 import com.ilyskyo.blancall.ui.statistics.StatisticsScreen
 import com.ilyskyo.blancall.ui.onboarding.OnboardingScreen
 import com.ilyskyo.blancall.ui.search.SearchScreen
+import com.ilyskyo.blancall.ui.tag.TagManagerScreen
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.ilyskyo.blancall.ui.viewmodel.SectionMode
@@ -132,8 +134,11 @@ fun AppNavigation() {
 
     // tab 切换：回到根页面栈，避免子页面残留
     fun selectTab(index: Int) {
-        // 不做 route==currentRoute 判断：navigateToTab 幂等（同页也安全），
-        // 避免 currentRoute 匹配异常时误拦「点回当前 tab / 首页」
+        // 点击**当前 tab**（如在首页点「首页」）：直接忽略，不做任何导航。
+        // ⚠️ 原实现放任 navigateToTab 走一遍（依赖 launchSingleTop “幂等”），
+        // 真机实测同 tab 点击仍会出现一次「白色遮挡刷新」（页面重建/转场中间帧）；
+        // 同 tab 点击本就不应有任何视觉变化，直接短路最稳。
+        if (index == currentTab) return
         val route = rootRoutes.getOrNull(index) ?: return
         navController.navigateToTab(route)
     }
@@ -198,6 +203,10 @@ fun AppNavigation() {
     // 依据 Material 3 规范：Compact(<600) 底栏 / Medium(600–839) 侧栏 / Expanded(≥840) 侧栏。
     // 横屏用侧栏的实质理由：横屏竖向空间稀缺而横向富余，底栏会再切掉 64dp。
     val isLargeScreen = LocalIsLargeScreen
+
+    // 页面级「临时收起底栏」请求（长按操作栏 / 编辑态贴底显示时不遮挡；
+    // 滚动驱动收起见 rememberAutoHideNavBarOnScroll）
+    val navBarAutoHidden by NavBarAutoHide.hidden.collectAsState()
 
     // 页面容器引用必须先声明：NavRail 与底栏都要用它做玻璃折射采样源，
     // 而它在下方 AndroidView 的 factory 里才被赋值（首次组合时仍为 null，
@@ -507,6 +516,19 @@ fun AppNavigation() {
             }
         }
 
+        // 文章标签管理页（设置 → 内容管理 → 文章标签）
+        composable(
+            "tag_manager",
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+        ) { backStackEntry ->
+            RevealPageShell(backStackEntry.id) {
+                TagManagerScreen(navController)
+            }
+        }
+
         // 句子卡片大卡片界面（首页小卡片点入；华为堆叠形态：划卡 + 三键评级）
         composable(
             "sentence_cards",
@@ -725,8 +747,10 @@ fun AppNavigation() {
         // ⚠️ 必须与页面容器**并列在 Box 里**，不能和 weight 子项同处 Row：
         // 真机反馈——自由窗口（小窗）下底栏 fillMaxWidth 参与 Row 测量、
         // 抢走全部宽度，页面容器被压成 0 宽 ⇒「只有导航栏、页面完全空白」。
+        // navBarAutoHidden：页面请求临时收起（长按多选 / 首页编辑态 / 滚动前进）——
+        // 走同一条下滑出场动画，退出状态自动滑回。
         AnimatedVisibility(
-            visible = currentTab >= 0 && !isLargeScreen,
+            visible = currentTab >= 0 && !isLargeScreen && !navBarAutoHidden,
             enter = slideInVertically(
                 animationSpec = tween(320, easing = LinearOutSlowInEasing),
                 initialOffsetY = { fullHeight -> fullHeight }

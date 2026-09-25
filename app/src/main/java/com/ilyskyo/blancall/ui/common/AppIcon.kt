@@ -8,13 +8,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.automirrored.outlined.Redo
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Celebration
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Home
@@ -54,7 +58,15 @@ enum class AppIconKind {
     /** 撤销 / 重做（编辑器顶栏用；AutoMirrored 保证 RTL 下箭头方向正确） */
     Undo, Redo,
     /** 手写笔（切换手写输入 / 键盘输入） */
-    Stylus
+    Stylus,
+    /** 标签（文章标签系统：设置入口 / 管理页） */
+    Tag,
+    /** 筛选（句子卡片抽句范围按标签筛选） */
+    Filter,
+    /** 拖拽手柄（标签管理页拖动排序用） */
+    DragHandle,
+    /** 复习（句子卡片：用户主动发起再学一轮） */
+    Refresh
 }
 
 /** 将存储 key 解析为 [AppIconKind]（未知 / 空 → [AppIconKind.Logo]） */
@@ -113,6 +125,10 @@ fun AppIcon(
         AppIconKind.SearchHint -> Icons.Outlined.Search
         AppIconKind.Undo -> Icons.AutoMirrored.Outlined.Undo
         AppIconKind.Redo -> Icons.AutoMirrored.Outlined.Redo
+        AppIconKind.Tag -> Icons.AutoMirrored.Outlined.Label
+        AppIconKind.Filter -> Icons.Outlined.FilterAlt
+        AppIconKind.DragHandle -> Icons.Outlined.DragHandle
+        AppIconKind.Refresh -> Icons.Outlined.Refresh
         AppIconKind.Stylus -> null
         AppIconKind.Logo -> null
     }

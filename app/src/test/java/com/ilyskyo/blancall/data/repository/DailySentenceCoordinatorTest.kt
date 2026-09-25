@@ -22,7 +22,7 @@ import kotlin.random.Random
  * 保证用例不依赖执行顺序。
  *
  * 覆盖：抽新句与同日幂等、到期优先、快照失效重抽、零候选空态、
- * 队列（今日置顶 / 到期按 due 升序 / 解析失败跳过）与今日句去重。
+ * 队列（今日置顶 / 到期按 due 升序 / 新句全量入队 / 解析失败跳过）与今日句去重。
  */
 class DailySentenceCoordinatorTest {
 
@@ -139,6 +139,62 @@ class DailySentenceCoordinatorTest {
         assertEquals(text2, queue[1].text)
         assertEquals(k1, queue[2].key)
         assertTrue("已删文章的到期项不应出现", queue.none { it.key == kGone })
+    }
+
+    @Test
+    fun `buildQueue 未学过的新句全部入队直到记完`() {
+        store.clear()
+        // 一篇含 3 个合格句的文章：没有今日快照时，3 句应全部在队列里（不止 1 张卡）
+        val a1 = article(1, "海内存知己，天涯若比邻。欲穷千里目，更上一层楼。春宵一刻值千金，花有清香月有阴。")
+        val queue = DailySentenceCoordinator.buildQueue(store, listOf(a1), emptyMap(), now)
+        assertEquals("全部合格新句都应入队", 3, queue.size)
+        assertEquals("新句不带今日标记", 0, queue.count { it.isToday })
+
+        // 已有今日快照（今日句也是新句）：今日句置顶，其余两句仍全部入队，不重复
+        DailySentenceCoordinator.ensureToday(store, listOf(a1), emptyMap(), now, Random(1))
+        val queue2 = DailySentenceCoordinator.buildQueue(store, listOf(a1), emptyMap(), now)
+        assertEquals(3, queue2.size)
+        assertTrue("今日句置顶", queue2[0].isToday)
+        assertEquals("今日句不重复出现", 1, queue2.count { it.isToday })
+        assertEquals("键去重", queue2.size, queue2.map { it.key }.toSet().size)
+
+        // 学过一句（有状态且未到期）：该句不再入队，剩两句
+        val learned = queue2[1].key
+        val states = mapOf(learned to state(due = now + 10 * day, lastReview = now))
+        val queue3 = DailySentenceCoordinator.buildQueue(store, listOf(a1), states, now)
+        assertEquals("已学未到期的新句按 FSRS 间隔复习语义不入队", 2, queue3.size)
+        assertTrue(queue3.none { it.key == learned })
+    }
+
+    @Test
+    fun `buildQueue 主动复习：未到期已学句也入队且最久未复习优先`() {
+        store.clear()
+        val text1 = "海内存知己，天涯若比邻。"
+        val text2 = "欲穷千里目，更上一层楼。"
+        val text3 = "春宵一刻值千金，花有清香月有阴。"
+        val a1 = article(1, text1)
+        val a2 = article(2, text2)
+        val a3 = article(3, text3)
+        val k1 = SentenceSelector.sentenceKey(1, text1)
+        val k2 = SentenceSelector.sentenceKey(2, text2)
+        // 两句均已学过且**未到期**：k1 最久未复习，应排最前
+        val states = mapOf(
+            k1 to state(due = now + 5 * day, lastReview = now - 9 * day),
+            k2 to state(due = now + 1 * day, lastReview = now - 2 * day),
+        )
+        val queue = DailySentenceCoordinator.buildQueue(
+            store, listOf(a1, a2, a3), states, now, includeAllLearned = true,
+        )
+        assertEquals("未到期的已学句也要入队，新句接在后", 3, queue.size)
+        assertEquals("最久未复习优先", k1, queue[0].key)
+        assertEquals(k2, queue[1].key)
+        assertEquals("未学新句接在已学之后", 3L, queue[2].articleId)
+        assertTrue("主动复习轮无今日句特殊位置", queue.none { it.isToday })
+
+        // 对照组：日常模式不排未到期已学句（现只有未学新句）
+        val normal = DailySentenceCoordinator.buildQueue(store, listOf(a1, a2, a3), states, now)
+        assertEquals("日常模式仅排新句", 1, normal.size)
+        assertTrue(normal.none { it.key == k1 || it.key == k2 })
     }
 
     @Test

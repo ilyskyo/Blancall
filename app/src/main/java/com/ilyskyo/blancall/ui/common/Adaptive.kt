@@ -158,9 +158,11 @@ fun adaptivePadding(
  * @param cardMinWidthDp   单卡最小舒适宽度
  */
 fun gridColumnsFor(availableWidthDp: Float, cardMinWidthDp: Float = 168f): Int {
-    if (availableWidthDp <= 0f) return 2
+    // 下限 1（而非 2）：允许窄屏下探到单列 —— 旧版下限锁 2 会把手机也排成双列、
+    // 卡片过窄导致标题被截断（真机反馈）。
+    if (availableWidthDp <= 0f) return 1
     val cols = (availableWidthDp / cardMinWidthDp).toInt()
-    return cols.coerceIn(2, 6)
+    return cols.coerceIn(1, 6)
 }
 
 /**

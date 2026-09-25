@@ -5,9 +5,9 @@ package com.ilyskyo.blancall.ui.viewmodel
 
 import android.app.Application
 import android.widget.Toast
-import java.io.File
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.geometry.Offset
 import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.AiClozeGenerator
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
@@ -26,17 +26,16 @@ import com.ilyskyo.blancall.data.model.PracticeStatus
 import com.ilyskyo.blancall.data.ai.AiClient
 import com.ilyskyo.blancall.data.ai.AiConfigStore
 import com.ilyskyo.blancall.data.repository.ArticleRepository
+import com.ilyskyo.blancall.data.repository.BlankInk
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
+import com.ilyskyo.blancall.data.repository.InkBatch
+import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
-import com.ilyskyo.blancall.ui.common.StylusActivity
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
-import com.ilyskyo.blancall.util.AtomicFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -47,7 +46,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.math.abs
 
 enum class BlancallMode { SENTENCE, WORD, REVERSE }
 
@@ -153,20 +151,20 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _article = MutableStateFlow<Article?>(null)
     val article: StateFlow<Article?> = _article.asStateFlow()
 
-    private val _mode = MutableStateFlow(BlancallMode.SENTENCE)
+    internal val _mode = MutableStateFlow(BlancallMode.SENTENCE)
     val mode: StateFlow<BlancallMode> = _mode.asStateFlow()
 
     // 句子挖空
-    private val _sentenceCloze = MutableStateFlow<BlancallGenerator.SentenceClozeResult?>(null)
+    internal val _sentenceCloze = MutableStateFlow<BlancallGenerator.SentenceClozeResult?>(null)
     val sentenceCloze: StateFlow<BlancallGenerator.SentenceClozeResult?> = _sentenceCloze.asStateFlow()
 
     // 字词挖空
-    private val _wordCloze = MutableStateFlow<BlancallGenerator.WordClozeResult?>(null)
+    internal val _wordCloze = MutableStateFlow<BlancallGenerator.WordClozeResult?>(null)
     val wordCloze: StateFlow<BlancallGenerator.WordClozeResult?> = _wordCloze.asStateFlow()
 
     // 用户答案——两种模式各自独立保存，切换时不丢失
-    private val _sentenceAnswers = MutableStateFlow<Map<Int, String>>(emptyMap())
-    private val _wordAnswers = MutableStateFlow<Map<Int, String>>(emptyMap())
+    internal val _sentenceAnswers = MutableStateFlow<Map<Int, String>>(emptyMap())
+    internal val _wordAnswers = MutableStateFlow<Map<Int, String>>(emptyMap())
     val userAnswers: StateFlow<Map<Int, String>> = combine(
         _mode, _sentenceAnswers, _wordAnswers
     ) { mode, s, w ->
@@ -180,7 +178,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _checkResults = MutableStateFlow<Map<Int, AnswerChecker.CheckDetail>>(emptyMap())
     val checkResults: StateFlow<Map<Int, AnswerChecker.CheckDetail>> = _checkResults.asStateFlow()
 
-    private val _isSubmitted = MutableStateFlow(false)
+    internal val _isSubmitted = MutableStateFlow(false)
     val isSubmitted: StateFlow<Boolean> = _isSubmitted.asStateFlow()
 
     // 是否从上次的练习进度恢复（用于 PracticeScreen 跳过模式选择界面）
@@ -195,7 +193,11 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _isSubmitting = MutableStateFlow(false)
     val isSubmitting: StateFlow<Boolean> = _isSubmitting.asStateFlow()
 
-    private val _totalBlanks = MutableStateFlow(0)
+    // ── 错题墨迹缓冲（错题回顾）：按空聚合手写笔迹，提交时只保留答错空并落盘 ──
+    // 值为提交批次列表（同空多次写 = 多个批次）；会话切换 / 落盘后清空（见 saveWrongInk）。
+    private val inkBuffer = LinkedHashMap<Int, MutableList<InkBatch>>()
+
+    internal val _totalBlanks = MutableStateFlow(0)
     val totalBlanks: StateFlow<Int> = _totalBlanks.asStateFlow()
 
     // 字词挖空数量（0 = 自动）
@@ -203,7 +205,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     val wordBlankCount: StateFlow<Int> = _wordBlankCount.asStateFlow()
 
     // 是否启用默写提示（菜单"显示提示"开关，默认开启）：控制弱/强提示功能
-    private val _showHint = MutableStateFlow(true)
+    internal val _showHint = MutableStateFlow(true)
     val showHint: StateFlow<Boolean> = _showHint.asStateFlow()
 
     // 双指缩放字号（练习页），默认 1.0x，范围 0.6x ~ 3.0x
@@ -287,11 +289,11 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     fun isAiClozeEnabled() = ai.isAiClozeEnabled()
 
     // 反向默写（段落打散默写）—— 把段落切成句子并打乱顺序作为线索，用户默写原文
-    private val _dictationResult = MutableStateFlow<BlancallGenerator.DictationResult?>(null)
+    internal val _dictationResult = MutableStateFlow<BlancallGenerator.DictationResult?>(null)
     val dictationResult: StateFlow<BlancallGenerator.DictationResult?> = _dictationResult.asStateFlow()
 
     // 用户默写输入的整段文本
-    private val _dictationInput = MutableStateFlow("")
+    internal val _dictationInput = MutableStateFlow("")
     val dictationInput: StateFlow<String> = _dictationInput.asStateFlow()
 
     // 反向默写整段判分结果
@@ -424,6 +426,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // 同一篇文章直接跳过，避免清空已输入答案并重新生成题目。
         if (loadedArticleId == articleId) return
         loadedArticleId = articleId
+        // 新会话：错题墨迹缓冲作废（防止上一场未提交的笔迹串入本场记录）
+        inkBuffer.clear()
         // 切换到单篇：清理跨文/自定义/失败残留（防御：同一 VM 先后加载不同来源时互不污染；
         // configId 入口会在其后由 startCustomPractice 重新上锁）
         _isCrossMode.value = false
@@ -612,6 +616,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // 幂等：旋转重建重跑时跳过，保护跨文本练习已输入答案
         if (loadedArticleIds == articleIds) return
         loadedArticleIds = articleIds
+        // 新会话：错题墨迹缓冲作废（与 loadArticle 同一约定）
+        inkBuffer.clear()
         _isCrossMode.value = articleIds.size > 1
         // 清理自定义练习残留（防御：同一 VM 先后加载不同来源时互不污染）
         activeCustomConfig = null
@@ -1156,7 +1162,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _customConfigName = MutableStateFlow<String?>(null)
     val customConfigName: StateFlow<String?> = _customConfigName.asStateFlow()
 
-    private var activeCustomConfig: CustomClozeStore.CustomConfig? = null
+    internal var activeCustomConfig: CustomClozeStore.CustomConfig? = null
 
     /**
      * 用一套配置直接开始自定义练习（配置选择浮层调用）。
@@ -1164,6 +1170,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
      *         调用方只需提示用户，不会进入"锁定 + 死界面"状态。
      */
     fun startCustomPractice(config: CustomClozeStore.CustomConfig): Boolean {
+        // 新会话：错题墨迹缓冲作废（同 loadArticle 的约定）
+        inkBuffer.clear()
         // 先上锁再应用：拦截 loadArticle 完成阶段的在途 regenerateCloze（时序竞态）
         activeCustomConfig = config
         _customConfigName.value = config.name
@@ -1355,199 +1363,29 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     //  流程：某空 10s 无输入 → 淡显下一字（5s）→ 再 5s 无输入 → 自动填入 → 立刻淡显下一字循环
     // 统计弱(淡显)/强(自动填入)次数并写入练习记录，AI 训练分析也会读取。
     // ═══════════════════════════════════════════
-    private val _hintChars = MutableStateFlow<Map<Int, Char>>(emptyMap())
+    internal val _hintChars = MutableStateFlow<Map<Int, Char>>(emptyMap())
     /** 每个空当前要淡显的下一个字符（key=blankIndex） */
     val hintChars: StateFlow<Map<Int, Char>> = _hintChars.asStateFlow()
 
     /** 反向默写（整段输入）当前要淡显的下一个字符；null=无提示 */
-    private val _dictationHint = MutableStateFlow<Char?>(null)
+    internal val _dictationHint = MutableStateFlow<Char?>(null)
     val dictationHint: StateFlow<Char?> = _dictationHint.asStateFlow()
 
-    private var dictationHintJob: Job? = null
-    private var dictationInputVersion = 0
+    internal var dictationHintJob: Job? = null
+    internal var dictationInputVersion = 0
 
-    private val _weakHintCount = MutableStateFlow(0)
+    internal val _weakHintCount = MutableStateFlow(0)
     /** 弱提示次数：淡显了下一个字 */
     val weakHintCount: StateFlow<Int> = _weakHintCount.asStateFlow()
 
-    private val _strongHintCount = MutableStateFlow(0)
+    internal val _strongHintCount = MutableStateFlow(0)
     /** 强提示次数：自动帮填了一个字 */
     val strongHintCount: StateFlow<Int> = _strongHintCount.asStateFlow()
 
-    private val blankHintJobs = mutableMapOf<Int, Job>()
-    private val blankInputVersions = mutableMapOf<Int, Int>()
+    internal val blankHintJobs = mutableMapOf<Int, Job>()
+    internal val blankInputVersions = mutableMapOf<Int, Int>()
 
-    private fun startBlankHint(blankIndex: Int, expected: String) {
-        blankHintJobs[blankIndex]?.cancel()
-        // 立即清掉该空残留的旧提示字：被 cancel 的协程不会执行末尾清理，不清会一直挂着旧提示
-        _hintChars.value = _hintChars.value - blankIndex
-        blankHintJobs[blankIndex] = viewModelScope.launch {
-            try {
-                var firstWait = true
-                while (isActive) {
-                    val cur = currentAnswerText(blankIndex)
-                    if (cur.length >= expected.length) break
-                    val ch = expected[cur.length]                       // 下一个应填的字
-                    val v0 = blankInputVersions[blankIndex] ?: 0
-                    delay(if (firstWait) HINT_FIRST_WAIT_MS else 0L)    // 首次 10s；强填后下一字立即淡显
-                    if (v0 != (blankInputVersions[blankIndex] ?: 0)) break  // 用户新输入打断（外层会重启）
-                    // 弱提示：淡显下一字（UI 端 5s 淡入动画）
-                    _weakHintCount.value += 1
-                    _hintChars.value = _hintChars.value + (blankIndex to ch)
-                    delay(HINT_FADE_MS)
-                    if (v0 != (blankInputVersions[blankIndex] ?: 0)) break
-                    delay(HINT_AFTER_WAIT_MS)
-                    if (v0 != (blankInputVersions[blankIndex] ?: 0)) break
-                    // 强提示：自动填入（不打断当前循环，继续提示下一个字）
-                    if (currentAnswerText(blankIndex).length < expected.length) {
-                        setAnswerText(blankIndex, currentAnswerText(blankIndex) + ch)
-                        _strongHintCount.value += 1
-                        firstWait = false
-                        continue
-                    }
-                    break
-                }
-            } finally {
-                // 正常结束或被取消都清理提示字，避免旧提示残留
-                _hintChars.value = _hintChars.value - blankIndex
-            }
-        }
-    }
 
-    /**
-     * 手写作答期间**不做任何提示**。
-     *
-     * 弱提示的节奏是「无输入 10s → 淡显下一字 → 再 5s → **自动填入**」，用户正拿笔写字时：
-     * 淡显的字会被他当成自己写的、自动填入更是直接替他改答案 —— 纯打断。
-     * 用户要求：只要有手写笔在手写，就不要提示。
-     */
-    private fun isHandwritingActive(): Boolean =
-        AppPrefs.handwritingInputEnabled || StylusActivity.isWriting
-
-    private fun maybeStartBlankHint(blankIndex: Int) {
-        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) {
-            blankHintJobs[blankIndex]?.cancel()
-            return
-        }
-        val expected = expectedText(blankIndex) ?: return
-        if (expected.isBlank()) return
-        startBlankHint(blankIndex, expected)
-    }
-
-    /**
-     * 确保提示计时运行（进入作答界面 / 聚焦某空时调用）：
-     * 无论用户是否输入过，只要满足无操作时长就淡显 / 强填下一个字。
-     *
-     * @param blankIndex 字词/句子模式当前聚焦的空；反向默写传 null（整段输入计时）
-     */
-    fun ensureHintTimer(blankIndex: Int? = null) {
-        // 手写作答期间不提示（见 isHandwritingActive）
-        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) return
-        when (_mode.value) {
-            BlancallMode.SENTENCE, BlancallMode.WORD -> {
-                val idx = blankIndex ?: return
-                if (expectedText(idx) == null) return
-                // 聚焦切换：其余空的计时与淡显只保留当前空，避免后台提示串位
-                blankHintJobs.entries.forEach { (bid, job) -> if (bid != idx) job.cancel() }
-                blankHintJobs.keys.retainAll(setOf(idx))
-                if (_hintChars.value.size > 1 || _hintChars.value.keys.firstOrNull() != idx) {
-                    _hintChars.value = _hintChars.value.filterKeys { it == idx }
-                }
-                maybeStartBlankHint(idx)
-            }
-            BlancallMode.REVERSE -> {
-                // 计时已运行则不重置（仅输入变化时经 updateDictationInput 才重计）
-                if (dictationHintJob?.isActive == true) return
-                startDictationHint()
-            }
-        }
-    }
-
-    private fun expectedText(blankIndex: Int): String? = when (_mode.value) {
-        BlancallMode.SENTENCE -> _sentenceCloze.value?.blanks?.getOrNull(blankIndex)?.originalText
-        BlancallMode.WORD -> _wordCloze.value?.blanks?.getOrNull(blankIndex)?.originalChar
-        else -> null
-    }
-
-    private fun currentAnswerText(blankIndex: Int): String = when (_mode.value) {
-        BlancallMode.SENTENCE -> _sentenceAnswers.value[blankIndex].orEmpty()
-        BlancallMode.WORD -> _wordAnswers.value[blankIndex].orEmpty()
-        else -> ""
-    }
-
-    private fun setAnswerText(blankIndex: Int, text: String) {
-        when (_mode.value) {
-            BlancallMode.SENTENCE -> _sentenceAnswers.value = _sentenceAnswers.value + (blankIndex to text)
-            BlancallMode.WORD -> _wordAnswers.value = _wordAnswers.value + (blankIndex to text)
-            // 反向默写使用独立的整段输入，不走按空作答路径
-            BlancallMode.REVERSE -> {}
-        }
-    }
-
-    private fun stopAllBlankHints() {
-        blankHintJobs.values.forEach { it.cancel() }
-        blankHintJobs.clear()
-        _hintChars.value = emptyMap()
-        dictationHintJob?.cancel()
-        _dictationHint.value = null
-    }
-
-    /**
-     * 反向默写（整段输入）弱/强提示：按原文顺序，无输入 10s 淡显下一字（5s）、
-     * 再 5s 无输入自动填入并循环；任何键入重新计时。
-     */
-    private fun startDictationHint() {
-        // 手写作答期间不提示（见 isHandwritingActive）
-        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) {
-            dictationHintJob?.cancel()
-            _dictationHint.value = null
-            return
-        }
-        val expected = _dictationResult.value?.clauses?.joinToString("") ?: return
-        if (expected.isBlank()) return
-        dictationHintJob?.cancel()
-        _dictationHint.value = null
-        dictationHintJob = viewModelScope.launch {
-            try {
-                var firstWait = true
-                while (isActive) {
-                    val cur = _dictationInput.value
-                    if (cur.length >= expected.length) break
-                    val ch = expected[cur.length]
-                    val v0 = dictationInputVersion
-                    delay(if (firstWait) HINT_FIRST_WAIT_MS else 0L)
-                    if (v0 != dictationInputVersion) break
-                    // 弱提示：淡显下一字（UI 端 5s 淡入动画）
-                    _weakHintCount.value += 1
-                    _dictationHint.value = ch
-                    delay(HINT_FADE_MS)
-                    if (v0 != dictationInputVersion) break
-                    delay(HINT_AFTER_WAIT_MS)
-                    if (v0 != dictationInputVersion) break
-                    // 强提示：自动填入（不打断循环，继续提示下一个字）
-                    if (_dictationInput.value.length < expected.length) {
-                        _dictationInput.value += ch
-                        _strongHintCount.value += 1
-                        firstWait = false
-                        continue
-                    }
-                    break
-                }
-            } finally {
-                // 正常结束或被取消都清理提示字，避免旧提示残留
-                _dictationHint.value = null
-            }
-        }
-    }
-
-    private companion object {
-        /** 首次无输入 10s 后淡显提示字；淡显完成后再等 5s 无输入则强填 */
-        const val HINT_FIRST_WAIT_MS = 10_000L
-        /** 提示字淡入时长（UI 动画同步 5s） */
-        const val HINT_FADE_MS = 5_000L
-        /** 淡显完成后再等待时长（到点未输入则自动填入） */
-        const val HINT_AFTER_WAIT_MS = 5_000L
-    }
 
     /** 更新反向默写的整段输入文本 */
     fun updateDictationInput(text: String) {
@@ -1556,6 +1394,20 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // 提示联动：任何键入都会重置提示计时
         dictationInputVersion++
         startDictationHint()
+    }
+
+    /**
+     * 手写笔迹上报（错题回顾）：按空聚合；同一空多次提交追加为多个批次。
+     *
+     * 只缓存在内存（量级 = 一次练习的错题数）；落盘在 [submitInternal] 按 mistakes
+     * 过滤后随记录一起完成（只存答错空），见 [saveWrongInk]。
+     */
+    fun appendInk(blankIndex: Int, strokes: List<List<Offset>>, boardW: Int, boardH: Int) {
+        // 设置项关闭时不再存档（已存数据保留，见设置页「清空已存的错题墨迹」）
+        if (!AppPrefs.keepInkEnabled) return
+        if (strokes.isEmpty() || boardW <= 0 || boardH <= 0) return
+        inkBuffer.getOrPut(blankIndex) { mutableListOf() }
+            .add(InkBatch(boardW, boardH, strokes))
     }
 
     fun submitAnswers() {
@@ -1621,7 +1473,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             val correctCount = (checkResult.overallScore * total).toInt()
             val rating = resolveRating(similarity, if (total > 0) correctCount.toFloat() / total else 0f)
             try {
-                recordRepo.insert(
+                // 接住返回值：错题墨迹旁路存档要用记录 id（见 saveWrongInk）
+                val saved = recordRepo.insert(
                     PracticeRecord(
                         articleId = articleId,
                         mode = _mode.value.name,
@@ -1635,6 +1488,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         strongHints = _strongHintCount.value
                     )
                 )
+                // 反向默写无逐空错题结构：只清空墨迹缓冲、不落盘
+                saveWrongInk(saved)
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
             // 更新 FSRS 记忆状态（自适应调度）
             updateFsrsState(articleId, rating)
@@ -1743,7 +1598,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     .distinct()
             }
             try {
-                recordRepo.insert(
+                // 接住返回值：错题墨迹旁路存档要用记录 id（见 saveWrongInk）
+                val saved = recordRepo.insert(
                     PracticeRecord(
                         articleId = articleId,
                         mode = mode.name,
@@ -1759,6 +1615,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         mistakeSentenceIndices = mistakeSentenceIndices
                     )
                 )
+                saveWrongInk(saved)
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
             // 更新 FSRS 记忆状态（自适应调度）
             updateFsrsState(articleId, rating)
@@ -1773,102 +1630,39 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 练习结束后更新 FSRS 记忆状态：评级 → 状态更新 → 持久化。
-     * FSRS 按文章维护独立难度与稳定性，实现完全自适应的复习调度。
-     * 任何失败都不影响练习主流程。
+     * 错题墨迹落盘（错题回顾的旁路存档）：
+     * - 只保留「答错空」的手写笔迹（与 mistakes 同口径），写入 `ink/<recordId>.json`；
+     * - 落盘后清空缓冲 —— 「部分提交后再练再交」时第二条记录只包含新增墨迹；
+     * - 任何失败只记日志（InkStore 内部兜底），绝不影响练习主流程。
      */
-    private fun updateFsrsState(articleId: Long, rating: FsrsEngine.Rating) {
-        // 跨文练习的 articleId = -1（混合内容无单篇归属）：负/零 id 不写 FSRS，避免孤儿状态
-        if (articleId <= 0L) return
+    private fun saveWrongInk(record: PracticeRecord) {
+        val wrong = record.mistakes.map { it.blankIndex }.toSet()
+        val blanks = inkBuffer.entries
+            .filter { it.key in wrong && it.value.isNotEmpty() }
+            .map { BlankInk(it.key, it.value.toList()) }
+        inkBuffer.clear()
+        if (blanks.isEmpty()) return
         try {
-            val store = FsrsStateStore.getInstance(
-                getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
+            val store = InkStore.getInstance(
+                getApplication<Application>().filesDir.resolve("ink").absolutePath
             )
-            val newState = FsrsEngine.review(
-                store.get(articleId) ?: FsrsEngine.CardState(),
-                rating
-            )
-            // 持久化切 IO 线程，避免主线程阻塞文件写
             viewModelScope.launch {
-                withContext(Dispatchers.IO) { store.save(articleId, newState) }
+                withContext(Dispatchers.IO) {
+                    store.save(record.id, record.articleId, blanks)
+                }
             }
-        } catch (_: Exception) { /* FSRS 状态更新失败不影响主流程 */ }
+        } catch (_: Exception) { /* 墨迹是展示性数据，失败静默 */ }
     }
 
-    /**
-     * 评级解析：默认按默写相似度→四档（FSRS-6 产品语义）；
-     * 回退开关开启旧行为时按正确率→四档。
-     */
-    private fun resolveRating(similarity: Float, accuracy: Float): FsrsEngine.Rating =
-        if (AppPrefs.useSimilarityRating) FsrsEngine.gradeFromSimilarity(similarity)
-        else FsrsEngine.ratingFromAccuracy(accuracy)
 
-    /** 保存练习进度到文件（为「继续练习」预留）。必须从协程调用，文件写入切到 IO 线程。
-     *  dictationInput 仅反向默写模式使用，其他模式传空串即可 */
-    private suspend fun savePracticeState(articleId: Long, answers: Map<Int, String>, dictationInput: String = "") {
-        try {
-            // 本次挖好的空序列化：供「继续练习」恢复（无需重新生成/选难度）
-            val clozeJson = when (_mode.value) {
-                BlancallMode.SENTENCE -> _sentenceCloze.value?.let { BlancallGenerator.sentenceClozeToJson(it) }
-                BlancallMode.WORD -> _wordCloze.value?.let { BlancallGenerator.wordClozeToJson(it) }
-                BlancallMode.REVERSE -> _dictationResult.value?.let { BlancallGenerator.dictationToJson(it) }
-            }
-            // 反向默写以"是否已输入"作为已答进度，便于首页"继续练习"卡片显示剩余量
-            val answeredCount = if (_mode.value == BlancallMode.REVERSE) {
-                if (dictationInput.isNotBlank()) _totalBlanks.value else 0
-            } else {
-                answers.values.count { it.isNotBlank() }
-            }
-            val state = PracticeState(
-                articleId = articleId,
-                mode = _mode.value.name,
-                status = PracticeStatus.IN_PROGRESS,
-                totalBlanks = _totalBlanks.value,
-                answeredCount = answeredCount,
-                answers = answers.filter { it.value.isNotBlank() },
-                dictationInput = dictationInput,
-                clozeJson = clozeJson,
-                // 自定义练习的身份：供「继续练习」恢复后重新挂上锁定
-                configId = activeCustomConfig?.id ?: 0L
-            )
-            val file = getApplication<Application>().filesDir.resolve("practice_state_${articleId}.json")
-            withContext(Dispatchers.IO) {
-                val json = org.json.JSONObject()
-                json.put("articleId", state.articleId)
-                json.put("mode", state.mode)
-                json.put("status", state.status.name)
-                json.put("totalBlanks", state.totalBlanks)
-                json.put("answeredCount", state.answeredCount)
-                json.put("dictationInput", state.dictationInput)
-                json.put("lastPracticeTime", state.lastPracticeTime)
-                if (state.clozeJson != null) json.put("clozeJson", state.clozeJson)
-                if (state.configId > 0L) json.put("configId", state.configId)
-                val ansObj = org.json.JSONObject()
-                state.answers.forEach { (k, v) -> ansObj.put(k.toString(), v) }
-                json.put("answers", ansObj)
-                // 原子写 + fsync（练习进度是「继续练习」的恢复来源，防写一半被杀损坏）
-                AtomicFiles.writeTextAtomic(file, json.toString())
-            }
-        } catch (_: Exception) { /* 静默保存，不影响主流程 */ }
-    }
-
-    /** 删除指定文章的练习进度文件（完整提交后调用，避免首页继续显示已完成练习） */
-    private fun clearPracticeState(articleId: Long) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    getApplication<Application>().filesDir
-                        .resolve("practice_state_${articleId}.json").delete()
-                } catch (_: Exception) { }
-            }
-        }
-    }
 
     fun reset() {
         val content = _article.value?.content
         if (content.isNullOrBlank()) return
         // 重做即重新计时，避免 duration 包含上次练习的停顿时间
         practiceStartTime = System.currentTimeMillis()
+        // 重做 = 新会话：错题墨迹缓冲作废（与 loadArticle 约定一致）
+        inkBuffer.clear()
         // 重做：清除提示计时与统计、训练分析
         stopAllBlankHints()
         _weakHintCount.value = 0

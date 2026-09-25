@@ -22,7 +22,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.animation.PathInterpolator
 import androidx.compose.ui.geometry.Offset
+import androidx.input.motionprediction.MotionEventPredictor
+import com.ilyskyo.blancall.algorithm.InkWidthSim
 import com.ilyskyo.blancall.ui.common.StylusActivity
+import com.ilyskyo.blancall.ui.common.StylusPresence
 
 /**
  * 超低延迟书写板（**原生 View 自绘**）。
@@ -48,11 +51,15 @@ import com.ilyskyo.blancall.ui.common.StylusActivity
  *   （丢 = 判定为「划掉」手写手势）；
  * - 清空/识别成功 → 上层调 [clearInk]。
  *
- * ## 事件分流（与改造前完全一致）
- * - **只有手写笔**落笔才进入书写；手指一律不写（[PointerType] 过滤的原生等价物）。
- * - 手指落在板上：**书写中吞掉**（防掌托穿透到正文/按钮），**空闲时放行**
- *   （让外层页面正常滚动 —— 返回 false 即可，事件回到 Compose 手势系统）。
- * - 抬笔只认「笔自己报告抬起」：掌压（手指）持续到达不代表笔离屏。
+ * ## 事件分流（双模式：手写笔 / 触屏）
+ * - **有笔设备**（[StylusPresence]）：只有手写笔落笔进入书写；手指一律不写
+ *   （保留系统掌托拒识的前提）。
+ * - **无笔设备**：手指落笔也进入书写 —— 「手写输入」模式，笔宽由轨迹速度仿造
+ *   （见 [InkWidthSim]），不读压感。
+ * - 模式在**落笔时刻**判定一次：书写过程中插入/拔出笔不打断当前笔画，下一笔生效。
+ * - 非书写工具的手指落在板上：**书写中吞掉**（防掌托穿透到正文/按钮），
+ *   **空闲时放行**（让外层页面正常滚动 —— 返回 false 即可，事件回到 Compose 手势系统）。
+ * - 抬笔只认书写指针自己报告抬起：掌压（手指）持续到达不代表笔离屏。
  */
 class InkBoardView @JvmOverloads constructor(
     context: Context,
@@ -200,7 +207,9 @@ class InkBoardView @JvmOverloads constructor(
      * 一笔（已完成）。Path 在这里一次性建好，绘制时不再重建 ——
      * 书写中每帧只需重建「正在写的那一笔」的 path。
      *
-     * [pressures] 与 [pts] **逐点同序**（含 historical 采样），只服务于压感显示，
+     * [pressures] 与 [pts] **逐点同序**（含 historical 采样），只服务于笔宽显示：
+     * - 手写笔模式：真实压感（自适应，见 [pressureActive]）；
+     * - 触屏仿造模式（[sim]）：速度生成的伪压感（见 [InkWidthSim]）。
      * 不参与识别 —— 送给模型的位图始终是等宽墨迹。
      *
      * [startMs]/[endMs] 为 `event.eventTime` 口径（uptimeMillis），供
@@ -210,7 +219,9 @@ class InkBoardView @JvmOverloads constructor(
         val pts: List<Offset>,
         val pressures: List<Float>,
         val startMs: Long,
-        val endMs: Long
+        val endMs: Long,
+        /** true = 触屏仿造（因子由速度生成，走 [simWidth] 映射） */
+        val sim: Boolean = false
     ) {
         val path = Path()
         val single = pts.size == 1
@@ -236,8 +247,20 @@ class InkBoardView @JvmOverloads constructor(
     /** 正在写的这一笔的起笔时间（`event.eventTime` 口径），见 [StrokeRec.startMs]。 */
     private var strokeStartMs = 0L
 
-    /** 与 [current] **逐点同序**的压力采样。 */
+    /** 与 [current] **逐点同序**的笔宽因子（真实压感 / 触屏仿造的伪压感）。 */
     private val currentPress = ArrayList<Float>(256)
+
+    /** 与 [current] **逐点同序**的采样时间（触屏仿造的速度计算用）。 */
+    private val currentTimes = ArrayList<Long>(256)
+
+    /** 正在写的这一笔是否为触屏仿造（无笔设备的手指书写）。 */
+    private var strokeSim = false
+
+    /** 触屏仿造压感：由轨迹速度生成宽度因子（见 [InkWidthSim]）。 */
+    private val widthSim = InkWidthSim()
+
+    /** 屏幕密度（px/dp）：速度按 dp 口径归一，跨设备观感一致。 */
+    private val density: Float = resources.displayMetrics.density
 
     private val livePath = Path()
     private var liveDirty = false
@@ -262,21 +285,31 @@ class InkBoardView @JvmOverloads constructor(
     private var exitProgress = 0f
     private var exitAnimator: ValueAnimator? = null
 
-    // ───────────────────────── 压感（自适应） ─────────────────────────
+    // ───────────────────────── 笔宽（真实压感 / 触屏仿造） ─────────────────────────
     //
-    // ⚠️ 压感**只用于屏上显示**：`HandwritingPanel.renderInk()` 仍然按固定笔宽渲染位图，
+    // ⚠️ 笔宽**只用于屏上显示**：`HandwritingPanel.renderInk()` 仍然按固定笔宽渲染位图，
     // 因为识别模型是在等宽墨迹上训练的，喂带粗细的位图会掉识别率。
     //
-    // ⚠️ 必须自适应：无压感的电容笔 / 部分设备会把 pressure 恒定报成同一个值，
-    // 此时若照着缩放笔宽，全部笔画会变成同一个最粗档 —— 比等宽更难看。
-    // 因此只在观测到「压力确实有变化」之后才切到压感渲染，否则永远是等宽。
+    // 两种笔宽来源、同一套宽段渲染（[buildRibbon]）：
+    // - 手写笔模式：真实压感，且必须自适应 —— 无压感的电容笔 / 部分设备会把 pressure
+    //   恒定报成同一个值，照着缩放会让全部笔画变成同一个最粗档（比等宽更难看）。
+    //   因此只在观测到「压力确实有变化」之后才切到压感渲染，否则永远是等宽；
+    // - 触屏仿造模式（[strokeSim]，无笔设备的手指书写）：**不读压感**，
+    //   宽度因子由轨迹速度生成（[InkWidthSim]）。
     private var pressLo = Float.MAX_VALUE
     private var pressHi = -Float.MAX_VALUE
     private var pressSamples = 0
     private var pressureActive = false
 
-    /** 当前正被追踪的笔指针 id；-1 表示没有笔在写。 */
-    private var penPointerId = -1
+    /** 当前正被追踪的书写指针 id（手写笔，或触屏仿造模式下的手指）；-1 表示没有在写。 */
+    private var writePointerId = -1
+
+    /**
+     * 运动预测器（显示层补间，见 [PREDICT_ENABLED]）。
+     * 库在 API 19+ 自带内置预测实现；初始化失败（极端情况）时置 null，功能整体降级。
+     */
+    private val predictor: MotionEventPredictor? =
+        runCatching { MotionEventPredictor.newInstance(this) }.getOrNull()
 
     private var hovering = false
     private var tipX = 0f
@@ -427,6 +460,8 @@ class InkBoardView @JvmOverloads constructor(
         strokes.clear()
         current.clear()
         currentPress.clear()
+        currentTimes.clear()
+        strokeSim = false
         liveDirty = false
         invalidate()
     }
@@ -443,33 +478,53 @@ class InkBoardView @JvmOverloads constructor(
             // 「一手扶屏 + 一手落笔」就永远开不了笔。
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val idx = event.actionIndex
-                val penDown = isPenPointer(event, idx)
-                // 诊断（仅 debug 包）：确认笔事件**到底有没有到达书写板**。
+                val stylusDown = isPenPointer(event, idx)
+                // 「手写输入」（触屏）模式：**无笔设备**时手指也是书写工具。
+                // 有笔设备保持纯笔书写 —— 手指留给滚动/点按（系统掌托拒识的前提）。
+                val fingerWriting = !stylusDown &&
+                    event.getToolType(idx) == MotionEvent.TOOL_TYPE_FINGER &&
+                    !StylusPresence.isPresent
+                // 诊断（仅 debug 包）：确认笔/手指事件**到底有没有到达书写板**。
                 // 出现「完全没有墨迹」时，日志里有没有这一行可以立刻二分定位：
                 //   有这一行 ⇒ 事件已到达，问题在绘制/识别链路；
                 //   没有     ⇒ 事件被上层吃掉了（Compose pointerInput 消费 / 父级拦截 / 根本没命中本 View）。
                 if (isDebuggable) {
-                    Log.d(TAG, "touch down idx=$idx pen=$penDown enabled=$writingEnabled")
+                    Log.d(
+                        TAG,
+                        "touch down idx=$idx tool=${event.getToolType(idx)} stylus=$stylusDown " +
+                            "fingerWrite=$fingerWriting present=${StylusPresence.isPresent} " +
+                            "enabled=$writingEnabled"
+                    )
                 }
-                if (!penDown) {
-                    // 手指/掌托落在板上。书写中一律吞掉（否则会穿透到正文与按钮），
-                    // 空闲时放行 —— 返回 false，事件回到 Compose，页面照常滚动。
-                    return StylusActivity.isWriting
+                if (!stylusDown && !fingerWriting) {
+                    // 手指/掌托落在板上且不处于触屏书写模式。书写中一律吞掉（否则会穿透到
+                    // 正文与按钮），空闲时放行 —— 返回 false，事件回到 Compose，页面照常滚动。
+                    // ⚠️ 不能只看本 View 的 writePointerId：笔可能正写在**另一块**板上，
+                    // 全局标记 StylusActivity.isWriting 表达的就是这一情形。
+                    return writePointerId >= 0 || StylusActivity.isWriting
                 }
-                if (penPointerId >= 0) return true // 理论上不会有第二支笔，保守只吞掉
-                penPointerId = event.getPointerId(idx)
+                if (writePointerId >= 0) return true // 已在写（笔或手指）：再加的触点保守吞掉
+                writePointerId = event.getPointerId(idx)
+                strokeSim = !stylusDown
                 // 起笔即告知父容器别再拦截：AndroidView 嵌在可滚动列表里时，父级的滚动
-                // 手势会在笔划到一半时把事件抢走（真机现象「写着写着页面跟着滚」）。
+                // 手势会在划到一半时把事件抢走（真机现象「写着写着页面跟着滚」）。
                 parent?.requestDisallowInterceptTouchEvent(true)
-                requestUnbufferedInput()
-                StylusActivity.isWriting = true
+                requestUnbufferedInput(stylusDown)
+                // 全局「笔在写」标记**只对笔置位**：它是掌托守卫（tapGesturesPenAware /
+                // suppressAsPalmMisTouch）的判定依据；手指书写没有掌托语义，置位会误伤
+                // 「另一只手点按其它控件」的合法操作。
+                StylusActivity.isWriting = stylusDown
                 latSamples = 0
                 latSumMs = 0L
                 latMaxMs = 0L
                 onStrokeStart?.invoke()
                 current.clear()
+                currentPress.clear()
+                currentTimes.clear()
+                widthSim.reset()
                 strokeStartMs = event.eventTime
                 appendSamples(event, idx)
+                predictor?.record(event)
                 liveDirty = true
                 latLastEventMs = event.eventTime
                 invalidate()
@@ -477,10 +532,11 @@ class InkBoardView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (penPointerId < 0) return false // 没在写：手指拖动交给上层滚动
-                val idx = event.findPointerIndex(penPointerId)
+                if (writePointerId < 0) return false // 没在写：手指拖动交给上层滚动
+                val idx = event.findPointerIndex(writePointerId)
                 if (idx >= 0) {
                     appendSamples(event, idx)
+                    predictor?.record(event)
                     liveDirty = true
                     latLastEventMs = event.eventTime
                     invalidate()
@@ -489,34 +545,34 @@ class InkBoardView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_UP -> {
-                if (penPointerId < 0) return false
-                val idx = event.findPointerIndex(penPointerId)
+                if (writePointerId < 0) return false
+                val idx = event.findPointerIndex(writePointerId)
                 if (idx >= 0) appendSamples(event, idx)
                 finishStroke(drop = false, endMs = event.eventTime)
                 return true
             }
 
-            // ⚠️ 扶屏的手指先抬起来 ≠ 这一笔写完了，**只有笔自己的指针抬起才算收笔**。
+            // ⚠️ 扶屏的手指先抬起来 ≠ 这一笔写完了，**只有书写指针自己抬起才算收笔**。
             // 漏掉这一条会出事：手指+笔同时在屏时收笔走的是 POINTER_UP，
-            // penPointerId 永远清不掉、StylusActivity.isWriting 永久停在 true ——
+            // writePointerId 永远清不掉、StylusActivity.isWriting 永久停在 true ——
             // 表现为「写一次之后全屏手指点按都失灵」，且没有任何报错。
-            // 反过来，抬起的是手指（不是笔）时什么也不做：绝不能打断这一笔。
+            // 反过来，抬起的是别的触点（不是书写指针）时什么也不做：绝不能打断这一笔。
             MotionEvent.ACTION_POINTER_UP -> {
-                if (penPointerId >= 0 && event.getPointerId(event.actionIndex) == penPointerId) {
+                if (writePointerId >= 0 && event.getPointerId(event.actionIndex) == writePointerId) {
                     appendSamples(event, event.actionIndex)
                     finishStroke(drop = false, endMs = event.eventTime)
                     return true
                 }
-                return penPointerId >= 0
+                return writePointerId >= 0
             }
 
             MotionEvent.ACTION_CANCEL -> {
-                if (penPointerId < 0) return false
+                if (writePointerId < 0) return false
                 finishStroke(drop = true, endMs = event.eventTime)
                 return true
             }
 
-            else -> return penPointerId >= 0
+            else -> return writePointerId >= 0
         }
     }
 
@@ -524,7 +580,7 @@ class InkBoardView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
                 if (isPenPointer(event, 0)) {
-                    if (event.actionMasked == MotionEvent.ACTION_HOVER_ENTER) requestUnbufferedInput()
+                    if (event.actionMasked == MotionEvent.ACTION_HOVER_ENTER) requestUnbufferedInput(stylus = true)
                     tipX = event.x
                     tipY = event.y
                     hovering = true
@@ -548,7 +604,8 @@ class InkBoardView @JvmOverloads constructor(
         // 与旧实现的 try/finally 等价：View 被移除时若还挂着「正在书写」标记，
         // 会让全屏手指点按永久失灵（且没有任何报错）。
         super.onDetachedFromWindow()
-        penPointerId = -1
+        writePointerId = -1
+        strokeSim = false
         StylusActivity.isWriting = false
         // 退场动画不能跟着视图一起留下（ValueAnimator 还持有监听、会继续 invalidate）
         clearExitNow()
@@ -570,24 +627,64 @@ class InkBoardView @JvmOverloads constructor(
      * 只取帧端点会让快写明显棱角化、视觉断续。开启 [requestUnbufferedInput] 后
      * 批处理的批量会变小，但历史采样依旧存在，不能省。
      *
-     * ⚠️ 压力必须与坐标**同序**取（同一个 index、同一段 historical 循环）：
+     * ⚠️ 压力/时间必须与坐标**同序**取（同一个 index、同一段 historical 循环）：
      * 分开遍历会让粗细与位置错位，墨迹会「前粗后细」地拧着。
+     *
+     * 触屏仿造模式（[strokeSim]）下**完全不读压感**：只取坐标与时间，
+     * 宽度因子由 [InkWidthSim] 按速度生成。
      */
     private fun appendSamples(event: MotionEvent, index: Int) {
         val hist = event.historySize
         for (h in 0 until hist) {
-            current.add(Offset(event.getHistoricalX(index, h), event.getHistoricalY(index, h)))
-            val p = event.getHistoricalPressure(index, h)
+            val x = event.getHistoricalX(index, h)
+            val y = event.getHistoricalY(index, h)
+            val t = event.getHistoricalEventTime(h)
+            if (strokeSim) {
+                pushSimSample(x, y, t)
+            } else {
+                current.add(Offset(x, y))
+                currentTimes.add(t)
+                val p = event.getHistoricalPressure(index, h)
+                currentPress.add(p)
+                observePressure(p)
+            }
+        }
+        val x = event.getX(index)
+        val y = event.getY(index)
+        val t = event.eventTime
+        if (strokeSim) {
+            pushSimSample(x, y, t)
+        } else {
+            current.add(Offset(x, y))
+            currentTimes.add(t)
+            val p = event.getPressure(index)
             currentPress.add(p)
             observePressure(p)
         }
-        current.add(Offset(event.getX(index), event.getY(index)))
-        val p = event.getPressure(index)
-        currentPress.add(p)
-        observePressure(p)
     }
 
-    /** 观测压力范围；一旦确认「压力确实在变化」就切到压感渲染，并重绘已有墨迹。 */
+    /**
+     * 触屏仿造采样：落一个点，宽度因子由与上一采样的速度生成。
+     * 因子的语义与真实压感的归一化值一致 —— 绘制侧共用同一套宽段渲染（[simWidth]）。
+     */
+    private fun pushSimSample(x: Float, y: Float, tMs: Long) {
+        val prev = current.lastOrNull()
+        val factor = if (prev == null) {
+            widthSim.onSample(0f, 0f, 0L, density)
+        } else {
+            widthSim.onSample(
+                x - prev.x,
+                y - prev.y,
+                tMs - (currentTimes.lastOrNull() ?: tMs),
+                density
+            )
+        }
+        current.add(Offset(x, y))
+        currentTimes.add(tMs)
+        currentPress.add(factor)
+    }
+
+    /** 观测压力范围（**仅手写笔模式调用**）；一旦确认「压力确实在变化」就切到压感渲染，并重绘已有墨迹。 */
     private fun observePressure(p: Float) {
         if (pressureActive) return
         if (p <= 0f || p > PRESSURE_ABSURD) return
@@ -610,31 +707,34 @@ class InkBoardView @JvmOverloads constructor(
         return INK_WIDTH_PX * (PRESS_MIN_SCALE + (PRESS_MAX_SCALE - PRESS_MIN_SCALE) * t)
     }
 
+    /**
+     * 触屏仿造的宽度映射：因子直接按归一化压感处理（与真实压感共用同一映射区间），
+     * 保证两种模式的笔宽范围与观感一致。
+     */
+    private fun simWidth(factor: Float): Float = INK_WIDTH_PX *
+        (PRESS_MIN_SCALE + (PRESS_MAX_SCALE - PRESS_MIN_SCALE) * factor.coerceIn(0f, 1f))
+
     /** 量化笔宽，避免压力抖动把一笔切成几十段（性能与观感的折中）。 */
     private fun quantize(w: Float): Float = Math.round(w / WIDTH_QUANT) * WIDTH_QUANT
 
     /**
-     * 把点串按笔宽变化切成若干等宽子段（压感渲染）。
+     * 把点串按笔宽变化切成若干等宽子段（真实压感 / 触屏仿造共用）。
      *
+     * [widthOf] 给出第 i 个点的显示笔宽（手写笔走自适应压感映射，触屏仿造走速度因子映射）。
      * 相邻子段**共用边界点**（前一段多含一个点），配合圆头笔帽在接缝处自然融合，
      * 不会出现台阶或断口。
      */
-    private fun buildRibbon(pts: List<Offset>, pressures: List<Float>): List<InkBand> {
+    private fun buildRibbon(pts: List<Offset>, widthOf: (Int) -> Float): List<InkBand> {
         val bands = ArrayList<InkBand>(8)
         if (pts.isEmpty()) return bands
         if (pts.size == 1) {
-            bands.add(
-                InkBand(
-                    singlePointPath(pts[0]),
-                    quantize(widthFor(pressures.getOrElse(0) { 1f }))
-                )
-            )
+            bands.add(InkBand(singlePointPath(pts[0]), quantize(widthOf(0))))
             return bands
         }
         var segStart = 0
-        var segW = quantize(widthFor(pressures.getOrElse(0) { 1f }))
+        var segW = quantize(widthOf(0))
         for (i in 1 until pts.size) {
-            val w = quantize(widthFor(pressures.getOrElse(i) { 1f }))
+            val w = quantize(widthOf(i))
             if (Math.abs(w - segW) >= 0.01f) {
                 // i+1（而不是 i）作为右端：与下一段共用这个点，接缝处圆头重叠
                 bands.add(InkBand(segmentPath(pts, segStart, i + 1), segW))
@@ -655,22 +755,30 @@ class InkBoardView @JvmOverloads constructor(
         inkPaint.strokeWidth = INK_WIDTH_PX
     }
 
-    /** 要求输入系统对本 View 的**笔事件**不做帧批处理（API 30+）。 */
-    private fun requestUnbufferedInput() {
+    /**
+     * 要求输入系统对本 View 的事件不做帧批处理（API 30+）。
+     * 手写笔走 [InputDevice.SOURCE_STYLUS]、触屏仿造走 [InputDevice.SOURCE_TOUCHSCREEN] ——
+     * 两类来源各自开低延迟派发，与书写模式对应。
+     */
+    private fun requestUnbufferedInput(stylus: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            requestUnbufferedDispatch(InputDevice.SOURCE_STYLUS)
+            requestUnbufferedDispatch(
+                if (stylus) InputDevice.SOURCE_STYLUS else InputDevice.SOURCE_TOUCHSCREEN
+            )
         }
     }
 
     private fun finishStroke(drop: Boolean, endMs: Long) {
         StylusActivity.isWriting = false
-        penPointerId = -1
+        writePointerId = -1
         // 收笔后把拦截权还给父容器，否则列表再也滚不动
         parent?.requestDisallowInterceptTouchEvent(false)
 
         if (drop || current.isEmpty()) {
             current.clear()
             currentPress.clear()
+            currentTimes.clear()
+            strokeSim = false
             liveDirty = false
             invalidate()
             return
@@ -679,13 +787,19 @@ class InkBoardView @JvmOverloads constructor(
         val pts = ArrayList(current)
         val pressures = ArrayList(currentPress)
         val startMs = strokeStartMs
+        val sim = strokeSim
+        // 触屏仿造：收笔时把末段因子收细（抬笔提锋，只影响显示；实时预览不做，
+        // 因为抬笔前不知道哪是末端）。
+        if (sim) InkWidthSim.taperEnd(pressures)
         current.clear()
         currentPress.clear()
+        currentTimes.clear()
+        strokeSim = false
         liveDirty = false
 
         // 同步交给上层判定：是字还是「划掉」手势。压力只留给显示，不进这个回调。
         val keep = onStrokeEnd?.invoke(pts, width, height) ?: false
-        if (keep) strokes.add(StrokeRec(pts, pressures, startMs, endMs))
+        if (keep) strokes.add(StrokeRec(pts, pressures, startMs, endMs, sim))
 
         if (isDebuggable && latSamples > 0) {
             // 一起把刷新率打出来：屏幕刷新率决定墨迹延迟的**下限**（60Hz ⇒ 每帧 16.7ms）。
@@ -706,13 +820,23 @@ class InkBoardView @JvmOverloads constructor(
     /** 画一条已完成笔画。live 与退场墨迹共用同一套绘制分支，保证两种墨迹逐点一致。 */
     private fun drawStrokeRec(canvas: Canvas, s: StrokeRec) {
         if (s.single) {
-            canvas.drawCircle(s.pts[0].x, s.pts[0].y, widthFor(s.pressureAt(0)) / 2f, dotPaint)
-        } else if (pressureActive) {
-            val ribbon = s.ribbon ?: buildRibbon(s.pts, s.pressures).also { s.ribbon = it }
+            canvas.drawCircle(s.pts[0].x, s.pts[0].y, strokeWidthOf(s, 0) / 2f, dotPaint)
+        } else if (s.sim || pressureActive) {
+            val ribbon = s.ribbon ?: buildRibbon(s.pts) { i -> strokeWidthOf(s, i) }.also { s.ribbon = it }
             drawBands(canvas, ribbon)
         } else {
             canvas.drawPath(s.path, inkPaint)
         }
+    }
+
+    /** 已完成笔画第 [i] 点的显示笔宽：触屏仿造走速度因子映射，手写笔走自适应压感映射。 */
+    private fun strokeWidthOf(s: StrokeRec, i: Int): Float =
+        if (s.sim) simWidth(s.pressureAt(i)) else widthFor(s.pressureAt(i))
+
+    /** 正在写的这一笔第 [i] 点的显示笔宽（触屏仿造 / 自适应压感）。 */
+    private fun liveWidthAt(i: Int): Float {
+        val f = currentPress.getOrElse(i) { 1f }
+        return if (strokeSim) simWidth(f) else widthFor(f)
     }
 
     /** 绘制退场墨迹：每组围绕自身重心收拢、整体上飘、渐隐。画完把共享画笔的 alpha 复原。 */
@@ -760,19 +884,43 @@ class InkBoardView @JvmOverloads constructor(
                 canvas.drawCircle(
                     current[0].x,
                     current[0].y,
-                    widthFor(currentPress.firstOrNull() ?: 1f) / 2f,
+                    liveWidthAt(0) / 2f,
                     dotPaint
                 )
-            } else if (pressureActive) {
+            } else if (pressureActive || strokeSim) {
                 // 每帧重建分段路径：点的量级只有几十到几百，与「每帧重建 livePath」同价，
                 // 但换来笔尖粗细跟手（抬笔后才变粗细会明显突兀）。
-                drawBands(canvas, buildRibbon(current, currentPress))
+                drawBands(canvas, buildRibbon(current) { i -> liveWidthAt(i) })
             } else {
                 if (liveDirty) {
                     buildInkPath(current, livePath)
                     liveDirty = false
                 }
                 canvas.drawPath(livePath, inkPaint)
+            }
+        }
+
+        // ── 运动预测补间（仅显示，不改墨迹数据） ──
+        //
+        // 用预测点把「正在写的这一笔」向前延伸一小段，抵消「事件 → 绘制」的感知延迟；
+        // 官方约束：预测点必须随新事件被替换、不得用于最终渲染 —— 这里每帧重绘以真实
+        // 末点为起点、预测点只画这一小段，也不写入 [current]/[strokes]（不进识别数据）。
+        // 快速折返笔画的过冲用 [PREDICT_MAX_PX] 截断；整体可被 [PREDICT_ENABLED] 关闭。
+        if (PREDICT_ENABLED && predictor != null && writePointerId >= 0 && current.size >= 2) {
+            val pe = predictor.predict()
+            if (pe != null) {
+                val last = current[current.size - 1]
+                val dx = pe.x - last.x
+                val dy = pe.y - last.y
+                val dist = kotlin.math.hypot(dx, dy)
+                if (dist > 0.5f) {
+                    val k = if (dist > PREDICT_MAX_PX) PREDICT_MAX_PX / dist else 1f
+                    val w = liveWidthAt(currentPress.size - 1)
+                    val oldW = inkPaint.strokeWidth
+                    inkPaint.strokeWidth = w
+                    canvas.drawLine(last.x, last.y, last.x + dx * k, last.y + dy * k, inkPaint)
+                    inkPaint.strokeWidth = oldW
+                }
             }
         }
 
@@ -813,7 +961,7 @@ class InkBoardView @JvmOverloads constructor(
      * 但这个数能明确回答「输入到上屏」这一段还剩多少，避免靠感觉调参。
      */
     private fun measureLatency() {
-        if (penPointerId < 0 || latLastEventMs <= 0L) return
+        if (writePointerId < 0 || latLastEventMs <= 0L) return
         val d = SystemClock.uptimeMillis() - latLastEventMs
         if (d < 0L || d > 500L) return
         latSamples++
@@ -864,6 +1012,15 @@ class InkBoardView @JvmOverloads constructor(
          * 这种情况直接按住不切压感渲染，回退等宽，比按错比例画出满屏粗线好。
          */
         private const val PRESSURE_ABSURD = 4f
+
+        /**
+         * 运动预测总开关（显示层补间）：书写时把这一笔往前延伸一小段以抵消感知延迟。
+         * 真机若出现过冲观感不可接受，直接置 false —— 预测只影响绘制，关闭零副作用。
+         */
+        private const val PREDICT_ENABLED = true
+
+        /** 预测补间的最大延伸距离（px）：快速折返笔画预测容易过冲，截断在合理范围内。 */
+        private const val PREDICT_MAX_PX = 40f
     }
 }
 

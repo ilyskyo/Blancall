@@ -268,6 +268,56 @@ private fun splitOptimal(
 }
 
 /**
+ * 把拉丁（英语）墨迹按「词间大空隙」聚成词组（词内不再切分）。
+ *
+ * ## 为什么需要
+ * 英语不只是单个单词：还有词组/短语（"give up"）。用户一口气写完两组词时，
+ * 词与词之间的空隙明显大于字母间距（字母 3–8% 字高，词间通常 ≥ 0.3 字高）。
+ * 先按词分组、再逐词跑现有切段逻辑有两个直接收益：
+ * 1. 词界宽度不参与「估字数」—— 整体切段时 `n = round(总宽/单字宽)` 会把
+ *    词间空地也算成一个字，段数高估后可能把宽字母劈开；
+ * 2. 提交流程可以在词间插入空格，得到 "give up" 而不是 "giveup"。
+ *
+ * ## 判据
+ * 把笔画按起点 x 排序后扫一遍：若下一笔的起点与「当前词已覆盖的最大 x」之间
+ * 出现 > [WORD_GAP_UNIT_RATIO]×单字宽的空白，则断开为新词。排序只用于分组
+ * 扫描（兼容乱序书写）；分组只是**归属划分**，组内笔画仍是原列表引用。
+ *
+ * 护栏：切不出 ≥2 个词时返回 null（调用方走原有单组路径，零行为变化）。
+ *
+ * @param strokes 板上全部笔画（各笔为点序列）
+ * @param charAspect 单字宽度先验（拉丁 [CHAR_ASPECT_LATIN]；本函数只用于拉丁）
+ * @return 词组列表（每组为「该词的笔画」，组间按 x 从左到右）；不足 2 组时返回 null
+ */
+fun splitInkIntoWords(
+    strokes: List<List<Offset>>,
+    charAspect: Float = CHAR_ASPECT_LATIN
+): List<List<List<Offset>>>? {
+    if (strokes.size < 2) return null
+    val h = heightOf(strokes)
+    if (h <= 0f) return null
+    val gapThreshold = h * charAspect.coerceAtLeast(0.2f) * WORD_GAP_UNIT_RATIO
+
+    val ordered = strokes.sortedBy { s -> s.minOfOrNull { it.x } ?: Float.MAX_VALUE }
+    val words = ArrayList<List<List<Offset>>>()
+    var cur = ArrayList<List<Offset>>()
+    var curMaxX = -Float.MAX_VALUE
+    for (s in ordered) {
+        val lo = s.minOfOrNull { it.x } ?: continue
+        val hi = s.maxOfOrNull { it.x } ?: continue
+        if (cur.isNotEmpty() && lo - curMaxX > gapThreshold) {
+            words.add(cur)
+            cur = ArrayList()
+            curMaxX = -Float.MAX_VALUE
+        }
+        cur.add(s)
+        if (hi > curMaxX) curMaxX = hi
+    }
+    if (cur.isNotEmpty()) words.add(cur)
+    return if (words.size >= 2) words else null
+}
+
+/**
  * 「几何 + 停顿」联合切分：几何优先，失败时用书写停顿补充。
  *
  * ## 为什么需要时间信号
@@ -594,6 +644,15 @@ private const val MIN_GAP_RATIO_RELAX = 0.05f
  * 用汉字的 0.10 会把几乎所有英文连写判成「切不开」。
  */
 private const val MIN_GAP_RATIO_LATIN = 0.035f
+
+/**
+ * 拉丁词间空隙阈值（× 单字宽先验）：超过它才把墨迹断成两个词（[splitInkIntoWords]）。
+ *
+ * 字母间距实测 3–8% 字高（≈0.05–0.13 字母宽），词间空隙通常 ≥ 0.5 字母宽；
+ * 0.55 字母宽（≈0.34 字高）是保守分界 —— 宁可漏空格（整组按单组路径提交），
+ * 也不误分（把一个词拆成两个假词、提交出错误空格）。真机数据出来后随日志校准。
+ */
+private const val WORD_GAP_UNIT_RATIO = 0.55f
 
 /** 段宽超过「单字宽度」的多少倍算漏切。 */
 private const val OVERWIDE_FACTOR = 1.7f

@@ -55,6 +55,9 @@ import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.TagChipRow
+import com.ilyskyo.blancall.ui.common.TagChipUi
+import com.ilyskyo.blancall.ui.common.TagColorDots
 import com.ilyskyo.blancall.ui.common.TouchAnchor
 import com.ilyskyo.blancall.ui.common.listItemEnter
 import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
@@ -163,6 +166,8 @@ fun HomeCardContent(
     card: HomeLayoutStore.Card,
     /** 全量文章，供「继续练习」按 articleId 反查标题 */
     articles: List<Article>,
+    /** 文章 id → 有序标签（「最近使用」/「文章卡片」徽标展示；缺省 = 无标签） */
+    tagsByArticle: Map<Long, List<TagChipUi>> = emptyMap(),
     /** 今日待复习（宿主用 FSRS + 记录算好后传入） */
     dueArticles: List<Article>,
     /** 未完成的练习进度（宿主扫描 practice_state_*.json 得到） */
@@ -227,6 +232,7 @@ fun HomeCardContent(
 
             HomeLayoutStore.CardType.RECENT -> RecentCard(
                 recentArticles = recentArticles,
+                tagsByArticle = tagsByArticle,
                 dateFormat = dateFormat,
                 anchorArticleId = anchorArticleId,
                 onAnchorMeasured = onAnchorMeasured,
@@ -239,6 +245,7 @@ fun HomeCardContent(
 
             HomeLayoutStore.CardType.ARTICLE -> ArticleCard(
                 article = articles.firstOrNull { it.id == card.refId },
+                tagsByArticle = tagsByArticle,
                 dateFormat = dateFormat,
                 anchorArticleId = anchorArticleId,
                 onAnchorMeasured = onAnchorMeasured,
@@ -508,6 +515,7 @@ private fun ContinueCard(
 @Composable
 private fun RecentCard(
     recentArticles: List<Article>,
+    tagsByArticle: Map<Long, List<TagChipUi>>,
     dateFormat: SimpleDateFormat,
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
@@ -533,8 +541,24 @@ private fun RecentCard(
             val titleH = 20.dp + if (m.short) 4.dp else if (m.compact) 6.dp else 8.dp
             // 4dp 安全余量：行高是估算值，宁可保守
             val avail = m.maxHeight - m.pad * 2 - titleH - 4.dp
-            val full = (((avail + gap) / (rowH + gap)).toInt()).coerceAtLeast(1)
-            val shown = recentArticles.take(full)
+            // 逐条累计估算（有标签的标准行多占 22dp 徽标行）：
+            // 固定行高估算在混入标签行后会溢出——维持「宁可少一条，不在卡底露半截」
+            val shown = remember(recentArticles, m.compact, m.short, avail, tagsByArticle) {
+                val extra = 22.dp
+                var used = 0.dp
+                val out = mutableListOf<Article>()
+                for (article in recentArticles) {
+                    val h = rowH + if (!m.short && tagsByArticle.containsKey(article.id)) extra else 0.dp
+                    val next = if (out.isEmpty()) h else used + gap + h
+                    if (out.isEmpty() || next <= avail) {
+                        out.add(article)
+                        used = next
+                    } else {
+                        break
+                    }
+                }
+                out
+            }
 
             // 标题行：「查看全部」入口挂在标题右侧，不占列表行高（列表区本来就紧），
             // 有溢出时才出现——任何尺寸下都能看到入口，不必挤掉一整篇文章行
@@ -597,6 +621,7 @@ private fun RecentCard(
                         AnimatedVisibility(visible = true, enter = listItemEnter(index)) {
                             RecentArticleRow(
                                 article = article,
+                                tags = tagsByArticle[article.id].orEmpty(),
                                 dateFormat = dateFormat,
                                 compact = m.compact,
                                 dense = m.short,
@@ -631,6 +656,8 @@ private fun RecentCard(
 @Composable
 private fun RecentArticleRow(
     article: Article,
+    /** 已绑定标签（标准行出 chips；矮卡降级为 ≤3 色点内联标题行） */
+    tags: List<TagChipUi> = emptyList(),
     dateFormat: SimpleDateFormat,
     compact: Boolean,
     dense: Boolean,
@@ -655,6 +682,15 @@ private fun RecentArticleRow(
                 bottom = if (dense) 1.dp else if (slim) 6.dp else if (compact) 8.dp else 10.dp,
             ),
     ) {
+        // 标签徽标：标准行在标题上方出一行 chips（矮卡用色点，见标题行内联）
+        if (!dense && !slim && tags.isNotEmpty()) {
+            TagChipRow(
+                tags = tags,
+                maxChips = if (compact) 1 else 2,
+                showOverflow = !compact,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -668,6 +704,11 @@ private fun RecentArticleRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            // 矮卡（dense/slim）：色点内联在标题后（零高度增量，不挤压既有排版）
+            if ((dense || slim) && tags.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
+                TagColorDots(tags)
+            }
             // 窄卡下隐藏「作者·字符数」次要信息，把宽度让给标题（避免标题被挤没）
             if (!compact && !dense) {
                 Spacer(Modifier.width(8.dp))
@@ -799,6 +840,7 @@ private fun PracticeButton(
 @Composable
 private fun ArticleCard(
     article: Article?,
+    tagsByArticle: Map<Long, List<TagChipUi>>,
     dateFormat: SimpleDateFormat,
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
@@ -836,7 +878,8 @@ private fun ArticleCard(
         } else {
             // 与「最近使用」卡内的文章行同款内容；矮卡（1 行高）用 slim 紧凑三行 ——
             // 用户要求「卡片小小的、内容像图 2 那样完整」
-            Column(
+            // 徽标行为追加内容：用 CardBody（空间富余居中、不足内滚）避免极小高度下裁切
+            CardBody(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(if (m.short) 2.dp else m.pad),
@@ -844,6 +887,7 @@ private fun ArticleCard(
             ) {
                 RecentArticleRow(
                     article = article,
+                    tags = tagsByArticle[article.id].orEmpty(),
                     dateFormat = dateFormat,
                     compact = m.compact,
                     dense = false,

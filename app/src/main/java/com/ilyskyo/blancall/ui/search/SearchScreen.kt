@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -50,13 +52,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.TagChipRow
+import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TouchAnchor
 import com.ilyskyo.blancall.ui.common.navigateReveal
 import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
@@ -64,12 +71,14 @@ import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
- * 搜索页：在全部文章中检索【标题 / 作者 / 正文 / 添加日期】。
+ * 搜索页：在全部文章中检索【标题 / 作者 / 正文 / 标签 / 添加日期】。
  *
  * - 实时过滤：输入即搜
- * - 命中样式：标题命中高亮；正文命中显示含关键词的上下文片段
+ * - 命中样式：标题命中高亮；正文命中显示含关键词的上下文片段；标签命中就列出该文章
  * - 添加日期命中（如 "2026-08-23" / "2026/8/23" / 年份）也会列出对应文章
  * - 点结果进入阅读页
  */
@@ -78,13 +87,23 @@ fun SearchScreen(navController: NavController) {
     val viewModel: ArticleViewModel = viewModel()
     val articles by viewModel.articles.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+
+    // ── 文章标签：标签名进命中维度 + 结果卡展示 chips ──
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
+    val tagData by tagStore.data.collectAsState()
+    // 首次进入 priming：IO 读盘 → 发布 StateFlow
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
+    val chipTagsByArticle = remember(tagData) {
+        TagOps.tagsByArticle(tagData).mapValues { (_, list) -> list.toChipUis() }
+    }
 
     val dateFmtDash = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
     val dateFmtSlash = remember { SimpleDateFormat("yyyy/M/d", Locale.getDefault()) }
 
     val trimmed = query.trim().lowercase(Locale.getDefault())
-    // 命中过滤：标题 / 正文 / 添加日期（两种日期格式都匹配）
-    val results = remember(articles, trimmed) {
+    // 命中过滤：标题 / 作者 / 正文 / 标签名 / 添加日期（两种日期格式都匹配）
+    val results = remember(articles, trimmed, chipTagsByArticle) {
         if (trimmed.isEmpty()) {
             emptyList()
         } else {
@@ -92,10 +111,11 @@ fun SearchScreen(navController: NavController) {
                 val authorHit = art.author.contains(trimmed, ignoreCase = true)
                 val titleHit = art.title.contains(trimmed, ignoreCase = true)
                 val bodyHit = art.content.contains(trimmed, ignoreCase = true)
+                val tagHit = chipTagsByArticle[art.id]?.any { it.name.contains(trimmed, ignoreCase = true) } == true
                 val dateDash = dateFmtDash.format(Date(art.createdAt)).lowercase()
                 val dateSlash = dateFmtSlash.format(Date(art.createdAt)).lowercase()
                 val dateHit = dateDash.contains(trimmed) || dateSlash.contains(trimmed)
-                titleHit || authorHit || bodyHit || dateHit
+                titleHit || authorHit || bodyHit || tagHit || dateHit
             }.sortedByDescending { it.updatedAt }
         }
     }
@@ -131,7 +151,7 @@ fun SearchScreen(navController: NavController) {
 
             // ── 结果区 ──
             when {
-                trimmed.isEmpty() -> EmptyHint("搜索标题、作者、正文或添加日期")
+                trimmed.isEmpty() -> EmptyHint("搜索标题、作者、正文、标签或添加日期")
                 results.isEmpty() -> {
                     // 长搜索词截断显示，避免空态文案被撑爆
                     val shown = if (trimmed.length > 10) trimmed.take(10) + "…" else trimmed
@@ -151,6 +171,7 @@ fun SearchScreen(navController: NavController) {
                         items(results, key = { it.id }) { article ->
                             SearchResultCard(
                                 article = article,
+                                tags = chipTagsByArticle[article.id].orEmpty(),
                                 query = trimmed,
                                 dateFmt = dateFmtDash,
                                 onClick = { anchor ->
@@ -188,7 +209,7 @@ private fun SearchField(
         modifier = modifier
             .focusRequester(focusRequester),
         singleLine = true,
-        placeholder = { Text("搜索标题 / 作者 / 正文 / 添加日期", fontSize = 14.sp) },
+        placeholder = { Text("搜索标题 / 作者 / 正文 / 标签 / 添加日期", fontSize = 14.sp) },
         leadingIcon = {
             AppIcon(
                 kind = AppIconKind.SearchHint,
@@ -229,10 +250,11 @@ private fun SearchField(
     )
 }
 
-/** 结果卡片：标题 + 命中片段 + 添加日期 */
+/** 结果卡片：标题 + 标签 chips（≤2 + 「+N」）+ 命中片段 + 添加日期 */
 @Composable
 private fun SearchResultCard(
     article: Article,
+    tags: List<TagChipUi> = emptyList(),
     query: String,
     dateFmt: SimpleDateFormat,
     onClick: (TouchAnchor?) -> Unit
@@ -265,6 +287,10 @@ private fun SearchResultCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            if (tags.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                TagChipRow(tags = tags, maxChips = 2)
+            }
             Spacer(Modifier.height(3.dp))
             Text(
                 text = snippet(article.content, query, maxLen = 80),

@@ -54,6 +54,27 @@ object AtomicFiles {
     }
 
     /**
+     * 追加一行文本（UTF-8，自动补换行）并 fsync —— 供「只增不改」的大文件
+     * （练习记录 JSONL）做 O(1) 落盘，避免每次 insert 全量重写。
+     *
+     * 与 [writeTextAtomic] 的分工：
+     * - 追加语义决定不能用 tmp+rename（会变成整体替换）；持久性靠 fd.sync；
+     * - 崩溃语义：追加中被杀只会留下**半行**，读取端按「逐行容错解析」跳过即可；
+     * - `.bak` 轮换只由全量重写路径（删除/转格式）负责，追加路径不动备份。
+     *
+     * 会按需创建父目录；追加失败原样抛出，由调用方维持既有处理。
+     */
+    fun appendTextLine(file: File, line: String) {
+        file.parentFile?.mkdirs()
+        FileOutputStream(file, true).use { out ->
+            out.write(line.toByteArray(Charsets.UTF_8))
+            out.write('\n'.code)
+            runCatching { out.fd.sync() }
+        }
+        fsyncDirectoryBestEffort(file.parentFile)
+    }
+
+    /**
      * 目录 fsync：Linux / Android 允许以只读打开目录并 fsync（持久化 rename 的目录项）。
      * Windows（JVM 单测环境）不允许打开目录、个别文件系统也不支持 —— 捕获后静默降级，
      * 目录 fsync 只是额外的持久化保证，不影响主写入路径。

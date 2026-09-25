@@ -64,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +84,7 @@ import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.TouchAnchor
 import com.ilyskyo.blancall.ui.common.navigateReveal
+import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
 import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
 import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
@@ -133,12 +135,14 @@ fun WesternThoughtScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.onBackground
             )
         }
+        // 滚动驱动的底栏自动收起：内容前进时导航栏让位、回滚时恢复（不再需要避让留白）
+        val navBarScrollConn = rememberAutoHideNavBarOnScroll()
         LazyVerticalGrid(
             columns = GridCells.Fixed(1),  // 单列：每张卡片横跨整行，与其它根页标题/排版一致
-            // 底部留白：悬浮导航栏覆盖屏幕底部约 100dp，避免最后卡片被遮挡
-            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 140.dp),
+            // 底部只留呼吸留白：导航栏已改为「滚动自动收起」后不再需要 140dp 避让底距
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().nestedScroll(navBarScrollConn)
         ) {
             items(BUILT_IN_LIBRARIES.filter { it.id in enabledLibraries }) { lib ->
                 LibraryCard(lib = lib) { anchor ->
