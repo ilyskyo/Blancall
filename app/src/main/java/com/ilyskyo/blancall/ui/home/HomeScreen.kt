@@ -32,6 +32,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.mutableLongStateOf
@@ -93,14 +95,9 @@ import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GridMaxWidth
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.NavBarAutoHide
-import com.ilyskyo.blancall.ui.common.TouchAnchor
-import com.ilyskyo.blancall.ui.common.appIconKindFromKey
 import com.ilyskyo.blancall.ui.common.navigateReveal
 import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
-import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
-import com.ilyskyo.blancall.ui.common.toTouchAnchor
-import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.homeGridColumns
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
@@ -111,6 +108,7 @@ import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -152,10 +150,35 @@ fun HomeScreen(
     // ── 首页滚动手势（无顶栏）：下拉揭示品牌区 ──
     val homeScrollState = rememberScrollState()
     // 下拉位移（px）：滚到顶再继续下拉 → 内容整体**跟手**下移，顶部露出空白区显示
-    // 「Blancall + 副标题」；松手回弹复位。Animatable：拖动 snapTo 跟手、松手 animateTo 回弹。
+    // 「Blancall + 副标题」；**松手立即回弹**。Animatable：拖动 snapTo 跟手、松手 animateTo 回弹。
     val homePullOffset = remember { Animatable(0f) }
     val homePullScope = rememberCoroutineScope()
     val homePullMaxPx = with(LocalDensity.current) { HOME_PULL_MAX.toPx() }
+    // 回弹防重入：松手兜底（指针抬起监听）与 onPreFling 可能同时触发
+    val homePullSettling = remember { AtomicBoolean(false) }
+
+    /** 松手立即回弹复位（跟手结束就缩回去）。多处触发点统一入口。 */
+    fun settleHomePull() {
+        if (homePullOffset.value <= 0.5f) return
+        if (!homePullSettling.compareAndSet(false, true)) return
+        homePullScope.launch {
+            try {
+                homePullOffset.animateTo(
+                    0f,
+                    spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                )
+            } finally {
+                // ⚠️ 必须 finally：回弹动画被新的拖动 snapTo/复位抢占时 animateTo 会抛
+                // CancellationException，若直接跟一句 set(false) 会被跳过 —— 标志永久停在
+                // true，之后所有回弹被拦死（真机：下拉后彻底不再收回）。
+                homePullSettling.set(false)
+            }
+        }
+    }
+
     val homePullConnection = remember(homeScrollState, homePullMaxPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -179,14 +202,9 @@ fun HomeScreen(
                 return Offset.Zero
             }
             override suspend fun onPreFling(available: Velocity): Velocity {
-                // 松手：平滑回弹复位（无过冲，避免内容越顶露缝）
-                homePullOffset.animateTo(
-                    0f,
-                    spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                )
+                // 快速下拉松手（有惯性）走这里回弹；慢松手无 fling 时由指针抬起监听
+                // （见内容列上的 Final pass 监听）兜底 —— 旧实现只靠这里，慢松手会卡在露出态。
+                settleHomePull()
                 return Velocity.Zero
             }
         }
@@ -350,8 +368,6 @@ fun HomeScreen(
     // 从 ImportScreen 保存成功后返回时接收信号
     var showSaveSuccessDialog by remember { mutableStateOf(false) }
     var savedArticleId by remember { mutableLongStateOf(0L) }
-    val homeIconKey by AppPrefs.homeIconKeyFlow.collectAsState()
-    val showHomeEmoji by AppPrefs.showHomeEmojiFlow.collectAsState()
     val subtitle by AppPrefs.subtitleFlow.collectAsState()
     // 模式选择弹窗
     var showModePicker by remember { mutableStateOf(false) }
@@ -494,14 +510,6 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(16.dp))
-                if (showHomeEmoji) {
-                    AppIcon(
-                        kind = appIconKindFromKey(homeIconKey),
-                        modifier = Modifier.size(26.dp),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
                 Text(
                     text = "Blancall",
                     style = MaterialTheme.typography.headlineMedium,
@@ -533,6 +541,18 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 松手兜底：嵌套滚动在「无速度慢松手」时不会派发 fling 阶段回调，
+                    // 仅靠 onPreFling 复位会漏（真机：下拉后卡在露出态）——
+                    // 这里在 Final pass **仅观察、不消费**：任何指针全部抬起/手势取消
+                    // 且仍处于下拉位移状态时，立即回弹缩回。
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val e = awaitPointerEvent(PointerEventPass.Final)
+                                if (e.changes.none { it.pressed }) settleHomePull()
+                            }
+                        }
+                    }
                     .nestedScroll(homePullConnection)
                     .nestedScroll(navBarScrollConn)
                     .verticalScroll(homeScrollState)

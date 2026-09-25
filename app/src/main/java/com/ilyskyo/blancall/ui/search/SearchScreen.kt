@@ -49,7 +49,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.TagOps
@@ -60,11 +59,7 @@ import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.TagChipUi
-import com.ilyskyo.blancall.ui.common.TouchAnchor
-import com.ilyskyo.blancall.ui.common.navigateReveal
-import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
 import com.ilyskyo.blancall.ui.common.toChipUis
-import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
@@ -128,14 +123,16 @@ fun SearchScreen(navController: NavController) {
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // ── 顶栏：返回 + 搜索框 ──
+            // 左右 20dp 与其它页对齐；上距 12dp：本行高由 56dp 输入框决定，
+            // 使 40dp 返回圆的圆心落到与其它页一致的 40dp 基线（20..60）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(12.dp))
                 SearchField(
                     query = query,
                     onQueryChange = { query = it },
@@ -149,39 +146,38 @@ fun SearchScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             )
 
-            // ── 结果区 ──
-            when {
-                trimmed.isEmpty() -> EmptyHint("搜索标题、作者、正文、标签或添加日期")
-                results.isEmpty() -> {
-                    // 长搜索词截断显示，避免空态文案被撑爆
-                    val shown = if (trimmed.length > 10) trimmed.take(10) + "…" else trimmed
-                    EmptyHint("没有找到与「$shown」相关的内容")
-                }
-                else -> {
-                    Text(
-                        "共 ${results.size} 篇",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 4.dp)
-                    )
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                    ) {
-                        items(results, key = { it.id }) { article ->
-                            SearchResultCard(
-                                article = article,
-                                tags = chipTagsByArticle[article.id].orEmpty(),
-                                query = trimmed,
-                                dateFmt = dateFmtDash,
-                                onClick = { anchor ->
-                                    navController.navigateReveal("reader/${article.id}", anchor)
-                                }
-                            )
-                        }
+            // ── 结果区（空态不在此占位，见下方覆盖层） ──
+            if (trimmed.isNotEmpty() && results.isNotEmpty()) {
+                Text(
+                    "共 ${results.size} 篇",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 4.dp)
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    items(results, key = { it.id }) { article ->
+                        SearchResultCard(
+                            article = article,
+                            tags = chipTagsByArticle[article.id].orEmpty(),
+                            query = trimmed,
+                            dateFmt = dateFmtDash,
+                            onClick = { navController.navigate("reader/${article.id}") }
+                        )
                     }
                 }
             }
+        }
+
+        // ── 空态覆盖层：图标 + 提示文本整体的视觉中心＝页面中央 ──
+        if (trimmed.isEmpty()) {
+            EmptyHint("搜索标题、作者、正文、标签或添加日期")
+        } else if (results.isEmpty()) {
+            // 长搜索词截断显示，避免空态文案被撑爆
+            val shown = if (trimmed.length > 10) trimmed.take(10) + "…" else trimmed
+            EmptyHint("没有找到与「$shown」相关的内容")
         }
     }
 }
@@ -209,7 +205,6 @@ private fun SearchField(
         modifier = modifier
             .focusRequester(focusRequester),
         singleLine = true,
-        placeholder = { Text("搜索标题 / 作者 / 正文 / 标签 / 添加日期", fontSize = 14.sp) },
         leadingIcon = {
             AppIcon(
                 kind = AppIconKind.SearchHint,
@@ -257,14 +252,12 @@ private fun SearchResultCard(
     tags: List<TagChipUi> = emptyList(),
     query: String,
     dateFmt: SimpleDateFormat,
-    onClick: (TouchAnchor?) -> Unit
+    onClick: () -> Unit
 ) {
     val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
     val bgColor = MaterialTheme.colorScheme.surface.copy(alpha = bgAlpha)
     val shape = RoundedCornerShape(16.dp)
-    // 触点锚点：点击时以结果卡中心作为阅读页浮起转场的起点
-    val anchor = rememberTouchAnchor()
 
     Box(
         modifier = Modifier
@@ -273,8 +266,7 @@ private fun SearchResultCard(
             .clip(shape)
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
             .background(bgColor)
-            .trackTouchAnchor(anchor)
-            .clickable { onClick(anchor.value) }
+            .clickable { onClick() }
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)

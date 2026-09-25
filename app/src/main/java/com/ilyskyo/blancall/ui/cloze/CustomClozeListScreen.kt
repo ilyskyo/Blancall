@@ -44,9 +44,6 @@ import com.ilyskyo.blancall.data.repository.ArticleRepository
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.ui.common.BackButton
-import com.ilyskyo.blancall.ui.common.navigateReveal
-import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
-import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
@@ -131,16 +128,16 @@ fun CustomClozeListScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
-                // 触点锚点：点击时以按钮中心作为编辑页浮起转场的起点
-                val newAnchor = rememberTouchAnchor()
                 Button(
                     onClick = {
-                        val route = if (pick) "custom_cloze_edit/$articleId?pick=true"
-                        else "custom_cloze_edit/$articleId"
-                        navController.navigateReveal(route, newAnchor.value)
+                        if (pick) {
+                            // 练一把流程：新建后进编辑页（带 pick，保存即开练）
+                            navController.navigate("custom_cloze_edit/$articleId?pick=true")
+                        } else {
+                            navController.navigate("custom_cloze_edit/$articleId")
+                        }
                     },
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.trackTouchAnchor(newAnchor)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Text("新建")
                 }
@@ -165,21 +162,19 @@ fun CustomClozeListScreen(
                 Text("文章不存在或已被删除", color = MaterialTheme.colorScheme.error)
             } else if (configs.isEmpty()) {
                 Spacer(Modifier.height(24.dp))
-                val emptyAnchor = rememberTouchAnchor()
                 Text(
                     "还没有自定义配置，点此创建",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .trackTouchAnchor(emptyAnchor)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
                         .combinedClickable(
                             onClick = {
                                 val route = if (pick) "custom_cloze_edit/$articleId?pick=true"
                                 else "custom_cloze_edit/$articleId"
-                                navController.navigateReveal(route, emptyAnchor.value)
+                                navController.navigate(route)
                             }
                         )
                         .padding(16.dp)
@@ -191,12 +186,10 @@ fun CustomClozeListScreen(
                 ) {
                     items(configs.size, key = { configs[it].id }) { idx ->
                         val cfg = configs[idx]
-                        val rowAnchor = rememberTouchAnchor()
                         Box {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .trackTouchAnchor(rowAnchor)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                                     .combinedClickable(
@@ -205,10 +198,7 @@ fun CustomClozeListScreen(
                                                 // 练一把流程：点配置直接开始练习
                                                 navController.navigate("practice/$articleId?configId=${cfg.id}")
                                             } else {
-                                                navController.navigateReveal(
-                                                    "custom_cloze_edit/$articleId?configId=${cfg.id}",
-                                                    rowAnchor.value,
-                                                )
+                                                navController.navigate("custom_cloze_edit/$articleId?configId=${cfg.id}")
                                             }
                                         },
                                         onLongClick = { confirmHaptic(); menuForId = cfg.id }

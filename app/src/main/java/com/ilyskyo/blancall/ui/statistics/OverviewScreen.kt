@@ -65,11 +65,7 @@ import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.BackButton
-import com.ilyskyo.blancall.ui.common.navigateReveal
 import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
-import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
-import com.ilyskyo.blancall.ui.common.toTouchAnchor
-import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
@@ -835,13 +831,11 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             for ((articleId, rate, count) in stats.weakestArticles) {
-                                val anchor = rememberTouchAnchor()
                                 GlassCard(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .trackTouchAnchor(anchor),
+                                        .weight(1f),
                                     containerColor = Macaron.neutral().fill,
-                                    onClick = { navController.navigateReveal("statistics/$articleId", anchor.value) }
+                                    onClick = { navController.navigate("statistics/$articleId") }
                                 ) {
                                     Row(
                                         Modifier.padding(12.dp).fillMaxWidth(),
@@ -867,13 +861,11 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     }
                 } else {
                     items(stats.weakestArticles, key = { it.first }) { (articleId, rate, count) ->
-                        val anchor = rememberTouchAnchor()
                         GlassCard(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .trackTouchAnchor(anchor),
+                                .fillMaxWidth(),
                             containerColor = Macaron.neutral().fill,
-                            onClick = { navController.navigateReveal("statistics/$articleId", anchor.value) }
+                            onClick = { navController.navigate("statistics/$articleId") }
                         ) {
                             Row(
                                 Modifier.padding(12.dp).fillMaxWidth(),
@@ -935,10 +927,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     is PickerSelection.Base ->
                         navController.navigate("practice/${pendingPracticeArticleId}?mode=${sel.mode.name}")
                     PickerSelection.Custom ->
-                        navController.navigateReveal(
-                            "custom_cloze_list/${pendingPracticeArticleId}?pick=true",
-                            practiceButtonRect.takeIf { it != Rect.Zero }?.toTouchAnchor(),
-                        )
+                        navController.navigate("custom_cloze_list/${pendingPracticeArticleId}?pick=true")
                 }
             }
         }

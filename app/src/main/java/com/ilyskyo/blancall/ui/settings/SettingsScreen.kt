@@ -22,8 +22,6 @@ import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
-import com.ilyskyo.blancall.ui.common.appIconKindFromKey
-import com.ilyskyo.blancall.ui.common.iconKeyFromKind
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import androidx.compose.ui.Alignment
@@ -49,9 +47,6 @@ import com.ilyskyo.blancall.data.ai.AiConfigStore
 import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.BackButton
-import com.ilyskyo.blancall.ui.common.navigateReveal
-import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
-import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.theme.AccentPresets
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderFrequency
@@ -65,14 +60,14 @@ fun SettingsScreen(navController: NavController) {
     // 首页副标题编辑弹窗（首页品牌栏收起时也可从这里修改）
     var showSubtitleDialog by remember { mutableStateOf(false) }
     val homeSubtitle by AppPrefs.subtitleFlow.collectAsState()
-    // 首页图标选择弹窗（下拉揭示区的品牌图标；首页顶栏移除后编辑入口收归设置）
-    var showIconPickerDialog by remember { mutableStateOf(false) }
-    val homeIconKey by AppPrefs.homeIconKeyFlow.collectAsState()
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
+            // 底部系统导航条让位（与导入/阅读等子页面一致）：缺少它时设置页
+            // 滚动内容会伸到导航条区域之下，底部露出一段白区且内容被截断。
+            .navigationBarsPadding()
             .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.TopCenter
     ) {
@@ -196,28 +191,6 @@ fun SettingsScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.primary)
                     }
 
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                    // ── 首页图标（下拉首页时展示的品牌图标；点击更换）──
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { showIconPickerDialog = true }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("首页图标", style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface)
-                            Text("下拉首页时展示的品牌图标，点击更换",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text("更换 ›", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary)
-                    }
-
                     // 内置素材库已移至下方「拓展功能」分组
                 }
             }
@@ -290,31 +263,6 @@ fun SettingsScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                // 首页表情图标显示开关
-                val showHomeEmoji by AppPrefs.showHomeEmojiFlow.collectAsState()
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("首页显示表情图标", style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface)
-                        Text("开启后，下拉首页时在顶部揭示区显示品牌图标",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    GlassSwitch(
-                        checked = showHomeEmoji,
-                        onCheckedChange = { AppPrefs.showHomeEmoji = it }
-                    )
-                }
-
-                HorizontalDivider(
-                    Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                )
-
                 // 段落首行缩进开关（导入时给未缩进段落补两格；关闭后不再新增缩进）
                 val autoIndentEnabled by AppPrefs.autoIndentEnabledFlow.collectAsState()
                 Row(
@@ -663,13 +611,10 @@ fun SettingsScreen(navController: NavController) {
                     Modifier.padding(horizontal = 16.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                 )
-                val helpAnchor = rememberTouchAnchor()
                 Surface(
-                    onClick = { navController.navigateReveal("help", helpAnchor.value) },
+                    onClick = { navController.navigate("help") },
                     color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .trackTouchAnchor(helpAnchor)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
@@ -699,14 +644,10 @@ fun SettingsScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                // 触点锚点：点击时以该行中心作为标签管理页浮起转场的起点
-                val tagAnchor = rememberTouchAnchor()
                 Surface(
-                    onClick = { navController.navigateReveal("tag_manager", tagAnchor.value) },
+                    onClick = { navController.navigate("tag_manager") },
                     color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .trackTouchAnchor(tagAnchor)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
@@ -897,66 +838,6 @@ fun SettingsScreen(navController: NavController) {
             },
             dismissButton = {
                 TextButton(onClick = { showSubtitleDialog = false }) { Text("取消") }
-            }
-        )
-    }
-
-    // ── 首页图标选择弹窗（下拉揭示区的品牌图标）──
-    if (showIconPickerDialog) {
-        val iconOptions = listOf(
-            AppIconKind.Logo, AppIconKind.Celebrate, AppIconKind.Edit, AppIconKind.Inbox,
-            AppIconKind.ArrowForward, AppIconKind.OpenInFull, AppIconKind.Check
-        )
-        BlancallAlertDialog(
-            onDismissRequest = { showIconPickerDialog = false },
-            title = { Text("选择首页图标") },
-            text = {
-                @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    iconOptions.forEach { kind ->
-                        val selected = kind == appIconKindFromKey(homeIconKey)
-                        val optionName = when (kind) {
-                            AppIconKind.Logo -> "默认图标"
-                            AppIconKind.Celebrate -> "庆祝"
-                            AppIconKind.Edit -> "编辑"
-                            AppIconKind.Inbox -> "收件箱"
-                            AppIconKind.ArrowForward -> "前进箭头"
-                            AppIconKind.OpenInFull -> "全屏展开"
-                            AppIconKind.Check -> "对勾"
-                            else -> "图标"
-                        }
-                        Surface(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clickable {
-                                    AppPrefs.homeIconKey = iconKeyFromKind(kind)
-                                    showIconPickerDialog = false
-                                },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (selected)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                AppIcon(
-                                    kind = kind,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    contentDescription = optionName
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showIconPickerDialog = false }) { Text("取消") }
             }
         )
     }

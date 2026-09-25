@@ -19,15 +19,6 @@ import kotlinx.coroutines.flow.asStateFlow
 object AppPrefs {
     private lateinit var prefs: SharedPreferences
 
-    /**
-     * 已知图标 key 集合（[com.ilyskyo.blancall.ui.common.AppIconKind] 的小写名）。
-     * SP key 沿用旧 "emoji_icon" 以兼容历史值；init() 中若存储值不在本集合（如旧 emoji），
-     * 迁移重置为默认 "logo"。
-     */
-    private val KNOWN_ICON_KEYS = setOf(
-        "logo", "celebrate", "edit", "inbox", "arrowforward", "openinfull", "check"
-    )
-
     private val _autoIndentEnabledFlow = MutableStateFlow(true)
     /** 段落首行自动缩进开关（导入时给未缩进段落补两格；关闭后不再新增缩进） */
     val autoIndentEnabledFlow: StateFlow<Boolean> = _autoIndentEnabledFlow.asStateFlow()
@@ -36,17 +27,9 @@ object AppPrefs {
     /** 主题色索引（0=靛蓝 1=海蓝 2=翠绿 3=暖橙 4=玫红 5=石墨） */
     val accentColorFlow: StateFlow<Int> = _accentColorFlow.asStateFlow()
 
-    private val _homeIconKeyFlow = MutableStateFlow("logo")
-    /** 首页 Logo 图标 key（AppIconKind 的小写名，如 "logo" / "celebrate" …） */
-    val homeIconKeyFlow: StateFlow<String> = _homeIconKeyFlow.asStateFlow()
-
     private val _subtitleFlow = MutableStateFlow("Fill the blank, recall the knowledge.")
     /** 首页副标题（默认品牌标语，可自定义） */
     val subtitleFlow: StateFlow<String> = _subtitleFlow.asStateFlow()
-
-    private val _showHomeEmojiFlow = MutableStateFlow(true)
-    /** 首页左上角表情图标显示开关 */
-    val showHomeEmojiFlow: StateFlow<Boolean> = _showHomeEmojiFlow.asStateFlow()
 
     private val _lightBeigeBackgroundFlow = MutableStateFlow(false)
     /** 浅色模式米黄底色开关：开启使用暖米黄底色，关闭使用纯白底色（深色模式不受影响） */
@@ -141,9 +124,7 @@ object AppPrefs {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         _autoIndentEnabledFlow.value = prefs.getBoolean("auto_indent_enabled", true)
         _accentColorFlow.value = prefs.getInt("accent_color", 0)
-        _homeIconKeyFlow.value = prefs.getString("emoji_icon", "logo")?.takeIf { it in KNOWN_ICON_KEYS } ?: "logo"
         _subtitleFlow.value = prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge."
-        _showHomeEmojiFlow.value = prefs.getBoolean("show_home_emoji", false)
         _lightBeigeBackgroundFlow.value = prefs.getBoolean("light_beige_background", false)
         _navLiquidGlassFlow.value = prefs.getBoolean("nav_liquid_glass", true)
         _practiceBackWarningDisabledFlow.value = prefs.getBoolean("practice_back_warning_disabled", false)
@@ -205,34 +186,12 @@ object AppPrefs {
             }
         }
 
-    var homeIconKey: String
-        get() = if (::prefs.isInitialized) {
-            (prefs.getString("emoji_icon", "logo") ?: "logo").takeIf { it in KNOWN_ICON_KEYS } ?: "logo"
-        } else {
-            "logo"
-        }
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putString("emoji_icon", value) }
-                _homeIconKeyFlow.value = value
-            }
-        }
-
     var subtitle: String
         get() = if (::prefs.isInitialized) prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge." else "Fill the blank, recall the knowledge."
         set(value) {
             if (::prefs.isInitialized) {
                 prefs.edit { putString("subtitle", value) }
                 _subtitleFlow.value = value
-            }
-        }
-
-    var showHomeEmoji: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("show_home_emoji", true) else true
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putBoolean("show_home_emoji", value) }
-                _showHomeEmojiFlow.value = value
             }
         }
 

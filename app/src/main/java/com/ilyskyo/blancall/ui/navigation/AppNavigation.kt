@@ -378,16 +378,14 @@ fun AppNavigation() {
                     defaultValue = "false"
                 }
             ),
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
             val pick = backStackEntry.arguments?.getString("pick") == "true"
-            RevealPageShell(backStackEntry.id) {
-                CustomClozeListScreen(navController, articleId, pick)
-            }
+            CustomClozeListScreen(navController, articleId, pick)
         }
 
         // 自定义挖空模板编辑页（按文章保存多套配置）；pick=true：保存后直接开始练习
@@ -404,17 +402,15 @@ fun AppNavigation() {
                     defaultValue = "false"
                 }
             ),
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
             val configId = backStackEntry.arguments?.getLong("configId") ?: -1L
             val pick = backStackEntry.arguments?.getString("pick") == "true"
-            RevealPageShell(backStackEntry.id) {
-                CustomClozeEditScreen(navController, articleId, configId, pick)
-            }
+            CustomClozeEditScreen(navController, articleId, configId, pick)
         }
 
         composable(
@@ -493,40 +489,34 @@ fun AppNavigation() {
 
         composable(
             "settings",
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
-        ) { backStackEntry ->
-            RevealPageShell(backStackEntry.id) {
-                SettingsScreen(navController)
-            }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            SettingsScreen(navController)
         }
 
         // 首页搜索页（搜索标题 / 正文 / 添加日期）
         composable(
             "search",
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
-        ) { backStackEntry ->
-            RevealPageShell(backStackEntry.id) {
-                SearchScreen(navController)
-            }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            SearchScreen(navController)
         }
 
         // 文章标签管理页（设置 → 内容管理 → 文章标签）
         composable(
             "tag_manager",
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
-        ) { backStackEntry ->
-            RevealPageShell(backStackEntry.id) {
-                TagManagerScreen(navController)
-            }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            TagManagerScreen(navController)
         }
 
         // 句子卡片大卡片界面（首页小卡片点入；华为堆叠形态：划卡 + 三键评级）
@@ -555,14 +545,12 @@ fun AppNavigation() {
 
         composable(
             "help",
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
-        ) { backStackEntry ->
-            RevealPageShell(backStackEntry.id) {
-                HelpScreen(navController)
-            }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            HelpScreen(navController)
         }
 
         // 内置素材库卡片页（底部「素材库」tab 进入，同级根页面，无返回键）
@@ -583,15 +571,13 @@ fun AppNavigation() {
             arguments = listOf(
                 navArgument("libraryId") { type = NavType.StringType }
             ),
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val libraryId = backStackEntry.arguments?.getString("libraryId") ?: "western"
-            RevealPageShell(backStackEntry.id) {
-                LibraryContentPage(navController, libraryId)
-            }
+            LibraryContentPage(navController, libraryId)
         }
 
         // 内置 PDF 预览页（点开素材库单篇 PDF 在 app 内预览）
@@ -616,15 +602,13 @@ fun AppNavigation() {
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType }
             ),
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            RevealPageShell(backStackEntry.id) {
-                StatisticsScreen(navController, articleId)
-            }
+            StatisticsScreen(navController, articleId)
         }
 
         composable(

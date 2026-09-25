@@ -69,23 +69,6 @@ enum class AppIconKind {
     Refresh
 }
 
-/** 将存储 key 解析为 [AppIconKind]（未知 / 空 → [AppIconKind.Logo]） */
-fun appIconKindFromKey(key: String): AppIconKind = when (key.lowercase()) {
-    "celebrate" -> AppIconKind.Celebrate
-    "edit" -> AppIconKind.Edit
-    "inbox" -> AppIconKind.Inbox
-    "arrowforward" -> AppIconKind.ArrowForward
-    "openinfull" -> AppIconKind.OpenInFull
-    "check" -> AppIconKind.Check
-    "home" -> AppIconKind.Home
-    "articles" -> AppIconKind.Articles
-    "insights" -> AppIconKind.Insights
-    else -> AppIconKind.Logo
-}
-
-/** 将 [AppIconKind] 转为持久化 key（与 [appIconKindFromTheOther] 约定一致的小写形式） */
-fun iconKeyFromKind(kind: AppIconKind): String = kind.name.lowercase()
-
 /**
  * 统一图标渲染入口。
  *

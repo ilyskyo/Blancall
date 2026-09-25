@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.home
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -208,7 +209,11 @@ fun SentenceCardScreen(navController: NavController) {
         }
         scope.launch {
             animating = true
-            dragY.animateTo(if (forward) -flyDistance else flyDistance, tween(180))
+            // 飞走降速：300ms + 缓入缓出（原 180ms 线性过快，不优雅）
+            dragY.animateTo(
+                if (forward) -flyDistance else flyDistance,
+                tween(300, easing = FastOutSlowInEasing),
+            )
             dragY.snapTo(0f)
             currentIndex = (currentIndex + if (forward) 1 else -1).coerceIn(0, items.size)
             animating = false
