@@ -28,7 +28,7 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
-import androidx.compose.runtime.DisposableEffect
+import com.ilyskyo.blancall.ui.common.AutoHideNavBarOnFlag
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -147,13 +147,10 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 
     // 长按进多选 = 「长按操作」：自动收起悬浮底部导航栏 —— 多选操作栏（删除/打标签/跨文复习）
     // 紧贴屏幕底部，导航栏还在时按钮会落进它的覆盖区、点不到（真机反馈）。
-    // 退出多选（完成后 / 取消 / 返回手势）自动恢复；页面销毁时 onDispose 兜底释放。
-    DisposableEffect(crossSelectMode) {
-        if (crossSelectMode) NavBarAutoHide.request(NavBarAutoHide.KEY_LIST_MULTI_SELECT)
-        onDispose {
-            if (crossSelectMode) NavBarAutoHide.release(NavBarAutoHide.KEY_LIST_MULTI_SELECT)
-        }
-    }
+    // 退出多选（完成后 / 取消 / 返回手势）自动恢复；页面销毁时自动兜底释放。
+    // ⚠️ 必须用 AutoHideNavBarOnFlag（flag 快照配对）：手写 DisposableEffect 在 onDispose
+    // 读委托状态会读到已复位的 false、漏释放 ⇒ 底栏不再恢复（见 NavBarAutoHide 文档）。
+    AutoHideNavBarOnFlag(NavBarAutoHide.KEY_LIST_MULTI_SELECT, crossSelectMode)
     // 滚动驱动的导航栏自动收起：内容前进（手指上滑）时导航栏让位、回滚时恢复 ——
     // 列表因此不再需要为导航栏预留底部留白（见 NavBarAutoHide 文档）
     val navBarScrollConn = rememberAutoHideNavBarOnScroll()

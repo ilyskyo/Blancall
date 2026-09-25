@@ -38,7 +38,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,6 +84,7 @@ import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.AutoHideNavBarOnFlag
 import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
@@ -216,13 +216,10 @@ fun HomeScreen(
     var cardEditMode by remember { mutableStateOf(false) }
 
     // 长按卡片 = 「长按操作」：自动收起悬浮底部导航栏（与「我的文章」多选同一机制），
-    // 底部空间让给悬浮「完成」按钮；退出编辑态自动恢复，页面销毁时 onDispose 兜底释放。
-    DisposableEffect(cardEditMode) {
-        if (cardEditMode) NavBarAutoHide.request(NavBarAutoHide.KEY_HOME_CARD_EDIT)
-        onDispose {
-            if (cardEditMode) NavBarAutoHide.release(NavBarAutoHide.KEY_HOME_CARD_EDIT)
-        }
-    }
+    // 底部空间让给悬浮「完成」按钮；退出编辑态自动恢复，页面销毁时自动兜底释放。
+    // ⚠️ 必须用 AutoHideNavBarOnFlag（flag 快照配对）：手写 DisposableEffect 在 onDispose
+    // 读委托状态会读到已复位的 false、漏释放 ⇒ 底栏不再恢复（见 NavBarAutoHide 文档）。
+    AutoHideNavBarOnFlag(NavBarAutoHide.KEY_HOME_CARD_EDIT, cardEditMode)
     val navBarAutoHidden by NavBarAutoHide.hidden.collectAsState()
     // 滚动驱动的导航栏自动收起：内容前进时导航栏让位、回滚时恢复（首页不再需要避让留白）
     val navBarScrollConn = rememberAutoHideNavBarOnScroll()

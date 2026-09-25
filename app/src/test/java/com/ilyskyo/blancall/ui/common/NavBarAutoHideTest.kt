@@ -54,4 +54,37 @@ class NavBarAutoHideTest {
         NavBarAutoHide.release("test_key_missing")
         assertFalse(NavBarAutoHide.hidden.value)
     }
+
+    @Test
+    fun `长按操作退出后能正常恢复 —— 回归：onDispose 状态快照陷阱（v7_1_2）`() {
+        // 回归背景：手写 DisposableEffect(x){ if(x) request; onDispose{ if(x) release } } 在退出
+        // 状态时 onDispose 读到已复位的 false、跳过释放 ⇒ 键永久残留、底栏不再出现。
+        // 正确配对（AutoHideNavBarOnFlag 快照语义）：长按操作结束 ⇒ 恢复显示；多来源互不误伤。
+        val listKey = NavBarAutoHide.KEY_LIST_MULTI_SELECT
+        val editKey = NavBarAutoHide.KEY_HOME_CARD_EDIT
+        try {
+            // ① 「我的文章」多选退出 → 恢复
+            NavBarAutoHide.request(listKey)
+            assertTrue(NavBarAutoHide.hidden.value)
+            NavBarAutoHide.release(listKey)
+            assertFalse("多选退出后底栏应恢复显示", NavBarAutoHide.hidden.value)
+
+            // ② 首页卡片编辑态退出 → 恢复
+            NavBarAutoHide.request(editKey)
+            assertTrue(NavBarAutoHide.hidden.value)
+            NavBarAutoHide.release(editKey)
+            assertFalse("首页编辑态退出后底栏应恢复显示", NavBarAutoHide.hidden.value)
+
+            // ③ 两个来源并存：先退一个仍收起，全退才恢复（互不误伤）
+            NavBarAutoHide.request(listKey)
+            NavBarAutoHide.request(editKey)
+            NavBarAutoHide.release(listKey)
+            assertTrue("另一来源仍在请求时保持收起", NavBarAutoHide.hidden.value)
+            NavBarAutoHide.release(editKey)
+            assertFalse("全部长按操作结束 → 恢复显示", NavBarAutoHide.hidden.value)
+        } finally {
+            NavBarAutoHide.release(listKey)
+            NavBarAutoHide.release(editKey)
+        }
+    }
 }

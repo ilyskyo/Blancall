@@ -27,12 +27,14 @@ import kotlinx.coroutines.launch
  * 进入这些状态时请求收起，导航栏按既有下滑动画让位；退出状态后自动滑回。
  *
  * ## 用法（务必成对，随状态自动还原）
+ * 页面状态驱动的收起一律用 [AutoHideNavBarOnFlag]（flag 求值为快照后严格配对）：
  * ```kotlin
- * DisposableEffect(crossSelectMode) {
- *     if (crossSelectMode) NavBarAutoHide.request(NavBarAutoHide.KEY_LIST_MULTI_SELECT)
- *     onDispose { if (crossSelectMode) NavBarAutoHide.release(NavBarAutoHide.KEY_LIST_MULTI_SELECT) }
- * }
+ * AutoHideNavBarOnFlag(NavBarAutoHide.KEY_LIST_MULTI_SELECT, crossSelectMode)
  * ```
+ * ⚠️ 不要自行写 `DisposableEffect(x) { if (x) request(key); onDispose { if (x) release(key) } }`：
+ * `by remember { mutableStateOf(...) }` 的委托变量在 lambda 中读到的是**执行时刻的最新值**——
+ * 状态复位（true→false）触发的重建里，旧 onDispose 读到 false、释放分支被跳过 ⇒ 键永久残留、
+ * 底栏再也不恢复（7.1.2 真机 bug：长按操作退出后导航栏不滑回）。快照配对根治该问题。
  * 用「键集合」而不是布尔值：多个来源同时请求时互不打架，最后一个释放后才恢复显示；
  * 页面在请求期间被销毁（切 tab / 导航离开）时 onDispose 兜底释放，不会永久藏栏。
  *
@@ -75,6 +77,26 @@ object NavBarAutoHide {
     fun release(key: String) {
         activeKeys.remove(key)
         _hidden.value = activeKeys.isNotEmpty()
+    }
+}
+
+/**
+ * 「页面状态驱动」的底栏收起请求（长按多选 / 首页卡片编辑态等）：[active] 为 true 时请求收起，
+ * 状态复位或页面销毁时自动释放。
+ *
+ * **必须用它代替手写 `DisposableEffect`**：flag 作为参数在每次重组时求值为不可变快照、
+ * 由 effect 闭包捕获 ——「创建时请求过 ⇒ dispose 时必然释放」，任何退出路径都不残留；
+ * 手写版在 onDispose 里读委托状态会读到「已复位的最新值」而漏释放（见 [NavBarAutoHide] 文档）。
+ *
+ * @param key 请求来源键（如 [NavBarAutoHide.KEY_LIST_MULTI_SELECT]），与 [active] 一一对应
+ * @param active 收起条件：true = 请求收起，false = 无请求
+ */
+@Composable
+fun AutoHideNavBarOnFlag(key: String, active: Boolean) {
+    // active 为本次调用的参数快照：旧 effect 的 onDispose 捕获旧值 —— 严格「谁请求谁释放」
+    DisposableEffect(key, active) {
+        if (active) NavBarAutoHide.request(key)
+        onDispose { if (active) NavBarAutoHide.release(key) }
     }
 }
 
