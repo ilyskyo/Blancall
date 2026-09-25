@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.data.repository
 
+import com.ilyskyo.blancall.util.AtomicFiles
 import org.json.JSONObject
 import java.io.File
 
@@ -122,16 +123,8 @@ class SentenceCardStore private constructor(private val file: File) {
                 .put("start", s.start)
                 .put("end", s.end)
                 .put("title", s.title)
-            val tmp = File(file.parentFile, file.name + ".tmp")
-            tmp.writeText(json.toString())
-            if (file.exists()) {
-                if (bak.exists()) bak.delete()
-                file.renameTo(bak)
-            }
-            if (!tmp.renameTo(file)) {
-                file.writeText(json.toString())
-                tmp.delete()
-            }
+            // 原子写 + fsync + 备份轮换统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
+            AtomicFiles.writeTextAtomic(file, json.toString())
         } catch (_: Exception) { /* 写失败不阻塞展示，下次 ensureToday 重试 */ }
     }
 }

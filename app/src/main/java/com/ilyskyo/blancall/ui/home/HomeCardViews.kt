@@ -1248,7 +1248,8 @@ private fun StatsCard(
                             Text(
                                 "${stats.practices}",
                                 style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
+                                // 字重红线：headline* 只能 SemiBold（设备楷体无 Bold 面会回退黑体）
+                                fontWeight = FontWeight.SemiBold,
                                 color = hue.accent,
                                 maxLines = 1,
                             )

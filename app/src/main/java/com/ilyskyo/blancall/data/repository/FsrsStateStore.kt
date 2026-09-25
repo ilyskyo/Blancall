@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.data.repository
 import android.util.Log
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.SentenceSelector
+import com.ilyskyo.blancall.util.AtomicFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -135,18 +136,8 @@ class FsrsStateStore private constructor(private val file: File) {
             states.forEach { (id, s) -> json.put(id.toString(), stateToJson(s)) }
             // 句子级状态与文章级同文件共存，键即命名空间（旧版本读非数值键时忽略）
             sentenceStates.forEach { (key, s) -> json.put(key, stateToJson(s)) }
-            val tmp = File(file.parentFile, file.name + ".tmp")
-            tmp.writeText(json.toString())
-            val mainFile = file
-            if (mainFile.exists()) {
-                val bak = File(file.parentFile, file.name + ".bak")
-                if (bak.exists()) bak.delete()
-                mainFile.renameTo(bak)
-            }
-            if (!tmp.renameTo(mainFile)) {
-                Log.e("FsrsStateStore", "保存 FSRS 状态失败：重命名临时文件失败: ${tmp.absolutePath} -> ${mainFile.absolutePath}")
-                return
-            }
+            // 原子写 + fsync + 备份轮换统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
+            AtomicFiles.writeTextAtomic(file, json.toString())
         } catch (e: Exception) {
             Log.e("FsrsStateStore", "保存 FSRS 状态失败", e)
         }

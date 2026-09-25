@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 34
-        versionName = "7.0.2"
+        versionCode = 35
+        versionName = "7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -76,6 +76,11 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    // JVM 单测允许调用 android.util.Log 等平台方法（返回默认值而不抛 "not mocked"）：
+    // 存储层的损坏恢复路径会在 catch 里记日志，若 Log 抛异常会中断恢复分支
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     // 手写识别 native 模块（NCNN + 单字手写模型）。

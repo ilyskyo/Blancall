@@ -7,11 +7,11 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -74,12 +74,15 @@ fun GlassSwitch(
         modifier = modifier
             .size(trackW, trackH)
             .clip(CircleShape)
-            .clickable(
+            // toggleable 而非 clickable：除点击外还带 ToggleableState 语义，
+            // 无屏阅读（TalkBack）能播报「开 / 关」状态；视觉与交互完全不变（无指示器、弹动同前）
+            .toggleable(
+                value = checked,
                 interactionSource = interactionSource,
                 indication = null,
                 enabled = enabled && onCheckedChange != null,
                 role = Role.Switch,
-                onClick = { onCheckedChange?.invoke(!checked) }
+                onValueChange = { onCheckedChange?.invoke(it) }
             )
             .alpha(if (enabled) 1f else 0.5f)
     ) {

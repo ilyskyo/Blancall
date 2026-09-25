@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.data.repository
 
 import android.content.Context
+import com.ilyskyo.blancall.util.AtomicFiles
 import org.json.JSONObject
 import java.io.File
 
@@ -92,7 +93,9 @@ class ReaderPrefsStore private constructor(private val file: File) {
                     }
                 )
             }
-            file.writeText(
+            // 原子写 + fsync 统一到 AtomicFiles（旧实现直接 writeText，中断会损坏本文件）
+            AtomicFiles.writeTextAtomic(
+                file,
                 JSONObject().apply {
                     put("version", 1)
                     put("articles", articles)

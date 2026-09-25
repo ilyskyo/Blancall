@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.data.repository
 
 import android.util.Log
+import com.ilyskyo.blancall.util.AtomicFiles
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -162,19 +163,8 @@ class HomeLayoutStore private constructor(private val file: File) {
             return
         }
         try {
-            file.parentFile?.mkdirs()
-            // 原子写：先写临时文件再改名，避免写一半被杀导致 JSON 损坏丢全部布局
-            val tmp = File(file.parentFile, file.name + ".tmp")
-            tmp.writeText(root.toString())
-            if (file.exists()) {
-                val bak = File(file.parentFile, file.name + ".bak")
-                if (bak.exists()) bak.delete()
-                file.renameTo(bak)
-            }
-            if (!tmp.renameTo(file)) {
-                file.writeText(root.toString())
-                tmp.delete()
-            }
+            // 原子写 + fsync + 备份轮换统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
+            AtomicFiles.writeTextAtomic(file, root.toString())
         } catch (_: Exception) { /* 写失败不影响主流程，下次保存重试 */ }
     }
 

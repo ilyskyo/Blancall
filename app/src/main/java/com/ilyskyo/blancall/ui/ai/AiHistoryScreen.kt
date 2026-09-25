@@ -10,12 +10,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -174,7 +176,10 @@ fun AiHistoryScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val dateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
-    val analysisOnly = initialSection == "analysis"
+    // 页面内筛选（全部 / 训练分析 / 对话）：进入时按 initialSection 预选；切换后随重建保留
+    var section by rememberSaveable {
+        mutableStateOf(if (initialSection == "analysis") "analysis" else "all")
+    }
 
     var sessions by remember { mutableStateOf<List<AiHistorySession>>(emptyList()) }
     var analyses by remember { mutableStateOf<List<AiAnalysisItem>>(emptyList()) }
@@ -233,7 +238,7 @@ fun AiHistoryScreen(
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
         ) {
-            // ── 顶部标题栏（返回 + 标题） ──
+            // ── 顶部标题栏（返回 + 标题，标题随当前筛选联动） ──
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -243,13 +248,33 @@ fun AiHistoryScreen(
                 BackButton(onClick = { onBack?.invoke() ?: navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    if (analysisOnly) "训练分析" else "AI 历史",
+                    when (section) {
+                        "analysis" -> "训练分析"
+                        "chat" -> "对话历史"
+                        else -> "AI 历史"
+                    },
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
             }
             HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // ── 分类筛选：同一页内切换，不再依赖外部入口参数 ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("all" to "全部", "analysis" to "训练分析", "chat" to "对话").forEach { (key, label) ->
+                    FilterChip(
+                        selected = section == key,
+                        onClick = { section = key },
+                        label = { Text(label) }
+                    )
+                }
+            }
 
             LazyColumn(
                 modifier = Modifier
@@ -258,8 +283,8 @@ fun AiHistoryScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // ═══ 训练分析 ═══
-                if (analyses.isNotEmpty()) {
+                // ═══ 训练分析（筛选为「对话」时不显示） ═══
+                if (section != "chat" && analyses.isNotEmpty()) {
                     item(key = "analysisTitle") {
                         SectionTitle("训练分析")
                     }
@@ -273,55 +298,44 @@ fun AiHistoryScreen(
                     }
                 }
 
-                // ═══ 对话历史（analysisOnly 视图下不显示）═══
-                if (!analysisOnly) {
-                    if (sessions.isEmpty() && analyses.isEmpty()) {
-                        item(key = "empty") {
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 96.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text("🤖", fontSize = 40.sp)
-                                Spacer(Modifier.height(12.dp))
-                                Text("暂无记录", style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(6.dp))
-                                Text("开启「保存与 AI 的对话」后，对话会自动保存在这里；训练分析也会保存在这里",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                            }
-                        }
-                    } else {
-                        item(key = "chatTitle") {
-                            SectionTitle("对话")
-                        }
-                        items(sessions, key = { "s_${it.id}" }) { session ->
-                            HistorySessionCard(
-                                session = session,
-                                dateFormat = dateFormat,
-                                onClick = { navController.navigate("ai_resume/${session.id}") },
-                                onDelete = { pendingDeleteSession = session }
-                            )
-                        }
+                // ═══ 对话历史（筛选为「训练分析」时不显示） ═══
+                if (section != "analysis" && sessions.isNotEmpty()) {
+                    item(key = "chatTitle") {
+                        SectionTitle("对话")
                     }
-                } else if (analyses.isEmpty()) {
+                    items(sessions, key = { "s_${it.id}" }) { session ->
+                        HistorySessionCard(
+                            session = session,
+                            dateFormat = dateFormat,
+                            onClick = { navController.navigate("ai_resume/${session.id}") },
+                            onDelete = { pendingDeleteSession = session }
+                        )
+                    }
+                }
+
+                // ═══ 空态：按当前筛选给出对应文案 ═══
+                val bothEmpty = sessions.isEmpty() && analyses.isEmpty()
+                if ((section == "all" && bothEmpty) ||
+                    (section == "analysis" && analyses.isEmpty()) ||
+                    (section == "chat" && sessions.isEmpty())
+                ) {
                     item(key = "empty") {
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 96.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("📊", fontSize = 40.sp)
-                            Spacer(Modifier.height(12.dp))
-                            Text("暂无训练分析", style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(6.dp))
-                            Text("完成一次练习并生成分析后，会保存在这里",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        when (section) {
+                            "analysis" -> HistoryEmptyState(
+                                emoji = "📊",
+                                title = "暂无训练分析",
+                                subtitle = "完成一次练习并生成分析后，会保存在这里"
+                            )
+                            "chat" -> HistoryEmptyState(
+                                emoji = "💬",
+                                title = "暂无对话记录",
+                                subtitle = "开启「保存与 AI 的对话」后，对话会自动保存在这里"
+                            )
+                            else -> HistoryEmptyState(
+                                emoji = "🤖",
+                                title = "暂无记录",
+                                subtitle = "开启「保存与 AI 的对话」后，对话会自动保存在这里；训练分析也会保存在这里"
+                            )
                         }
                     }
                 }
@@ -412,6 +426,33 @@ private fun SectionTitle(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 6.dp)
     )
+}
+
+/** 空态（三个筛选视图共用）：大号符号 + 主文案 + 淡色说明（居中排版） */
+@Composable
+private fun HistoryEmptyState(emoji: String, title: String, subtitle: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(emoji, fontSize = 40.sp)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+    }
 }
 
 /** 历史会话卡片：标题 + 时间 + 消息数 + 最后消息预览 + 删除 */

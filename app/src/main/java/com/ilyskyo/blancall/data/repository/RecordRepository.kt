@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.data.repository
 import android.util.Log
 import com.ilyskyo.blancall.data.model.MistakeDetail
 import com.ilyskyo.blancall.data.model.PracticeRecord
+import com.ilyskyo.blancall.util.AtomicFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +17,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 import java.util.concurrent.CountDownLatch
 
 /**
@@ -144,8 +144,10 @@ class RecordRepository(private val filePath: String) {
     }
 
     private suspend fun saveToFile() {
-        val snapshot = _records.value
         fileMutex.withLock {
+            // 快照必须在锁内读取：并发 insert 时锁外读取会拿到旧值，
+            // 待其获得锁后会用「旧快照」覆盖「新快照」写下的文件（内存新、磁盘旧）
+            val snapshot = _records.value
             // 文件写入切 IO 线程，避免在 Main 线程上做磁盘 IO（调用方多为 viewModelScope）
             withContext(Dispatchers.IO) {
                 try {
@@ -177,17 +179,8 @@ class RecordRepository(private val filePath: String) {
                         obj.put("mistakes", mistakesArr)
                         jsonArray.put(obj)
                     }
-                    val tmpFile = File(filePath + ".tmp")
-                    tmpFile.writeText(jsonArray.toString())
-                    val mainFile = File(filePath)
-                    if (mainFile.exists()) {
-                        val bak = File(filePath + ".bak")
-                        if (bak.exists()) bak.delete()
-                        mainFile.renameTo(bak)
-                    }
-                    if (!tmpFile.renameTo(mainFile)) {
-                        throw IOException("重命名临时文件失败: ${tmpFile.absolutePath} -> ${mainFile.absolutePath}")
-                    }
+                    // 原子写 + fsync 统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
+                    AtomicFiles.writeTextAtomic(File(filePath), jsonArray.toString())
                 } catch (e: Exception) {
                     Log.e("RecordRepository", "保存练习记录失败", e)
                     throw e

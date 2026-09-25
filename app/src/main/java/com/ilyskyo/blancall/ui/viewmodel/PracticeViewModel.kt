@@ -32,6 +32,7 @@ import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.StylusActivity
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
+import com.ilyskyo.blancall.util.AtomicFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -1845,7 +1846,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 val ansObj = org.json.JSONObject()
                 state.answers.forEach { (k, v) -> ansObj.put(k.toString(), v) }
                 json.put("answers", ansObj)
-                file.writeText(json.toString())
+                // 原子写 + fsync（练习进度是「继续练习」的恢复来源，防写一半被杀损坏）
+                AtomicFiles.writeTextAtomic(file, json.toString())
             }
         } catch (_: Exception) { /* 静默保存，不影响主流程 */ }
     }

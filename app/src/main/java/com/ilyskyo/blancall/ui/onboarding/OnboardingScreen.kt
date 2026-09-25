@@ -292,7 +292,8 @@ private fun OnboardingPageCard(
                 Text(
                     text = page.title,
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    // 字重红线：headline* 只能 SemiBold（设备楷体无 Bold 面会回退黑体）
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center
                 )

@@ -79,6 +79,25 @@ class MaskConfigStoreTest {
         val loaded = store.getConfigs(104).single { it.id == id }
         assertNull(loaded.contentHash)
     }
+
+    @Test
+    fun `主文件损坏时回读备份并保留损坏现场`() {
+        val id = store.saveConfig(105, cfg(0, "备份源", 10, listOf(MaskConfigStore.MaskSpan(0, 0, 1, 0))))
+        // 再存一次：上一版（"备份源"）轮换入 .bak
+        store.saveConfig(105, cfg(id, "备份源v2", 0, listOf(MaskConfigStore.MaskSpan(0, 0, 2, 0))))
+        val file = java.io.File(dir, "mask_config.json")
+        val healthy = file.readText()
+        file.writeText("{ 损坏的配置库")
+
+        // 读：主损坏 → 现场另存 .corrupt-* → 回读 .bak（上一版）
+        val loaded = store.getConfigs(105).single { it.id == id }
+        assertEquals("备份源", loaded.name)
+        val corrupt = dir.listFiles { f -> f.name.startsWith("mask_config.json.corrupt-") }
+        assertTrue("损坏现场应被另存保留", corrupt != null && corrupt.isNotEmpty())
+
+        // 收尾：写回健康内容，避免影响其它用例
+        file.writeText(healthy)
+    }
 }
 
 class CustomClozeStoreTest {
@@ -152,5 +171,24 @@ class CustomClozeStoreTest {
         assertTrue(loaded.levels.isEmpty())
         assertNull(loaded.contentHash)
         assertEquals(listOf(CustomClozeStore.BlankSpec(0, 0, 2)), loaded.blanks)
+    }
+
+    @Test
+    fun `主文件损坏时回读备份并保留损坏现场`() {
+        val id = store.saveConfig(205, cfg(0, "备份源", 10, listOf(CustomClozeStore.BlankSpec(0, 0, 2))))
+        // 再存一次：上一版（"备份源"）轮换入 .bak
+        store.saveConfig(205, cfg(id, "备份源v2", 0, listOf(CustomClozeStore.BlankSpec(0, 0, 3))))
+        val file = java.io.File(dir, "custom_cloze.json")
+        val healthy = file.readText()
+        file.writeText("{ 损坏的配置库")
+
+        // 读：主损坏 → 现场另存 .corrupt-* → 回读 .bak（上一版）
+        val loaded = store.getConfigs(205).single { it.id == id }
+        assertEquals("备份源", loaded.name)
+        val corrupt = dir.listFiles { f -> f.name.startsWith("custom_cloze.json.corrupt-") }
+        assertTrue("损坏现场应被另存保留", corrupt != null && corrupt.isNotEmpty())
+
+        // 收尾：写回健康内容，避免影响其它用例
+        file.writeText(healthy)
     }
 }
