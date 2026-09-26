@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.home
 
+import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
@@ -10,6 +11,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -47,9 +51,11 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -65,6 +71,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.TagOps
+import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.model.TagData
 import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
@@ -112,22 +120,25 @@ fun SentenceCardScreen(navController: NavController) {
     }
     val sentenceStore = remember { SentenceCardStore.getInstance(context.filesDir) }
 
-    // ── 抽句范围标签筛选（AppPrefs 持久化；空 = 全部文章）──
+    // ── 抽句范围筛选（AppPrefs 持久化）：标签 + 文章两个维度，空 = 该维度不限 ──
     val tagStore = remember { TagStore.getInstance(context.filesDir) }
     val tagData by tagStore.data.collectAsState()
     // 首次进入 priming：IO 读盘 → 发布 StateFlow
     LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
     val rawSentenceFilter by AppPrefs.sentenceTagFilterFlow.collectAsState()
+    val rawArticleFilter by AppPrefs.sentenceArticleFilterFlow.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
-    // 与现有标签对账：已删标签的筛选 id 仅本次忽略
+    // 与现有数据对账：已删标签 / 已删文章的筛选 id 仅本次忽略
     val validSentenceFilter = remember(rawSentenceFilter, tagData) {
         rawSentenceFilter.filterTo(mutableSetOf()) { id -> tagData.tags.any { it.id == id } }
     }
-    // 筛选后的文章池：筛选为空或命中为空 → 回退全部文章（防「每日一句」凭空消失）
-    val sentencePool = remember(articles, tagData, validSentenceFilter) {
-        if (validSentenceFilter.isEmpty()) articles
-        else TagOps.filterArticles(articles, tagData, validSentenceFilter, includeUntagged = false)
-            .ifEmpty { articles }
+    val validArticleFilter = remember(rawArticleFilter, articles) {
+        rawArticleFilter.filterTo(mutableSetOf()) { id -> articles.any { it.id == id } }
+    }
+    // 筛选后的文章池（组合与回退语义见 [resolveSentencePool]：任何维度命中为空都回退
+    // 上一级，保证「选了文章却抽不出句子」的空池不会出现）
+    val sentencePool = remember(articles, tagData, validSentenceFilter, validArticleFilter) {
+        resolveSentencePool(articles, tagData, validSentenceFilter, validArticleFilter)
     }
     // 来源文章 id → 标签 chips（句卡展示）
     val chipByArticle = remember(tagData) {
@@ -222,11 +233,14 @@ fun SentenceCardScreen(navController: NavController) {
 
     /** 三键评级：FSRS 更新 → 本地即时展示 → IO 落盘 → 自动前进 */
     fun rate(item: DailySentenceCoordinator.QueueItem, rating: FsrsEngine.Rating) {
-        // 主动复习轮允许对任意一张再次评级（含今天已评的）；日常模式保持「今天已评只读」
-        if (animating || (!reviewAll && ratedToday(item.key))) return
+        // 防连点：动画期间的点击一律拦截（按钮视觉不受动画影响）；
+        // 「今日已评」不再只读 —— 回看已评卡可再次点击改判（更新该卡评级与回显高亮）。
+        if (animating) return
         haptic()
         val ts = System.currentTimeMillis()
         val next = FsrsEngine.review(states[item.key] ?: FsrsEngine.CardState(), rating, ts)
+        // 记录本次所选评级名称：回看该卡时回显对应高亮（随 fsrs_state.json 持久化）
+        next.lastRating = rating.name
         states = states + (item.key to next)
         sessionRatings[item.key] = rating
         scope.launch(Dispatchers.IO) {
@@ -282,7 +296,7 @@ fun SentenceCardScreen(navController: NavController) {
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            if (validSentenceFilter.isEmpty()) "筛选" else "已筛选",
+                            if (validSentenceFilter.isEmpty() && validArticleFilter.isEmpty()) "筛选" else "已筛选",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -298,6 +312,12 @@ fun SentenceCardScreen(navController: NavController) {
                                 positioned = false
                             } else {
                                 reviewAll = true
+                                // 主动复习轻提示：系统 Toast 弹出（不再占用页面高度，卡片尺寸与常态一致）
+                                Toast.makeText(
+                                    context,
+                                    "已进入主动复习：全部句子已入队",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                             }
                             reviewRound++
                         },
@@ -319,23 +339,21 @@ fun SentenceCardScreen(navController: NavController) {
             }
 
             // 筛选生效指示（透明可见的一行小字，避免"句子突然变少"无从解释）
-            if (validSentenceFilter.isNotEmpty()) {
+            if (validSentenceFilter.isNotEmpty() || validArticleFilter.isNotEmpty()) {
                 Text(
-                    "已按标签筛选抽句范围（${validSentenceFilter.size} 个标签）",
+                    buildString {
+                        append("已限定抽句范围：")
+                        if (validSentenceFilter.isNotEmpty()) append("${validSentenceFilter.size} 个标签")
+                        if (validSentenceFilter.isNotEmpty() && validArticleFilter.isNotEmpty()) append(" · ")
+                        if (validArticleFilter.isNotEmpty()) append("${validArticleFilter.size} 篇文章")
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
                 )
             }
-            // 主动复习指示（让「复习」按钮的状态与可重复评级行为可解释）
-            if (reviewAll) {
-                Text(
-                    "主动复习中：全部句子均已入队，可对任意一张再次评级",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
-                )
-            }
+            // 主动复习提示已改为系统 Toast（见顶栏「复习」按钮）——页面不再渲染提示行，
+            // 复习态与常态的卡片布局因此完全一致（不会因提示行占位而变矮）。
 
             when {
                 items == null -> {
@@ -380,8 +398,20 @@ fun SentenceCardScreen(navController: NavController) {
                             .clipToBounds(),
                     ) {
                         Box(Modifier.fillMaxSize().padding(top = 22.dp)) {
+                            // 层叠方向按拖动方向选择：前进（上滑）露「下一张」、回看（下拉）露「上一张」；
+                            // 缩放进度统一取 |dragY|：即将接棒的卡从 0.94 平滑放大到 1.0，动画结束
+                            // 正好以全尺寸成为顶层 —— 修复「回看时底层显示成下一张」与「卡片从
+                            // 被挡住的卡尺寸（0.94）突然跳大」的尺寸跳变（真机反馈）。
+                            val towardBack = dragY.value > 0f
+                            val secondItem = items.getOrNull(
+                                if (towardBack) currentIndex - 1 else currentIndex + 1
+                            )
+                            val thirdItem = items.getOrNull(
+                                if (towardBack) currentIndex - 2 else currentIndex + 2
+                            )
+                            val stackP = (kotlin.math.abs(dragY.value) / flyDistance).coerceIn(0f, 1f)
                             // 后层卡（depth=2 最后画底层；上移偏移让顶部露边）
-                            items.getOrNull(currentIndex + 2)?.let { behind ->
+                            thirdItem?.let { behind ->
                                 SentenceCardFace(
                                     item = behind,
                                     state = states[behind.key],
@@ -398,8 +428,8 @@ fun SentenceCardScreen(navController: NavController) {
                                         },
                                 )
                             }
-                            // 次层卡（depth=1）：随上滑进度渐渐顶到最前
-                            items.getOrNull(currentIndex + 1)?.let { behind ->
+                            // 次层卡（depth=1）：随拖动进度渐渐顶到最前（前进/回看两方向一致）
+                            secondItem?.let { behind ->
                                 SentenceCardFace(
                                     item = behind,
                                     state = states[behind.key],
@@ -408,7 +438,7 @@ fun SentenceCardScreen(navController: NavController) {
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer {
-                                            val p = (-dragY.value / flyDistance).coerceIn(0f, 1f)
+                                            val p = stackP
                                             val base = 0.94f + (1f - 0.94f) * p
                                             scaleX = base
                                             scaleY = base
@@ -500,7 +530,16 @@ fun SentenceCardScreen(navController: NavController) {
                     }
 
                     // ── 三键评级（左→右：忘记 / 不熟 / 记住了，记住了主色强调） ──
-                    val canRate = (reviewAll || !ratedToday(current.key)) && !animating
+                    // 所选评级回显：会话内最新选择优先，否则取持久化的上次评级；未评卡不高亮
+                    // （避免预设误导）。点击即时选中与回看回显共用同一 selected 样式；
+                    // 按钮不再因「今日已评」禁用（支持改判），动画防连点由 rate() 内部 guard 兜底。
+                    val selectedRating: FsrsEngine.Rating? =
+                        if (ratedToday(current.key)) {
+                            resolveDisplayedRating(
+                                session = sessionRatings[current.key],
+                                persisted = states[current.key]?.lastRating,
+                            )
+                        } else null
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -514,24 +553,29 @@ fun SentenceCardScreen(navController: NavController) {
                             desc = "忘记了：下次复习间隔会缩短",
                             container = MaterialTheme.colorScheme.errorContainer,
                             content = MaterialTheme.colorScheme.onErrorContainer,
-                            enabled = canRate,
+                            enabled = true,
                             modifier = Modifier.weight(1f),
+                            selected = selectedRating == FsrsEngine.Rating.AGAIN,
                         ) { rate(current, FsrsEngine.Rating.AGAIN) }
                         RatingButton(
                             label = "不熟",
                             desc = "不熟：下次复习间隔略短",
                             container = MaterialTheme.colorScheme.secondaryContainer,
                             content = MaterialTheme.colorScheme.onSecondaryContainer,
-                            enabled = canRate,
+                            enabled = true,
                             modifier = Modifier.weight(1f),
+                            selected = selectedRating == FsrsEngine.Rating.HARD,
                         ) { rate(current, FsrsEngine.Rating.HARD) }
                         RatingButton(
                             label = "记住了",
                             desc = "记住了：下次复习间隔将变长",
                             container = MaterialTheme.colorScheme.primary,
                             content = MaterialTheme.colorScheme.onPrimary,
-                            enabled = canRate,
+                            enabled = true,
                             modifier = Modifier.weight(1f),
+                            selected = selectedRating == FsrsEngine.Rating.GOOD,
+                            // 主色底上的白色描边不可见：改黑色，与另两键的深色描边拉齐（仅颜色差异）
+                            borderColor = Color.Black,
                         ) { rate(current, FsrsEngine.Rating.GOOD) }
                     }
                 }
@@ -539,8 +583,9 @@ fun SentenceCardScreen(navController: NavController) {
         }
     }
 
-    // ── 抽句范围筛选面板（多选标签；即时写入 AppPrefs，背后句子池实时刷新）──
+    // ── 抽句范围筛选面板（标签 + 文章两个维度，多选；即时写入 AppPrefs，背后句子池实时刷新）──
     if (showFilterSheet) {
+        val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.5f).dp
         GlassModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
             Column(
                 modifier = Modifier
@@ -556,50 +601,114 @@ fun SentenceCardScreen(navController: NavController) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "只从所选标签的文章中抽句；不选 = 全部文章",
+                    "按标签 / 文章限定抽句范围；两者都选时取交集，都不选 = 全部文章",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
 
-                if (tagData.tags.isEmpty()) {
+                // 面板内容整体可滚动：标签与文章列表都可能较长
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxPanelHeight)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    // ── 维度一：按标签 ──
                     Text(
-                        "还没有标签，可在「设置 → 文章标签」中创建",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(vertical = 10.dp),
+                        "按标签",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                } else {
-                    tagData.tags.forEach { tag ->
-                        val checked = tag.id in validSentenceFilter
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val next = validSentenceFilter.toMutableSet()
-                                    if (!next.add(tag.id)) next.remove(tag.id)
-                                    AppPrefs.setSentenceTagFilter(next)
-                                }
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(checked = checked, onCheckedChange = null)
-                            Spacer(Modifier.width(4.dp))
-                            TagDot(tag = TagChipUi(tag.name, tag.color))
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                tag.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                "${articles.count { a -> tagData.links[a.id]?.contains(tag.id) == true }} 篇",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            )
+                    Spacer(Modifier.height(2.dp))
+                    if (tagData.tags.isEmpty()) {
+                        Text(
+                            "还没有标签，可在「设置 → 文章标签」中创建",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(vertical = 10.dp),
+                        )
+                    } else {
+                        tagData.tags.forEach { tag ->
+                            val checked = tag.id in validSentenceFilter
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val next = validSentenceFilter.toMutableSet()
+                                        if (!next.add(tag.id)) next.remove(tag.id)
+                                        AppPrefs.setSentenceTagFilter(next)
+                                    }
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = checked, onCheckedChange = null)
+                                Spacer(Modifier.width(4.dp))
+                                TagDot(tag = TagChipUi(tag.name, tag.color))
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    tag.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    "${articles.count { a -> tagData.links[a.id]?.contains(tag.id) == true }} 篇",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // ── 维度二：按文章（直接勾选具体文章）──
+                    Text(
+                        "按文章",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    if (articles.isEmpty()) {
+                        Text(
+                            "还没有文章",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(vertical = 10.dp),
+                        )
+                    } else {
+                        articles.sortedByDescending { it.updatedAt }.forEach { a ->
+                            val checked = a.id in validArticleFilter
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val next = validArticleFilter.toMutableSet()
+                                        if (!next.add(a.id)) next.remove(a.id)
+                                        AppPrefs.setSentenceArticleFilter(next)
+                                    }
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = checked, onCheckedChange = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    a.title.ifBlank { "未命名文章" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    "${a.content.length} 字符",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                )
+                            }
                         }
                     }
                 }
@@ -609,7 +718,11 @@ fun SentenceCardScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = { AppPrefs.setSentenceTagFilter(emptySet()) }) {
+                    TextButton(onClick = {
+                        // 清除筛选 = 两个维度一起清（否则仍被另一维度限定，不符合直觉）
+                        AppPrefs.setSentenceTagFilter(emptySet())
+                        AppPrefs.setSentenceArticleFilter(emptySet())
+                    }) {
                         Text("清除筛选")
                     }
                     Spacer(Modifier.weight(1f))
@@ -620,6 +733,36 @@ fun SentenceCardScreen(navController: NavController) {
             }
         }
     }
+}
+
+/**
+ * 回显所选评级：会话内最新选择优先，否则解析持久化的上次评级名称；
+ * 空/未知 → null（不显示高亮）。回归测试见 RateButtonStateTest。
+ */
+internal fun resolveDisplayedRating(
+    session: FsrsEngine.Rating?,
+    persisted: String?,
+): FsrsEngine.Rating? =
+    session ?: persisted?.let { name ->
+        FsrsEngine.Rating.entries.firstOrNull { it.name == name }
+    }
+
+/**
+ * 抽句文章池：文章维度先行限定（不选 = 全部），标签维度再取交集；
+ * 任一维度命中为空都回退上一级结果（交集空回退文章维度、文章命中空回退全部），
+ * 保证「选了文章却抽不出句子」的空池不会出现。回归测试见 SentenceCardPoolTest。
+ */
+internal fun resolveSentencePool(
+    articles: List<Article>,
+    tagData: TagData,
+    tagFilter: Set<Long>,
+    articleFilter: Set<Long>,
+): List<Article> {
+    val byArticle = if (articleFilter.isEmpty()) articles
+    else articles.filter { it.id in articleFilter }.ifEmpty { articles }
+    return if (tagFilter.isEmpty()) byArticle
+    else TagOps.filterArticles(byArticle, tagData, tagFilter, includeUntagged = false)
+        .ifEmpty { byArticle }
 }
 
 /** 会话评级记录的 Saveable：序列化为 "key|RATING" 字符串列表（仅旋转恢复用，不落盘） */

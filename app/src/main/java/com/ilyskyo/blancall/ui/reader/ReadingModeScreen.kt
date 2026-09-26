@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -171,7 +172,11 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     }
     var readerPrefs by readerPrefsState
     fun updateReaderPrefs(transform: (ReaderPrefs) -> ReaderPrefs) {
-        val next = transform(readerPrefs)
+        // 基准取 store 最新值（而非内存快照）：遮挡浮层（自定义配置列表/编辑器）内的
+        // 「使用 / 保存 / 删除」只写 store + 磁盘，若基于旧内存对象整体回写，会把浮层
+        // 刚写入的字段（自定义配置 id / 粒度 / 开关）覆盖回旧值 —— 表现为「选过自定义
+        // 配置后一改设置就失效、配置名也丢」（真机反馈）。
+        val next = transform(loadArticleReaderPrefs(prefsStore, articleKey))
         readerPrefs = next
         prefsStore.save(articleKey, next)
     }
@@ -236,10 +241,14 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     // 编辑会话 token：每次从列表进入编辑（含新建）自增，并 key 到编辑页上 ——
     // 不同会话的 rememberSaveable 槽位完全隔离，防上一套配置的编辑现场 / 保存目标
     // 泄漏到下一次编辑（用户反馈「点旧配置进去内容不对、保存没进去」）。
-    // 旋转重建不经过入口回调，token 不变，编辑现场快照（rememberSaveable）得以正常恢复。
-    var maskEditSession by remember { mutableLongStateOf(0L) }
-    // 当前「使用中」的自定义遮挡配置名：供设置面板「自定义」chip 展示（如「自定义 · 我大一」）。
-    // 配置列表/编辑器关闭或切换会话后重新读取（AppPrefs 存的是 configId，名字需从 store 反查）
+    // ⚠️ 必须 rememberSaveable（而非 remember）：进程被系统回收后恢复时，若 token 归零
+    // 重走 1、2、3…，会再次命中「上次被杀时的会话槽位」——编辑页的 rememberSaveable
+    // （savedId / 编辑现场快照 / 名称）被跨会话注入，出现「保存不生效、回填丢失」。
+    // saveable 保证 token 单调向前、从不复用已消费的槽位键。
+    var maskEditSession by rememberSaveable { mutableLongStateOf(0L) }
+    // 当前「使用中」的自定义遮挡配置名：设置面板该粒度的 chip 直接以它显示
+    //（无配置时 chip 回退默认文案「自定义」）。列表/编辑器关闭或切换会话后重新读取
+    //（prefs 存的是 configId，名字需从 store 反查）
     var maskConfigName by remember { mutableStateOf("") }
     LaunchedEffect(maskOverlay, maskEditSession, article.id, readerPrefs.occlusionCustomConfigId) {
         val id = readerPrefs.occlusionCustomConfigId
@@ -252,6 +261,14 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                 }.getOrNull().orEmpty()
             }
         } else ""
+    }
+    // 浮层（列表/编辑器）开启/关闭/切换会话时，从 store 重读本文章阅读设置：
+    // 浮层内的写入（使用配置 / 保存新建 / 删除清指向）落在 store + 磁盘，阅读页内存态
+    // 不会自动感知 —— 不同步则正文仍按旧 id/粒度解析（自定义遮挡不生效）、chip 显示旧
+    // 配置名或不显示。store.get 读缓存，浮层写入立即可见；值相同则不动状态（防抖）。
+    LaunchedEffect(maskOverlay, maskEditSession) {
+        val fresh = withContext(Dispatchers.IO) { prefsStore.get(articleKey) }
+        if (fresh != null && fresh != readerPrefsState.value) readerPrefsState.value = fresh
     }
     // 当前节内的滚动比例（0~1），由每页回调上报，用于更细的进度条
     var inPageFraction by remember { mutableFloatStateOf(0f) }
@@ -885,8 +902,10 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     .pointerInput(Unit) { detectTapGestures { } }
             ) {
                 if (maskOverlay == "edit") {
-                    // key(会话)：见 maskEditSession 注释 —— 不同编辑会话的状态完全隔离
-                    androidx.compose.runtime.key(maskEditSession) {
+                    // key(会话)：见 maskEditSession 注释 —— 不同编辑会话的状态完全隔离。
+                    // 前缀 "maskEdit" 用于升级换代：换 tag 即整体更换槽位键命名空间，
+                    // 旧版本残留的已保存状态不会再被任何新会话命中/消费。
+                    androidx.compose.runtime.key("maskEdit", maskEditSession) {
                         MaskConfigEditScreen(
                             article = article,
                             configId = maskEditConfigId,

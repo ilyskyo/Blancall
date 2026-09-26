@@ -212,7 +212,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
-                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是删除/编辑。
+                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是删除/编辑/自定义挖空。
                     // 标题字号 = 右侧两行总高度（上下边缘与作者/字符数对齐）
                     var metaHeightPx by remember { mutableIntStateOf(0) }
                     val titleFontSize = if (metaHeightPx > 0) {
@@ -273,6 +273,15 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             modifier = Modifier.height(40.dp)
                         ) {
                             Text("编辑", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        // 自定义挖空：原底部操作栏入口上移至顶部（删除/编辑右侧），文案更明确；
+                        // 点击进入当前文章的自定义挖空配置列表页（路由与行为与原底部入口完全一致）
+                        GlassButton(
+                            onClick = { navController.navigate("custom_cloze_list/${art.id}") },
+                            modifier = Modifier.height(40.dp)
+                        ) {
+                            Text("自定义挖空", style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
@@ -479,7 +488,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 液态玻璃操作栏：学习统计 / 阅读模式 / AI / 开始练习
+            // 液态玻璃操作栏：学习统计 / 阅读模式 / 句子卡 / AI / 开始练习
             // 玻璃 = LiquidGlassPageBar（自绘中性光斑采样源，bind 兄弟画布——
             // 不能 bind 页面宿主 pageHost：宿主是玻璃的祖先，PreDraw 反馈循环会致
             // RenderThread 栈溢出闪退；参数对齐导航栏基准（blur 6 / dispersion 0 / 折射 20·70 / 染色 0.04·0.06）
@@ -526,9 +535,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     GlassActionItem("阅读模式", Modifier.weight(1f), enabled = barVisible) {
                         readingMode = true
                     }
-                    // 自定义挖空：进入配置列表页（新建 / 编辑 / 长按开始练习）
-                    GlassActionItem("自定义", Modifier.weight(1f), enabled = barVisible) {
-                        navController.navigate("custom_cloze_list/${art.id}")
+                    // 句子卡：进入句子卡片大卡片界面（沿用既有 sentence_cards 全局入口路由；
+                    // 无触点锚点时浮起转场自动回退默认动画，不会错乱）
+                    GlassActionItem("句子卡", Modifier.weight(1f), enabled = barVisible) {
+                        navController.navigate("sentence_cards")
                     }
                     // AI 对话入口（设置中启用 AI 功能后才显示）
                     if (aiEnabled) {

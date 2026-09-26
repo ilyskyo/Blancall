@@ -3,6 +3,9 @@
 
 package com.ilyskyo.blancall.ui.home
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,6 +36,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -103,11 +108,16 @@ internal fun SentenceCardFace(
                 Spacer(Modifier.height(4.dp))
                 TagChipRow(tags = tags, maxChips = 2)
             }
+            // 正文区垂直手势的归属（切卡热区扩展的关键）：
+            // - 文本溢出需滚动时：正文区滑动 = 滚动文本（保持原行为，不冲突）；
+            // - 文本未溢出（绝大多数句子）：禁用它对拖拽的拦截，事件冒泡给外层卡片手势 ⇒
+            //   从卡片顶端到正文文字的整段区域都可上下滑切卡，阈值/手感与顶端手势完全一致。
+            val textScrollState = rememberScrollState()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(textScrollState, enabled = textScrollState.maxValue > 0),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -130,7 +140,7 @@ internal fun SentenceCardFace(
     }
 }
 
-/** 评级按钮（统一 52dp 高、圆角 16dp、带效果描述的无障碍语义） */
+/** 评级按钮（统一 52dp 高、圆角 16dp、带效果描述的无障碍语义；[selected] = 选中高亮） */
 @Composable
 internal fun RatingButton(
     label: String,
@@ -139,8 +149,19 @@ internal fun RatingButton(
     content: Color,
     enabled: Boolean,
     modifier: Modifier,
+    /** 选中高亮：点击即时选中与回看回显共用同一样式（同内容色描边渐显） */
+    selected: Boolean = false,
+    /** 选中描边色：默认随内容色（深色系）；「记住了」主色底上的白色不可见，单独传黑色拉齐 */
+    borderColor: Color = content,
     onClick: () -> Unit,
 ) {
+    // 选中高亮：用描边色渐显（透明 ↔ 描边色过渡，200ms）——
+    // 点击即时选中与「回看已评卡回显上次所选」共用同一样式，不引入第二套高亮
+    val selectedBorder by animateColorAsState(
+        targetValue = if (selected) borderColor else Color.Transparent,
+        animationSpec = tween(200),
+        label = "ratingSelectedBorder",
+    )
     Button(
         onClick = onClick,
         enabled = enabled,
@@ -148,6 +169,7 @@ internal fun RatingButton(
             .height(52.dp)
             .semantics { contentDescription = desc },
         shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(2.dp, selectedBorder),
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
             contentColor = content,
@@ -156,7 +178,13 @@ internal fun RatingButton(
         ),
         contentPadding = PaddingValues(horizontal = 0.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        // 系统黑体（SansSerif）：主操作按钮不用主题的楷体/衬线体（与首页悬浮「完成」按钮同规范）
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontFamily = FontFamily.SansSerif,
+            maxLines = 1,
+        )
     }
 }
 

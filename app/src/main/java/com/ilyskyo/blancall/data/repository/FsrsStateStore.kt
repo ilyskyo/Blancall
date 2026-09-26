@@ -107,7 +107,8 @@ class FsrsStateStore private constructor(private val file: File) {
                 due = o.optLong("due", 0L),
                 lastReview = o.optLong("lastReview", 0L),
                 reviewCount = o.optInt("reviewCount", 0),
-                lapses = o.optInt("lapses", 0)
+                lapses = o.optInt("lapses", 0),
+                lastRating = o.optString("lastRating", "")
             )
             if (key.startsWith(SENTENCE_KEY_PREFIX)) {
                 if (isSentenceKey(key)) sentenceStates[key] = state
@@ -128,6 +129,7 @@ class FsrsStateStore private constructor(private val file: File) {
         .put("difficulty", s.difficulty).put("stability", s.stability)
         .put("due", s.due).put("lastReview", s.lastReview)
         .put("reviewCount", s.reviewCount).put("lapses", s.lapses)
+        .put("lastRating", s.lastRating)
 
     private fun persist() {
         try {

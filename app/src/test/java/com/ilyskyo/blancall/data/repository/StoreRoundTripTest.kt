@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.data.repository
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -97,6 +98,39 @@ class MaskConfigStoreTest {
 
         // 收尾：写回健康内容，避免影响其它用例
         file.writeText(healthy)
+    }
+
+    @Test
+    fun `保存后 getConfig 精确回填且按文章隔离（编辑器重进回填的数据源）`() {
+        val id = store.saveConfig(107, cfg(0, "回填源", 88, listOf(MaskConfigStore.MaskSpan(2, 4, 9, 3))))
+        val one = store.getConfig(107, id)!!
+        assertEquals("回填源", one.name)
+        assertEquals(listOf(MaskConfigStore.MaskSpan(2, 4, 9, 3)), one.spans)
+        // 列表页与编辑器回填读同一套数据
+        assertEquals(id, store.getConfigs(107).single().id)
+        // 按文章隔离：同一 configId 在其它文章下必须查不到（防串篇）
+        assertNull(store.getConfig(108, id))
+    }
+
+    @Test
+    fun `主文件损坏且无备份：保存被拦截，不得以空库覆盖（防抹库回归）`() {
+        val keepId = store.saveConfig(106, cfg(0, "保命配置", 7, listOf(MaskConfigStore.MaskSpan(0, 0, 1, 0))))
+        val file = java.io.File(dir, "mask_config.json")
+        val healthy = file.readText()
+        val bak = java.io.File(dir, "mask_config.json.bak")
+        if (bak.exists()) bak.delete()
+        file.writeText("{ 再损坏一次")
+
+        // 读：损坏且无备份 → 空库（现场另存 .corrupt-* 供人工恢复）
+        assertTrue(store.getConfigs(106).isEmpty())
+        // 写：粘性 loadFailed 必须拦截 —— 旧实现尾部用 file.exists() 判定（损坏文件
+        // 已被改名搬走→恒为 false）会误放行，以空 root 写盘抹掉全部文章的配置
+        store.saveConfig(106, cfg(0, "不该写进去", 8, listOf(MaskConfigStore.MaskSpan(0, 0, 1, 0))))
+        assertFalse("损坏且无备份时必须拒绝写盘", file.exists())
+
+        // 收尾：恢复健康数据（成功解析会清除粘性标记），不影响其它用例
+        file.writeText(healthy)
+        assertEquals("保命配置", store.getConfigs(106).single { it.id == keepId }.name)
     }
 }
 

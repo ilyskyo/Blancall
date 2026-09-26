@@ -531,11 +531,10 @@ internal fun ReadingSettingsSheet(
                                 onDismiss()
                             },
                             label = {
-                                Text(
-                                    if (customActive && maskConfigName.isNotBlank()) {
-                                        "自定义 · $maskConfigName"
-                                    } else "自定义"
-                                )
+                                // 配置名回显（单一来源）：有使用中的配置就显示其名称，
+                                // 没有则回退默认文案「自定义」——不再分「选中后显示固定文案」
+                                // 与「配置名回显」两套逻辑
+                                Text(maskConfigName.ifBlank { "自定义" })
                             },
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = when {

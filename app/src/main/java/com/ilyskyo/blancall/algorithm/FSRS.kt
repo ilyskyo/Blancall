@@ -60,7 +60,9 @@ object FsrsEngine {
         /** 练习次数 */
         var reviewCount: Int = 0,
         /** 遗忘次数（评级为 AGAIN 的次数） */
-        var lapses: Int = 0
+        var lapses: Int = 0,
+        /** 最近一次评级名称（AGAIN/HARD/GOOD；空 = 未知）。句子卡片回看时回显所选高亮用 */
+        var lastRating: String = ""
     )
 
     /** FSRS-6 官方默认参数（Anki 开源默认权重 w[0..20]，21 个） */

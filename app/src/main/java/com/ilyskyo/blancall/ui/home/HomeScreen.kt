@@ -150,7 +150,8 @@ fun HomeScreen(
     // ── 首页滚动手势（无顶栏）：下拉揭示品牌区 ──
     val homeScrollState = rememberScrollState()
     // 下拉位移（px）：滚到顶再继续下拉 → 内容整体**跟手**下移，顶部露出空白区显示
-    // 「Blancall + 副标题」；**松手立即回弹**。Animatable：拖动 snapTo 跟手、松手 animateTo 回弹。
+    // 「Blancall + 副标题」；**松手立即回弹**（松手后的惯性帧不再跟手，见 onPreScroll）。
+    // Animatable：拖动 snapTo 跟手、松手 animateTo 回弹。
     val homePullOffset = remember { Animatable(0f) }
     val homePullScope = rememberCoroutineScope()
     val homePullMaxPx = with(LocalDensity.current) { HOME_PULL_MAX.toPx() }
@@ -184,15 +185,21 @@ fun HomeScreen(
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val dy = available.y
                 if (dy > 0f && homeScrollState.value <= 0f) {
-                    // 滚到顶再继续下拉：内容跟手下移（阻尼渐重——越拉越沉、行程封顶）
-                    homePullScope.launch {
-                        val damping = 1f -
-                            (homePullOffset.value / homePullMaxPx).coerceIn(0f, 1f) * 0.65f
-                        homePullOffset.snapTo(
-                            (homePullOffset.value + dy * damping).coerceIn(0f, homePullMaxPx)
-                        )
+                    if (shouldAccumulateHomePull(source)) {
+                        // 滚到顶再继续下拉（手指按住拖拽）：内容跟手下移（阻尼渐重——越拉越沉、行程封顶）
+                        homePullScope.launch {
+                            val damping = 1f -
+                                (homePullOffset.value / homePullMaxPx).coerceIn(0f, 1f) * 0.65f
+                            homePullOffset.snapTo(
+                                (homePullOffset.value + dy * damping).coerceIn(0f, homePullMaxPx)
+                            )
+                        }
+                    } else if (homePullOffset.value > 0f) {
+                        // 松手后的惯性帧：不积累位移；若仍有展开残留（回弹尚未启动/曾被取消），
+                        // 借惯性帧兜底拉起回弹 —— 任何松手路径都不得停在露出态
+                        settleHomePull()
                     }
-                    // 消费本段下拉：内容由上面自行下移，不触发系统过度滚动光效
+                    // 消费本段下拉：内容由上面自行下移（或回弹中），不触发系统过度滚动光效
                     return Offset(0f, dy)
                 }
                 if (dy != 0f && homePullOffset.value > 0f) {
@@ -1415,6 +1422,16 @@ private const val STATS_POPUP_AUTO_DISMISS_MS = 6000L
 
 /** 下拉揭示区最大行程：滚到顶再继续下拉这么多即到顶（跟手 + 阻尼渐重）。 */
 private val HOME_PULL_MAX = 140.dp
+
+/**
+ * 下拉位移「跟手积累」是否允许：**仅限用户拖拽（手指按住）**。
+ *
+ * 松手后的惯性帧（fling）不得再扩大位移——惯性帧会把品牌区继续往外拽、并抢占
+ * （取消）松手回弹动画（Animatable 互斥锁），惯性结束又无收尾回调 ⇒ 品牌区停在
+ * 露出态不再自动收回（真机 bug）。回归测试见 HomePullTest。
+ */
+internal fun shouldAccumulateHomePull(source: NestedScrollSource): Boolean =
+    source == NestedScrollSource.Drag
 
 /**
  * 「学习数据」悬浮弹窗：仅当用户**刚做完一次练习**且首页没有学习数据卡片时弹出。

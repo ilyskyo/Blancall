@@ -58,7 +58,12 @@ class MaskConfigStore private constructor(private val file: File) {
      * 安全语义（重要）：解析失败时**不能**当作「空配置库」——旧实现直接返回 freshRoot()，
      * 之后的保存会以空 root 覆盖写盘，把其他文章的全部遮挡配置静默抹除。
      * 现在：① 主文件损坏 → 先另存 .corrupt-<ts>（供事后人工恢复）再回读 .bak；
-     * ② 备份也不可用 → 置 loadFailed 并在 writeRoot 拒绝写盘。
+     * ② 备份也不可用 → loadFailed 置位并在 writeRoot 拒绝写盘。
+     *
+     * loadFailed 是**粘性**标记：主文件读坏即置位，只有「成功解析主文件或备份」才清除。
+     * 旧实现在尾部用 `loadFailed = file.exists()` 判定 —— 主文件损坏时已被
+     * preserveCorruptFile 改名搬走，该表达式恒为 false，会把「损坏且无备份」这条危险
+     * 路径误判成「首次使用」放行写盘，下一次保存即以空 root 抹掉全库（已修复）。
      */
     private fun readRoot(): JSONObject {
         if (file.exists()) {
@@ -66,7 +71,8 @@ class MaskConfigStore private constructor(private val file: File) {
                 loadFailed = false
                 return migrate(JSONObject(file.readText()))
             } catch (_: Exception) {
-                // 主文件损坏：保留现场后落到下方备份分支
+                // 主文件损坏：置粘性危险标记（仅由成功解析主/备份清除）并保留现场
+                loadFailed = true
                 preserveCorruptFile()
             }
         }
@@ -79,8 +85,8 @@ class MaskConfigStore private constructor(private val file: File) {
                 // 备份也不可用，落到下方
             }
         }
-        // 文件确实不存在（首次使用）→ 正常空库；文件存在却读不出来且无备份 → 危险状态，禁止写盘
-        loadFailed = file.exists()
+        // 直接返回空库：loadFailed 保留「是否损坏过」的粘性结论 ——
+        // 首次使用为 false（正常空库、可写）；损坏搬迁后为 true（writeRoot 拒绝写盘）
         return freshRoot()
     }
 

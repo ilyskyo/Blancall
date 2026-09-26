@@ -199,10 +199,14 @@ fun MaskConfigEditScreen(
         repeat(paragraphs.size) { levels.add(0) }
     }
 
-    // 有快照 = 重建恢复：现场（可能含未保存编辑）比磁盘新，直接回放；
-    // **只回放归属本配置（configId 一致）的现场** —— 跨配置（列表里点了另一套）必须丢弃，
-    // 改从磁盘加载（否则会拿着上一套的现场把新配置的内容顶掉，即“点旧配置让重新编辑”）
-    if (!snapshotApplied && editorSnapshot != null && editorSnapshotFor == configId) {
+    // 有快照 = 恢复现场：现场（可能含未保存编辑）比磁盘新，直接回放；
+    // **仅限已有配置（configId>0）且快照归属一致**：
+    // ① 新建（configId<=0）必须从空白起步 —— 新建会话的快照归属也是 -1，
+    //    与「上一会话/跨进程恢复残留的快照」无法区分（同为 -1），一律禁止回放
+    //    可从根上杜绝「点新建却带出旧现场」；
+    // ② 已有配置仍按「快照归属 == 本配置」严格校验，跨配置（列表里点了另一套）必须
+    //    丢弃、改从磁盘加载（否则会拿着上一套的现场把新配置的内容顶掉）。
+    if (!snapshotApplied && configId > 0 && editorSnapshot != null && editorSnapshotFor == configId) {
         snapshotApplied = true
         runCatching {
             val o = JSONObject(editorSnapshot!!)
@@ -243,9 +247,12 @@ fun MaskConfigEditScreen(
     LaunchedEffect(article.id, configId) {
         val cfgs = withContext(Dispatchers.IO) { store.getConfigs(article.id) }
         existingConfigs = cfgs
-        // 保存目标与入口参数强制对齐（与列表页的会话 key 双保险）：
-        // 防残留状态把保存写到另一套配置（用户反馈「旧配置没保存进去」）
-        if (configId > 0 && savedId != configId) savedId = configId
+        // 保存目标无条件对齐入口参数：新建（configId<=0）一律重置为 -1 ——
+        // 若沿用上一会话/跨进程恢复残留的 savedId>0，requestSave 会跳过命名弹窗、
+        // doSave 按旧 id「覆盖更新」，表现为「新建保存后列表里看不到新配置、旧配置被改乱」；
+        // 已有配置同样以入口 configId 为准（与列表页的会话 key 双保险）。
+        val targetId = if (configId > 0) configId else -1L
+        if (savedId != targetId) savedId = targetId
         if (configId > 0 && !snapshotApplied) {
             cfgs.firstOrNull { it.id == configId }?.let { cfg ->
                 editingName = cfg.name

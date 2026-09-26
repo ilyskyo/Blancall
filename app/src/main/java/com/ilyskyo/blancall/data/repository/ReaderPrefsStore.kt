@@ -19,6 +19,9 @@ import java.io.File
  *
  * 存储：filesDir/reader_prefs.json
  * `{"version":1,"articles":{"<articleId>":{"bgMode":0,...}}}`
+ *
+ * 构造函数 internal：生产代码统一走 [getInstance]（进程级单例），
+ * open 给单测用临时文件直就连实例，验证序列化口径（含 occlusionCustomConfigId）。
  */
 data class ReaderPrefs(
     val bgMode: Int,
@@ -33,7 +36,7 @@ data class ReaderPrefs(
     val occlusionCustomConfigId: Long
 )
 
-class ReaderPrefsStore private constructor(private val file: File) {
+class ReaderPrefsStore internal constructor(private val file: File) {
 
     private var cache: MutableMap<Long, ReaderPrefs>? = null
 

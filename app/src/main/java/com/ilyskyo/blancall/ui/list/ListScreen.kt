@@ -15,10 +15,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -128,7 +127,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         fsrsStates = fsrsStore.allStates()
     }
     // 预计算每篇文章复习状态，避免 Lazy 列表逐项组合时重复对记录排序（记录多的文章尤甚）。
-    // 同时配合下方 items/gridItems 的 contentType，消除进入列表与滚动时的重复组合开销。
+    // 同时配合下方 items/staggeredItems 的 contentType，消除进入列表与滚动时的重复组合开销。
     val reviewStatusByArticle = remember(recordsByArticle, fsrsStates) {
         sortedArticles.associate { article ->
             article.id to EbbinghausScheduler.getReviewStatus(
@@ -383,14 +382,20 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             // 手机也排成双列、标题被截断（真机反馈）；该函数下限已放通到 1 列（见 Adaptive.kt）。
             val gridColumns = if (LocalIsLargeScreen) 2 else 1
             if (gridColumns > 1) {
-                LazyVerticalGrid(
+                // 双列用**交错网格**（每列独立纵向流式）而非等高行网格：
+                // 标题超长的卡片会完整撑高（标题不截断，见 ArticleCard 的硬性要求），
+                // 等高行网格下同行较矮卡的正常槽位会因该行被撑高而露出大块空白
+                //（真机反馈「超长标题卡之后莫名空一块」）。交错网格下每张卡紧跟本列
+                // 上一张继续排列，空白完全消除；卡片尺寸（内容自适应）、间距（10dp）
+                // 与阅读顺序均保持不变。
+                LazyVerticalStaggeredGrid(
                     modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
-                    columns = GridCells.Fixed(gridColumns),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    columns = StaggeredGridCells.Fixed(gridColumns),
+                    verticalItemSpacing = 10.dp,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 12.dp)
                 ) {
-                gridItems(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
+                staggeredItems(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
                     ArticleCard(
                         article = article,
                         tags = chipTagsByArticle[article.id].orEmpty(),

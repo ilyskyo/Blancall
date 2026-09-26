@@ -116,8 +116,12 @@ object AppPrefs {
     val articleTagIncludeUntaggedFlow: StateFlow<Boolean> = _articleTagIncludeUntaggedFlow.asStateFlow()
 
     private val _sentenceTagFilterFlow = MutableStateFlow<Set<Long>>(emptySet())
-    /** 句子卡片抽句范围标签筛选：选中的标签 id 集合（空 = 全部文章） */
+    /** 句子卡片抽句范围标签筛选：选中的标签 id 集合（空 = 标签维度不限） */
     val sentenceTagFilterFlow: StateFlow<Set<Long>> = _sentenceTagFilterFlow.asStateFlow()
+
+    private val _sentenceArticleFilterFlow = MutableStateFlow<Set<Long>>(emptySet())
+    /** 句子卡片抽句范围文章筛选：选中的文章 id 集合（空 = 文章维度不限；与标签维度组合见 resolveSentencePool） */
+    val sentenceArticleFilterFlow: StateFlow<Set<Long>> = _sentenceArticleFilterFlow.asStateFlow()
 
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
@@ -146,6 +150,8 @@ object AppPrefs {
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         _articleTagIncludeUntaggedFlow.value = prefs.getBoolean("article_tag_include_untagged", false)
         _sentenceTagFilterFlow.value = prefs.getStringSet("sentence_tag_filter", emptySet())
+            ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
+        _sentenceArticleFilterFlow.value = prefs.getStringSet("sentence_article_filter", emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 36f)
         _readingLineHeightFlow.value = prefs.getFloat("reading_line_height", 2.0f).coerceIn(1.4f, 2.4f)
@@ -404,11 +410,18 @@ object AppPrefs {
         _articleTagIncludeUntaggedFlow.value = includeUntagged
     }
 
-    /** 设置句子卡片抽句范围标签筛选（空集 = 全部文章） */
+    /** 设置句子卡片抽句范围标签筛选（空集 = 标签维度不限） */
     fun setSentenceTagFilter(selectedTagIds: Set<Long>) {
         if (!::prefs.isInitialized) return
         prefs.edit { putStringSet("sentence_tag_filter", selectedTagIds.map { it.toString() }.toSet()) }
         _sentenceTagFilterFlow.value = selectedTagIds
+    }
+
+    /** 设置句子卡片抽句范围文章筛选（空集 = 文章维度不限） */
+    fun setSentenceArticleFilter(selectedArticleIds: Set<Long>) {
+        if (!::prefs.isInitialized) return
+        prefs.edit { putStringSet("sentence_article_filter", selectedArticleIds.map { it.toString() }.toSet()) }
+        _sentenceArticleFilterFlow.value = selectedArticleIds
     }
 
     // ── 沉浸阅读模式设置 ──
