@@ -849,9 +849,24 @@ private fun ArticleCard(
 // ========== PDF 导出逻辑 ==========
 
 /**
+ * 空位宽度口径（「挖空 PDF」导出）：把 displayText 中固定的 "___" 占位符逐空替换为
+ * 与「被挖字数」等长的全角下划线串（1 个全角下划线 ≈ 1 个汉字书写宽），
+ * 打印后可直接按真实字数在空位上手写作答（PdfExporter 以蓝色渲染该串）。
+ * displayText 中 "___" 的出现顺序与 [blankLengths] 一一对应
+ *（generateSentenceCloze 按句序、句内位置顺序逐空替换）。
+ */
+internal fun sizeClozeBlanks(displayText: String, blankLengths: List<Int>): String {
+    var i = 0
+    return Regex("_{3,}").replace(displayText) { _ ->
+        // 兜底 3 字宽：长度缺失（理论不可达）时保持原占位观感
+        "＿".repeat(blankLengths.getOrElse(i++) { 3 }.coerceAtLeast(1))
+    }
+}
+
+/**
  * 构建导出配置（纯函数，可单测）：
  * - [asCloze]=false 原文导出：displayText = 完整正文（不含任何挖空/空位），blanks 空；
- * - [asCloze]=true 挖空导出：自动句子挖空的 displayText（保留 "[N] ___" 空位呈现），
+ * - [asCloze]=true 挖空导出：displayText 保留 "[N] ＿…" 空位呈现（宽度 = 被挖字数），
  *   不得还原为完整原文（回归锚点见 ArticleExportConfigTest）。
  */
 internal fun buildArticleExportConfig(title: String, content: String, asCloze: Boolean): PdfExporter.ExportConfig =
@@ -859,7 +874,7 @@ internal fun buildArticleExportConfig(title: String, content: String, asCloze: B
         val blancall = BlancallGenerator.generateSentenceCloze(content)
         PdfExporter.ExportConfig(
             title = title,
-            displayText = blancall.displayText,
+            displayText = sizeClozeBlanks(blancall.displayText, blancall.blanks.map { it.originalText.length }),
             blanks = blancall.blanks.map { PdfExporter.BlankExportInfo(it.index, it.originalText) },
             includeAnswer = false
         )

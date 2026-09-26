@@ -47,8 +47,12 @@ object PdfExporter {
     private val CLOZE_COLOR = 0xFF4A90D9.toInt()
     private const val TAG = "PdfExporter"
 
-    /** 填空标记正则（下划线 3 个及以上），提取为常量避免重复编译 */
-    private val CLOZE_REGEX = Regex("_{3,}")
+    /**
+     * 填空标记正则：半角下划线 ≥3（历史格式 "[N] ___"）或全角下划线 ≥1
+     *（「挖空 PDF」按被挖字数生成的一字一空宽格式 "[N] ＿…"，见 ListScreen.sizeClozeBlanks），
+     * 两类均以 CLOZE_COLOR 渲染为空位。提取为常量避免重复编译。
+     */
+    private val CLOZE_REGEX = Regex("_{3,}|＿+")
 
     /** 字体缓存，避免每次导出都遍历 assets 并 createFromAsset */
     @Volatile
@@ -229,13 +233,28 @@ object PdfExporter {
             if (para.isEmpty()) { out.add(""); continue }
             var r = para
             while (r.isNotEmpty()) {
-                val n = paint.breakText(r, true, w, null)
-                if (n <= 0) { out.add(r.first().toString()); r = r.substring(1) }
-                else { out.add(r.substring(0, n)); r = r.substring(n) }
+                var n = paint.breakText(r, true, w, null)
+                if (n <= 0) {
+                    out.add(r.first().toString())
+                    r = r.substring(1)
+                    continue
+                }
+                // 空位下划线串不得从中间切断：断点落于串内时整串移到下一行
+                //（行首即空位串则保持原断点，避免死循环）
+                if (n < r.length && isBlankMark(r[n - 1]) && isBlankMark(r[n])) {
+                    var start = n - 1
+                    while (start > 0 && isBlankMark(r[start - 1])) start--
+                    if (start > 0) n = start
+                }
+                out.add(r.substring(0, n))
+                r = r.substring(n)
             }
         }
         return out
     }
+
+    /** 空位下划线标记（半角 _ 或全角 ＿） */
+    private fun isBlankMark(c: Char): Boolean = c == '_' || c == '＿'
 
     // ── 分享 ──
 

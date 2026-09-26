@@ -27,8 +27,33 @@ class ArticleExportConfigTest {
     @Test
     fun `挖空导出：保留空位呈现，不得还原为完整原文`() {
         val cfg = buildArticleExportConfig("陋室铭", content, asCloze = true)
-        assertTrue("挖空导出必须保留 [N] ___ 空位标记", cfg.displayText.contains("___"))
+        assertTrue("挖空导出必须保留 [N] ＿… 空位标记", cfg.displayText.contains("＿"))
         assertTrue("挖空导出不得与完整原文一致", cfg.displayText != content)
         assertTrue("挖空导出须携带空位信息", cfg.blanks.isNotEmpty())
+    }
+
+    @Test
+    fun `挖空导出：空位宽度与被挖字数一致（一字一空宽）`() {
+        val cfg = buildArticleExportConfig("陋室铭", content, asCloze = true)
+        // 每个 "[N] ＿…" 空位的全角下划线数量 == 第 N 个空被挖字数；固定 "___" 不再出现
+        val all = Regex("\\[(\\d+)] (＿+)").findAll(cfg.displayText).toList()
+        assertTrue("displayText 应包含按字数生成的空位", all.isNotEmpty())
+        assertEquals("空位数量应与 blanks 一致", cfg.blanks.size, all.size)
+        all.forEach { m ->
+            val blank = cfg.blanks[m.groupValues[1].toInt() - 1]
+            assertEquals(
+                "空位宽度（全角下划线数）应等于被挖字数",
+                blank.correctAnswer.length,
+                m.groupValues[2].length
+            )
+        }
+        assertTrue("不应再出现固定 3 下划线占位", !cfg.displayText.contains("___"))
+    }
+
+    @Test
+    fun `sizeClozeBlanks：按字数逐空替换且顺序一一对应`() {
+        // 占位符出现顺序与长度列表一一对应：第 1 空 1 字宽、第 2 空 5 字宽
+        val out = sizeClozeBlanks("甲[1] ___乙[2] ___", listOf(1, 5))
+        assertEquals("甲[1] ＿乙[2] ＿＿＿＿＿", out)
     }
 }
