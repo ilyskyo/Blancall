@@ -44,6 +44,8 @@ import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.LiquidGlassPopupBackdrop
 import com.ilyskyo.blancall.ui.common.PopupGlassPlate
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.first
 import kotlin.math.max
 import kotlin.math.min
 
@@ -171,6 +173,18 @@ fun AdaptiveModePicker(
         else -> ExpandDirection.BOTTOM_SHEET
     }
 
+    // 关闭复位（关键路径，必须在 BOTTOM_SHEET 的 return 之前注册）：
+    // 底部面板没有浮窗退场动画，visible=false 时立即移除组合。
+    // ⚠️ 不能把该逻辑放在下方 effect2 中 —— BOTTOM_SHEET 分支在上方直接 return，
+    // effect2 在底部面板路径永远不可达：关闭时 sheet 组合永不移除 ⇒ M3 模态窗口
+    //（Hidden 态、全屏透明 scrim）残留并吞掉后续所有点击
+    //（真机 bug「点掉底部面板后再点练习永远无反应」的根因）。
+    LaunchedEffect(visible) {
+        if (!visible && expandDirection == ExpandDirection.BOTTOM_SHEET) {
+            isShowing = false
+        }
+    }
+
     if (expandDirection == ExpandDirection.BOTTOM_SHEET) {
         AdaptiveBottomSheetPicker(onDismiss = onDismiss, onModeSelected = onModeSelected)
         return
@@ -212,7 +226,8 @@ fun AdaptiveModePicker(
     // 退出动画进行中：末段快速淡出，避免缩回按钮时与按钮图案重叠产生残影
     var isExiting by remember { mutableStateOf(false) }
 
-    // 弹窗生命周期：visible → true 启动进入；false 先播完退场动画再移除
+    // 弹窗生命周期（仅 UP/DOWN 浮窗路径可达；底部面板的关闭复位见上方 closeEffect）：
+    // visible → true 启动进入；false 先播完退场动画再移除
     LaunchedEffect(visible) {
         if (!visible) {
             // 反向收回：180ms 缩回按钮中心（transformOrigin 锚在按钮），利落退场
@@ -326,8 +341,30 @@ private fun AdaptiveBottomSheetPicker(
     onDismiss: () -> Unit,
     onModeSelected: (PickerSelection) -> Unit
 ) {
+    // 外部持有 sheetState：关闭走「双通道」——
+    // ① M3 的 onDismissRequest（遮罩点击 / 返回键）；
+    // ② 兜底监听 currentValue 回到 Hidden（面板被收起的最终事实）→ 驱动 onDismiss。
+    // 无论 M3 回调链是否完整送达，只要面板在视觉上被收起，组合必定被移除，
+    // 模态窗口不会残留（残留会吞掉后续所有点击——真机回归 bug 的根因）。
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    LaunchedEffect(sheetState) {
+        snapshotFlow { sheetState.currentValue }
+            .dropWhile { it != SheetValue.Expanded } // 跳过打开前的初始 Hidden（尚未展开）
+            .first { it == SheetValue.Hidden }       // 展开后被收起（遮罩点击 / 下滑）→ 关闭
+        onDismiss()
+    }
+    // 兑底关闭通道：hide() 一旦启动（targetValue 离开 Expanded）即通知关闭，不等收起动画完成——
+    // 即使 M3 的 onDismissRequest 回调因任何原因未送达，面板也能被确定移除，
+    // 模态窗口不会残留（残留会吞掉后续所有点击）
+    LaunchedEffect(sheetState) {
+        snapshotFlow { sheetState.targetValue }
+            .dropWhile { it != SheetValue.Expanded }
+            .first { it != SheetValue.Expanded }
+        onDismiss()
+    }
     GlassModalBottomSheet(
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
     ) {
         ModeListContent(
             expandDirection = ExpandDirection.BOTTOM_SHEET,

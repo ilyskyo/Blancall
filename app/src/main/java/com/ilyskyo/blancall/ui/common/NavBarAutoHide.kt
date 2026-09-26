@@ -46,7 +46,9 @@ import kotlinx.coroutines.launch
  * - **滑动中**：收起（滚动内容不被悬浮底栏遮挡）；
  * - **滑动停止**：自动恢复显示（去抖无新滚动事件即视为停止）；
  * - **滑到底部**：保持收起——停在底部时也不恢复（最后一段内容天然不被遮挡）；
- *   向上回滚离开底部后停止 → 恢复。
+ *   向上回滚离开底部后停止 → 恢复；
+ * - **内容不足以滚动**：不触发收起（滑动不产生滚动消费的页面——如「我的文章」文章很少时——
+ *   不得把上滑误判为「到底」而把底栏收住不放；见 [isScrollAtEnd]）。
  * 因此滚动容器无需 90–140dp 的「避让留白」。
  */
 object NavBarAutoHide {
@@ -123,6 +125,8 @@ fun rememberAutoHideNavBarOnScroll(): NestedScrollConnection {
         object : NestedScrollConnection {
             /** 最近一次滚动时是否已到滚动末端（底部）；向上回滚即清除 */
             private var atEnd = false
+            /** 本页面发生过真实滚动消费：用于识别「内容不足、完全不可滚」的页面 */
+            private var scrollable = false
             private var restoreJob: Job? = null
 
             /** 重置「停止」计时：超时无新滚动事件才视为滑动停止 */
@@ -140,8 +144,13 @@ fun rememberAutoHideNavBarOnScroll(): NestedScrollConnection {
                 if (dy != 0f) {
                     // 滑动中：收起；向上回滚（看更早内容）= 已离开「停在底部」语义
                     if (dy > 2f) atEnd = false
-                    NavBarAutoHide.request(NavBarAutoHide.KEY_SCROLL)
-                    scheduleRestore()
+                    // 仅「可滚动页面」驱动收起：内容不足、完全不可滚的页面滑动不产生任何
+                    // 滚动消费，也不应把悬浮底栏收起（真机反馈：文章少时上滑被误判
+                    //「到底」、底栏保持收起，需反向下滑才恢复）
+                    if (scrollable) {
+                        NavBarAutoHide.request(NavBarAutoHide.KEY_SCROLL)
+                        scheduleRestore()
+                    }
                 }
                 return Offset.Zero
             }
@@ -151,13 +160,27 @@ fun rememberAutoHideNavBarOnScroll(): NestedScrollConnection {
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
-                // 还有向下滚动意图却滚不动 ⇒ 已到滚动末端（底部）
-                if (available.y < -2f) atEnd = true
+                // 真正消费了滚动 ⇒ 页面可滚动（此后进入正常「滑动中收起」规则）
+                if (hasScrollConsumed(consumed.y)) scrollable = true
+                // 可滚页面仍在向上滑却滚不动 ⇒ 到达底部；不可滚页面不得误判
+                if (isScrollAtEnd(scrollable, available.y)) atEnd = true
                 return Offset.Zero
             }
         }
     }
 }
+
+/** 本帧滚动是否证明页面可滚动（有真实消费；含 fling 惯性帧）。 */
+internal fun hasScrollConsumed(consumedY: Float): Boolean = consumedY != 0f
+
+/**
+ * 「到达滚动底部」判定（回归锚点 —— 「内容不足的页面滑一下、底栏保持收起」真机 bug）：
+ * 仅**可滚动页面**（[scrollable] 建立后）向上滑却滚不动时才算到底；内容完全不足以滚动的
+ * 页面 consumed 恒为 0、scrollable 永不建立，不得误判「到底」
+ *（误判会使底栏在停止滚动后保持收起，需反向下滑才能恢复）。
+ */
+internal fun isScrollAtEnd(scrollable: Boolean, availableY: Float): Boolean =
+    scrollable && availableY < -2f
 
 /** 滑动停止判定延时：无新滚动事件超过该时长即视为停止（恢复底栏）。 */
 private const val RESTORE_DELAY_MS = 350L

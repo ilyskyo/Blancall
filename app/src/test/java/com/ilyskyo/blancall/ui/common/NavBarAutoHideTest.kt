@@ -87,4 +87,24 @@ class NavBarAutoHideTest {
             NavBarAutoHide.release(editKey)
         }
     }
+
+    @Test
+    fun `不可滚页面的上滑不得被误判「到底」（底栏不得保持收起）`() {
+        // 回归：「我的文章」文章数不足、完全不可滚时，滑动 consumed 恒 0 —— 绝不标记「到底」
+        assertFalse(isScrollAtEnd(scrollable = false, availableY = -10f))
+    }
+
+    @Test
+    fun `可滚页面：向上滑到底标记「到底」保持收起，仍有余量则不标记`() {
+        assertTrue(isScrollAtEnd(scrollable = true, availableY = -10f))
+        assertFalse(isScrollAtEnd(scrollable = true, availableY = 0f))
+        assertFalse(isScrollAtEnd(scrollable = true, availableY = 10f))
+    }
+
+    @Test
+    fun `真实滚动消费（含 fling 惯性）标识页面可滚动`() {
+        assertTrue(hasScrollConsumed(-5f))
+        assertTrue(hasScrollConsumed(5f))
+        assertFalse(hasScrollConsumed(0f))
+    }
 }
