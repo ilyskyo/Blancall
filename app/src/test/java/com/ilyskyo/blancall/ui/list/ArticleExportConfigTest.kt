@@ -56,4 +56,18 @@ class ArticleExportConfigTest {
         val out = sizeClozeBlanks("甲[1] ___乙[2] ___", listOf(1, 5))
         assertEquals("甲[1] ＿乙[2] ＿＿＿＿＿", out)
     }
+
+    @Test
+    fun `作者展示：已填作者时两种导出均携带（trim 口径）`() {
+        val text = buildArticleExportConfig("陋室铭", content, asCloze = false, author = "  刘禹锡  ")
+        assertEquals("作者应去除首尾空白后展示", "刘禹锡", text.author)
+        val cloze = buildArticleExportConfig("陋室铭", content, asCloze = true, author = "刘禹锡")
+        assertEquals("挖空导出同样携带作者", "刘禹锡", cloze.author)
+    }
+
+    @Test
+    fun `作者展示：未填或纯空白时不携带（无作者不占行）`() {
+        assertEquals("未传作者时为空串", "", buildArticleExportConfig("陋室铭", content, asCloze = false).author)
+        assertEquals("纯空白视为未填", "", buildArticleExportConfig("陋室铭", content, asCloze = true, author = "   ").author)
+    }
 }

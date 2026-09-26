@@ -135,15 +135,31 @@ fun AdaptiveModePicker(
 
     val isDark = isBlancallDark()
 
-    // 无锚点时的伪锚点：屏幕横向中心、纵向 38% 处，向下弹出居中面板。
+    // 覆盖层自身的位置与尺寸（onGloballyPositioned 上报，见下方覆盖层 Box）。
+    // ⚠️ 锚点来自 positionInWindow（窗口坐标系），而覆盖层绘制在自己的局部坐标系中 ——
+    // 平板（左侧导航栏）或页面内偏移下两者不同源，直接用窗口坐标定位会整体错位、面板画到
+    // 屏幕外（真机反馈：右列卡片的「练习」弹出面板出屏）。以下统一换算到覆盖层局部坐标。
+    var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
+    var overlaySize by remember { mutableStateOf(IntSize.Zero) }
+    val localW = if (overlaySize.width > 0) overlaySize.width.toFloat() else screenWidthPx
+    val localH = if (overlaySize.height > 0) overlaySize.height.toFloat() else screenHeightPx
+
+    // 无锚点时的伪锚点：覆盖层横向中心、纵向 38% 处，向下弹出居中面板。
     // 「保存成功 → 开始练习」路径没有可锚定的按钮，**不能沿用上次练习按钮的旧锚点**：
     // 那篇文章所在的行可能在屏幕外，会把选项卡弹到屏幕外（用户反馈「点了开始练习没有弹出」）
-    val effectiveAnchor = anchorRect ?: Rect(
-        Offset(screenWidthPx / 2, screenHeightPx * 0.38f),
-        Offset(screenWidthPx / 2, screenHeightPx * 0.38f)
+    val effectiveAnchor = anchorRect?.let { a ->
+        Rect(
+            a.left - overlayOrigin.x,
+            a.top - overlayOrigin.y,
+            a.right - overlayOrigin.x,
+            a.bottom - overlayOrigin.y
+        )
+    } ?: Rect(
+        Offset(localW / 2, localH * 0.38f),
+        Offset(localW / 2, localH * 0.38f)
     )
     val spaceAbove = effectiveAnchor.top
-    val spaceBelow = screenHeightPx - effectiveAnchor.bottom
+    val spaceBelow = localH - effectiveAnchor.bottom
     val neededSpace = popupEstimatePx + minMarginPx
     val canExpandUp = spaceAbove >= neededSpace
     val canExpandDown = spaceBelow >= neededSpace
@@ -162,8 +178,8 @@ fun AdaptiveModePicker(
 
     val centerX = (effectiveAnchor.left + effectiveAnchor.right) / 2
     var popupX = centerX - popupWidthPx / 2
-    if (popupX + popupWidthPx > screenWidthPx - minMarginPx) {
-        popupX = screenWidthPx - popupWidthPx - minMarginPx
+    if (popupX + popupWidthPx > localW - minMarginPx) {
+        popupX = localW - popupWidthPx - minMarginPx
     }
     if (popupX < minMarginPx) {
         popupX = minMarginPx
@@ -171,7 +187,7 @@ fun AdaptiveModePicker(
 
     // 上下双向钳制：锚点可能位于屏幕之外（首页卡片可拖动，锚定行的位置可超出窗口），
     // 不钳制会把选项卡整块画到屏幕外 —— 点了「开始练习」看不到弹窗（用户反馈根因之一）
-    val maxPopupTop = (screenHeightPx - popupEstimatePx - minMarginPx).coerceAtLeast(minMarginPx)
+    val maxPopupTop = (localH - popupEstimatePx - minMarginPx).coerceAtLeast(minMarginPx)
     val popupY = when (expandDirection) {
         ExpandDirection.DOWN -> (effectiveAnchor.bottom + arrowGapPx).coerceIn(minMarginPx, maxPopupTop)
         ExpandDirection.UP -> (effectiveAnchor.top - popupEstimatePx - arrowGapPx).coerceIn(minMarginPx, maxPopupTop)
@@ -235,6 +251,10 @@ fun AdaptiveModePicker(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { coords ->
+                overlayOrigin = coords.positionInWindow()
+                overlaySize = coords.size
+            }
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() }

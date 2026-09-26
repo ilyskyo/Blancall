@@ -216,7 +216,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
-                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是自定义挖空 + ⋮ 菜单。
+                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是 ⋮ 菜单（编辑/自定义挖空/删除）。
                     // 标题字号 = 右侧两行总高度（上下边缘与作者/字符数对齐）
                     var metaHeightPx by remember { mutableIntStateOf(0) }
                     val titleFontSize = if (metaHeightPx > 0) {
@@ -264,54 +264,53 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             )
                         }
                     }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // 自定义挖空：保持原位（原底部操作栏入口上移至顶部），文案与跳转行为不变
-                        GlassButton(
-                            onClick = { navController.navigate("custom_cloze_list/${art.id}") },
-                            modifier = Modifier.height(40.dp)
+                    // ⋮ 三点菜单（顶部栏唯一操作按钮）：编辑 / 自定义挖空 / 删除 ——
+                    // 按钮铺在顶部栏会占宽挤没标题（真机反馈），全部操作收进菜单；
+                    // 图标（AppIconKind.MoreVert）与弹出菜单（GlassDropdownMenu/GlassMenuItem）
+                    // 均复用项目通用组件，样式与其它页面 ⋮ 菜单完全一致。
+                    Box {
+                        IconButton(
+                            onClick = { showMoreMenu = true },
+                            modifier = Modifier.size(40.dp)
                         ) {
-                            Text("自定义挖空", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface)
+                            AppIcon(
+                                kind = AppIconKind.MoreVert,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(22.dp),
+                                contentDescription = "更多"
+                            )
                         }
-                        // ⋮ 三点菜单（最右端）：编辑/删除收进菜单 —— 原并排按钮占宽过多把标题挤没
-                        //（真机反馈）；图标（AppIconKind.MoreVert）与弹出菜单（GlassDropdownMenu/
-                        // GlassMenuItem）均复用项目通用组件，弹出样式与其它页面 ⋮ 菜单完全一致。
-                        Box {
-                            IconButton(
-                                onClick = { showMoreMenu = true },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                AppIcon(
-                                    kind = AppIconKind.MoreVert,
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(22.dp),
-                                    contentDescription = "更多"
-                                )
-                            }
-                            GlassDropdownMenu(
-                                expanded = showMoreMenu,
-                                onDismissRequest = { showMoreMenu = false }
-                            ) {
-                                // 编辑：与原顶部栏「编辑」按钮行为一致（进入编辑态）
-                                GlassMenuItem(
-                                    onClick = { showMoreMenu = false; isEditing = true },
-                                    label = {
-                                        Text("编辑", style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                )
-                                // 删除：与原顶部栏「删除」按钮行为一致（弹原文确认框）
-                                GlassMenuItem(
-                                    onClick = { showMoreMenu = false; showDeleteDialog = true },
-                                    label = {
-                                        Text("删除", style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.error)
-                                    }
-                                )
-                            }
+                        GlassDropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
+                        ) {
+                            // 编辑：与原顶部栏「编辑」按钮行为一致（进入编辑态）
+                            GlassMenuItem(
+                                onClick = { showMoreMenu = false; isEditing = true },
+                                label = {
+                                    Text("编辑", style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            )
+                            // 自定义挖空：与原顶部栏按钮行为一致（进入该文章的自定义挖空配置列表）
+                            GlassMenuItem(
+                                onClick = {
+                                    showMoreMenu = false
+                                    navController.navigate("custom_cloze_list/${art.id}")
+                                },
+                                label = {
+                                    Text("自定义挖空", style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            )
+                            // 删除：与原顶部栏「删除」按钮行为一致（弹原文确认框）
+                            GlassMenuItem(
+                                onClick = { showMoreMenu = false; showDeleteDialog = true },
+                                label = {
+                                    Text("删除", style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error)
+                                }
+                            )
                         }
                     }
                 }
@@ -571,7 +570,9 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     }
                     // AI 对话入口（设置中启用 AI 功能后才显示）
                     if (aiEnabled) {
-                        GlassActionItem("AI", Modifier.weight(1f), enabled = barVisible) {
+                        // AI 仅 2 字：不参与 weight 均分（否则与 4 字项等宽、胶囊内大片留白——真机反馈）；
+                        // 按内容宽度形成小胶囊；其余按钮维持 weight(1f) 均分规则不变
+                        GlassActionItem("AI", Modifier.widthIn(min = 52.dp), enabled = barVisible) {
                             navController.navigate("ai?ids=${art.id}")
                         }
                     }

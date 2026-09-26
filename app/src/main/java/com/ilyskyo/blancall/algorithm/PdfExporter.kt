@@ -34,7 +34,9 @@ object PdfExporter {
         val displayText: String,
         val blanks: List<BlankExportInfo>,
         val includeAnswer: Boolean = false,
-        val subtitle: String = ""
+        val subtitle: String = "",
+        /** 作者名（可选）：非空时按「标题 → 作者 → 副标题 → 正文」顺序渲染，样式与副标题一致 */
+        val author: String = ""
     )
 
     data class BlankExportInfo(val index: Int, val correctAnswer: String)
@@ -172,6 +174,9 @@ object PdfExporter {
         // y 从顶部 margin + 标题字号开始（标题基线位置）
         var y = MG + FS_TITLE
         for (l in wrap(titleP, cfg.title)) { c.drawText(l, MG, y, titleP); y += LG_TITLE }
+        // 作者（可选）：已由上层 trim；空白不绘制、不占行 —— 无作者时排版与原来完全一致
+        if (cfg.author.isNotBlank())
+            for (l in wrap(subP, cfg.author)) { c.drawText(l, MG, y, subP); y += LG_SUB }
         if (cfg.subtitle.isNotBlank())
             for (l in wrap(subP, cfg.subtitle)) { c.drawText(l, MG, y, subP); y += LG_SUB }
         // 分隔线绘制在当前 y 下方 6pt

@@ -158,6 +158,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     var showExportDialog by remember { mutableStateOf(false) }
+    // 导出对话框的预选文章（多选态快捷导出用；-1 = 不预选）
+    var exportPreselectId by remember { mutableStateOf(-1L) }
     val scope = rememberCoroutineScope()
 
     // ── 文章标签：筛选 / 卡片徽标 / 批量打标签 ──
@@ -239,15 +241,31 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 多选模式下右上角显示"全选/取消全选"
                 if (crossSelectMode) {
-                    OutlinedButton(
+                    // 全选/取消全选：与导入/导出同款磨砂玻璃样式（原 OutlinedButton 与之不一致）
+                    GlassButton(
                         onClick = {
                             selectedIds = if (selectedIds.size == filteredArticles.size) emptySet()
                             else filteredArticles.map { it.id }.toSet()
                         },
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        modifier = Modifier.height(40.dp)
                     ) {
-                        Text(if (selectedIds.size == articles.size) "取消全选" else "全选")
+                        Text(if (selectedIds.size == articles.size) "取消全选" else "全选",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    // 导出：仅选中 1 篇时可用（多选批量导出置灰——导出为单篇功能）
+                    GlassButton(
+                        onClick = {
+                            val id = selectedIds.singleOrNull() ?: return@GlassButton
+                            val art = articles.firstOrNull { it.id == id } ?: return@GlassButton
+                            exportPreselectId = art.id
+                            showExportDialog = true
+                        },
+                        enabled = selectedIds.size == 1,
+                        modifier = Modifier.height(40.dp)
+                    ) {
+                        Text("导出", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
                 if (!crossSelectMode) {
@@ -276,6 +294,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                             if (articles.isEmpty()) {
                                 Toast.makeText(context, "暂无文章可导出", Toast.LENGTH_SHORT).show()
                             } else {
+                                exportPreselectId = -1L
                                 showExportDialog = true
                             }
                         },
@@ -491,7 +510,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // 删除选中
+                // 删除选中（数量由「已选 N 篇」标题与确认弹窗展示；按钮文案保持 4 字居中——
+                // 原「删除选中（N）」超宽被裁切、视觉偏左）
                 OutlinedButton(
                     onClick = {
                         // 批量删除：收集选中文章后弹出确认
@@ -499,19 +519,21 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                     enabled = selectedIds.isNotEmpty(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     ),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
                 ) {
-                    AdaptiveButtonLabel("删除选中（${selectedIds.size}）")
+                    AdaptiveButtonLabel("删除选中")
                 }
                 // 打标签（批量绑定；≥1 篇可用）
                 OutlinedButton(
                     onClick = { tagPickTargets = articles.filter { it.id in selectedIds } },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                     enabled = selectedIds.isNotEmpty()
                 ) {
                     AdaptiveButtonLabel("打标签")
@@ -525,7 +547,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                             navController.navigate("ai?ids=$ids")
                         },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                     ) {
                         AdaptiveButtonLabel("发给 AI")
                     }
@@ -540,6 +563,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
@@ -600,7 +624,10 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 
     // 导出 PDF 对话框
     if (showExportDialog) {
-        var selectedArticle by remember { mutableStateOf<Article?>(null) }
+        // 预选：多选态快捷导出传入选中的文章；正常入口为 -1（不预选）
+        var selectedArticle by remember {
+            mutableStateOf(articles.firstOrNull { it.id == exportPreselectId })
+        }
         // 导出类型：false = 原文 PDF（完整正文）；true = 挖空 PDF（保留空位呈现）
         var exportAsCloze by remember { mutableStateOf(false) }
         // 排序结果缓存，避免每次重组新建列表
@@ -867,30 +894,36 @@ internal fun sizeClozeBlanks(displayText: String, blankLengths: List<Int>): Stri
  * 构建导出配置（纯函数，可单测）：
  * - [asCloze]=false 原文导出：displayText = 完整正文（不含任何挖空/空位），blanks 空；
  * - [asCloze]=true 挖空导出：displayText 保留 "[N] ＿…" 空位呈现（宽度 = 被挖字数），
- *   不得还原为完整原文（回归锚点见 ArticleExportConfigTest）。
+ *   不得还原为完整原文（回归锚点见 ArticleExportConfigTest）；
+ * - [author]：文章作者（可选）——已填（trim 后非空）时由 PdfExporter 按
+ *   「标题 → 作者 → 正文」渲染；未填时为空串、不占行（两种导出类型均适用）。
  */
-internal fun buildArticleExportConfig(title: String, content: String, asCloze: Boolean): PdfExporter.ExportConfig =
+internal fun buildArticleExportConfig(
+    title: String, content: String, asCloze: Boolean, author: String = ""
+): PdfExporter.ExportConfig =
     if (asCloze) {
         val blancall = BlancallGenerator.generateSentenceCloze(content)
         PdfExporter.ExportConfig(
             title = title,
             displayText = sizeClozeBlanks(blancall.displayText, blancall.blanks.map { it.originalText.length }),
             blanks = blancall.blanks.map { PdfExporter.BlankExportInfo(it.index, it.originalText) },
-            includeAnswer = false
+            includeAnswer = false,
+            author = author.trim()
         )
     } else {
         PdfExporter.ExportConfig(
             title = title,
             displayText = content,
             blanks = emptyList(),
-            includeAnswer = false
+            includeAnswer = false,
+            author = author.trim()
         )
     }
 
 private suspend fun exportArticlePdf(context: android.content.Context, article: Article, asCloze: Boolean) {
     try {
         val config = withContext(Dispatchers.Default) {
-            buildArticleExportConfig(article.title, article.content, asCloze)
+            buildArticleExportConfig(article.title, article.content, asCloze, article.author)
         }
         // 文件名清洗：标题可能含 / \ : 等非法字符（直接拼入会创建子路径导致导出失败）
         val safeName = article.title.trim().replace(Regex("""[\\/:*?"<>|\r\n]"""), "_").take(50)
@@ -909,8 +942,9 @@ private suspend fun exportArticlePdf(context: android.content.Context, article: 
 }
 
 /**
- * 自适应单行按钮文字：空间不足时逐步缩小字号（下限 12sp，上限为默认 labelLarge），
- * 保证单行不换行且保持可读性。用于按钮宽度受限的场景，避免文字换行导致按钮大小不一。
+ * 自适应单行按钮文字：空间不足时自动缩小字号（下限 8sp，上限为默认 labelLarge），
+ * 保证单行不换行、始终完整可见（多选底栏按钮多/窄时不再被裁切）。
+ * 收敛采用按比例一步缩（0.9×/帧），几帧内到位，避免逐 0.5sp 收缩过慢。
  */
 @Composable
 private fun AdaptiveButtonLabel(text: String) {
@@ -919,12 +953,13 @@ private fun AdaptiveButtonLabel(text: String) {
     Text(
         text = text,
         maxLines = 1,
+        softWrap = false,
         overflow = TextOverflow.Clip,
         style = style.copy(fontSize = fontSize),
         onTextLayout = { result ->
-            // 溢出时逐步缩小字号，但不低于 12sp，保持可读性且不超过默认 labelLarge
-            if (result.hasVisualOverflow && fontSize.value > 12f) {
-                fontSize = (fontSize.value - 0.5f).sp
+            // 溢出：按比例收一步（下限 8sp），下一帧重测直至放得下
+            if (result.hasVisualOverflow && fontSize.value > 8f) {
+                fontSize = (fontSize.value * 0.9f).coerceAtLeast(8f).sp
             }
         }
     )
