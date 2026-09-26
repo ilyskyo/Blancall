@@ -292,6 +292,29 @@ class TagStore private constructor(private val file: File) {
         }
     }
 
+    /**
+     * 覆盖设置某标签下的文章集合（标签文章管理面板）：
+     * 选中集合内的文章绑定该标签，**未选中但已绑定的文章解绑**（增/删同一入口，单次落盘）。
+     * 仅动这一条标签的关联，其它标签不受影响；标签 id 不存在时无副作用。
+     */
+    fun setTagArticles(tagId: Long, articleIds: Set<Long>) = mutate { d, _ ->
+        if (d.tags.none { it.id == tagId }) {
+            d to Unit
+        } else {
+            val links = d.links.toMutableMap()
+            // 受影响集合 = 选中文章 ∪ 当前已绑定该标签的文章（其余文章不碰）
+            val bound = d.links.filterValues { tagId in it }.keys
+            val affected = bound + articleIds
+            affected.forEach { aid ->
+                if (aid <= 0L) return@forEach
+                val current = links[aid] ?: emptySet()
+                val next = if (aid in articleIds) current + tagId else current - tagId
+                if (next.isEmpty()) links.remove(aid) else links[aid] = next
+            }
+            d.copy(links = links) to Unit
+        }
+    }
+
     /** 文章删除级联：清除该文章的全部绑定 */
     fun removeArticle(articleId: Long) = mutate { d, _ ->
         if (d.links.containsKey(articleId)) {

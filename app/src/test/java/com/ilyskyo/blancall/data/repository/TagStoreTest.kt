@@ -212,4 +212,37 @@ class TagStoreTest {
         // 收尾：还原健康内容
         restoreHealthy(healthy)
     }
+
+    @Test
+    fun `标签文章管理：勾选绑定、取消勾选移出、其它标签不受影响（单次覆盖落盘）`() {
+        val t1 = store.createTag("TM1管理", 0x112233)!!
+        val t2 = store.createTag("TM2共存", 0x445566)!!
+        // 初始：文章 921/922 同时绑 t1+t2；923 无绑定
+        store.applyBatchToggle(listOf(921L, 922L), setOf(t1, t2), emptySet())
+
+        // 管理 t1：勾选 921/923，取消 922（922 仅移出 t1）
+        store.setTagArticles(t1, setOf(921L, 923L))
+        val d = store.snapshot()
+        assertTrue(t1 in (d.links[921L] ?: emptySet()))    // 原已绑定保留
+        assertTrue(t1 in (d.links[923L] ?: emptySet()))    // 新增绑定
+        assertFalse(t1 in (d.links[922L] ?: emptySet()))   // 取消勾选 = 移出
+        // 其它标签不受影响（922 的 t2 仍在，921 的 t2 仍在）
+        assertTrue(t2 in (d.links[922L] ?: emptySet()))
+        assertTrue(t2 in (d.links[921L] ?: emptySet()))
+        // 持久化：写盘内容包含新绑定（退出重进可回读）
+        assertTrue(file.readText().contains("\"923\""))
+        // 再清空 t1：921/923 的 t1 都被移出，t2 仍保留
+        store.setTagArticles(t1, emptySet())
+        val d2 = store.snapshot()
+        assertFalse(t1 in (d2.links[921L] ?: emptySet()))
+        assertNull(d2.links[923L])
+        assertTrue(t2 in (d2.links[921L] ?: emptySet()))
+    }
+
+    @Test
+    fun `setTagArticles：标签 id 不存在时无副作用`() {
+        val before = store.snapshot().links
+        store.setTagArticles(99999999L, setOf(921L))
+        assertEquals(before, store.snapshot().links)
+    }
 }

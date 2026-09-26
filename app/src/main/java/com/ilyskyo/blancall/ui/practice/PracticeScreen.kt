@@ -160,6 +160,8 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var modeSelected by rememberSaveable { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showModeSheet by remember { mutableStateOf(false) }
+    // 跨文复习「自定义挖空」：按文章分别选择配置浮层
+    var showCrossCustomSheet by remember { mutableStateOf(false) }
     var showStrategySheet by remember { mutableStateOf(false) }
     var showSectionSheet by remember { mutableStateOf(false) }
     var showIncompleteDialog by remember { mutableStateOf(false) }
@@ -921,6 +923,16 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                 modeSelected = true
                             }
                         )
+                        // 跨文复习专属：「自定义挖空」—— 按文章分别指定要应用的挖空配置
+                        if (isCrossMode) {
+                            Spacer(Modifier.height(10.dp))
+                            ModeCard(
+                                emoji = "🎯",
+                                title = "自定义挖空",
+                                desc = "按文章分别指定要应用的挖空配置",
+                                onClick = { showCrossCustomSheet = true }
+                            )
+                        }
                     }
             }
         }
@@ -976,6 +988,31 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+
+    // ── 跨文复习「自定义挖空」：按文章分别选择配置（未选择/配置被删的文章自然不参与挖空）──
+    if (showCrossCustomSheet) {
+        // 参与文章按混合来源顺序（distinctBy 保留首次出现顺序，即输入文章顺序）
+        val crossArticles = crossSourceInfo
+            .distinctBy { it.articleId }
+            .map { it.articleId to it.articleTitle }
+        CrossCustomClozeSheet(
+            articles = crossArticles,
+            onDismiss = { showCrossCustomSheet = false },
+            onStart = { configs ->
+                if (vm.startCrossCustomPractice(configs)) {
+                    showCrossCustomSheet = false
+                    modeSelected = true
+                } else {
+                    // 所有选中配置都没有可应用的标注（如文章被改短导致全部失效）：不进入空白练习
+                    Toast.makeText(
+                        context,
+                        "所选配置没有可应用的挖空，请更换配置或改用其它模式",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        )
     }
 
     // ── 返回未保存提示弹窗（返回本身不承担保存；要保存请点右上角提交）──

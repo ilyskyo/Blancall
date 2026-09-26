@@ -225,4 +225,44 @@ class CustomClozeStoreTest {
         // 收尾：写回健康内容，避免影响其它用例
         file.writeText(healthy)
     }
+
+    @Test
+    fun `保存回写 id 可精确命中且字段完整（编辑器点开回填的数据源）`() {
+        // 模拟编辑器链路：新建保存（id 回写）→ 列表刷新 → 点开编辑（configId=回写 id）；
+        // 编辑器回填口径：getConfigs(articleId).firstOrNull { it.id == configId }
+        val newId = store.saveConfig(
+            206,
+            cfg(0, "回填源", 5000, listOf(CustomClozeStore.BlankSpec(0, 1, 4), CustomClozeStore.BlankSpec(2, 0, 3)), "WORD", listOf(2, 0, 1), "cafebabe")
+        )
+        val loaded = store.getConfigs(206).firstOrNull { it.id == newId }
+        assertTrue("回写 id 必须能在同文章下命中", loaded != null)
+        assertEquals("回填源", loaded!!.name)
+        assertEquals("WORD", loaded.mode)
+        assertEquals(listOf(2, 0, 1), loaded.levels)
+        assertEquals("cafebabe", loaded.contentHash)
+        assertEquals(
+            listOf(CustomClozeStore.BlankSpec(0, 1, 4), CustomClozeStore.BlankSpec(2, 0, 3)),
+            loaded.blanks
+        )
+        // 按文章隔离：同 id 在其它文章读不到
+        assertTrue(store.getConfigs(207).none { it.id == newId })
+    }
+
+    @Test
+    fun `覆盖保存后 blanks 与 levels 完整替换（继续编辑再保存的回填一致性）`() {
+        val id = store.saveConfig(
+            208,
+            cfg(0, "改前", 6000, listOf(
+                CustomClozeStore.BlankSpec(0, 0, 2),
+                CustomClozeStore.BlankSpec(1, 0, 3),
+                CustomClozeStore.BlankSpec(2, 0, 4)
+            ), "WORD", listOf(1, 1, 1))
+        )
+        store.saveConfig(208, cfg(id, "改后", 0, listOf(CustomClozeStore.BlankSpec(1, 5, 9)), "WORD", listOf(0, 3, 0)))
+        val loaded = store.getConfigs(208).single { it.id == id }
+        assertEquals("改后", loaded.name)
+        assertEquals(listOf(CustomClozeStore.BlankSpec(1, 5, 9)), loaded.blanks) // 旧空不得残留
+        assertEquals(listOf(0, 3, 0), loaded.levels) // 粒度随覆盖更新
+        assertEquals(6000, loaded.createdAt) // 排序锚不变
+    }
 }

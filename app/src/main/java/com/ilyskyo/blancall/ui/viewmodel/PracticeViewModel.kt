@@ -1190,6 +1190,76 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
+     * 跨文复习「自定义挖空」：按文章分别应用各自选定的配置 ——
+     * 每篇文章的配置只作用于该文章自己的句子（经 [CrossTextReview.mapCustomClozeRanges]
+     * 按 sources 映射到混合句序）。
+     *
+     * 统一以「句子挖空」呈现（各配置自身的目标模式可能不同，句子挖空是空位位置的通用呈现）。
+     * 同时构造一份「混合坐标」的合成配置挂到 [activeCustomConfig]：重做时按同一套空位重建，
+     * 不开锁让 UI 保持一致（不落盘、id 为 -1，不参与记录恢复）。
+     *
+     * @return 是否成功应用；false = 没有任何可应用的标注（调用方提示并保持选择浮层）
+     */
+    fun startCrossCustomPractice(configsByArticle: Map<Long, CustomClozeStore.CustomConfig>): Boolean {
+        if (!_isCrossMode.value || configsByArticle.isEmpty()) return false
+        val content = _article.value?.content ?: return false
+        if (content.isBlank()) return false
+        val sentences = SentenceSplitter.split(content)
+        val sources = _crossSourceInfo.value
+        if (sentences.isEmpty() || sources.isEmpty()) return false
+
+        // 按文章配置 → 混合句坐标的空位映射（纯函数，已单测）
+        val bySentence = CrossTextReview.mapCustomClozeRanges(sentences, sources, configsByArticle)
+        if (bySentence.isEmpty()) return false
+
+        // 新会话：错题墨迹缓冲作废（同 loadArticle 的约定）
+        inkBuffer.clear()
+        // 取消在途生成/加载，防止竞态覆盖（跨文加载与单篇生成任务均取消）
+        loadJob?.cancel()
+        sentenceGenerateJob?.cancel()
+        wordGenerateJob?.cancel()
+        dictationGenerateJob?.cancel()
+        ai.aiGenerateJob?.cancel()
+
+        // 锁定 + 重做可重建的合成配置（空位已是混合内容坐标）
+        activeCustomConfig = CustomClozeStore.CustomConfig(
+            id = -1L,
+            name = "自定义挖空",
+            createdAt = 0L,
+            blanks = bySentence.entries.sortedBy { it.key }.flatMap { (s, ranges) ->
+                ranges.map { CustomClozeStore.BlankSpec(s, it.first, it.last + 1) }
+            },
+            mode = "SENTENCE",
+        )
+        _customConfigName.value = "自定义挖空（${configsByArticle.size} 篇）"
+
+        // 状态清理（与 applyCustomPractice 同口径）
+        _sectionMode.value = SectionMode.FULL
+        _selectedSections.value = emptySet()
+        _sentenceAnswers.value = emptyMap()
+        _wordAnswers.value = emptyMap()
+        _checkResults.value = emptyMap()
+        _isSubmitted.value = false
+        _dictationInput.value = ""
+        _dictationCheckResult.value = null
+        stopAllBlankHints()
+        _weakHintCount.value = 0
+        _strongHintCount.value = 0
+        ai.difficultyConfirmed = true
+
+        _mode.value = BlancallMode.SENTENCE
+        val result = BlancallGenerator.buildCustomSentenceCloze(content, bySentence)
+        _sentenceCloze.value = result
+        _wordCloze.value = null
+        _dictationResult.value = null
+        _totalBlanks.value = result.blanks.size
+        // 整篇模式：锚点即全文切句位置（判分记录的句子归属与热力图依赖）
+        _sentenceAnchors.value = buildSentenceAnchors(content, content, SectionSplitter.split(content), emptySet())
+        practiceStartTime = System.currentTimeMillis()
+        return true
+    }
+
+    /**
      * 按配置构造并应用挖空；成功返回 true。
      * 失败（内容缺失 / 配置为空 / 规范化后无任何有效空）不改变任何状态，由调用方决定降级。
      */

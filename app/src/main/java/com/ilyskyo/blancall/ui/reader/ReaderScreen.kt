@@ -54,6 +54,8 @@ import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.DeleteConfirmDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
+import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
@@ -82,6 +84,8 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     var editAuthor by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showModePicker by remember { mutableStateOf(false) }
+    // 顶栏 ⋮ 菜单（编辑 / 删除收进菜单，避免并排按钮挤没标题）
+    var showMoreMenu by remember { mutableStateOf(false) }
     var showFullscreenEdit by remember { mutableStateOf(false) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     // 预测性返回跟手进度：编辑模式下侧滑返回时驱动编辑界面缩放/淡出动画
@@ -212,7 +216,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
-                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是删除/编辑/自定义挖空。
+                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是自定义挖空 + ⋮ 菜单。
                     // 标题字号 = 右侧两行总高度（上下边缘与作者/字符数对齐）
                     var metaHeightPx by remember { mutableIntStateOf(0) }
                     val titleFontSize = if (metaHeightPx > 0) {
@@ -260,29 +264,54 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             )
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        GlassButton(
-                            onClick = { showDeleteDialog = true },
-                            modifier = Modifier.height(40.dp)
-                        ) {
-                            Text("删除", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.error)
-                        }
-                        GlassButton(
-                            onClick = { isEditing = true },
-                            modifier = Modifier.height(40.dp)
-                        ) {
-                            Text("编辑", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface)
-                        }
-                        // 自定义挖空：原底部操作栏入口上移至顶部（删除/编辑右侧），文案更明确；
-                        // 点击进入当前文章的自定义挖空配置列表页（路由与行为与原底部入口完全一致）
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 自定义挖空：保持原位（原底部操作栏入口上移至顶部），文案与跳转行为不变
                         GlassButton(
                             onClick = { navController.navigate("custom_cloze_list/${art.id}") },
                             modifier = Modifier.height(40.dp)
                         ) {
                             Text("自定义挖空", style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        // ⋮ 三点菜单（最右端）：编辑/删除收进菜单 —— 原并排按钮占宽过多把标题挤没
+                        //（真机反馈）；图标（AppIconKind.MoreVert）与弹出菜单（GlassDropdownMenu/
+                        // GlassMenuItem）均复用项目通用组件，弹出样式与其它页面 ⋮ 菜单完全一致。
+                        Box {
+                            IconButton(
+                                onClick = { showMoreMenu = true },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                AppIcon(
+                                    kind = AppIconKind.MoreVert,
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(22.dp),
+                                    contentDescription = "更多"
+                                )
+                            }
+                            GlassDropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false }
+                            ) {
+                                // 编辑：与原顶部栏「编辑」按钮行为一致（进入编辑态）
+                                GlassMenuItem(
+                                    onClick = { showMoreMenu = false; isEditing = true },
+                                    label = {
+                                        Text("编辑", style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                )
+                                // 删除：与原顶部栏「删除」按钮行为一致（弹原文确认框）
+                                GlassMenuItem(
+                                    onClick = { showMoreMenu = false; showDeleteDialog = true },
+                                    label = {
+                                        Text("删除", style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.error)
+                                    }
+                                )
+                            }
                         }
                     }
                 }

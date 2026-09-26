@@ -601,6 +601,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // 导出 PDF 对话框
     if (showExportDialog) {
         var selectedArticle by remember { mutableStateOf<Article?>(null) }
+        // 导出类型：false = 原文 PDF（完整正文）；true = 挖空 PDF（保留空位呈现）
+        var exportAsCloze by remember { mutableStateOf(false) }
         // 排序结果缓存，避免每次重组新建列表
         val sortedArticles = remember(articles) { articles.sortedByDescending { it.updatedAt } }
         BlancallAlertDialog(
@@ -608,8 +610,44 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             title = { Text("导出 PDF") },
             text = {
                 Column {
+                    // ── 导出类型（必选其一，默认原文）──
                     Text(
-                        "选择要导出为 PDF 的文章：",
+                        "导出类型",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !exportAsCloze,
+                            onClick = { exportAsCloze = false },
+                            label = { Text("原文 PDF") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                        FilterChip(
+                            selected = exportAsCloze,
+                            onClick = { exportAsCloze = true },
+                            label = { Text("挖空 PDF") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    // 说明行随类型实时切换：两种导出结果差异一眼可见
+                    Text(
+                        if (exportAsCloze) "保留挖空空位（[N] ___），供练习作答"
+                        else "完整正文，不含任何挖空 / 空位",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "选择要导出的文章：",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -664,7 +702,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         if (article != null) {
                             showExportDialog = false
                             scope.launch {
-                                exportArticlePdf(context, article)
+                                exportArticlePdf(context, article, exportAsCloze)
                             }
                         }
                     },
@@ -810,21 +848,40 @@ private fun ArticleCard(
 
 // ========== PDF 导出逻辑 ==========
 
-private suspend fun exportArticlePdf(context: android.content.Context, article: Article) {
-    try {
-        val blancall = withContext(Dispatchers.Default) {
-            BlancallGenerator.generateSentenceCloze(article.content)
-        }
-        val config = PdfExporter.ExportConfig(
-            title = article.title,
+/**
+ * 构建导出配置（纯函数，可单测）：
+ * - [asCloze]=false 原文导出：displayText = 完整正文（不含任何挖空/空位），blanks 空；
+ * - [asCloze]=true 挖空导出：自动句子挖空的 displayText（保留 "[N] ___" 空位呈现），
+ *   不得还原为完整原文（回归锚点见 ArticleExportConfigTest）。
+ */
+internal fun buildArticleExportConfig(title: String, content: String, asCloze: Boolean): PdfExporter.ExportConfig =
+    if (asCloze) {
+        val blancall = BlancallGenerator.generateSentenceCloze(content)
+        PdfExporter.ExportConfig(
+            title = title,
             displayText = blancall.displayText,
-            blanks = blancall.blanks.map {
-                PdfExporter.BlankExportInfo(it.index, it.originalText)
-            },
+            blanks = blancall.blanks.map { PdfExporter.BlankExportInfo(it.index, it.originalText) },
             includeAnswer = false
         )
+    } else {
+        PdfExporter.ExportConfig(
+            title = title,
+            displayText = content,
+            blanks = emptyList(),
+            includeAnswer = false
+        )
+    }
+
+private suspend fun exportArticlePdf(context: android.content.Context, article: Article, asCloze: Boolean) {
+    try {
+        val config = withContext(Dispatchers.Default) {
+            buildArticleExportConfig(article.title, article.content, asCloze)
+        }
+        // 文件名清洗：标题可能含 / \ : 等非法字符（直接拼入会创建子路径导致导出失败）
+        val safeName = article.title.trim().replace(Regex("""[\\/:*?"<>|\r\n]"""), "_").take(50)
+        val suffix = if (asCloze) "挖空" else "原文"
         val file = withContext(Dispatchers.IO) {
-            PdfExporter.export(context, config, "${article.title}_试卷.pdf")
+            PdfExporter.export(context, config, "${safeName}_$suffix.pdf")
         }
         withContext(Dispatchers.Main) {
             PdfExporter.sharePdf(context, file)

@@ -123,6 +123,10 @@ fun CustomClozeEditScreen(
     // 旋转/进程重建恢复编辑现场：levels+selected 序列化快照（rememberSaveable 自动回放）
     var editorSnapshot by rememberSaveable { mutableStateOf<String?>(null) }
     var snapshotApplied by remember { mutableStateOf(false) }
+    // 「组合期」捕获的恢复快照（rememberSaveable 的恢复值；新进入时为 null）。
+    // 恢复判断读它而非实时 editorSnapshot：本会话 editSeq 驱动写入的快照会污染实时值
+    //（真机 bug：已保存配置点开显示空白，回归锚点见 shouldPersistEditorSnapshot）。
+    val restoredSnapshot = remember { editorSnapshot }
 
     val haptic = LocalHapticFeedback.current
     // 文章内容失配检测：配置锚定的内容指纹与当前文章不一致时警示
@@ -150,11 +154,13 @@ fun CustomClozeEditScreen(
         repeat(sentences.size) { levels.add(0) }
         val cfgs = withContext(Dispatchers.IO) { store.getConfigs(articleId) }
         existingConfigs = cfgs
-        // 有快照 = 旋转/重建恢复：现场（可能含未保存编辑）比磁盘新，直接回放
-        if (!snapshotApplied && editorSnapshot != null) {
-            snapshotApplied = true
+        // 有恢复快照 = 旋转/重建恢复：现场（可能含未保存编辑）比磁盘新，直接回放。
+        // ⚠️ 判断读「组合期捕获值」restoredSnapshot，且回放成功（onSuccess）才置位：
+        // 实时读 editorSnapshot 会被本会话空快照抢断（已保存配置永不回填、显示空白）；
+        // 回放失败则回落下方磁盘回填，不再静默空白。
+        if (!snapshotApplied && restoredSnapshot != null) {
             runCatching {
-                val o = JSONObject(editorSnapshot!!)
+                val o = JSONObject(restoredSnapshot)
                 o.optJSONArray("levels")?.let { lv ->
                     if (lv.length() == levels.size) {
                         levels.clear()
@@ -173,8 +179,9 @@ fun CustomClozeEditScreen(
                         }
                     }
                 }
-            }
-        } else if (configId > 0) {
+            }.onSuccess { snapshotApplied = true }
+        }
+        if (!snapshotApplied && configId > 0) {
             val cfg = cfgs.firstOrNull { it.id == configId }
             if (cfg != null) {
                 savedId = cfg.id
@@ -213,8 +220,12 @@ fun CustomClozeEditScreen(
         }
     }
 
-    // 编辑驱动（而非每帧）持久化编辑现场快照：任何编辑 editSeq++，重组后序列化一次
+    // 编辑驱动（而非每帧）持久化编辑现场快照：任何编辑 editSeq++，重组后序列化一次。
+    // ⚠️ editSeq==0（初次组合）必须跳过：此刻磁盘回填尚未执行（仍在 IO 挂起中），
+    // 写入的「空现场快照」会抢占上方恢复判断 ⇒ 已保存配置点开永不回填（真机 bug）。
+    // 快照只承载「真实编辑现场」：editSeq>0（回填完成 / 任何编辑）才写。
     LaunchedEffect(editSeq) {
+        if (!shouldPersistEditorSnapshot(editSeq)) return@LaunchedEffect
         editorSnapshot = runCatching {
             JSONObject().apply {
                 put("levels", JSONArray().apply { levels.forEach { put(it) } })
@@ -674,6 +685,17 @@ private data class ClozeEditSnapshot(
     val levels: List<Int>,
     val sel: Map<Int, List<IntRange>>
 )
+
+/**
+ * 编辑现场快照的写入决策（回归锚点 —— 「点开已保存配置回填丢失」真机 bug）。
+ *
+ * 快照由 LaunchedEffect(editSeq) 驱动，editSeq 初始 0 时 effect 也会执行一次；
+ * 但那一刻磁盘回填尚未执行（LaunchedEffect(articleId, configId) 仍挂起在 IO），
+ * 若写入「空现场快照」，恢复判断（restoredSnapshot != null）会把新进入误判为
+ * 旋转恢复而回放空快照，磁盘回填分支永不执行 ⇒ 已保存配置点开显示空白。
+ * 因此仅 editSeq > 0（回填完成 / 任何真实编辑）才允许写快照。
+ */
+internal fun shouldPersistEditorSnapshot(editSeq: Int): Boolean = editSeq > 0
 
 /** 模式切换 chips（自定义即预览：三选一） */
 @Composable

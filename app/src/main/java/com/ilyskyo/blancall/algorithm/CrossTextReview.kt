@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.algorithm
 
+import com.ilyskyo.blancall.data.repository.CustomClozeStore
+
 /**
  * 跨文本联动复习（F7）
  *
@@ -121,6 +123,40 @@ object CrossTextReview {
         }
 
         return result
+    }
+
+    /**
+     * 跨文「自定义挖空」映射（纯函数，可单测）：把「每篇文章各自选定的挖空配置」
+     * 的空位区间，平移到混合内容的句序坐标。
+     *
+     * 口径：
+     * - 配置的 BlankSpec.s = 该文章内句索引（SentenceSplitter.split(原文) 口径）；
+     * - [sources] 与 [sentences]（SentenceSplitter.split(混合内容)）一一对应，
+     *   给出每句的来源（文章 id + 原句索引）；
+     * - 未在 [configsByArticle] 中的文章（未选择 / 无配置）不贡献任何空位；
+     * - 文章被修改变短等失效区间经 [RangeOps.normalizeClampedRanges] 归一化裁剪，
+     *   裁剪后无有效区间的句子直接跳过（不会出现越界错配的空）。
+     *
+     * @return 混合句索引 → 该句的挖空区间（空表 = 无任何可应用空位）
+     */
+    fun mapCustomClozeRanges(
+        sentences: List<String>,
+        sources: List<SourceInfo>,
+        configsByArticle: Map<Long, CustomClozeStore.CustomConfig>,
+    ): Map<Int, List<IntRange>> {
+        if (sentences.isEmpty() || sources.isEmpty() || configsByArticle.isEmpty()) return emptyMap()
+        val out = LinkedHashMap<Int, List<IntRange>>()
+        sentences.forEachIndexed { i, text ->
+            val src = sources.getOrNull(i) ?: return@forEachIndexed
+            val cfg = configsByArticle[src.articleId] ?: return@forEachIndexed
+            val ranges = cfg.blanks
+                .filter { it.s == src.sentenceIndex }
+                .map { it.a until it.b }
+            if (ranges.isEmpty()) return@forEachIndexed
+            val normalized = RangeOps.normalizeClampedRanges(text.length, ranges)
+            if (normalized.isNotEmpty()) out[i] = normalized
+        }
+        return out
     }
 
     /**
