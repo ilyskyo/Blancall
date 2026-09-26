@@ -388,9 +388,17 @@ private fun ModeListContent(
     }
 
     Column(
-        modifier = Modifier
-            .verticalScroll(rememberScrollState())
-            .padding(top = 20.dp, bottom = 6.dp)
+        modifier = if (expandDirection == ExpandDirection.BOTTOM_SHEET) {
+            // BOTTOM_SHEET：外层 GlassModalBottomSheet 自带 verticalScroll（内容即可滚动），
+            // 此处不得再叠加滚动 —— 嵌套垂直滚动会让内层收到无限高约束并直接崩溃
+            //（IllegalStateException: Vertically scrollable ... infinity ...，真机闪退根因）
+            Modifier.padding(top = 20.dp, bottom = 6.dp)
+        } else {
+            // UP / DOWN 浮窗：容器自身无滚动，内容在这里滚动（单层，无嵌套）
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(top = 20.dp, bottom = 6.dp)
+        }
     ) {
         // 标题：index 0，最先出现
         val titleProgress = itemProgress(0)
