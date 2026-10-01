@@ -30,12 +30,12 @@ Blancall turns any article into cloze practice and uses memory science to help y
 
 **Six core selling points**:
 
-- **Offline handwriting recognition** — 7,356 Chinese classes / 47 Latin classes, on-device NCNN inference: write it, and it gets graded
-- **FSRS-6 spaced repetition** — the same algorithm family as Anki (default 90% retention); reviews land right at the edge of forgetting
-- **AI cloze generation** — AI picks the spots, the app grades against your original text; a coordinate contract means AI can never tamper with it
-- **Character-level error diagnosis** — typos / missing / extra / wrong-order characters classified, with a similarity score
-- **Cross-article mixing + weakness drills** — break single-article dependence; practice always lands on your weakest spots
-- **Local-only, zero upload** — no account, no cloud, fully offline
+- **Four practice modes** — sentence cloze / keyword cloze / reverse dictation / custom cloze, a progressive path covering every memory level
+- **Daily sentence card** — one sentence auto-picked each day; three-key ratings feed the FSRS scheduler, so fragmented time still moves review forward
+- **Handwritten answers (in-house models)** — self-trained recognition models (7,356 Chinese classes / 47 Latin classes) running on-device via NCNN: write it, and it gets graded
+- **Reading-page masking** — mask the original text right on the reading page; read and memorize in one place
+- **Custom cloze & mask positions** — mark exam points sentence-by-sentence / word-by-word / character-by-character, saved as named presets you can reuse anytime
+- **Multi-format import** — paste / TXT / PDF (with preview) / Word, auto-split into sentences and paragraphs; start marking key points right after import
 
 **The learning loop**:
 
