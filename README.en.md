@@ -169,10 +169,9 @@ The source code is released under the **MIT License** (see the [LICENSE](LICENSE
 
 ### Fonts
 
-The bundled font **Noto Sans SC** (Google & Adobe; Source Han Sans / Noto Sans CJK family) is licensed under the **SIL Open Font License 1.1** — free for commercial use and bundling.
+The font embedded for PDF export is **LXGW WenKai (霞鹜文楷) Medium**, licensed under the **SIL Open Font License 1.1** and **IPA Font License 1.0** — free for commercial use and bundling.
 
-- Font page: https://fonts.google.com/noto
-- Repository: https://github.com/notofonts/noto-cjk
+- Repository: https://github.com/lxgw/LxgwWenKai
 
 The circular mark on the app icon is rendered with a glyph from **LXGW Neo XiHei**, derived from "IPAex Gothic", under **SIL Open Font License 1.1** and **IPA Font License 1.0** — free for commercial use and bundling.
 
