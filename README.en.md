@@ -39,16 +39,7 @@ Blancall turns any article into cloze practice and uses memory science to help y
 
 **The learning loop**:
 
-```mermaid
-flowchart LR
-    A[Import article] --> B[Reading mode<br>mask text & mark key points]
-    B --> C[Sentence cloze<br>learn the structure]
-    C --> D[Keyword cloze<br>sharpen the details]
-    D --> E[Reverse dictation<br>restore in full]
-    E --> F[FSRS-6 scheduling<br>review at the edge of forgetting]
-    F --> G[Weakness drills<br>eliminate errors]
-    G -->|due today| F
-```
+![Blancall learning loop](docs/screenshots/learning-loop.png)
 
 ### 1. Core Practice Engine
 

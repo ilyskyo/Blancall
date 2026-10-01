@@ -41,16 +41,7 @@ Blancall 把任何文章变成挖空练习，用记忆科学帮你真正记住�
 
 **学习闭环**：
 
-```mermaid
-flowchart LR
-    A[导入文章] --> B[阅读模式<br>挡片遮挡 · 圈定考点]
-    B --> C[句子挖空<br>熟悉结构]
-    C --> D[字词挖空<br>强化细节]
-    D --> E[反向默写<br>整段还原]
-    E --> F[FSRS-6 排期<br>濒临遗忘时复习]
-    F --> G[薄弱集训<br>消灭错点]
-    G -->|今日到期| F
-```
+![Blancall 学习闭环](docs/screenshots/learning-loop.png)
 
 ### 一、核心背诵引擎
 
