@@ -2,7 +2,9 @@
 > 本仓库即日起停止一切更新活动。  
 > **恢复更新日期：不早于 2027 年 6 月 10 日。**
 
-**Blancall**
+**Blancall** ｜ [English](README.en.md)
+
+![License](https://img.shields.io/badge/License-MIT-blue) ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84) ![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F52FF) ![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)
 
 **Not “blank all”, but “recall”**.Blancall helps you turn any article into fill-in-the-blank exercises. It offers a modern, efficient, and trustworthy way to master the content you need to memorize.
 
@@ -11,6 +13,18 @@
 Blancall 是一个帮助你把任何文章转化为挖空练习的开源项目。基于遗忘曲线调度复习，支持自配 AI 分析练习数据，所有数据本地存储，不上云。
 
 > 提示：本项目的 AI 功能需由用户自行配置第三方 API 服务，请用户自行确保使用第三方 AI API 时遵守其服务条款。
+
+## 📱 界面预览
+
+<!-- 截图待补充：图片放入 docs/screenshots/ 后取消下方注释
+| 阅读页 | 练习页 |
+|---|---|
+| ![](docs/screenshots/reader.png) | ![](docs/screenshots/practice.png) |
+
+| 统计页 | 手写作答 |
+|---|---|
+| ![](docs/screenshots/stats.png) | ![](docs/screenshots/handwriting.png) |
+-->
 
 ## ✨ 功能亮点
 
@@ -95,14 +109,17 @@ Blancall 把任何文章变成挖空练习，用记忆科学帮你真正记住�
 | AI 学习助手（自配 API / AI 挖空 / 联网搜索 / 对话存档） | ✅ Pro 专属 | ❌ 无任何 AI 模块 |
 | 适用人群 | 想要 AI 出题、答疑、错因分析的进阶用户 | 只要纯粹背诵工具、追求极简与隐私的用户 |
 
-注本项目为源代码，不提供apk文件。需自行编译后使用。
+## 安装
 
-环境要求
+本项目以源代码形式分发，**不提供 APK 文件**，需自行编译后使用。
+
+### 环境要求
+
 - Android Studio
 - Kotlin
 - （其他依赖由 Gradle 自动管理）
 
-克隆与编译
+### 克隆与编译
 
 ```bash
 # 克隆仓库
@@ -112,6 +129,26 @@ git clone https://github.com/ilyskyo/Blancall.git
 # 等待 Gradle 同步完成
 # 点击 Run 按钮编译安装
 ```
+
+## 数据与备份
+
+- 所有数据（文章、练习进度、统计、AI 对话记录）仅存储在设备本机的应用私有目录，无账号、无云端。
+- 「CSV 导出」导出的是**练习记录**；文章库与练习进度目前没有一键整体备份功能。
+- 换机迁移：可借助系统或厂商换机工具迁移应用数据（完整性不保证），或在新设备上重新导入文章。
+
+## 常见问题（FAQ）
+
+**为什么没有 APK / 安装包？**
+
+本项目以源代码形式开源，供学习、研究与自行构建使用，不提供编译好的安装包。
+
+**Pro 版和标准版（NoAI）怎么选？**
+
+两者的功能差异只在 AI，见上方「两版差异速览」。需要 AI 出题、答疑、联网核验选 Pro；只要一个纯粹的背诵工具选标准版（[Blancall-NoAI](https://github.com/ilyskyo/Blancall-NoAI)）。
+
+**需要联网吗？**
+
+核心背诵、记忆调度、统计、手写识别全部离线可用；仅 AI 功能需要联网，且 AI 可整体关闭、关闭后所有入口零痕迹。
 
 ## 开源许可
 
