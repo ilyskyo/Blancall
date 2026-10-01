@@ -41,16 +41,14 @@ Blancall turns any article into cloze practice and uses memory science to help y
 
 ```mermaid
 flowchart LR
-    A[Import article] --> B[Sentence cloze<br>learn the structure]
-    B --> C[Keyword cloze<br>sharpen the details]
-    C --> D[Reverse dictation<br>restore in full]
-    D --> E[FSRS-6 scheduling<br>review at the edge of forgetting]
-    E --> F[Weakness drills<br>eliminate errors]
-    F -->|due today| E
+    A[Import article] --> B[Reading mode<br>mask text & mark key points]
+    B --> C[Sentence cloze<br>learn the structure]
+    C --> D[Keyword cloze<br>sharpen the details]
+    D --> E[Reverse dictation<br>restore in full]
+    E --> F[FSRS-6 scheduling<br>review at the edge of forgetting]
+    F --> G[Weakness drills<br>eliminate errors]
+    G -->|due today| F
 ```
-
-<details>
-<summary><b>Core Practice Engine · full 12-feature table</b></summary>
 
 ### 1. Core Practice Engine
 
@@ -68,8 +66,6 @@ flowchart LR
 | Smart grading & error diagnosis | Punctuation tolerance; CJK/Latin mixed-text tolerance (full/half width, case, decimal points); edit-distance diagnosis of typos / missing / extra / wrong-order characters with a similarity score | Poetry and prose dictation, foreign-language passages, character-level checks | No more failing on a comma; you learn *which kind* of mistake you made |
 | Daily sentence card | One sentence per day: due reviews first, otherwise a new sentence rotating across articles; swipe up/down; rate with Forgot / Shaky / Got it | Two minutes a day of sentence-level memory | A zero-friction daily habit that compounds |
 | Offline handwriting | Switch to handwritten answers: built-in local recognition (NCNN, fully offline), Chinese model with 7,356 classes (HWDB full set: 7,185 characters + 171 alphanumerics), Latin model with 47 classes (EMNIST); embedded board, pressure-aware ink, automatic character splitting for continuous writing | Stylus dictation; testing memory through real writing | Handwriting mirrors real exams, and recognition never leaves the device |
-
-</details>
 
 ### 2. Memory Science Engine
 
