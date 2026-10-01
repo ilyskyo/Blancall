@@ -4,7 +4,7 @@
 
 **Blancall** ｜ [English](README.en.md)
 
-![License](https://img.shields.io/badge/License-MIT-blue) ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84) ![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F52FF) ![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Android-3DDC84)](https://www.android.com/) [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F52FF)](https://kotlinlang.org/) [![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)](https://developer.android.com/compose)
 
 **Not “blank all”, but “recall”**.Blancall helps you turn any article into fill-in-the-blank exercises. It offers a modern, efficient, and trustworthy way to master the content you need to memorize.
 
