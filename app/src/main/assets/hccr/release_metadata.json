@@ -6,6 +6,22 @@
     "top1": 0.9575,
     "top5": 0.993
   },
+  "metrics_scope": {
+    "test_set": "自建测试集（从 CASIA-HWDB 1.0+1.2 自行划分）",
+    "is_official_casia_test_set": false,
+    "comparable_to_public_benchmarks": false,
+    "why_not_comparable": "官方 CASIA 测试集是固定不变的，所有论文使用同一份，因此其数值可横向对比；本项目使用的自建划分由训练者自行决定切分方式，同一书写者的不同字可能同时出现在训练集与测试集，设备/笔/纸张分布也可能一致。自建划分通常略偏容易。",
+    "reading_guide": "这两个数字只说明本模型在本次训练的自建划分上的表现，不能用于与任何论文、ML Kit 或其他模型的公开数值直接比较。",
+    "official_casia_test_set_top1_reference": 0.9547,
+    "official_casia_reference_note": "0.9547 为代码历史注释中记录的官方 CASIA 测试集 top-1，与上面的自建测试集数值属两个不同测试集，互相不可比。",
+    "observed_during_training": {
+      "sample_epoch3_top1": 0.9312,
+      "sample_epoch3_top5": 0.9905,
+      "sample_note": "README_TRAIN.md 记录的样例日志（epoch 3/18），非最终结果；该文件同时写明「top1 到 0.93 以上就很好了」。真实训练的 train_report.txt 未随仓库提交。"
+    },
+    "on_device_expectation": "端侧实际体验通常低于上表数值：真实手写存在连笔、潦草、非常规笔顺、压感缺失等情况，置信度分布比标准测试集更平。这也是自动上屏阈值取得保守（top-1 >= 0.80 且领先 top-2 >= 0.15）的原因。"
+  },
+  "note": "2026-09 起为用户自训 7356 类模型（HWDB 全集：7185 汉字 + 171 符号，含 14 个标点类）；本文件按当前 assets 资产重新生成，旧版 3755 类记录已废弃。",
   "note": "2026-09 起为用户自训 7356 类模型（HWDB 全集：7185 汉字 + 171 符号，含 14 个标点类）；本文件按当前 assets 资产重新生成，旧版 3755 类记录已废弃。",
   "sha256": {
     "ncnn/model.ncnn.param": "488713410ee1ffbc86fc1beeb6795d82cbcefa704ba15739655b8f3538bb333a",

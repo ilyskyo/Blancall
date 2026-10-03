@@ -24,6 +24,9 @@ data class HandwritingResult(
      * 否则交由用户从候选中点选 —— 宁可多一次点选，也不误判。
      *
      * 阈值取 0.80 是保守值：CASIA 测试集 top-1 为 95.47%，
+     * 自建测试集 top-1 为 95.75% / top-5 99.30%
+     * （两个测试集互相不可比，也不可与公开基准横向比较 —— 详见
+     * `assets/hccr/release_metadata.json` 的 `metrics_scope` 字段），
      * 但在真实手写（笔迹潦草、连笔、非常规笔顺）下置信度分布更平，
      * 此时默认不给结论更安全。
      */
