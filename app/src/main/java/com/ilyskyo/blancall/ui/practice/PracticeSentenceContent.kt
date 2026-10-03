@@ -527,7 +527,13 @@ internal fun SentenceBlankInline(
 
 /** 淡显提示字（弱提示）：5s 淡入到浅灰。用于输入框内部 overlay 与句内空位。 */
 @Composable
-internal fun HintGhost(hintChar: Char?, show: Boolean = true, modifier: Modifier = Modifier) {
+internal fun HintGhost(
+    hintChar: Char?,
+    show: Boolean = true,
+    modifier: Modifier = Modifier,
+    /** 字号随宿主走：输入框内用 bodyMedium，弹层答案回显用 titleMedium（否则提示字会比答案小一号）。 */
+    textStyle: TextStyle = MaterialTheme.typography.bodyMedium
+) {
     val alpha = remember(hintChar, show) { Animatable(0f) }
     LaunchedEffect(hintChar, show) {
         if (hintChar != null && show) alpha.animateTo(0.38f, animationSpec = tween(5000))
@@ -536,7 +542,7 @@ internal fun HintGhost(hintChar: Char?, show: Boolean = true, modifier: Modifier
     if (hintChar != null && alpha.value > 0.01f) {
         Text(
             hintChar.toString(),
-            style = MaterialTheme.typography.bodyMedium,
+            style = textStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha.value),
             modifier = modifier
         )

@@ -5,8 +5,8 @@ package com.ilyskyo.blancall.ui.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import com.ilyskyo.blancall.ui.common.StylusActivity
-import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -54,22 +54,71 @@ import kotlinx.coroutines.launch
     }
 
     /**
-     * 手写作答期间**不做任何提示**。
+     * 板面墨迹变化对提示计时的处置（纯逻辑，便于单测）。
      *
-     * 弱提示的节奏是「无输入 10s → 淡显下一字 → 再 5s → **自动填入**」，用户正拿笔写字时：
-     * 淡显的字会被他当成自己写的、自动填入更是直接替他改答案 —— 纯打断。
-     * 用户要求：只要有手写笔在手写，就不要提示。
+     * - [CANCEL] 板上有墨迹 ⇒ 取消计时并清掉已淡显的提示字。
+     *   **只在真正有墨迹的时候拦**：手写态并非全程无提示，用户要求
+     *   「手写也该有强弱提示，只是别在写着的时候冒出来」。
+     * - [RESUME] 板空 ⇒ 从首次 10s 重新计时（不接着刚才的进度，
+     *   否则多笔字「女」抬笔写「子」的间隙会立刻弹出下一个提示字）。
+     * - [IDLE] 已提交 / 提示被关 ⇒ 什么都不做。
      */
-    internal fun PracticeViewModel.isHandwritingActive(): Boolean =
-        AppPrefs.handwritingInputEnabled || StylusActivity.isWriting
+    internal enum class InkHintAction { CANCEL, RESUME, IDLE }
+
+    internal fun inkHintAction(
+        hasInkOnBoard: Boolean,
+        submitted: Boolean,
+        hintEnabled: Boolean
+    ): InkHintAction = when {
+        submitted || !hintEnabled -> InkHintAction.IDLE
+        hasInkOnBoard -> InkHintAction.CANCEL
+        else -> InkHintAction.RESUME
+    }
+
+    /**
+     * 书写板此刻有没有墨迹（正在写的那一笔、或已抬笔但还留在板上的都算）。
+     *
+     * ⚠️ 这里**不能**用 `AppPrefs.handwritingInputEnabled`：那是「默认输入方式」开关，
+     * 开着就永远为真，等于回到「手写全程无提示」。也不能用 `StylusActivity.isWriting`
+     * ——那是掌托守卫，只对笔置位，手指书写永远判不到。
+     */
+    internal fun PracticeViewModel.hasInkOnBoard(): Boolean = StylusActivity.hasInkOnBoard
+
+    /** 板面墨迹变化 ⇒ 提示计时启停。订阅 [StylusActivity.inkFlow]，VM 存活期间常驻。 */
+    internal fun PracticeViewModel.bindInkHintTimer() {
+        viewModelScope.launch {
+            StylusActivity.inkFlow.collect { hasInk ->
+                when (inkHintAction(hasInk, _isSubmitted.value, _showHint.value)) {
+                    InkHintAction.CANCEL -> stopAllBlankHints()
+                    InkHintAction.RESUME -> resumeHintTimer()
+                    InkHintAction.IDLE -> Unit
+                }
+            }
+        }
+    }
+
+    /**
+     * 板面清空后把提示计时接回去。
+     *
+     * 恢复到**刚才那个空**（[lastHintedBlank]），而不是「当前聚焦的空」：
+     * 弹层里写的是弹层对应的空，焦点可能在别处，恢复到错的空会让提示串位。
+     */
+    internal fun PracticeViewModel.resumeHintTimer() {
+        when (_mode.value) {
+            BlancallMode.REVERSE -> startDictationHint()
+            BlancallMode.SENTENCE, BlancallMode.WORD ->
+                lastHintedBlank?.let { maybeStartBlankHint(it) }
+        }
+    }
 
     internal fun PracticeViewModel.maybeStartBlankHint(blankIndex: Int) {
-        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) {
+        if (_isSubmitted.value || !_showHint.value || hasInkOnBoard()) {
             blankHintJobs[blankIndex]?.cancel()
             return
         }
         val expected = expectedText(blankIndex) ?: return
         if (expected.isBlank()) return
+        lastHintedBlank = blankIndex
         startBlankHint(blankIndex, expected)
     }
 
@@ -80,8 +129,8 @@ import kotlinx.coroutines.launch
      * @param blankIndex 字词/句子模式当前聚焦的空；反向默写传 null（整段输入计时）
      */
     internal fun PracticeViewModel.ensureHintTimer(blankIndex: Int? = null) {
-        // 手写作答期间不提示（见 isHandwritingActive）
-        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) return
+        // 板上有墨迹时不启动（见 hasInkOnBoard）；板空后由 bindInkHintTimer 接回
+        if (_isSubmitted.value || !_showHint.value || hasInkOnBoard()) return
         when (_mode.value) {
             BlancallMode.SENTENCE, BlancallMode.WORD -> {
                 val idx = blankIndex ?: return
@@ -136,8 +185,8 @@ import kotlinx.coroutines.launch
      * 再 5s 无输入自动填入并循环；任何键入重新计时。
      */
     internal fun PracticeViewModel.startDictationHint() {
-        // 手写作答期间不提示（见 isHandwritingActive）
-        if (_isSubmitted.value || !_showHint.value || isHandwritingActive()) {
+        // 板上有墨迹时不提示（见 hasInkOnBoard）
+        if (_isSubmitted.value || !_showHint.value || hasInkOnBoard()) {
             dictationHintJob?.cancel()
             _dictationHint.value = null
             return

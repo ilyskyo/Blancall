@@ -62,6 +62,7 @@ import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.StylusPresence
 import com.ilyskyo.blancall.ui.common.penTapToHandwriting
 import com.ilyskyo.blancall.ui.common.suppressAsPalmMisTouch
+import com.ilyskyo.blancall.ui.practice.HintGhost
 import com.ilyskyo.blancall.ui.practice.HintOutlinedField
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 
@@ -89,7 +90,14 @@ fun AnswerInputField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "",
-    /** 弱提示字（键盘态跟在光标后淡入；手写态不显示——手写时看字会「照抄」） */
+    /**
+     * 弱提示字：跟在已输入内容之后淡入下一个待填字。
+     *
+     * 手写态**同样显示**——早先「手写不提示」的理由是「看字会照抄」，但真正该拦的是
+     * 「写着写着提示冒出来」（用户正在落笔，余光扫到淡显的字、或被自动填入打断）。
+     * 所以提示照常计时，只在 [com.ilyskyo.blancall.ui.common.StylusActivity.hasInkOnBoard]
+     * 为真（板面此刻有墨迹，含刚抬笔还没上屏的那一笔）时取消。
+     */
     hintChar: Char? = null,
     enabled: Boolean = true,
     isError: Boolean = false,
@@ -270,18 +278,29 @@ fun AnswerInputField(
                                 maxLines = maxLines,
                                 keyboardOptions = KeyboardOptions(imeAction = imeAction),
                                 decorationBox = { innerTextField ->
-                                    Box {
-                                        if (value.isEmpty()) {
-                                            Text(
-                                                placeholder.ifBlank {
-                                                    if (stylusPresent) "用笔在下方书写" else "用手指在下方书写"
-                                                },
-                                                style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
+                                    // 与键盘态 HintOutlinedField 同一套排法：提示字紧跟已写内容
+                                    // （value 为空时即落在光标处），而不是浮在框角。
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(modifier = Modifier.weight(1f, fill = false)) {
+                                            if (value.isEmpty()) {
+                                                Text(
+                                                    placeholder.ifBlank {
+                                                        if (stylusPresent) "用笔在下方书写" else "用手指在下方书写"
+                                                    },
+                                                    style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            innerTextField()
                                         }
-                                        innerTextField()
+                                        // 手写态的弱提示：有笔迹时 hintChar 已被计时器清空，
+                                        // 收笔后才重新淡显，所以不会与正在写的笔画同框。
+                                        HintGhost(
+                                            hintChar,
+                                            show = hintChar != null,
+                                            modifier = Modifier.padding(start = 4.dp)
+                                        )
                                     }
                                 }
                             )

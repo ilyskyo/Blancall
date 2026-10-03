@@ -305,6 +305,33 @@ class InkBoardView @JvmOverloads constructor(
     private var writePointerId = -1
 
     /**
+     * 本板是否已计入全局「板面有墨迹」计数（[StylusActivity] 的配对标记）。
+     *
+     * 幂等保护：同一块板的收笔/清板/退场三条路径都可能撞上，
+     * 各减一次会让计数变负，提示计时就再也停不下来了。
+     */
+    private var inkReported = false
+
+    /** 板面此刻是否有墨迹：**正在写的那一笔也算**（此刻还在 `current` 里、尚未进 `strokes`）。 */
+    private fun inkPresent(): Boolean = writePointerId >= 0 || strokes.isNotEmpty()
+
+    /**
+     * 把板面墨迹状态同步给全局（提示计时据此启停）。
+     *
+     * ⚠️ 判据是「板上有墨迹」而不是「笔尖按着」：抬笔后到识别完成前、
+     * 以及低置信候选等待点选期间，板上墨迹都还在（见 [removeStrokes] 的注释：
+     * 候选待选的那几段必须留着，用户要看着自己写的字挑）。
+     * 这两段时间里用户仍在写那一个字，此时弹提示既是干扰，
+     * 强提示自动填入还会与板上那个字重复 —— 所以这段时间必须一并算作「有墨迹」。
+     */
+    private fun syncInkState() {
+        val present = inkPresent()
+        if (inkReported == present) return
+        inkReported = present
+        if (present) StylusActivity.notifyBoardHasInk() else StylusActivity.notifyBoardCleared()
+    }
+
+    /**
      * 运动预测器（显示层补间，见 [PREDICT_ENABLED]）。
      * 库在 API 19+ 自带内置预测实现；初始化失败（极端情况）时置 null，功能整体降级。
      */
@@ -368,6 +395,7 @@ class InkBoardView @JvmOverloads constructor(
     fun removeStrokes(exact: List<List<Offset>>) {
         if (exact.isEmpty()) return
         strokes.removeAll { rec -> exact.any { it === rec.pts } }
+        syncInkState()
         invalidate()
     }
 
@@ -399,6 +427,7 @@ class InkBoardView @JvmOverloads constructor(
         // 会「回光返照」跳到新进度上。
         clearExitNow()
         strokes.removeAll(matched)
+        syncInkState()
         groups.forEach { g ->
             val recs = g.mapNotNull { ptsRef -> matched.firstOrNull { it.pts === ptsRef } }
             if (recs.isEmpty()) return@forEach
@@ -463,6 +492,7 @@ class InkBoardView @JvmOverloads constructor(
         currentTimes.clear()
         strokeSim = false
         liveDirty = false
+        syncInkState()
         invalidate()
     }
 
@@ -514,6 +544,8 @@ class InkBoardView @JvmOverloads constructor(
                 // suppressAsPalmMisTouch）的判定依据；手指书写没有掌托语义，置位会误伤
                 // 「另一只手点按其它控件」的合法操作。
                 StylusActivity.isWriting = stylusDown
+                // 板面有墨迹即停提示计时（笔和手指都算）
+                syncInkState()
                 latSamples = 0
                 latSumMs = 0L
                 latMaxMs = 0L
@@ -607,6 +639,8 @@ class InkBoardView @JvmOverloads constructor(
         writePointerId = -1
         strokeSim = false
         StylusActivity.isWriting = false
+        // 墨迹已随 View 消失 ⇒ 全局「板面有墨迹」必须复位，否则提示永远停着
+        syncInkState()
         // 退场动画不能跟着视图一起留下（ValueAnimator 还持有监听、会继续 invalidate）
         clearExitNow()
     }
@@ -771,6 +805,9 @@ class InkBoardView @JvmOverloads constructor(
     private fun finishStroke(drop: Boolean, endMs: Long) {
         StylusActivity.isWriting = false
         writePointerId = -1
+        // 提示计时按「板上还有没有墨迹」恢复，而不是无脑恢复：
+        // 这一笔若被 keep，墨迹才刚进板子，用户还在写这个字 ⇒ 计时继续停着。
+        syncInkState()
         // 收笔后把拦截权还给父容器，否则列表再也滚不动
         parent?.requestDisallowInterceptTouchEvent(false)
 
@@ -800,6 +837,9 @@ class InkBoardView @JvmOverloads constructor(
         // 同步交给上层判定：是字还是「划掉」手势。压力只留给显示，不进这个回调。
         val keep = onStrokeEnd?.invoke(pts, width, height) ?: false
         if (keep) strokes.add(StrokeRec(pts, pressures, startMs, endMs, sim))
+        // 这一笔刚落板：墨迹从「正在写」转成「已完成待识别」，对提示而言仍是「有墨迹」，
+        // 但 syncInkState 是按状态跳变上报的，这里必须再同步一次才不会出现空窗。
+        syncInkState()
 
         if (isDebuggable && latSamples > 0) {
             // 一起把刷新率打出来：屏幕刷新率决定墨迹延迟的**下限**（60Hz ⇒ 每帧 16.7ms）。

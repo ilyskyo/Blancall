@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.StylusPresence
+import com.ilyskyo.blancall.ui.practice.HintGhost
 
 /**
  * 「就地书写」底部面板：对某个具体挖空作答。
@@ -87,14 +87,6 @@ fun HandwritingAnswerSheet(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(Modifier.width(8.dp))
-                if (hintChar != null) {
-                    Text(
-                        "提示：$hintChar",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onDismissRequest) { Text("完成") }
             }
@@ -111,13 +103,25 @@ fun HandwritingAnswerSheet(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // ⚠️ 提示字必须与键盘态落在**同一类位置**：紧跟已写内容。
+                    // 早先放在标题行右侧（「提示：X」），那是与输入无关的地方 ——
+                    // 提示的功能就是提示「下一个字」，离开答案区就失去了参照。
+                    // `fill = false` 让文字按内容宽度占位、提示字紧随其后，
+                    // 再用弹性 Spacer 把退格/清空推到行尾（长答案仍能换行占满宽度）。
                     Text(
                         answer.ifEmpty { "（还没写）" },
                         style = MaterialTheme.typography.titleMedium,
                         color = if (answer.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    HintGhost(
+                        hintChar,
+                        show = hintChar != null,
+                        modifier = Modifier.padding(start = 4.dp),
+                        textStyle = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(Modifier.weight(1f))
                     if (answer.isNotEmpty()) {
                         TextButton(onClick = { onAnswerChange(answer.dropLast(1)) }) {
                             Text("⌫")

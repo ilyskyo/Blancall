@@ -15,6 +15,8 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.flow.MutableStateFlow
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.sqrt
 
 /**
@@ -158,6 +160,66 @@ object StylusActivity {
     /** 最近一次「手指点按被笔书写挡下」的时间戳。仅用于调试定位，不参与任何逻辑判断。 */
     @Volatile
     var lastSuppressedAt: Long = 0L
+
+    // ── 板面墨迹（提示计时用）────────────────────────────────────────────
+    //
+    // ⚠️ 与上面的 [isWriting] **不是一回事**，别合并：
+    // isWriting 是「掌托守卫」，只对笔置位（手指书写没有掌托语义，置位会误伤
+    // 「另一只手点按其它控件」）；而提示计时要的是「板面上此刻有没有墨迹」，
+    // 笔和手指都算。用 isWriting 判手指书写会永远判不到。
+
+    /**
+     * 板面有墨迹的书写板数量。用计数而非布尔：多块板理论上可同时收到不同触点的
+     * DOWN，布尔会在「A 板清空」时把「B 板还有墨迹」的状态一起抹掉。
+     * 只允许 [InkBoardView] 通过 [notifyBoardHasInk] / [notifyBoardCleared] 改动。
+     */
+    private val inkDepth = AtomicInteger(0)
+
+    /**
+     * 是否有任意书写板此刻**有墨迹**。
+     *
+     * 含两种情形：① 正在写的那一笔（笔尖未抬）；② 已抬笔但墨迹还留在板上 ——
+     * 识别停顿期间、以及低置信候选等待点选期间都属于后者，用户此时仍在写那一个字。
+     * 只判 ① 是不够的：强提示自动填入会与板上那个字重复。
+     */
+    @Volatile
+    var hasInkOnBoard: Boolean = false
+        private set
+
+    /**
+     * 板面墨迹状态变化事件流：`true` = 板上有墨迹，`false` = 板已空。
+     *
+     * 提示计时订阅它：有墨迹 ⇒ 取消所有提示（防止「写着写着提示冒出来」），
+     * 板空 ⇒ 从 10s 重新计时。用流而不是让计时协程轮询 [hasInkOnBoard]，
+     * 是因为 `delay(10_000)` 无法被标志位打断。
+     */
+    val inkFlow: MutableStateFlow<Boolean> = MutableStateFlow(false)
+
+    internal fun notifyBoardHasInk() {
+        if (inkDepth.incrementAndGet() == 1) publish(true)
+    }
+
+    internal fun notifyBoardCleared() {
+        // ⚠️ 必须把**存储值**夹到 0，不能只对返回值做 coerceAtLeast：
+        // View 生命周期异常（finishStroke 与 onDetachedFromWindow 撞车）会多报一次清空，
+        // 计数停在 -1；此后每次 increment 都到不了 1，`== 1` 永不成立
+        // ⇒ hasInkOnBoard 再也置不回 true ⇒ 提示永远不再出现（且无任何报错）。
+        // CAS 循环而非 updateAndGet：后者要 API 24，本项目 minSdk 更低。
+        while (true) {
+            val cur = inkDepth.get()
+            if (cur <= 0) {
+                inkDepth.compareAndSet(cur, 0)
+                break
+            }
+            if (inkDepth.compareAndSet(cur, cur - 1)) break
+        }
+        if (inkDepth.get() == 0) publish(false)
+    }
+
+    private fun publish(hasInk: Boolean) {
+        hasInkOnBoard = hasInk
+        inkFlow.value = hasInk
+    }
 }
 
 /**

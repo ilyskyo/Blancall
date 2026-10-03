@@ -208,6 +208,16 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     internal val _showHint = MutableStateFlow(true)
     val showHint: StateFlow<Boolean> = _showHint.asStateFlow()
 
+    /**
+     * 落笔即停、收笔即恢复：手写也走强弱提示，只是别在写着的时候弹出来。
+     *
+     * 放构造函数里而不是 UI 侧 `LaunchedEffect`：`StylusActivity` 是进程级单例，
+     * 练习页重建（旋屏、配置变更）不该让订阅出现空窗，否则会漏掉一次落笔。
+     */
+    init {
+        bindInkHintTimer()
+    }
+
     // 双指缩放字号（练习页），默认 1.0x，范围 0.6x ~ 3.0x
     private val _fontScale = MutableStateFlow(1f)
     val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
@@ -1454,6 +1464,14 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
 
     internal val blankHintJobs = mutableMapOf<Int, Job>()
     internal val blankInputVersions = mutableMapOf<Int, Int>()
+
+    /**
+     * 最近一次启动提示计时的空。
+     *
+     * 收笔后据此恢复计时（见 [resumeHintTimer]）：不用「当前聚焦的空」是因为
+     * 弹层里写的是弹层对应的空，焦点可能在别处，恢复到错的空会让提示串位。
+     */
+    internal var lastHintedBlank: Int? = null
 
 
 
