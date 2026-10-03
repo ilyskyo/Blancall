@@ -1,0 +1,22 @@
+{
+  "name": "HandwrittenLatin",
+  "model": "cnn_emnist_balanced",
+  "classes": 47,
+  "input": "1x28x28",
+  "preprocess": "grayscale -> crop bbox -> resize content to 20x20 -> invert (white-on-black) -> normalize [-1,1]",
+  "metrics": {
+    "note": "英文模型无独立 top-k 精度报告；正确性判据为与 numpy 参照前向的数值一致性（见 _enmodel/verify_ncnn.py）。"
+  },
+  "note": "2026-10 起补齐本文件，使英文模型与中文模型（hccr/release_metadata.json）采用同一套可核验口径：类别数 + 三份资产 sha256 + 上游数据集声明。",
+  "source": "EMNIST Balanced (NIST SD19) / barkiayoub CNN (Apache-2.0), folded BN; NCNN param/bin hand-written by this project (build_ncnn.py)",
+  "license": {
+    "dataset": "NIST SD19 / EMNIST Balanced - public dataset, no non-commercial restriction",
+    "weights_origin": "Apache-2.0 (barkiayoub/handwritten-character-recognition)",
+    "ncnn": "BSD-3-Clause (Tencent/ncnn, statically linked)"
+  },
+  "sha256": {
+    "ncnn/model_en.param": "21997ca8a51b5c2de557a234dbb01b2316693c762f08ffd6beec1e089ecd41eb",
+    "ncnn/model_en.bin": "f341020251257043e4389b59fcfd78763f1ff94e0583200d9e9685968f8b678c",
+    "charset_en.json": "aa01982f13fada8fe110dcd2f95902cca85439ae47591cc7556e16db23aaa950"
+  }
+}

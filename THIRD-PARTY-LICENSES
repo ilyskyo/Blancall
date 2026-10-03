@@ -74,6 +74,125 @@ Blancall 使用了以下第三方开源组件。本项目自身以 MIT 许可证
    同样遵循上述非商业限制（详见 README「手写识别模型」用途声明）。
 
 ================================================================================
+4. ncnn（手写识别推理框架，静态链接进 libblancall_hccr.so）
+   - 项目：https://github.com/Tencent/ncnn
+   - 版本：release 20240820（Android 预编译包 ncnn-20240820-android-vulkan）
+   - 用途：本项目 app/src/main/cpp 内的手写识别推理（preprocess.c + hccr_jni.cpp）
+   - 许可证：BSD 3-Clause License
+   - 版权：Copyright (c) 2017 Tencent
+   - 集成方式：以 libncnn.a 静态链接进 app 的 JNI 库，运行时不单独分发 ncnn .so
+   - 备注：本项目推理配置为纯 CPU（use_vulkan_compute = false），不使用 ncnn 的 GPU 后端；
+           但因使用 vulkan 预编译包，链接期仍需 glslang / SPIRV 静态库。
+
+   BSD 3-Clause License
+
+   Copyright (c) 2017, Tencent
+   All rights reserved.
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, this
+      list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+
+   3. Neither the name of the copyright holder nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+   DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+   SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+   CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+   OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+================================================================================
+5. EMNIST / NIST Special Database 19（英文手写识别模型训练数据，非开源组件）
+   - 数据集：EMNIST Balanced（源自 NIST Special Database 19 / NIST SD19）
+   - 发布方：美国国家标准与技术研究院（NIST）
+   - 用途：本项目内置英文/拉丁手写识别模型（app/src/main/assets/hccr_en，47 类）的
+           训练数据。EMNIST Balanced 会折叠易混淆字符对（如 l/1、O/0），
+           因此类别数为 47 而非 62。
+   - 版权：NIST 商标归属美国政府；EMNIST 衍生数据遵循 NIST 数据使用条款
+   - 数据集主页：https://www.nist.gov/itl/iad/image-analysis/homepage-emnist
+   - 许可状态：NIST 公开数据集不施加非商业限制（与第 3 项 CASIA-HWDB 不同），
+               因此 assets/hccr_en 位于本项目 MIT 商业授权范围内。
+
+================================================================================
+6. handwritten-character-recognition（英文模型权重的第三方来源与结构参考）
+   - 项目：https://github.com/barkiayoub/handwritten-character-recognition
+   - 用途：工作区 _enmodel 目录中 EMNIST CNN 训练权重（cnn_model.pth）、类别映射
+           以及 convert_emnist.py / build_ncnn.py 的网络结构参考来源。
+           仅用于研究与转换流程，本仓库不含其代码副本。
+   - 许可证：Apache License 2.0
+   - 版权：Copyright (c) barkiayoub
+   - 集成方式：仅引用其模型权重文件与网络结构；转换后的 NCNN 权重由本项目自行生成
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+================================================================================
+7. Apache PDFBox（Android 移植版）及其依赖
+   - 项目：https://github.com/TomRoush/PdfBox-Android
+   - Maven 坐标：com.tom-roush:pdfbox-android:2.0.27.0
+   - 用途：PDF 文本提取与内置高考必背篇目的注释清洗
+           （PdfTextExtractor.kt / GaokaoTextCleaner.kt）
+   - 许可证：Apache License 2.0
+   - 版权：Copyright (c) 2007-2026, Matthew J. McGowan and contributors
+           （PdfBox-Android 移植版版权归 TomRoush）
+   - 备注：本项目通过 packaging.resources.excludes 排除了 fontbox 的
+           cmap/unicode 资源 jar 与 pdfbox 的 afm 资源 jar 以减小 APK 体积；
+           未修改其任何源码。
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+================================================================================
+8. FSRS-6 间隔重复算法（Kotlin 移植实现）
+   - 上游：Anki 开源实现 fsrs-rs（https://github.com/open-spaced-repetition/fsrs-rs）
+   - 算法与默认权重出处：FSRS-6 官方说明
+     https://github.com/open-spaced-repetition/awesome-fsrs/wiki/The-Algorithm
+   - 论文：J. Ye, J. Su, Y. Cao. A Stochastic Shortest Path Algorithm for
+     Optimizing Spaced Repetition Scheduling. DOI: 10.1145/3534678.3539081
+   - 许可证：fsrs-rs 以 MIT License 发布；本项目 FsrsEngine 为 Kotlin 移植实现，
+             携带其官方 FSRS-6 默认参数（21 个权重）与全部六个状态转移公式
+   - 兼容性：难度（D）/ 稳定性（S）状态语义与 v5 兼容，存量 fsrs_state.json 无需迁移
+
+================================================================================
+9. 内置与图标字体
+   - 霞鹜新晰黑（LXGW Neo XiHei）：应用图标字形
+     许可证：SIL Open Font License 1.1 + IPA Font License 1.0（允许商用与嵌入）
+   - 霞鹜文楷（LXGW WenKai）：阅读页内置字体（Light / Regular / Medium 三份静态母版，
+     覆盖 CJK 基本区全部 20992 字）
+     许可证：SIL Open Font License 1.1
+
+================================================================================
 
 ================================================================================
 补充合规说明（许可证保留要求）
