@@ -3,7 +3,10 @@
 
 package com.ilyskyo.blancall.ui.settings
 
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -44,6 +47,7 @@ import com.ilyskyo.blancall.MainActivity
 import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.data.ai.AiConfigStore
+import com.ilyskyo.blancall.data.backup.BackupManager
 import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -53,6 +57,11 @@ import com.ilyskyo.blancall.ui.theme.ReminderFrequency
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.theme.ThemeManager
 import com.ilyskyo.blancall.ui.theme.ThemeMode
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.system.exitProcess
 
 @Composable
 fun SettingsScreen(navController: NavController) {
@@ -60,6 +69,41 @@ fun SettingsScreen(navController: NavController) {
     // 首页副标题编辑弹窗（首页品牌栏收起时也可从这里修改）
     var showSubtitleDialog by remember { mutableStateOf(false) }
     val homeSubtitle by AppPrefs.subtitleFlow.collectAsState()
+
+    // ── 学习数据一键备份/恢复 ──
+    val backupContext = LocalContext.current
+    val backupScope = rememberCoroutineScope()
+    // 待确认的导入文件（选定后先弹覆盖确认，确认才落盘）
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    // 导入成功后的重启提示；非空即弹窗
+    var backupRestartMessage by remember { mutableStateOf<String?>(null) }
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            backupScope.launch {
+                val failure = withContext(Dispatchers.IO) {
+                    runCatching {
+                        backupContext.contentResolver.openOutputStream(uri)?.use { out ->
+                            BackupManager.exportZip(backupContext.filesDir, out)
+                        } ?: error("无法写入所选文件")
+                    }.exceptionOrNull()?.message
+                }
+                Toast.makeText(
+                    backupContext,
+                    if (failure == null) "备份文件已导出，请妥善保存" else "导出失败：$failure",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+    val backupImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            pendingImportUri = uri
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -677,6 +721,62 @@ fun SettingsScreen(navController: NavController) {
 
             Spacer(Modifier.height(8.dp))
 
+            // ── 数据（学习数据整机备份，换机/重装可一键迁移） ──
+            Text("数据", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary)
+
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(Modifier.padding(4.dp)) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("一键导出备份", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("文章库与练习进度等学习数据打包成一个备份文件，不含界面偏好设置",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = {
+                            val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+                            backupExportLauncher.launch("blancall_backup_$stamp.zip")
+                        }) { Text("导出") }
+                    }
+
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("一键导入备份", style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("从备份文件恢复学习数据，会覆盖当前数据，完成后需重启应用",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = {
+                            // 放开 MIME 过滤：部分文件管理器返回的备份类型不固定，
+                            // 内容合法性由导入时的备份清单校验兜底
+                            backupImportLauncher.launch(arrayOf("*/*"))
+                        }) { Text("导入") }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             // ── 拓展功能 ──
             Text("拓展功能", style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
@@ -838,6 +938,63 @@ fun SettingsScreen(navController: NavController) {
             },
             dismissButton = {
                 TextButton(onClick = { showSubtitleDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    // ── 导入备份确认弹窗：确认后才覆盖当前学习数据 ──
+    pendingImportUri?.let { importUri ->
+        BlancallAlertDialog(
+            onDismissRequest = { pendingImportUri = null },
+            title = { Text("导入备份") },
+            text = {
+                Text("将用备份文件整体替换当前的文章库与练习进度，" +
+                    "现有学习数据会被覆盖且无法撤销。导入完成后应用需重启一次才能生效。")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingImportUri = null
+                        backupScope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    // 先落到缓存临时包：ZipFile 需随机读取，且避免边读 SAF 边写盘
+                                    val temp = File(backupContext.cacheDir, "backup_import.zip")
+                                    backupContext.contentResolver.openInputStream(importUri)?.use { input ->
+                                        temp.outputStream().use { output -> input.copyTo(output) }
+                                    } ?: error("无法读取备份文件")
+                                    BackupManager.restoreZip(temp, backupContext.filesDir).also { temp.delete() }
+                                }
+                            }
+                            result.onSuccess {
+                                backupRestartMessage = "已恢复 ${it.restored} 个数据文件" +
+                                    if (it.removed > 0) "，并清理了 ${it.removed} 个备份外的旧文件" else "" +
+                                    "。点击「退出应用」后重新打开即可生效。"
+                            }.onFailure {
+                                Toast.makeText(backupContext, "导入失败：${it.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text("导入") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingImportUri = null }) { Text("取消") }
+            }
+        )
+    }
+
+    // ── 导入成功提示：必须重启进程，否则各 Store 旧内存会覆盖刚恢复的文件 ──
+    backupRestartMessage?.let { message ->
+        BlancallAlertDialog(
+            onDismissRequest = { },
+            title = { Text("导入成功") },
+            text = { Text(message) },
+            confirmButton = {
+                Button(
+                    onClick = { exitProcess(0) },
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text("退出应用") }
             }
         )
     }
