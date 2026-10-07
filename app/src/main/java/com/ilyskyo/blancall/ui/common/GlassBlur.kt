@@ -3,13 +3,6 @@
 
 package com.ilyskyo.blancall.ui.common
 
-import android.graphics.RenderEffect
-import android.graphics.Shader
-import android.os.Build
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
-
 /** 玻璃卡片在深色模式下的不透明度（更低 → 氛围光斑透出更明显） */
 const val GLASS_ALPHA_DARK = 0.68f
 
@@ -23,21 +16,7 @@ const val GLASS_ALPHA_LIGHT = 0.72f
  */
 const val GLASS_MENU_ALPHA_LIGHT = 0.93f
 
-/**
- * 在 API31+ 上对内容施加真实 backdrop blur（[RenderEffect] + `graphicsLayer`）。
- *
- * 低版本（< API 31）直接原样返回，由调用方降级为「仅半透明染色层」，
- * 保证观感不退化（minSdk = 26，必须守卫）。
- *
- * @param enabled 是否启用模糊（默认 true；可在调用方根据版本/开关控制）
- * @param radiusPx 模糊半径（像素）
- */
-fun Modifier.glassSurface(enabled: Boolean = true, radiusPx: Float = 24f): Modifier =
-    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        this.graphicsLayer {
-            renderEffect = RenderEffect.createBlurEffect(radiusPx, radiusPx, Shader.TileMode.CLAMP)
-                .asComposeRenderEffect()
-        }
-    } else {
-        this
-    }
+// 这里原有 `Modifier.glassSurface(enabled, radiusPx)`：在 graphicsLayer 里挂 RenderEffect.createBlurEffect。
+// 它被删掉是因为 Compose 的 RenderEffect 只能模糊**自己图层已绘制的内容**，模糊不到身后的页面，
+// 所以两个调用点（GlassMenu / GlassSheet）实际是在给一块什么都不画的空容器做全屏 GPU 模糊。
+// 需要真实背景模糊时用 LiquidGlassView（原生采样）；需要模糊自身内容时用 androidx.compose.ui.draw.blur。

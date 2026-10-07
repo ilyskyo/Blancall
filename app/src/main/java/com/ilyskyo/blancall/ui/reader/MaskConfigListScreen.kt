@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.reader
 
+import com.ilyskyo.blancall.ui.common.StateSwap
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -54,6 +55,9 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.combinedPress
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -186,99 +190,116 @@ fun MaskConfigListScreen(
             )
             Spacer(Modifier.height(12.dp))
 
-            if (loading) {
-                // 加载中：不渲染空态/列表，避免「还没有遮挡配置」空态文案一闪而过
-            } else if (configs.isEmpty()) {
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    "还没有遮挡配置，点此新建",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
-                        .combinedClickable(onClick = onNew)
-                        .padding(16.dp)
-                )
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 32.dp)
-                ) {
-                    items(configs.size, key = { configs[it].id }) { idx ->
-                        val cfg = configs[idx]
-                        val inUse = cfg.id == selectedId
-                        Box {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        if (inUse) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                                    )
-                                    .combinedClickable(
-                                        onClick = { useConfig(cfg) },
-                                        onLongClick = { confirmHaptic(); menuForId = cfg.id }
-                                    )
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🫥", fontSize = 20.sp)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        cfg.name,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        "${cfg.spans.size} 块遮挡" + if (inUse) " · 使用中" else "",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (inUse) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+            // 三态之间交叉淡入淡出（同 CustomClozeListScreen）：改造前 loading→列表、
+            // 列表→空态都是硬切。父 Column 没有 verticalArrangement，empty 臂的 Spacer+Text
+            // 收进一个 Column 是逐像素等价的。
+            StateSwap(
+                targetState = when {
+                    loading -> 0
+                    configs.isEmpty() -> 1
+                    else -> 2
+                },
+                label = "maskConfigListState"
+            ) { state ->
+                when (state) {
+                    // 加载中：不渲染空态/列表，避免「还没有遮挡配置」的空态文案一闪而过。
+                    // 给一个 0dp 的占位根而不是空臂：AnimatedContent 每态要有确定的一根。
+                    0 -> Spacer(Modifier.height(0.dp))
+                    1 -> Column {
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            "还没有遮挡配置，点此新建",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
+                                .combinedPress(tier = PressTier.Card, onClick = onNew)
+                                .padding(16.dp)
+                        )
+                    }
+                    else -> {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(bottom = 32.dp)
+                        ) {
+                            items(configs.size, key = { configs[it].id }) { idx ->
+                                val cfg = configs[idx]
+                                val inUse = cfg.id == selectedId
+                                Box {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (inUse) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                            )
+                                            .combinedPress(
+                                                tier = PressTier.Card,
+                                                onClick = { useConfig(cfg) },
+                                                onLongClick = { confirmHaptic(); menuForId = cfg.id }
+                                            )
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🫥", fontSize = 20.sp)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                cfg.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                "${cfg.spans.size} 块遮挡" + if (inUse) " · 使用中" else "",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (inUse) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        // 编辑入口：点按已改为「使用」，编辑必须显式可达
+                                        Text(
+                                            "编辑",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .pressClick { onEdit(cfg.id) }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                    // 长按菜单（锚定在配置卡片上）
+                                    GlassDropdownMenu(
+                                        expanded = menuForId == cfg.id,
+                                        onDismissRequest = { menuForId = null }
+                                    ) {
+                                        GlassMenuItem(
+                                            onClick = {
+                                                menuForId = null
+                                                useConfig(cfg)
+                                            },
+                                            label = { Text("使用", style = MaterialTheme.typography.bodyMedium) }
+                                        )
+                                        GlassMenuItem(
+                                            onClick = {
+                                                menuForId = null
+                                                renameTarget = cfg
+                                                renameText = cfg.name
+                                            },
+                                            label = { Text("重命名", style = MaterialTheme.typography.bodyMedium) }
+                                        )
+                                        GlassMenuItem(
+                                            onClick = {
+                                                menuForId = null
+                                                deleteTarget = cfg
+                                            },
+                                            label = { Text("删除", style = MaterialTheme.typography.bodyMedium) }
+                                        )
+                                    }
                                 }
-                                Spacer(Modifier.width(8.dp))
-                                // 编辑入口：点按已改为「使用」，编辑必须显式可达
-                                Text(
-                                    "编辑",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { onEdit(cfg.id) }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                            }
-                            // 长按菜单（锚定在配置卡片上）
-                            GlassDropdownMenu(
-                                expanded = menuForId == cfg.id,
-                                onDismissRequest = { menuForId = null }
-                            ) {
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuForId = null
-                                        useConfig(cfg)
-                                    },
-                                    label = { Text("使用", style = MaterialTheme.typography.bodyMedium) }
-                                )
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuForId = null
-                                        renameTarget = cfg
-                                        renameText = cfg.name
-                                    },
-                                    label = { Text("重命名", style = MaterialTheme.typography.bodyMedium) }
-                                )
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuForId = null
-                                        deleteTarget = cfg
-                                    },
-                                    label = { Text("删除", style = MaterialTheme.typography.bodyMedium) }
-                                )
                             }
                         }
                     }

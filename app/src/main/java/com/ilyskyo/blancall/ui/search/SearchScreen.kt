@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 ilyskyo
+// Copyright (c) 2026 ilyskyo
 // SPDX-License-Identifier: MIT
 
 package com.ilyskyo.blancall.ui.search
@@ -56,12 +56,16 @@ import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.animateListItem
+import com.ilyskyo.blancall.ui.common.heroElement
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.StateSwap
 import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -159,25 +163,40 @@ fun SearchScreen(navController: NavController) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                 ) {
                     items(results, key = { it.id }) { article ->
-                        SearchResultCard(
-                            article = article,
-                            tags = chipTagsByArticle[article.id].orEmpty(),
-                            query = trimmed,
-                            dateFmt = dateFmtDash,
-                            onClick = { navController.navigate("reader/${article.id}") }
-                        )
+                        // 结果集在每次输入后整体增减：改造前 item 出现/消失都是瞬时的，
+                        // 列表像被抖了一下。入场淡入 tween + 换位弹簧 + 退场淡出（词表见 animateListItem）。
+                        Box(modifier = animateListItem()) {
+                            SearchResultCard(
+                                article = article,
+                                tags = chipTagsByArticle[article.id].orEmpty(),
+                                query = trimmed,
+                                dateFmt = dateFmtDash,
+                                onClick = { navController.navigate("reader/${article.id}") }
+                            )
+                        }
                     }
                 }
             }
         }
 
         // ── 空态覆盖层：图标 + 提示文本整体的视觉中心＝页面中央 ──
-        if (trimmed.isEmpty()) {
-            EmptyHint("搜索标题、作者、正文、标签或添加日期")
-        } else if (results.isEmpty()) {
-            // 长搜索词截断显示，避免空态文案被撑爆
-            val shown = if (trimmed.length > 10) trimmed.take(10) + "…" else trimmed
-            EmptyHint("没有找到与「$shown」相关的内容")
+        // 提示与「有结果」两副面孔原先由条件直接决定渲不渲染，切换是硬切
+        StateSwap(
+            targetState = when {
+                trimmed.isEmpty() -> 0
+                results.isEmpty() -> 1
+                else -> 2
+            },
+            label = "searchHintSwap",
+        ) {
+            when (it) {
+                0 -> EmptyHint("搜索标题、作者、正文、标签或添加日期")
+                1 -> {
+                    // 长搜索词截断显示，避免空态文案被撑爆
+                    val shown = if (trimmed.length > 10) trimmed.take(10) + "…" else trimmed
+                    EmptyHint("没有找到与「$shown」相关的内容")
+                }
+            }
         }
     }
 }
@@ -218,7 +237,7 @@ private fun SearchField(
                     modifier = Modifier
                         .size(26.dp)
                         .clip(RoundedCornerShape(13.dp))
-                        .clickable { onQueryChange("") },
+                        .pressClick { onQueryChange("") },
                     contentAlignment = Alignment.Center
                 ) {
                     AppIcon(
@@ -261,12 +280,13 @@ private fun SearchResultCard(
 
     Box(
         modifier = Modifier
+            .heroElement("article/${article.id}")
             .fillMaxWidth()
             .padding(vertical = 5.dp)
             .clip(shape)
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
             .background(bgColor)
-            .clickable { onClick() }
+            .pressClick { onClick() }
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)

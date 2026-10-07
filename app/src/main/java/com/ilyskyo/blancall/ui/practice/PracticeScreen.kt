@@ -3,9 +3,6 @@
 
 package com.ilyskyo.blancall.ui.practice
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -16,30 +13,15 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,38 +29,33 @@ import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.stateSwap
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
-import com.ilyskyo.blancall.ui.common.MarkdownText
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
-import com.ilyskyo.blancall.algorithm.PdfExporter
-import com.ilyskyo.blancall.algorithm.SectionSplitter
-import com.ilyskyo.blancall.algorithm.ShareImageGenerator
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
@@ -87,7 +64,6 @@ import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.PracticeMaxWidth
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
-import com.ilyskyo.blancall.ui.viewmodel.BlankCountWarning
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.ilyskyo.blancall.ui.viewmodel.PracticeViewModel
 import com.ilyskyo.blancall.ui.viewmodel.SectionMode
@@ -95,6 +71,8 @@ import com.ilyskyo.blancall.ui.viewmodel.ensureHintTimer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -280,6 +258,11 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             // 标题拖拽跟手：滑动时标题随手指平移（有拖拽动画，而非静止检测后跳切）
             // 标题拖拽跟手：Animatable 支持拖拽时即时 snapTo、松手 animateTo 平滑回弹
             val titleDrag = remember { Animatable(0f) }
+            // 横向速度采样：标题滑切换原来只看距离（80dp），
+            // 于是「快甩一下但没甩够」什么也不发生，慢慢拖反而切了模式 ——
+            // 和翻卡是同一类错：距离是位移，速度才是意图。
+            val titleVelocity = remember { VelocityTracker() }
+            val titleFlingCommitPx = with(LocalDensity.current) { Motion.flingCommitDpPerSec.dp.toPx() }
             Text(
                 text = article?.title ?: "",
                 style = MaterialTheme.typography.titleLarge,
@@ -291,20 +274,33 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         var accumulated = 0f
                         detectHorizontalDragGestures(
                             onDragStart = { accumulated = 0f; scope.launch { titleDrag.snapTo(0f) } },
-                            onDragCancel = { accumulated = 0f; scope.launch { titleDrag.animateTo(0f, tween(240)) } },
+                            onDragCancel = {
+                                accumulated = 0f
+                                titleVelocity.resetTracking()
+                                scope.launch { titleDrag.animateTo(0f, Motion.cardSettle()) }
+                            },
                             onDragEnd = {
+                                val v = titleVelocity.calculateVelocity().x
+                                titleVelocity.resetTracking()
                                 if (titleSwipeEnabled) {
+                                    val flickHard = abs(v) >= titleFlingCommitPx
                                     when {
-                                        accumulated <= -TitleSwipeThreshold -> vm.switchMode(nextMode(latestMode))
-                                        accumulated >= TitleSwipeThreshold -> vm.switchMode(prevMode(latestMode))
+                                        accumulated <= -TitleSwipeThreshold || (flickHard && v < 0f) ->
+                                            vm.switchMode(nextMode(latestMode))
+                                        accumulated >= TitleSwipeThreshold || (flickHard && v > 0f) ->
+                                            vm.switchMode(prevMode(latestMode))
                                     }
                                 }
                                 accumulated = 0f
-                                // 松手平滑回弹，不做快速跳回
-                                scope.launch { titleDrag.animateTo(0f, tween(240)) }
+                                // 回位是位移 → 弹簧（改造前是 tween(240)），并把手指的动量还进去
+                                scope.launch {
+                                    titleDrag.animateTo(0f, Motion.cardSettle(), initialVelocity = v)
+                                }
                             }
-                        ) { _, dragAmount ->
+                        ) { change, dragAmount ->
                             accumulated += dragAmount
+                            @Suppress("DEPRECATION")
+                            titleVelocity.addPosition(change.uptimeMillis, change.position)
                             if (titleSwipeEnabled) {
                                 // 限制可拉范围（跟手上限），避免越拉越远
                                 val clamped = accumulated.coerceIn(-MaxTitleDrag, MaxTitleDrag)
@@ -747,7 +743,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 else -> {
                     AnimatedContent(
                         targetState = mode,
-                        transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
+                        transitionSpec = { stateSwap() },
                         label = "modeContent"
                     ) { currentMode ->
                         // 双指缩放：把当前色系/形状保留，仅按 fontScale 放大各级字号（自动重排）
@@ -836,30 +832,30 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     }
 
     // ── 模式选择浮层（初次进入，未选模式时显示）──
-    // 模式选择浮层：fade + scale 弹性动画，避免直接消失的视觉跳变
+    //
+    // scrim 搬出缩放子树：改造前它和卡片同属一个 AnimatedVisibility 的内容，
+    // `scaleIn(0.9f)` 把**遮罩也一起缩小** —— 动画开头屏幕四周约 10% 是没变暗的页面，
+    // MediumBouncy 过冲时那块暗层还会被甩出屏外。遮罩的职责只是压暗，不需要被搬动，
+    // 所以它单独走 alpha 补间，卡片继续走缩放弹簧（法则三：位移=弹簧，alpha=tween）。
+    val pickerVisible = !modeSelected && article != null
+    PickerScrim(visible = pickerVisible)
+
     AnimatedVisibility(
-        visible = !modeSelected && article != null,
-        enter = fadeIn(animationSpec = tween(160)) +
+        visible = pickerVisible,
+        enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
                 scaleIn(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    ),
-                    initialScale = 0.9f
+                    animationSpec = Motion.press(),
+                    initialScale = Motion.Scale.enterFrom
                 ),
-        exit = fadeOut(animationSpec = tween(120)) +
-               scaleOut(targetScale = 0.96f)
+        exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+               scaleOut(
+                   animationSpec = Motion.press(),
+                   targetScale = Motion.Scale.dismissTo
+               )
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                // 模态遮罩：压暗底层页面，毛玻璃叠在内容页上不会显得"透穿破图"
-                .background(Color.Black.copy(alpha = 0.32f))
-                // 消费点击：浮层显示时阻断底层页面交互
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { },
+                .fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             GlassCard(
@@ -1115,5 +1111,35 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
         }
     }
 
+    }
+}
+
+/**
+ * 模式选择浮层的模态遮罩：压暗底层 + 消费点击。
+ *
+ * 补间器住在这一层而不是练习页里：之前宿主直接读 `pickerScrimAlpha > 0f` 当存在判据，
+ * 于是淡入的每一帧都重组整个练习页（页面里有正文渲染与评分条）。现在只有绘制失效。
+ * 名字不能就叫 alpha —— graphicsLayer 的 lambda 里那会解析到 scope 自己的属性。
+ */
+@Composable
+private fun PickerScrim(visible: Boolean) {
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = MotionFade.alpha(MotionFade.enter),
+        label = "pickerScrim"
+    )
+    if (visible || scrimAlpha > 0f) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = scrimAlpha }
+                // 模态遮罩：压暗底层页面，毛玻璃叠在内容页上不会显得"透穿破图"
+                .background(Color.Black.copy(alpha = 0.32f))
+                // 消费点击：浮层显示时阻断底层页面交互
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { },
+        )
     }
 }

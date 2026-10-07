@@ -27,6 +27,12 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressFeedback
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -40,6 +46,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,10 +102,12 @@ import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GridMaxWidth
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.NavBarAutoHide
-import com.ilyskyo.blancall.ui.common.navigateReveal
 import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
-import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.HapticTier
+import androidx.compose.runtime.rememberUpdatedState
+import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.homeGridColumns
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -157,6 +166,13 @@ fun HomeScreen(
     val homePullMaxPx = with(LocalDensity.current) { HOME_PULL_MAX.toPx() }
     // 回弹防重入：松手兜底（指针抬起监听）与 onPreFling 可能同时触发
     val homePullSettling = remember { AtomicBoolean(false) }
+    // 下拉跨过「已经拉开了」这道界时响一次双段轻击（Threshold 档）。
+    // armed 用 AtomicBoolean 而不是普通 Boolean：判定发生在 NestedScrollConnection
+    // 的闭包里，捕获到的值必须每帧都是最新的（与 homePullSettling 同一套纪律）。
+    val homePullArmed = remember { AtomicBoolean(true) }
+    // 经 rememberUpdatedState：下面的 NestedScrollConnection 只在 (homeScrollState, homePullMaxPx)
+    // 变化时才重建，直接捕获会让设置里改「触感强度」对下拉到位回执不生效。
+    val homePullHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Threshold))
 
     /** 松手立即回弹复位（跟手结束就缩回去）。多处触发点统一入口。 */
     fun settleHomePull() {
@@ -164,18 +180,14 @@ fun HomeScreen(
         if (!homePullSettling.compareAndSet(false, true)) return
         homePullScope.launch {
             try {
-                homePullOffset.animateTo(
-                    0f,
-                    spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                )
+                homePullOffset.animateTo(0f, Motion.pullRecoil())
             } finally {
                 // ⚠️ 必须 finally：回弹动画被新的拖动 snapTo/复位抢占时 animateTo 会抛
                 // CancellationException，若直接跟一句 set(false) 会被跳过 —— 标志永久停在
                 // true，之后所有回弹被拦死（真机：下拉后彻底不再收回）。
                 homePullSettling.set(false)
+                // 收回之后重新给一次「到位」的额度，否则第二次下拉就再也不响
+                homePullArmed.set(true)
             }
         }
     }
@@ -190,9 +202,16 @@ fun HomeScreen(
                         homePullScope.launch {
                             val damping = 1f -
                                 (homePullOffset.value / homePullMaxPx).coerceIn(0f, 1f) * 0.65f
-                            homePullOffset.snapTo(
-                                (homePullOffset.value + dy * damping).coerceIn(0f, homePullMaxPx)
-                            )
+                            val next = (homePullOffset.value + dy * damping)
+                                .coerceIn(0f, homePullMaxPx)
+                            homePullOffset.snapTo(next)
+                            // 跨过「到位」那条线时给一次双段轻击，手指先于眼睛知道拉开了。
+                            // compareAndSet 保证一次拖动只响一次 —— 每帧都响就不是反馈，是噪音。
+                            if (next >= homePullMaxPx * HOME_PULL_HAPTIC_FRACTION &&
+                                homePullArmed.compareAndSet(true, false)
+                            ) {
+                                homePullHaptic()
+                            }
                         }
                     } else if (homePullOffset.value > 0f) {
                         // 松手后的惯性帧：不积累位移；若仍有展开残留（回弹尚未启动/曾被取消），
@@ -204,7 +223,10 @@ fun HomeScreen(
                 }
                 if (dy != 0f && homePullOffset.value > 0f) {
                     // 任何其它滚动（含回滚）立即复位
-                    homePullScope.launch { homePullOffset.snapTo(0f) }
+                    homePullScope.launch {
+                        homePullOffset.snapTo(0f)
+                        homePullArmed.set(true)
+                    }
                 }
                 return Offset.Zero
             }
@@ -501,16 +523,26 @@ fun HomeScreen(
             contentAlignment = Alignment.TopCenter
         ) {
         // ── 下拉揭示层：内容跟手下移后露出的顶部空白区（位于内容层之下，被内容盖住）──
-        // 高度 = 当前下拉位移；品牌文字从顶部渐显，随下拉逐步完整露出。
-        val homePullPx = homePullOffset.value
-        if (homePullPx > 0.5f) {
+        //
+        // 高度**固定**为行程上限：这一层在内容层之下，「还没揭示」的部分本来就被内容盖着，
+        // 所以不需要跟着位移改高度。改造前这里是 `Modifier.height(homePullPx)` +
+        // 在组合作用域读 `homePullOffset.value` —— 下拉的每一帧都在重组并重新测量整块首页，
+        // 是全 app 最大的一笔逐帧布局开销（S4）。现在位移由内容层的 translationY 负责（绘相位），
+        // 这一层只剩一个 alpha，且也在绘相位读。
+        //
+        // 存在与否用 derivedStateOf 收成布尔：只有「有没有露出」这个翻转才需要重组，
+        // 位移每帧变化不再波及整块 Box。
+        val pullRevealed = remember { derivedStateOf { homePullOffset.value > 0.5f } }
+        if (pullRevealed.value) {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(with(LocalDensity.current) { homePullPx.toDp() })
+                    .height(HOME_PULL_MAX)
                     .clipToBounds()
-                    .graphicsLayer { alpha = (homePullPx / homePullMaxPx).coerceIn(0f, 1f) },
+                    .graphicsLayer {
+                        alpha = (homePullOffset.value / homePullMaxPx).coerceIn(0f, 1f)
+                    },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(16.dp))
@@ -642,11 +674,19 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 cardContent = { card ->
                     // 编辑态淡化卡面：角上的白钮必然会压住标题一角，内容淡下去后
-                    // 视觉重心落在「白钮 + 点亮描环」上，不会显得内容被压坏
+                    // 视觉重心落在「白钮 + 点亮描环」上，不会显得内容被压坏。
+                    // 淡到多少收在 Motion.editDimAlpha，**怎么淡**是 alpha 类 → tween：
+                    // 改造前是 graphicsLayer(alpha = if (cardEditMode) 0.5f else 1f) 的布尔硬切，
+                    // 进出编辑态时一叠卡片「唰」地暗掉/亮起，读起来像掉了一帧。
+                    val editDimAlpha by animateFloatAsState(
+                        targetValue = if (cardEditMode) Motion.editDimAlpha else 1f,
+                        animationSpec = MotionFade.alpha(MotionFade.enter),
+                        label = "cardEditDim"
+                    )
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer(alpha = if (cardEditMode) 0.5f else 1f)
+                            .graphicsLayer(alpha = editDimAlpha)
                     ) {
                         HomeCardContent(
                             card = card,
@@ -673,22 +713,22 @@ fun HomeScreen(
                             onResumePractice = { item ->
                                 navController.navigate("practice/${item.articleId}?resume=true")
                             },
-                            onOpenArticle = { article, anchor ->
-                                navController.navigateReveal("reader/${article.id}", anchor)
+                            onOpenArticle = { article ->
+                                navController.navigate("reader/${article.id}")
                             },
                             onViewAllArticles = { navController.navigateToTab("list") },
                             onAddArticle = { navController.navigate("import") },
                             onOpenClozeConfig = { articleId, configId ->
                                 navController.navigate("practice/$articleId?configId=$configId")
                             },
-                            onOpenMaskConfig = { articleId, _, anchor ->
-                                navController.navigateReveal("reader/$articleId", anchor)
+                            onOpenMaskConfig = { articleId, _ ->
+                                navController.navigate("reader/$articleId")
                             },
                             stats = homeStats,
                             onOpenStats = { navController.navigateToTab("overview") },
                             sentenceUi = sentenceUi,
-                            onOpenSentenceCard = { anchor ->
-                                navController.navigateReveal("sentence_cards", anchor)
+                            onOpenSentenceCard = {
+                                navController.navigate("sentence_cards")
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -765,23 +805,28 @@ fun HomeScreen(
 
         // ── 悬浮层：不随首页内容滚动（底栏可见时自动落在其上方）──
 
-        // 编辑态底栏已自动收起（见 NavBarAutoHide）：底距从「栏上安全距」收缩为贴底小距，
-        // 用动画过渡避免按钮跳变；统计弹窗（非编辑态，底栏可见）仍按安全底距避让。
-        val doneButtonBottom by animateDpAsState(
-            targetValue = if (navBarAutoHidden) 16.dp else FLOATING_BOTTOM_PADDING,
-            label = "doneButtonBottom",
+        // 编辑态底栏已自动收起（见 NavBarAutoHide）：按钮要从「栏上安全距」落到贴底小距。
+        // 补间的是 translationY 而不是 padding：padding 每帧重测这块悬浮层，translation 只重绘；
+        // 位移仍走弹簧（barAvoidTravel 是 NoBouncy 档——避让动作自己晃会读成卡顿）。
+        val doneButtonDrop by animateDpAsState(
+            targetValue = if (navBarAutoHidden) 0.dp else -(FLOATING_BOTTOM_PADDING - DONE_BUTTON_DOCKED_BOTTOM),
+            animationSpec = Motion.barAvoidTravel(),
+            label = "doneButtonDrop",
         )
 
         // ① 编辑态「完成」：旧版内联在画布下方，要滚到底才能看到、还会被导航栏遮住
         AnimatedVisibility(
             visible = cardEditMode,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+            enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                slideInVertically(Motion.sheetSlide()) { it / 2 },
+            exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                slideOutVertically(Motion.sheetSlide()) { it / 2 },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 20.dp)
-                .padding(bottom = doneButtonBottom)
-                .navigationBarsPadding(),
+                .padding(bottom = DONE_BUTTON_DOCKED_BOTTOM)
+                .navigationBarsPadding()
+                .graphicsLayer { translationY = doneButtonDrop.toPx() },
         ) {
             Button(
                 onClick = { cardEditMode = false },
@@ -967,7 +1012,7 @@ private fun HomeSearchBar(
                 .clip(shape)
                 .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
                 .background(container)
-                .clickable { onSearch() },
+                .pressClick { onSearch() },
             contentAlignment = Alignment.CenterStart
         ) {
             Row(
@@ -1240,11 +1285,20 @@ private fun HomeArticlePickRow(
     added: Boolean,
     onClick: () -> Unit,
 ) {
+    val rowSrc = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // 整行宽的条目**只压暗、不缩放**（PressTier.Plain）：一整行缩 3% 会同时离开
+            // 左右两侧边距，读起来像布局错位。涟漪关掉，焦点/悬停由 pressFeedback 补回。
+            .pressFeedback(rowSrc, PressTier.Plain)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = !added, onClick = onClick)
+            .clickable(
+                interactionSource = rowSrc,
+                indication = null,
+                enabled = !added,
+                onClick = onClick
+            )
             .padding(horizontal = 4.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1281,11 +1335,14 @@ private fun HomeArticlePickRow(
 /** 「添加卡片」面板里的一行可选项：名称 + 类型说明 + 右侧「添加」动作 */
 @Composable
 private fun HomeAddCardRow(label: String, desc: String, onClick: () -> Unit) {
+    val rowSrc = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // 与上方「加入学习」行同一档：整行宽只压暗，不缩放；涟漪换成 pressFeedback。
+            .pressFeedback(rowSrc, PressTier.Plain)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = rowSrc, indication = null, onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1417,11 +1474,20 @@ private fun collectAddableCustomCards(
 /** 悬浮元素的安全底距 = 导航栏高(64dp) + 栏底距(14dp) + 间距(12dp)，再叠加 navigationBarsPadding() */
 private val FLOATING_BOTTOM_PADDING = 90.dp
 
+/** 底栏收起后「完成」按钮的贴底底距；与 [FLOATING_BOTTOM_PADDING] 之差即按钮的避让行程 */
+private val DONE_BUTTON_DOCKED_BOTTOM = 16.dp
+
 /** 学习数据弹窗自动收起延时（点详情 / 关闭可提前） */
 private const val STATS_POPUP_AUTO_DISMISS_MS = 6000L
 
 /** 下拉揭示区最大行程：滚到顶再继续下拉这么多即到顶（跟手 + 阻尼渐重）。 */
 private val HOME_PULL_MAX = 140.dp
+
+/**
+ * 下拉揭示的「到位」判定点：拉满行程的这一成才给一次 Threshold 触感。
+ * 太早响等于没意义（还没拉开就报到位），太晚（=1f）在窄屏上几乎碰不到。
+ */
+private const val HOME_PULL_HAPTIC_FRACTION = 0.55f
 
 /**
  * 下拉位移「跟手积累」是否允许：**仅限用户拖拽（手指按住）**。
@@ -1468,12 +1534,19 @@ private fun StatsPopupCard(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.weight(1f))
+                val dismissSrc = remember { MutableInteractionSource() }
                 Box(
                     modifier = Modifier
                         .size(28.dp)
+                        // 小圆钮用 Icon 档（收得最多才看得见），涟漪关掉
+                        .pressFeedback(dismissSrc, PressTier.Icon)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .clickable(onClick = onDismiss),
+                        .clickable(
+                            interactionSource = dismissSrc,
+                            indication = null,
+                            onClick = onDismiss
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     AppIcon(

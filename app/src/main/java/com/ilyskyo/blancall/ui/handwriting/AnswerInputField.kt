@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.handwriting
 
 import androidx.compose.animation.animateContentSize
+import com.ilyskyo.blancall.ui.common.Motion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -210,7 +211,7 @@ fun AnswerInputField(
     // 「手写/键盘」切换按钮：紧凑卡不渲染（十几个空各挂一个胶囊既是噪音，也撑高每张卡）
     val showModeSwitch = allowHandwritingSwitch && engineAvailable && !compactHandwriting
 
-    Column(modifier = modifier.animateContentSize()) {
+    Column(modifier = modifier.animateContentSize(Motion.contentSize())) {
         // ── 输入区：键盘 / 手写（完整书写板）/ 手写（紧凑只读行）──
         if (useHandwriting && !compactHandwriting) {
             // 手写态（当前作答目标）：屏上显示已写内容 + 面板本身
@@ -453,7 +454,7 @@ fun InlineHandwritingAnswer(
     /** 墨迹上报（错题回顾）：透传给面板（见 [HandwritingPanel] 参数注释）。 */
     onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
-    Column(modifier = modifier.animateContentSize()) {
+    Column(modifier = modifier.animateContentSize(Motion.contentSize())) {
         if (value.isNotEmpty()) {
             Surface(
                 shape = RoundedCornerShape(8.dp),

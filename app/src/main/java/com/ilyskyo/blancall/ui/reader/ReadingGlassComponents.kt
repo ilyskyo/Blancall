@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.reader
 
 import android.os.Build
+import com.ilyskyo.blancall.ui.common.MotionFade
 import android.view.View
 import android.widget.FrameLayout
 import androidx.compose.animation.core.Spring
@@ -13,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -22,9 +24,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -41,8 +46,11 @@ internal fun LgCornerPx(dp: Float): Float = with(LocalDensity.current) { dp.dp.t
 
 
 /**
- * 玻璃胶囊内的图标按钮：学 Kyant0 LiquidButton 的按压反馈——
- * 按下时微缩 + 变淡，spring 回弹（"液态"手感），保留系统 ripple。
+ * 玻璃胶囊内的图标按钮：按压反馈统一走 [pressFeedback]（缩放＋亮度＋焦点/悬停，无涟漪）。
+ *
+ * 改造前这里自己写了一套 0.84 缩放 + 0.66 淡出，**同时**还留着 M3 IconButton 的系统
+ * ripple（KDoc 甚至写着「保留系统 ripple」）—— 缩放和涟漪在同一次按下里并存，
+ * 是法则五里互相矛盾的两句话。缩放幅度也归到统一档位，不再自成一套。
  */
 @Composable
 internal fun GlassIconButton(
@@ -52,31 +60,23 @@ internal fun GlassIconButton(
     content: @Composable () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (enabled && pressed) 0.84f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "glassIconScale"
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (enabled && pressed) 0.66f else 1f,
-        animationSpec = tween(110),
-        label = "glassIconAlpha"
-    )
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        interactionSource = interactionSource,
+    // 不再用 M3 的 IconButton：它没有 indication 形参，而且实现里把 `ripple()` 写死了
+    // （material3 1.4 IconButton.kt:187），覆盖 LocalIndication 对它无效。
+    // 改成自己画容器 —— 涟漪关掉，缩放／亮度／焦点／悬停统一由 pressFeedback 给，
+    // 按钮语义用 Role.Button 补回读屏。
+    Box(
         modifier = Modifier
             .size(buttonSize)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                this.alpha = alpha
-            }
+            .pressFeedback(interactionSource, PressTier.Icon, enabled = enabled)
+            .clip(RoundedCornerShape(50))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center,
     ) {
         content()
     }
@@ -235,7 +235,7 @@ internal fun ReadingProgressCapsule(
     ) {
         val animated = animateFloatAsState(
             targetValue = fraction.coerceIn(0f, 1f),
-            animationSpec = tween(220),
+            animationSpec = MotionFade.number(MotionFade.itemEnter),
             label = "readProgress"
         )
         Box(

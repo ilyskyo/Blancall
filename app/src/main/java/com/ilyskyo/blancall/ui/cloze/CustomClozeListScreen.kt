@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.cloze
 
+import com.ilyskyo.blancall.ui.common.StateSwap
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -48,6 +49,8 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.combinedPress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -158,100 +161,118 @@ fun CustomClozeListScreen(
             )
             Spacer(Modifier.height(12.dp))
 
-            if (loadFailed) {
-                Text("文章不存在或已被删除", color = MaterialTheme.colorScheme.error)
-            } else if (configs.isEmpty()) {
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    "还没有自定义配置，点此创建",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
-                        .combinedClickable(
-                            onClick = {
-                                val route = if (pick) "custom_cloze_edit/$articleId?pick=true"
-                                else "custom_cloze_edit/$articleId"
-                                navController.navigate(route)
-                            }
+            // 三态之间交叉淡入淡出：改造前是硬切换，删掉最后一条配置时列表凭空消失、
+            // 空态卡片凭空出现。父 Column 没有 verticalArrangement，所以 empty 臂的
+            // Spacer+Text 收进一个 Column 是逐像素等价的（AnimatedContent 每态只许一个根）。
+            StateSwap(
+                targetState = when {
+                    loadFailed -> 0
+                    configs.isEmpty() -> 1
+                    else -> 2
+                },
+                label = "clozeListState"
+            ) { state ->
+                when (state) {
+                    0 -> {
+                        Text("文章不存在或已被删除", color = MaterialTheme.colorScheme.error)
+                    }
+                    1 -> Column {
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            "还没有自定义配置，点此创建",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
+                                .combinedPress(
+                                    tier = PressTier.Card,
+                                    onClick = {
+                                        val route = if (pick) "custom_cloze_edit/$articleId?pick=true"
+                                        else "custom_cloze_edit/$articleId"
+                                        navController.navigate(route)
+                                    }
+                                )
+                                .padding(16.dp)
                         )
-                        .padding(16.dp)
-                )
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)
-                ) {
-                    items(configs.size, key = { configs[it].id }) { idx ->
-                        val cfg = configs[idx]
-                        Box {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                                    .combinedClickable(
-                                        onClick = {
-                                            if (pick) {
-                                                // 练一把流程：点配置直接开始练习
+                    }
+                    else -> {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)
+                        ) {
+                            items(configs.size, key = { configs[it].id }) { idx ->
+                                val cfg = configs[idx]
+                                Box {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                                            .combinedPress(
+                                                tier = PressTier.Card,
+                                                onClick = {
+                                                    if (pick) {
+                                                        // 练一把流程：点配置直接开始练习
+                                                        navController.navigate("practice/$articleId?configId=${cfg.id}")
+                                                    } else {
+                                                        navController.navigate("custom_cloze_edit/$articleId?configId=${cfg.id}")
+                                                    }
+                                                },
+                                                onLongClick = { confirmHaptic(); menuForId = cfg.id }
+                                            )
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🎯", fontSize = 20.sp)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                cfg.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                "${cfg.blanks.size} 个空 · " + when (cfg.mode) {
+                                                    "SENTENCE" -> "句子挖空"
+                                                    "REVERSE" -> "反向默写"
+                                                    else -> "字词挖空"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    // 长按菜单（锚定在配置卡片上）
+                                    GlassDropdownMenu(
+                                        expanded = menuForId == cfg.id,
+                                        onDismissRequest = { menuForId = null }
+                                    ) {
+                                        GlassMenuItem(
+                                            onClick = {
+                                                menuForId = null
                                                 navController.navigate("practice/$articleId?configId=${cfg.id}")
-                                            } else {
-                                                navController.navigate("custom_cloze_edit/$articleId?configId=${cfg.id}")
-                                            }
-                                        },
-                                        onLongClick = { confirmHaptic(); menuForId = cfg.id }
-                                    )
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🎯", fontSize = 20.sp)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        cfg.name,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        "${cfg.blanks.size} 个空 · " + when (cfg.mode) {
-                                            "SENTENCE" -> "句子挖空"
-                                            "REVERSE" -> "反向默写"
-                                            else -> "字词挖空"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                            },
+                                            label = { Text("开始练习", style = MaterialTheme.typography.bodyMedium) }
+                                        )
+                                        GlassMenuItem(
+                                            onClick = {
+                                                menuForId = null
+                                                renameTarget = cfg
+                                                renameText = cfg.name
+                                            },
+                                            label = { Text("重命名", style = MaterialTheme.typography.bodyMedium) }
+                                        )
+                                        GlassMenuItem(
+                                            onClick = {
+                                                menuForId = null
+                                                deleteTarget = cfg
+                                            },
+                                            label = { Text("删除", style = MaterialTheme.typography.bodyMedium) }
+                                        )
+                                    }
                                 }
-                            }
-                            // 长按菜单（锚定在配置卡片上）
-                            GlassDropdownMenu(
-                                expanded = menuForId == cfg.id,
-                                onDismissRequest = { menuForId = null }
-                            ) {
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuForId = null
-                                        navController.navigate("practice/$articleId?configId=${cfg.id}")
-                                    },
-                                    label = { Text("开始练习", style = MaterialTheme.typography.bodyMedium) }
-                                )
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuForId = null
-                                        renameTarget = cfg
-                                        renameText = cfg.name
-                                    },
-                                    label = { Text("重命名", style = MaterialTheme.typography.bodyMedium) }
-                                )
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuForId = null
-                                        deleteTarget = cfg
-                                    },
-                                    label = { Text("删除", style = MaterialTheme.typography.bodyMedium) }
-                                )
                             }
                         }
                     }

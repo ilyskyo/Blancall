@@ -9,7 +9,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -23,8 +22,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 
@@ -54,7 +53,9 @@ fun GlassSwitch(
             isDark -> Color(0xFF3A3A3C)
             else -> Color(0xFFE3E3E8)
         },
-        animationSpec = spring(stiffness = 900f),
+        // 底色是**颜色**，按词表走 tween（原来是一条裸 `spring(stiffness = 900f)` ——
+        // 弹簧对颜色没有物理意义，只会让它在终点附近再抖一下）
+        animationSpec = MotionFade.color(MotionFade.enter),
         label = "switchTrackColor"
     )
 
@@ -65,9 +66,14 @@ fun GlassSwitch(
     val thumbD = trackH - gap * 2          // 28dp 正圆
     val thumbX by animateDpAsState(
         targetValue = if (checked) trackW - gap - thumbD else gap,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = 700f),
+        // 拇指平移是位移 → 弹簧（Motion.toggleTravel：约 20dp 行程，利落带一点回弹）
+        animationSpec = Motion.toggleTravel(),
         label = "switchThumbX"
     )
+
+    // 开关是全局最沉默的一类交互：改造前任何开关都「不响」。
+    // Toggle 档 = 10ms/90 的轻击，只在用户真的翻了一格时给，程序回写不经过这里。
+    val flipHaptic = rememberHaptic(HapticTier.Toggle)
 
     val interactionSource = remember { MutableInteractionSource() }
     Box(
@@ -82,7 +88,10 @@ fun GlassSwitch(
                 indication = null,
                 enabled = enabled && onCheckedChange != null,
                 role = Role.Switch,
-                onValueChange = { onCheckedChange?.invoke(it) }
+                onValueChange = {
+                    flipHaptic()
+                    onCheckedChange?.invoke(it)
+                }
             )
             .alpha(if (enabled) 1f else 0.5f)
     ) {
@@ -90,7 +99,9 @@ fun GlassSwitch(
         Box(
             Modifier
                 .align(Alignment.CenterStart)
-                .offset { IntOffset(thumbX.roundToPx(), 0) }
+                // 平移走 translationX，不走 offset{}：offset 改的是「摆放」，每帧重排整棵树；
+                // graphicsLayer 只重绘，弹簧跑动期间不占布局预算（法则六 / S4）。
+                .graphicsLayer { translationX = thumbX.toPx() }
                 .size(thumbD)
                 // 1dp 投影：让白滑块在轨道上"浮起来"（图 2 的体感来源）
                 .shadow(elevation = 1.dp, shape = CircleShape, clip = false)

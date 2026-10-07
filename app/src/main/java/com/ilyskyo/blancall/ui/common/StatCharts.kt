@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.common
 
 import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -47,7 +48,7 @@ fun GaugeProgress(
     LaunchedEffect(Unit) { played = true }
     val animated by animateFloatAsState(
         targetValue = if (played) progress.coerceIn(0f, 1f) else 0f,
-        animationSpec = tween(900, delayMillis = 80),
+        animationSpec = MotionFade.number(MotionFade.chartReveal, 80),
         label = "gaugeProgress"
     )
     val trackColor = MaterialTheme.colorScheme.surfaceVariant

@@ -27,13 +27,19 @@ fun DeleteConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    // 删除是全 app 唯一的「收不回去」，回执用 Destructive 档（35ms/255 重击）：
+    // 确认之后东西就没了，那一下要让手指记住「刚才是我按的」。
+    val confirmHaptic = rememberHaptic(HapticTier.Destructive)
     BlancallAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
             Button(
-                onClick = onConfirm,
+                onClick = {
+                    confirmHaptic()
+                    onConfirm()
+                },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error
                 )

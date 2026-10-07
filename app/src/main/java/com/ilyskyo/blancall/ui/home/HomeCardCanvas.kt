@@ -3,7 +3,11 @@
 
 package com.ilyskyo.blancall.ui.home
 
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.rememberEnteredOnFirstFrame
+import com.ilyskyo.blancall.ui.common.staggerDelay
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -65,7 +69,14 @@ import com.ilyskyo.blancall.data.repository.HomeLayoutStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.HapticTier
+import com.ilyskyo.blancall.ui.common.rememberHaptic
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressFeedback
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.pressClick
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.floor
@@ -512,7 +523,12 @@ fun HomeCardCanvas(
 
     val density = LocalDensity.current
     // 统一强触感：长按进编辑、拖动/缩放开始都用同一套“咔嗒”（各机型一致、明显）
-    val confirmHaptic = rememberConfirmHaptic()
+    // 触觉闭包要经 rememberUpdatedState：pointerInput(card.id) 只在 key 变化时才重启，
+    // 直接捕获的话用户在设置里改「触感强度」对拖拽/缩放落位永远不生效（要到杀进程才更新）。
+    val confirmHaptic by rememberUpdatedState(rememberConfirmHaptic())
+    // 落位回执：改造前只有**拿起**那一下会振，松手落格却是沉默的 ——
+    // 手指做了两件大事（拿起、放下），只听到一件。落格用 Threshold（双段，「跨过一道界」）。
+    val commitHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Threshold))
 
     // 手势中的预览态（不落地，松手才写回）
     var dragCardId by remember { mutableStateOf<String?>(null) }
@@ -572,7 +588,7 @@ fun HomeCardCanvas(
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
-                        .clickable { cbAdd() },
+                        .pressClick { cbAdd() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -592,7 +608,7 @@ fun HomeCardCanvas(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(18.dp))
-                    .clickable { cbAdd() }
+                    .pressClick { cbAdd() }
                     .padding(vertical = 28.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -646,14 +662,34 @@ fun HomeCardCanvas(
 
                         val slotX = cellPitch * slot[1].toFloat()
                         val slotY = ROW_UNIT * slot[0].toFloat()
+                        val dragDx = with(density) { dragOffset.x.toDp() }
+                        val dragDy = with(density) { dragOffset.y.toDp() }
+                        // 槽位：换格交给弹簧（改造前是两条互不相干的 220ms 定时补间）
                         val animX by animateDpAsState(
-                            targetValue = slotX, animationSpec = tween(220)
+                            targetValue = slotX,
+                            animationSpec = Motion.slotTravel(),
+                            label = "cardSlotX",
                         )
                         val animY by animateDpAsState(
-                            targetValue = slotY, animationSpec = tween(220)
+                            targetValue = slotY,
+                            animationSpec = Motion.slotTravel(),
+                            label = "cardSlotY",
                         )
-                        val x = if (isDragging) slotX + with(density) { dragOffset.x.toDp() } else animX
-                        val y = if (isDragging) slotY + with(density) { dragOffset.y.toDp() } else animY
+                        // 拖出量：拖的时候用 snap 逐帧跟住手指，松手那一帧换成弹簧归零。
+                        // 这样 animX + settleX 在松手帧恰好等于手指离开的那一点 ——
+                        // 改造前是把 dragOffset 直接清零，那一帧卡会跳回旧槽位再滑走（松手瞬移）。
+                        val settleX by animateDpAsState(
+                            targetValue = if (isDragging) dragDx else 0.dp,
+                            animationSpec = if (isDragging) snap() else Motion.slotSettle(),
+                            label = "cardSettleX",
+                        )
+                        val settleY by animateDpAsState(
+                            targetValue = if (isDragging) dragDy else 0.dp,
+                            animationSpec = if (isDragging) snap() else Motion.slotSettle(),
+                            label = "cardSettleY",
+                        )
+                        val x = animX + settleX
+                        val y = animY + settleY
 
                         val w = cellW * colSpan.toFloat() +
                             COLUMN_GAP * (colSpan - 1).toFloat()
@@ -664,25 +700,53 @@ fun HomeCardCanvas(
                 }
 
                 // ── 第一遍：全部卡片的内容层（正文 + 指示环 + 拖动遮罩）──
-                cards.forEach { card ->
+                // 冷启动的入场编排：整页卡片按格子顺序错峰淡入。开关放在循环外，
+                // 循环里每帧 remember 会因为列表增删而错位。
+                val entered = rememberEnteredOnFirstFrame()
+                cards.forEachIndexed { index, card ->
                     key(card.id) {
                         // 注意：不要在这里写 `?: return@key`。在 @Composable inline 函数（key）
                         // 的 lambda 里做 labeled return，Compose 编译器会生成 $NON_LOCAL_RETURN 机制、
                         // 产出名为 <anonymous> 的 JVM 方法 —— ClassFormatError: Illegal method name，
                         // 类一加载就崩（单测/真机同样）。geoMap 在同一组合内先填充，取值为空即异常。
                         val geo = geoMap.getValue(card.id)
+                        // 抬起要有过程：改造前是 graphicsLayer 里的 `if (isDragging) 1.03f` ——
+                        // 布尔硬切，拿起与放下那一帧整张卡突然变大一档，看不出「重量」只看出「跳」。
+                        val lifted = geo.isDragging || geo.isResizing
+                        val liftScale by animateFloatAsState(
+                            targetValue = if (lifted) Motion.Scale.lifted else 1f,
+                            animationSpec = Motion.lift(),
+                            label = "cardLiftScale"
+                        )
+                        val liftAlpha by animateFloatAsState(
+                            targetValue = if (lifted) Motion.liftAlpha else 1f,
+                            animationSpec = MotionFade.alpha(MotionFade.enter),
+                            label = "cardLiftAlpha"
+                        )
+                        // 入场错峰：只淡入、不给位移 —— 卡片是绝对定位的，位移会和槽位弹簧打架。
+                        // 减动效下 MotionFade.alpha 退化成 snap，卡片直接以终态出现。
+                        val entryAlpha by animateFloatAsState(
+                            targetValue = if (entered) 1f else 0f,
+                            animationSpec = MotionFade.alpha(
+                                MotionFade.itemEnter,
+                                staggerDelay(index),
+                            ),
+                            label = "cardEnterAlpha"
+                        )
                         Box(
                             modifier = Modifier
-                                .offset(x = geo.x, y = geo.y)
                                 .width(geo.width)
                                 .height(geo.height)
                                 .zIndex(if (geo.isDragging || geo.isResizing) 1f else 0f)
+                                // 位置走 translation 而不是 Modifier.offset：offset 是布局修饰符，
+                                // 槽位弹簧与拖出量每帧都在改它 → 每帧重跑一遍 placement。
+                                // translation 只动绘相位，拖动与落位期间卡片不再逐帧重排。
                                 .graphicsLayer {
-                                    if (geo.isDragging || geo.isResizing) {
-                                        scaleX = 1.03f
-                                        scaleY = 1.03f
-                                        alpha = 0.96f
-                                    }
+                                    translationX = geo.x.toPx()
+                                    translationY = geo.y.toPx()
+                                    scaleX = liftScale
+                                    scaleY = liftScale
+                                    alpha = liftAlpha * entryAlpha
                                 }
                         ) {
                             // ① 内容层：非编辑态唯一在场的一层，点击原样透传给 cardContent。
@@ -822,7 +886,11 @@ fun HomeCardCanvas(
                                                         } else {
                                                             resolveDrop(currentCards, c, tRow, tCol, columns)
                                                         }
-                                                        if (next != currentCards) cbCardsChange(next)
+                                                        if (next != currentCards) {
+                                                            // 真的换了格子才给回执；原地弹回不响（那是「没放下」而不是「放好了」）
+                                                            commitHaptic()
+                                                            cbCardsChange(next)
+                                                        }
                                                     }
                                                     dragCardId = null
                                                     dragOffset = Offset.Zero
@@ -847,20 +915,27 @@ fun HomeCardCanvas(
                         key(card.id) {
                             // 同样：不得用 `return@key`（见上方的说明）。
                             val geo = geoMap.getValue(card.id)
+                            // 控件层同样补间抬起倍数（布尔硬切的问题与内容层一致）。
+                            val controlsLifted = geo.isDragging || geo.isResizing
+                            val controlLiftScale by animateFloatAsState(
+                                targetValue = if (controlsLifted) Motion.Scale.lifted else 1f,
+                                animationSpec = Motion.lift(),
+                                label = "controlLiftScale"
+                            )
                             Box(
                                 modifier = Modifier
-                                    .offset(x = geo.x, y = geo.y)
                                     .width(geo.width)
                                     .height(geo.height)
                                     .zIndex(if (geo.isDragging || geo.isResizing) 3f else 2f)
+                                    // 与内容层同一套 translation（两层必须逐帧一致，否则白钮会脱离卡角）
                                     .graphicsLayer {
-                                        if (geo.isDragging || geo.isResizing) {
-                                            // 只缩放、**不设 alpha**：alpha<1 会让该层走离屏合成，
-                                            // 图层边界=卡片矩形，控件伸出卡角的那一截被直角裁掉
-                                            // （用户反馈「拖动/拉伸时圆圈上边和左边被削平」）。
-                                            scaleX = 1.03f
-                                            scaleY = 1.03f
-                                        }
+                                        translationX = geo.x.toPx()
+                                        translationY = geo.y.toPx()
+                                        scaleX = controlLiftScale
+                                        scaleY = controlLiftScale
+                                        // 只缩放、**不设 alpha**：alpha<1 会让该层走离屏合成，
+                                        // 图层边界=卡片矩形，控件伸出卡角的那一截被直角裁掉
+                                        // （用户反馈「拖动/拉伸时圆圈上边和左边被削平」）。
                                     }
                             ) {
                                 // 四角控件的圆心一律落在卡片内 10dp（见 CONTROL_INSET），
@@ -996,7 +1071,11 @@ fun HomeCardCanvas(
                                                         } else it
                                                     }
                                                     resizeCardId = null
-                                                    if (next != currentCards) cbCardsChange(next)
+                                                    if (next != currentCards) {
+                                                        // 尺寸真的变了才落位回执（与拖动同一档）
+                                                        commitHaptic()
+                                                        cbCardsChange(next)
+                                                    }
                                                 }
                                             )
                                         },
@@ -1025,13 +1104,17 @@ private fun ControlButton(
     scrim: Color = CONTROL_SCRIM,
     content: @Composable () -> Unit
 ) {
+    val controlSrc = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .size(CONTROL_HIT)
-            // clip 成圆再 clickable：点击（长按）时的 Material 水波纹被裁成**圆形**，
-            // 不然会画成一个灰色方块（用户反馈「点击圆圈时出现灰色矩形」）。
+            // 角上的圆钮 → Icon 档（行程短，收得最多才看得见）。
+            // clip 成圆再 clickable 这条**保留**：它原本是给 Material 水波纹裁形的
+            // （用户反馈「点击圆圈时出现灰色矩形」），现在涟漪关了但它仍决定
+            // 按压的亮度层画在圆内而不是方块内。
+            .pressFeedback(controlSrc, PressTier.Icon)
             .clip(CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(interactionSource = controlSrc, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Box(

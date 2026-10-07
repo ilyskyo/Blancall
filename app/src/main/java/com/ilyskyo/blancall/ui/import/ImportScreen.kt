@@ -3,14 +3,15 @@
 
 package com.ilyskyo.blancall.ui.import
 
+import com.ilyskyo.blancall.ui.common.FadeDialogWindow
 import android.net.Uri
 import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -33,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -42,8 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -280,17 +278,17 @@ fun ImportScreen(navController: NavController) {
         val highlightBorderColor by animateColorAsState(
             targetValue = if (titleHighlight) MaterialTheme.colorScheme.primary
                           else MaterialTheme.colorScheme.outline,
-            animationSpec = tween(600)
+            animationSpec = MotionFade.color(MotionFade.highlight)
         )
         val highlightFocusedBorderColor by animateColorAsState(
             targetValue = if (titleHighlight) MaterialTheme.colorScheme.primary
                           else MaterialTheme.colorScheme.primary,
-            animationSpec = tween(600)
+            animationSpec = MotionFade.color(MotionFade.highlight)
         )
         val highlightContainerColor by animateColorAsState(
             targetValue = if (titleHighlight) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
                           else Color.Transparent,
-            animationSpec = tween(600)
+            animationSpec = MotionFade.color(MotionFade.highlight)
         )
 
         Row(
@@ -590,61 +588,46 @@ fun ImportScreen(navController: NavController) {
         )
     }
 
-    // 全屏输入对话框
-    if (showFullscreenInput) {
-        Dialog(
-            onDismissRequest = { showFullscreenInput = false },
-            properties = DialogProperties(
-                usePlatformDefaultWidth = false,
-                dismissOnBackPress = true,
-                dismissOnClickOutside = false
-            )
+    // ── 全屏输入对话框 ──
+    // 与阅读页的全屏编辑对话框同一处理：窗口存活条件带上「退场还在播」那一项。
+    // 改造前只写 `if (showFullscreenInput)`，flag 一翻窗口同帧被拆，
+    // 那套 alpha + 14dp 位移只放过入场，退场从未上过屏。
+    // 减动效时 alpha 走 snap 同帧归零，条件同帧失效 —— 跳过动画，而不是延后 dismiss。
+    FadeDialogWindow(
+        visible = showFullscreenInput,
+        onDismissRequest = { showFullscreenInput = false },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .padding(16.dp)
         ) {
-            // 入场动画：淡入 + 轻微上移（不整屏 scale，避免露出背景缝隙）。
-            // 注：外层是条件式 if(showFullscreenInput)，dismiss 时 Dialog 立即移出组合，退场不播放。
-            var fsVisible by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) { fsVisible = true }
-            val fsAlpha by animateFloatAsState(targetValue = if (fsVisible) 1f else 0f, animationSpec = tween(180), label = "fsFade")
-            val fsOffset by animateDpAsState(targetValue = if (fsVisible) 0.dp else 14.dp, animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow), label = "fsSlide")
-            Surface(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("全屏输入", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = { showFullscreenInput = false }) {
+                    Text("完成")
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = fsAlpha; translationY = fsOffset.toPx() },
-                color = MaterialTheme.colorScheme.background
+                    .verticalScroll(rememberScrollState())
             ) {
-                Column(
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it.take(MAX_CONTENT_LENGTH) },
                     modifier = Modifier
-                        .fillMaxSize()
-                        .imePadding()
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("全屏输入", style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { showFullscreenInput = false }) {
-                            Text("完成")
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        OutlinedTextField(
-                            value = content,
-                            onValueChange = { content = it.take(MAX_CONTENT_LENGTH) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 400.dp),
-                            placeholder = { Text("在此粘贴或输入文本...") },
-                            maxLines = Int.MAX_VALUE
-                        )
-                    }
-                }
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 400.dp),
+                    placeholder = { Text("在此粘贴或输入文本...") },
+                    maxLines = Int.MAX_VALUE
+                )
             }
         }
     }

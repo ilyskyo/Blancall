@@ -31,7 +31,8 @@ import androidx.compose.ui.unit.dp
  * - 不再叠加 verticalGradient 高光与底部内阴影，整体视觉回归纯色面
  * - 半透明 surface（浅色 0.66 / 深色 0.75）保持不变，颜色由调用方主题决定
  * - 自带 1dp 细描边，调用方无需再传 border（避免双边框）
- * - onClick 非空时整卡可点击（无涟漪，内容区交互不受影响）；onClick + onLongClick 时支持长按
+ * - onClick 非空时整卡可点击（无涟漪，按压反馈由 pressFeedback 给缩放＋亮度；内容区交互不受影响）；
+ *   onClick + onLongClick 时支持长按
  *
  * 实现为纯 Modifier 组合（clip + background + border），
  * 不依赖 Outline 内部结构，跨 Compose 版本稳定。
@@ -79,8 +80,18 @@ fun GlassCard(
         else -> Modifier
     }
 
+    // 涟漪早就关了（indication = null），但关了之后什么都没补 ——
+    // 按下一块卡片，屏幕上没有任何东西回应你。现在补的是缩放＋亮度＋（长按时）触感，
+    // 见 pressFeedback：接在点击修饰符之前，让整块的绘制一起沉下去。
+    val pressModifier = if (onClick != null || onLongClick != null) {
+        Modifier.pressFeedback(src, PressTier.Card)
+    } else {
+        Modifier
+    }
+
     Box(
         modifier = modifier
+            .then(pressModifier)
             .then(clickModifier)
             // 大圆角裁切 → 细描边（背景由下方分层绘制，避免裁切边缘漏出实心）
             .clip(shape)

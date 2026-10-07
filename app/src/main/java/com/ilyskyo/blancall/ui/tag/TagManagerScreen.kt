@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.tag
 
+import com.ilyskyo.blancall.ui.common.StateSwap
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -46,6 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import com.ilyskyo.blancall.ui.common.Motion
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -61,6 +65,7 @@ import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Tag
 import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AmbientBackground
+import com.ilyskyo.blancall.ui.common.animateListItem
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -73,6 +78,7 @@ import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TagDot
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -202,167 +208,189 @@ fun TagManagerScreen(navController: NavController) {
 
             Spacer(Modifier.height(10.dp))
 
-            if (data.tags.isEmpty()) {
-                // ── 空态 ──
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    AppIcon(
-                        kind = AppIconKind.Tag,
-                        modifier = Modifier.size(44.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
+            StateSwap(
+                targetState = if (data.tags.isEmpty()) 0 else 1,
+                modifier = Modifier.weight(1f),
+                label = "tagListState"
+            ) { state ->
+                when (state) {
+                    // 空态与列表两态今天都是硬切：新建第一个标签时整块空态瞬间换成列表。
+                    // weight(1f) 提到 swap 外层（AnimatedContent 直接子层里 weight 会失效），
+                    // 臂内改 fillMaxSize —— 槽位高度与改前逐像素相同。
+                    0 -> {
+                    // ── 空态 ──
+                    Column(
+                        modifier = Modifier
+                                .fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        AppIcon(
+                            kind = AppIconKind.Tag,
+                            modifier = Modifier.size(44.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "还没有标签",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "标签为文章分类，并以彩色徽标显示在卡片上",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                        Spacer(Modifier.height(18.dp))
+                        Button(onClick = { creating = true }, shape = RoundedCornerShape(10.dp)) {
+                            Text("新建第一个标签")
+                        }
+                    }
+                    }
+                    // 列表臂有三个根（计数 Text + Spacer + 列表 Column），每态只许一根：
+                    // 收进一个 fillMaxSize 的普通 Column，列表 Column 的 weight(1f) 留在原位
+                    // （它的父级现在是这个普通 Column，weight 仍然有效）。
+                    else -> Column(Modifier.fillMaxSize()) {
                     Text(
-                        "还没有标签",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "标签为文章分类，并以彩色徽标显示在卡片上",
+                        "共 ${data.tags.size} 个标签",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
-                    Spacer(Modifier.height(18.dp))
-                    Button(onClick = { creating = true }, shape = RoundedCornerShape(10.dp)) {
-                        Text("新建第一个标签")
-                    }
-                }
-            } else {
-                Text(
-                    "共 ${data.tags.size} 个标签",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                )
-                Spacer(Modifier.height(10.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        // 拖动期间临时卸下滚动，避免与换位手势抢指针
-                        .then(
-                            if (draggingId == null) Modifier.verticalScroll(listScrollState)
-                            else Modifier
-                        ),
-                ) {
-                    data.tags.forEach { tag ->
-                        val isDragging = draggingId == tag.id
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .zIndex(if (isDragging) 1f else 0f),
-                        ) {
-                            GlassCard(
+                    Spacer(Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            // 拖动期间临时卸下滚动，避免与换位手势抢指针
+                            .then(
+                                if (draggingId == null) Modifier.verticalScroll(listScrollState)
+                                else Modifier
+                            ),
+                    ) {
+                        data.tags.forEach { tag ->
+                            val isDragging = draggingId == tag.id
+                            // 落位弹簧：拖的时候用 snap 逐帧跟住手指，松手翻成弹簧归零。
+                            // handleDrop 里 dragOffset 会被直接清零，改造前这一帧被拖的那行会瞬移到新位置
+                            // —— 其余行本来就有 animateListItem 的 placement 弹簧，只有拖的那行缺这一段。
+                            val settleY by animateFloatAsState(
+                                targetValue = if (isDragging) dragOffset else 0f,
+                                animationSpec = if (isDragging) snap() else Motion.slotSettleFloat(),
+                                label = "tagRowSettle",
+                            )
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(TAG_ROW_HEIGHT)
-                                    .graphicsLayer {
-                                        if (isDragging) {
-                                            translationY = dragOffset
-                                            alpha = 0.92f
-                                        }
-                                    },
-                                shape = RoundedCornerShape(14.dp),
-                                backdrop = false,
-                                onClick = { editing = tag },
-                                onLongClick = { menuFor = tag.id },
+                                    .zIndex(if (isDragging) 1f else 0f),
                             ) {
-                                Row(
+                                GlassCard(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(start = 14.dp, end = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                        .fillMaxWidth()
+                                        .height(TAG_ROW_HEIGHT)
+                                        .graphicsLayer {
+                                            if (isDragging) {
+                                                translationY = settleY
+                                                alpha = 0.92f
+                                            }
+                                        },
+                                    shape = RoundedCornerShape(14.dp),
+                                    backdrop = false,
+                                    onClick = { editing = tag },
+                                    onLongClick = { menuFor = tag.id },
                                 ) {
-                                    TagDot(tag = TagChipUi(tag.name, tag.color), size = 12.dp)
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        tag.name,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Text(
-                                        "${countsByTag[tag.id] ?: 0} 篇",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    )
-                                    // 管理该标签下的文章：勾选添加 / 取消勾选移出（同一入口兼顾增删）
-                                    Text(
-                                        "管理",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
+                                    Row(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable { managing = tag }
-                                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                                    )
-                                    // 拖动手柄：直接拖（无需长按），与长按菜单手势互不冲突。
-                                    // 拖拽用「越过 slop 才接管」的手动模式（见 dragHandleAfterSlop 注释）：
-                                    // detectDragGestures 在滚动手势 + 卡面 combinedClickable 的组合环境下
-                                    // 会因事件「已被消费」而静默中止，表现为「手柄拖不动、无任何反应」（真机反馈）。
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .pointerInput(tag.id) {
-                                                dragHandleAfterSlop(
-                                                    onStart = {
-                                                        draggingId = tag.id
-                                                        dragOffset = 0f
-                                                    },
-                                                    onDelta = { d -> dragOffset += d.y },
-                                                    onEnd = { handleDrop() },
-                                                )
-                                            },
-                                        contentAlignment = Alignment.Center,
+                                            .fillMaxSize()
+                                            .padding(start = 14.dp, end = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        AppIcon(
-                                            kind = AppIconKind.DragHandle,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        TagDot(tag = TagChipUi(tag.name, tag.color), size = 12.dp)
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(
+                                            tag.name,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
                                         )
+                                        Text(
+                                            "${countsByTag[tag.id] ?: 0} 篇",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        )
+                                        // 管理该标签下的文章：勾选添加 / 取消勾选移出（同一入口兼顾增删）
+                                        Text(
+                                            "管理",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .pressClick { managing = tag }
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        )
+                                        // 拖动手柄：直接拖（无需长按），与长按菜单手势互不冲突。
+                                        // 拖拽用「越过 slop 才接管」的手动模式（见 dragHandleAfterSlop 注释）：
+                                        // detectDragGestures 在滚动手势 + 卡面 combinedClickable 的组合环境下
+                                        // 会因事件「已被消费」而静默中止，表现为「手柄拖不动、无任何反应」（真机反馈）。
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .pointerInput(tag.id) {
+                                                    dragHandleAfterSlop(
+                                                        onStart = {
+                                                            draggingId = tag.id
+                                                            dragOffset = 0f
+                                                        },
+                                                        onDelta = { d -> dragOffset += d.y },
+                                                        onEnd = { handleDrop() },
+                                                    )
+                                                },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            AppIcon(
+                                                kind = AppIconKind.DragHandle,
+                                                modifier = Modifier.size(20.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            )
+                                        }
                                     }
                                 }
+                                // 长按菜单锚点（相对本行定位）
+                                GlassDropdownMenu(
+                                    expanded = menuFor == tag.id,
+                                    onDismissRequest = { menuFor = null },
+                                ) {
+                                    GlassMenuItem(
+                                        onClick = {
+                                            menuFor = null
+                                            editing = tag
+                                        },
+                                        label = { Text("编辑名称与颜色") },
+                                    )
+                                    GlassMenuItem(
+                                        onClick = {
+                                            menuFor = null
+                                            crossReview(tag)
+                                        },
+                                        label = { Text("跨文复习") },
+                                    )
+                                    GlassMenuDivider()
+                                    GlassMenuItem(
+                                        onClick = {
+                                            menuFor = null
+                                            deleteTarget = tag
+                                        },
+                                        label = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                    )
+                                }
                             }
-                            // 长按菜单锚点（相对本行定位）
-                            GlassDropdownMenu(
-                                expanded = menuFor == tag.id,
-                                onDismissRequest = { menuFor = null },
-                            ) {
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuFor = null
-                                        editing = tag
-                                    },
-                                    label = { Text("编辑名称与颜色") },
-                                )
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuFor = null
-                                        crossReview(tag)
-                                    },
-                                    label = { Text("跨文复习") },
-                                )
-                                GlassMenuDivider()
-                                GlassMenuItem(
-                                    onClick = {
-                                        menuFor = null
-                                        deleteTarget = tag
-                                    },
-                                    label = { Text("删除", color = MaterialTheme.colorScheme.error) },
-                                )
-                            }
+                            Spacer(Modifier.height(TAG_ROW_GAP))
                         }
-                        Spacer(Modifier.height(TAG_ROW_GAP))
+                        // 底部留白：最后一行不被导航条/屏幕边缘压迫
+                        Spacer(Modifier.height(40.dp))
                     }
-                    // 底部留白：最后一行不被导航条/屏幕边缘压迫
-                    Spacer(Modifier.height(40.dp))
+                    }
                 }
             }
         }
@@ -460,10 +488,10 @@ fun TagManagerScreen(navController: NavController) {
                             items(articles, key = { it.id }) { article ->
                                 val on = article.id in checked
                                 Row(
-                                    modifier = Modifier
+                                    modifier = animateListItem()
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .clickable {
+                                        .pressClick {
                                             checked = if (on) checked - article.id else checked + article.id
                                         }
                                         .padding(vertical = 2.dp),

@@ -68,11 +68,13 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.ScrollProgressBadge
 import com.ilyskyo.blancall.ui.common.TopBarIconAction
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.HapticTier
+import com.ilyskyo.blancall.ui.common.rememberHaptic
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.combinedPress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -128,7 +130,11 @@ fun CustomClozeEditScreen(
     //（真机 bug：已保存配置点开显示空白，回归锚点见 shouldPersistEditorSnapshot）。
     val restoredSnapshot = remember { editorSnapshot }
 
-    val haptic = LocalHapticFeedback.current
+    // 触觉栈收并：这里原本直接用 Compose 的 LocalHapticFeedback + TextHandleMove，
+    // 与 ui/common/Haptics.kt 那套直振并存 —— 同一个 app 两种「响不响」的判法。
+    // 撤销/重做/点选是「换了一格」= Toggle；长按触发的手势 = Confirm。
+    val toggleHaptic = rememberHaptic(HapticTier.Toggle)
+    val longPressHaptic = rememberHaptic(HapticTier.Confirm)
     // 文章内容失配检测：配置锚定的内容指纹与当前文章不一致时警示
     var hashMismatch by remember { mutableStateOf(false) }
     // 撤销/重做：操作前完整快照栈（容量 20）
@@ -271,7 +277,7 @@ fun CustomClozeEditScreen(
         applySnapshot(snap)
         dirty = if (savedSnapshot != null) currentSnapshot() != savedSnapshot else true
         editSeq++
-        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        toggleHaptic()
     }
 
     fun redo() {
@@ -280,7 +286,7 @@ fun CustomClozeEditScreen(
         applySnapshot(snap)
         dirty = if (savedSnapshot != null) currentSnapshot() != savedSnapshot else true
         editSeq++
-        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        toggleHaptic()
     }
 
     fun buildConfig(): CustomClozeStore.CustomConfig? {
@@ -543,7 +549,7 @@ fun CustomClozeEditScreen(
                                 selectedRanges = ranges,
                                 blankIndexOffset = offsetBefore,
                                 onToggle = { range ->
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    toggleHaptic()
                                     pushUndo()
                                     val list = selected.getOrPut(sIdx) { mutableStateListOf() }
                                     val hit = list.firstOrNull { it.first <= range.last && range.first <= it.last }
@@ -553,7 +559,7 @@ fun CustomClozeEditScreen(
                                 },
                                 onExplode = {
                                     // 长按循环切换粒度：复句→分句→字词→单字→回到复句（拆碎后可还原）
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    longPressHaptic()
                                     pushUndo()
                                     if (clozeMode == "WORD") levels[sIdx] = (levels[sIdx] + 1) % 4
                                     dirty = true
@@ -788,7 +794,7 @@ private fun SentenceEditCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
-                                    .combinedClickable(onClick = { onToggle(token.range) })
+                                    .combinedPress(tier = PressTier.Icon, onClick = { onToggle(token.range) })
                                     .padding(horizontal = 2.dp, vertical = 4.dp)
                             )
                         }
@@ -804,7 +810,7 @@ private fun SentenceEditCard(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .combinedClickable(onClick = { onToggle(token.range) })
+                                .combinedPress(tier = PressTier.Card, onClick = { onToggle(token.range) })
                                 .padding(10.dp)
                         )
                     }
@@ -819,7 +825,7 @@ private fun SentenceEditCard(
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
                                     RoundedCornerShape(6.dp)
                                 )
-                                .combinedClickable(onClick = { onToggle(token.range) }, onLongClick = { confirmHaptic(); onExplode() })
+                                .combinedPress(tier = PressTier.Icon, onClick = { onToggle(token.range) }, onLongClick = { confirmHaptic(); onExplode() })
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -840,7 +846,8 @@ private fun SentenceEditCard(
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .combinedClickable(
+                                .combinedPress(
+                                    tier = PressTier.Icon,
                                     onClick = { onToggle(token.range) },
                                     onLongClick = { confirmHaptic(); if (mode == "WORD") onExplode() }
                                 )

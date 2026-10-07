@@ -56,11 +56,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -80,6 +78,10 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.ScrollProgressBadge
 import com.ilyskyo.blancall.ui.common.TopBarIconAction
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.HapticTier
+import com.ilyskyo.blancall.ui.common.rememberHaptic
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.combinedPress
 import com.ilyskyo.blancall.ui.practice.pinchZoom
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
@@ -112,7 +114,8 @@ fun MaskConfigEditScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
+    // 触觉栈收并（见 CustomClozeEditScreen 同名注释）：撤销/重做与点选遮挡都是「换一格」= Toggle。
+    val toggleHaptic = rememberHaptic(HapticTier.Toggle)
 
     // ── 主题明暗与阅读排版（与 ReadingModeScreen 同一路由，保证"像阅读界面"）──
     val themeMode by ThemeManager.themeMode.collectAsState()
@@ -288,7 +291,7 @@ fun MaskConfigEditScreen(
         applySnapshot(snap)
         dirty = if (savedSnapshot != null) currentSnapshot() != savedSnapshot else true
         editSeq++
-        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        toggleHaptic()
     }
 
     fun redo() {
@@ -297,12 +300,12 @@ fun MaskConfigEditScreen(
         applySnapshot(snap)
         dirty = if (savedSnapshot != null) currentSnapshot() != savedSnapshot else true
         editSeq++
-        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        toggleHaptic()
     }
 
     /** 点选切换遮挡：命中已遮块 → 取消；否则移除局部重叠后按当前颜色整块遮上（语义在 MaskSpanOps，可单测） */
     fun toggleMask(p: Int, a: Int, e: Int) {
-        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        toggleHaptic()
         val next = MaskSpanOps.toggle(masks.toList(), p, a, e, colorIdx)
         if (next != masks.toList()) {
             pushUndo()
@@ -459,7 +462,7 @@ fun MaskConfigEditScreen(
                     color = if (masks.isEmpty()) subColor.copy(alpha = 0.35f) else subColor,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .combinedClickable(enabled = masks.isNotEmpty(), onClick = { clearAllMasks() })
+                        .combinedPress(tier = PressTier.Icon, enabled = masks.isNotEmpty(), onClick = { clearAllMasks() })
                         .padding(horizontal = 8.dp, vertical = 8.dp)
                 )
                 Spacer(Modifier.width(4.dp))
@@ -508,7 +511,8 @@ fun MaskConfigEditScreen(
                                     color = if (sel) accent else (if (isDark) Color(0x59FFFFFF) else Color(0x33000000)),
                                     shape = RoundedCornerShape(50)
                                 )
-                                .combinedClickable(
+                                .combinedPress(
+                                    tier = PressTier.Icon,
                                     onClick = { colorIdx = idx; AppPrefs.readingOcclusionColor = idx }
                                 ),
                             contentAlignment = Alignment.Center
@@ -792,7 +796,8 @@ private fun EditableUnitParagraph(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(palette[masked.c.coerceIn(0, palette.lastIndex)])
-                        .combinedClickable(
+                        .combinedPress(
+                            tier = PressTier.Icon,
                             onClick = { currentToggle(u.start, u.end) },
                             onLongClick = { confirmHaptic(); currentSplit() }
                         )
@@ -809,7 +814,8 @@ private fun EditableUnitParagraph(
                     style = textStyle,
                     color = textColor,
                     modifier = Modifier
-                        .combinedClickable(
+                        .combinedPress(
+                            tier = PressTier.Icon,
                             onClick = { currentToggle(u.start, u.end) },
                             onLongClick = { confirmHaptic(); currentSplit() }
                         )

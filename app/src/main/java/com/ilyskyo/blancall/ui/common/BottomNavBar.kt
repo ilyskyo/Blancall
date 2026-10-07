@@ -4,6 +4,8 @@
 package com.ilyskyo.blancall.ui.common
 
 import android.os.Build
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
 import android.widget.FrameLayout
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
@@ -50,10 +52,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -145,7 +149,10 @@ fun NavRail(
     val density = LocalDensity.current
 
     val navGlass by AppPrefs.navLiquidGlassFlow.collectAsState()
-    val railGlassAlpha by animateFloatAsState(if (navGlass) 1f else 0f, label = "railGlassAlpha")
+    // 玻璃强度是 alpha，按词表走 tween：默认 spring 会越过 1f/0f，
+    // 越界虽被绘制端夹住，但视觉上会在「关」的那一刻先暗一下再消失。
+    val railGlassAlpha by animateFloatAsState(
+        if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "railGlassAlpha")
 
     val railWidthDp = NavRailWidth
     val railCornerDp = 28.dp
@@ -167,8 +174,8 @@ fun NavRail(
     LaunchedEffect(currentTab) {
         if (currentTab != lastTabForFade) {
             lastTabForFade = currentTab
-            switchFade.animateTo(0.6f, tween(70))
-            switchFade.animateTo(1f, tween(200))
+            switchFade.animateTo(0.6f, MotionFade.number(MotionFade.switchDip))
+            switchFade.animateTo(1f, MotionFade.number(MotionFade.enter))
         }
     }
 
@@ -182,7 +189,7 @@ fun NavRail(
     LaunchedEffect(currentTab) {
         railSelAnim.animateTo(
             currentTab.coerceIn(0, (tabs.size - 1)).toFloat(),
-            spring(dampingRatio = 0.6f, stiffness = 380f)
+            Motion.sliderIndex()
         )
     }
 
@@ -429,7 +436,7 @@ fun NavRail(
                                     railScope.launch {
                                         railSelAnim.animateTo(
                                             targetTab.toFloat(),
-                                            spring(dampingRatio = 0.6f, stiffness = 380f)
+                                            Motion.sliderIndex()
                                         )
                                     }
                                     onSelectLatest(targetTab)
@@ -478,8 +485,10 @@ fun BottomNavBar(
     // LiquidGlassView 是 AndroidView，不能按条件移出组合树（detach 态 PreDraw 会崩），
     // 因此节点常驻、只动 alpha。
     val navGlass by AppPrefs.navLiquidGlassFlow.collectAsState()
-    val barGlassAlpha by animateFloatAsState(if (navGlass) 1f else 0f, label = "barGlassAlpha")
-    val sliderGlassAlpha by animateFloatAsState(if (navGlass) 1f else 0f, label = "sliderGlassAlpha")
+    val barGlassAlpha by animateFloatAsState(
+        if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "barGlassAlpha")
+    val sliderGlassAlpha by animateFloatAsState(
+        if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "sliderGlassAlpha")
 
     val barHeightDp = 64.dp
     val barCornerDp = 28.dp
@@ -506,9 +515,12 @@ fun BottomNavBar(
         )
     }
     var sliderPressed by remember { mutableStateOf(false) }
+    // 按下改成**缩小**：改造前是 1.15× 放大，而「选中」态本身也用放大表达 ——
+    // 同一个视觉承担两种语义，快速连点时会分不清是「按下了」还是「切过去了」。
+    // 缩放走统一按压谱（Motion.press），幅度取 Motion.Scale.slider。
     val sliderScale by animateFloatAsState(
-        targetValue = if (sliderPressed) 1.15f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 420f),
+        targetValue = if (sliderPressed) Motion.Scale.slider else 1f,
+        animationSpec = Motion.press(),
         label = "sliderScale"
     )
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -516,7 +528,7 @@ fun BottomNavBar(
     LaunchedEffect(currentTab, tabCount) {
         sliderAnim.animateTo(
             currentTab.toFloat().coerceIn(0f, (tabCount - 1).toFloat()),
-            spring(dampingRatio = 0.6f, stiffness = 380f)
+            Motion.sliderIndex()
         )
     }
     // host/玻璃 View 创建竞速：等两颗玻璃都创建完再 bind
@@ -557,7 +569,11 @@ fun BottomNavBar(
             // 悬浮玻璃导航栏下层是 NavHost 页面容器：若点击下放给 tab clickable，
             // 页面内元素（列表/卡片）会先消费 up 导致 tap 失效。
             // 因此全部交互在此完成，并在 Initial pass 消费事件、阻断泄漏到下层页面。
-            val haptic = LocalHapticFeedback.current
+            // 滑块落格 = 「换了一格」→ Toggle 档。
+            // 改造前这里用 Compose 的 LocalHapticFeedback + TextHandleMove，正是 Haptics.kt
+            // 当初否掉的那条路：语义类型只给词汇、不给力度，定制 ROM 上会被弱化到几乎无感，
+            // 于是同一个 app 里两套触觉栈并存、响不响全看系统心情。
+            val tabHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Toggle))
             Box(
                 Modifier
                     .fillMaxSize()
@@ -568,43 +584,51 @@ fun BottomNavBar(
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                             down.consume()
                             sliderPressed = true
-                            var tracking = false
-                            val startX = down.position.x
-                            var lastX = startX
-                            while (true) {
-                                val change = awaitPointerEvent(PointerEventPass.Initial)
-                                    .changes.firstOrNull { it.id == down.id } ?: break
-                                if (!change.pressed) {
-                                    // 抬起：tab 归属按「按下位置」向下取整判定——roundToInt 在 tab 中心处
-                                    // 产生半格偏移（点第 2 个 tab 会算成第 3 个）；手指微动不跨 tab 时
-                                    // 也按按下位置，避免误入拖动吸附导致点击无响应。
-                                    val startTab = (startX / tabW).toInt().coerceIn(0, tabCount - 1)
-                                    val endTab = (change.position.x / tabW).toInt().coerceIn(0, tabCount - 1)
-                                    val targetTab = if (startTab == endTab) startTab else endTab
-                                    scope.launch {
-                                        sliderAnim.animateTo(
-                                            targetTab.toFloat(),
-                                            spring(dampingRatio = 0.6f, stiffness = 380f)
-                                        )
+                            // 整段跟踪包在 try/finally 里：`?: break` 是**非抬起**出口
+                            // —— 指针被别的手势接管（或本次手势被取消）时从这里离开，
+                            // 而改造前只有抬起那条路会复位 sliderPressed。于是滑块会
+                            // 冻结在按压态的放大倍数上直到下一次触摸，读起来像卡住了。
+                            try {
+                                var tracking = false
+                                val startX = down.position.x
+                                var lastX = startX
+                                while (true) {
+                                    val change = awaitPointerEvent(PointerEventPass.Initial)
+                                        .changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) {
+                                        // 抬起：tab 归属按「按下位置」向下取整判定——roundToInt 在 tab 中心处
+                                        // 产生半格偏移（点第 2 个 tab 会算成第 3 个）；手指微动不跨 tab 时
+                                        // 也按按下位置，避免误入拖动吸附导致点击无响应。
+                                        val startTab = (startX / tabW).toInt().coerceIn(0, tabCount - 1)
+                                        val endTab = (change.position.x / tabW).toInt().coerceIn(0, tabCount - 1)
+                                        val targetTab = if (startTab == endTab) startTab else endTab
+                                        scope.launch {
+                                            sliderAnim.animateTo(
+                                                targetTab.toFloat(),
+                                                Motion.sliderIndex()
+                                            )
+                                        }
+                                        onSelectLatest(targetTab)
+                                        tabHaptic()
+                                        change.consume()
+                                        break
                                     }
-                                    onSelectLatest(targetTab)
-                                    sliderPressed = false
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    change.consume()
-                                    break
+                                    if (!tracking && abs(change.position.x - startX) > viewConfiguration.touchSlop) {
+                                        tracking = true
+                                        lastX = change.position.x
+                                    }
+                                    if (tracking) {
+                                        change.consume()
+                                        val dx = change.position.x - lastX
+                                        lastX = change.position.x
+                                        val t = (sliderAnim.value + dx / tabW).coerceIn(0f, (tabCount - 1).toFloat())
+                                        // 受限作用域不能直接调外部挂起函数，经 scope 调度（开销极小）
+                                        scope.launch { sliderAnim.snapTo(t) }
+                                    }
                                 }
-                                if (!tracking && abs(change.position.x - startX) > viewConfiguration.touchSlop) {
-                                    tracking = true
-                                    lastX = change.position.x
-                                }
-                                if (tracking) {
-                                    change.consume()
-                                    val dx = change.position.x - lastX
-                                    lastX = change.position.x
-                                    val t = (sliderAnim.value + dx / tabW).coerceIn(0f, (tabCount - 1).toFloat())
-                                    // 受限作用域不能直接调外部挂起函数，经 scope 调度（开销极小）
-                                    scope.launch { sliderAnim.snapTo(t) }
-                                }
+                            } finally {
+                                // 无论抬起、跳出还是被取消，按压态都必须放行
+                                sliderPressed = false
                             }
                         }
                     }
@@ -719,7 +743,27 @@ fun BottomNavBar(
                     Box(
                         modifier = Modifier
                             .width(with(density) { tabW.toDp() })
-                            .fillMaxHeight(),
+                            .fillMaxHeight()
+                            // 底栏的点击原本只由栏级 pointerInput 承担，于是四个 tab 在无障碍
+                            // 树里没有任何动作，TalkBack 到不了主导航。这里照侧栏那份房规给每一项
+                            // 自己挂 clickable（同一处写法见 NavRail 的 tabs 循环）：语义合并会把
+                            // 图标下的文字带进节点名，indication=null 保持「无涟漪」。
+                            // ⚠️ 子级会先消费 up 事件，栏级手势里的「点同一项收起」是否还触发
+                            // 属于本次改动的回归范围：改这里必须连那条一起在真机上验一遍。
+                            // 底栏的点击原本只由栏级 pointerInput 承担（它跑在
+                            // PointerEventPass.Initial 上并立刻 consume(down)，是全 app 对
+                            // 「导航栏点击归手势层统一处理」这条约定的落点）。所以这里
+                            // **不能**给子项挂 .clickable：那会让子级再走一遍 onSelect，
+                            // 与栏级的 onSelectLatest + tabHaptic 双触发。
+                            // 无障碍要的动作与状态用纯语义提供：只加 ACTION_CLICK，不碰指针。
+                            // 名字**不再显式挂** ContentDescription —— 节点子树里那颗 Text 就是
+                            // 唯一名称来源，再挂一份会让读屏念成「首页 首页」。实测：未选中的
+                            // tab 报 clickable，选中的那个报 selected（已选中无需再被点），都对。
+                            .semantics(mergeDescendants = true) {
+                                this[SemanticsProperties.Selected] = selected
+                                this[SemanticsProperties.Role] = Role.Tab
+                                onClick(label = null) { onSelect(index); true }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(

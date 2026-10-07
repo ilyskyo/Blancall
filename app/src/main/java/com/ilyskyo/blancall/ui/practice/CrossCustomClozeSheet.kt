@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.practice
 
+import com.ilyskyo.blancall.ui.common.StateSwap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -25,11 +26,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +38,8 @@ import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * 跨文复习「自定义挖空」配置选择浮层：**按文章分别勾选**要应用的挖空配置
@@ -95,66 +96,74 @@ fun CrossCustomClozeSheet(
             )
             Spacer(Modifier.height(12.dp))
 
-            if (loading) {
-                Text(
-                    "加载中…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 380.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    articles.forEach { (articleId, title) ->
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        val cfgs = configsByArticle[articleId].orEmpty()
-                        if (cfgs.isEmpty()) {
+            // 每次打开这张表都要先读一遍各文章的配置：改造前「加载中…」是瞬间被
+            // 列表顶掉的。两臂各自单根，父 Column 没有 verticalArrangement ⇒ 稳态等价；
+            // 盒子按目标内容定尺寸，所以列表该多高还是多高，只是旧文字淡出去。
+            StateSwap(
+                targetState = loading,
+                label = "crossClozeLoading"
+            ) { isLoading ->
+                if (isLoading) {
+                    Text(
+                        "加载中…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 380.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        articles.forEach { (articleId, title) ->
                             Text(
-                                "该文章暂无挖空配置",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                        } else {
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                cfgs.forEach { cfg ->
-                                    val sel = selected[articleId] == cfg.id
-                                    FilterChip(
-                                        selected = sel,
-                                        // 点已选中的 chip = 取消选择（便于纠正误选）
-                                        onClick = {
-                                            if (sel) selected.remove(articleId)
-                                            else selected[articleId] = cfg.id
-                                        },
-                                        label = {
-                                            Text(
-                                                cfg.name,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                            selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                        ),
-                                    )
+                            Spacer(Modifier.height(6.dp))
+                            val cfgs = configsByArticle[articleId].orEmpty()
+                            if (cfgs.isEmpty()) {
+                                Text(
+                                    "该文章暂无挖空配置",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                )
+                            } else {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    cfgs.forEach { cfg ->
+                                        val sel = selected[articleId] == cfg.id
+                                        FilterChip(
+                                            selected = sel,
+                                            // 点已选中的 chip = 取消选择（便于纠正误选）
+                                            onClick = {
+                                                if (sel) selected.remove(articleId)
+                                                else selected[articleId] = cfg.id
+                                            },
+                                            label = {
+                                                Text(
+                                                    cfg.name,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                                selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                            ),
+                                        )
+                                    }
                                 }
                             }
+                            Spacer(Modifier.height(14.dp))
                         }
-                        Spacer(Modifier.height(14.dp))
                     }
                 }
             }

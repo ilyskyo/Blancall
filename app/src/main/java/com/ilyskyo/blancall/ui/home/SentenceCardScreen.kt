@@ -3,8 +3,10 @@
 
 package com.ilyskyo.blancall.ui.home
 
+import com.ilyskyo.blancall.ui.common.StateSwap
 import android.widget.Toast
 import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -84,12 +86,18 @@ import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TagDot
+import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.HapticTier
+import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.toChipUis
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -197,45 +205,107 @@ fun SentenceCardScreen(navController: NavController) {
 
     val now = System.currentTimeMillis()
     val haptic = rememberConfirmHaptic()
+    // 回弹（没跨过阈值，卡片自己回到原位）是轻的一下：它说的是「没走成」，
+    // 和提交那一下的 Confirm 不是同一句话，共用一档会把两件事混成一个。
+    val reboundHaptic = rememberHaptic(HapticTier.Toggle)
     val scope = rememberCoroutineScope()
     val dragY = remember { Animatable(0f) }
     val swipeThreshold = with(LocalDensity.current) { 56.dp.toPx() }
+    /**
+     * flick 提交的速度线（词表里与横向标题切换共用同一条 [Motion.flingCommitDpPerSec]）。
+     * 改造前提交**只看距离**，于是「用力一甩但没甩过 56dp」什么都不发生，
+     * 而缓慢拖过阈值却整张飞走 —— 距离是手指的位移，速度才是手指的意图（法则一）。
+     */
+    val flingCommitPx = with(LocalDensity.current) { Motion.flingCommitDpPerSec.dp.toPx() }
+    val dragVelocity = remember { VelocityTracker() }
     var areaHeightPx by remember { mutableIntStateOf(0) }
     val flyDistance = if (areaHeightPx > 0) areaHeightPx.toFloat() * 1.1f else 2000f
     var animating by remember { mutableStateOf(false) }
+    /**
+     * 已发出但尚未提交的推进数。飞行可以被手指抢占（见 onDragStart），而 index 要等
+     * 各自协程的 finally 才落 —— 没有这个计数，连滑两次会算出同一个目标、第二张被吞掉。
+     * 只由 advance() 自己加减，别处不碰，所以不需要和 193/200/444 那几处直接写 index 的地方同步。
+     */
+    var inFlight by remember { mutableIntStateOf(0) }
+    /** 第几次飞行：只有最新那次有权清 animating，否则被抢占的旧飞行会提前解锁输入。 */
+    var flyToken by remember { mutableIntStateOf(0) }
+    /**
+     * 飞离过程中收到的一次评分先暂存这里（最多一个，后来的不覆盖先来的）。
+     * 见 [rate]：不在飞行途中结算，等这一张落位后应用到"露出来的那张"。
+     */
+    var pendingRating by remember { mutableStateOf<FsrsEngine.Rating?>(null) }
+    // 飞离那张卡所在的协程：下一次按下要能抢占它（见 onDragStart）
+    var flyJob by remember { mutableStateOf<Job?>(null) }
 
     fun ratedToday(key: String): Boolean = isRatedToday(states[key], System.currentTimeMillis())
 
     /**
-     * 翻卡：上滑离场前进 / 下滑离场回看（回看只读）。
-     * 边界（首张下滑、末张上滑）或动画进行中：不做翻卡，只把拖出的卡**回弹复位**，
-     * 避免停在半途看起来像"卡死"。
+     * advance() 能否真的翻走。
+     * 抽出来是为了让**提交回执**在拖拽松手那一刻就判得准：
+     * 到头翻不动时该响的是「没走成」那一档，不是「走了」那一档。
+     *
+     * 基准是 `currentIndex + inFlight` 而不是 currentIndex：飞离协程要等动画结束才落 index，
+     * 只看 currentIndex 的话连滑两次会算出同一个目标（第二张被吞掉）。
      */
-    fun advance(forward: Boolean) {
+    fun canAdvance(forward: Boolean): Boolean {
+        val items = queue ?: return false
+        val base = (currentIndex + inFlight).coerceIn(0, items.size)
+        return if (forward) base < items.size else base > 0
+    }
+
+    /**
+     * 翻卡：上滑离场前进 / 下滑离场回看（回看只读）。
+     * 边界（首张下滑、末张上滑）：不做翻卡，只把拖出的卡**回弹复位**，
+     * 避免停在半途看起来像"卡死"。
+     *
+     * 两处物理：
+     * 1. 松手速度带进弹簧（[Motion.cardFly]）—— 甩得越快飞得越快，
+     *    这是改造前 `tween(300)` 永远给不出的「有重量」；
+     * 2. 飞行途中被下一次按下抢占时（见 `onDragStart` 里的 `flyJob?.cancel()`），
+     *    这一张的推进**照旧完成**（finally 里落 index）。
+     *    改造前的 `animating` 是一把 300ms 的输入锁：动画期间拖拽与评分一律被挡掉，
+     *    那是「可中断」的字面反面。现在动画可以被手指打断，而且打断不丢卡片。
+     */
+    fun advance(forward: Boolean, releaseVelocity: Float = 0f) {
         val items = queue ?: return
-        val canGo = if (forward) currentIndex < items.size else currentIndex > 0
-        if (!canGo || animating) {
-            scope.launch { dragY.animateTo(0f, spring()) }
+        if (!canAdvance(forward)) {
+            scope.launch { dragY.animateTo(0f, Motion.cardRebound(), initialVelocity = releaseVelocity) }
             return
         }
-        scope.launch {
-            animating = true
-            // 飞走降速：300ms + 缓入缓出（原 180ms 线性过快，不优雅）
-            dragY.animateTo(
-                if (forward) -flyDistance else flyDistance,
-                tween(300, easing = FastOutSlowInEasing),
-            )
-            dragY.snapTo(0f)
-            currentIndex = (currentIndex + if (forward) 1 else -1).coerceIn(0, items.size)
-            animating = false
+        animating = true
+        val myToken = ++flyToken
+        // 基准带上在飞的推进数：连滑两次才不会算出同一个目标、把第二张吞掉
+        val nextIndex = advanceTargetIndex(currentIndex, inFlight, forward, items.size)
+        inFlight++
+        val targetOffset = if (forward) -flyDistance else flyDistance
+        flyJob = scope.launch {
+            try {
+                // 初速度 = 松手那一刻的 finger velocity：飞离的快慢由手指决定，不是由定时器决定
+                dragY.animateTo(targetOffset, Motion.cardFly(), initialVelocity = releaseVelocity)
+                dragY.snapTo(0f)
+            } catch (_: CancellationException) {
+                // 被下一次按下抢占：归位与索引推进分别在 onDragStart（snapTo）与 finally 里完成
+            } finally {
+                currentIndex = nextIndex
+                inFlight--
+                // 只有最新那次飞行有权清标志。被抢占的旧飞行提前清的话，
+                // 排队中的评分（LaunchedEffect(animating) 靠它结算）会落在还没落位的卡上。
+                if (myToken == flyToken) animating = false
+            }
         }
     }
 
     /** 三键评级：FSRS 更新 → 本地即时展示 → IO 落盘 → 自动前进 */
     fun rate(item: DailySentenceCoordinator.QueueItem, rating: FsrsEngine.Rating) {
-        // 防连点：动画期间的点击一律拦截（按钮视觉不受动画影响）；
-        // 「今日已评」不再只读 —— 回看已评卡可再次点击改判（更新该卡评级与回显高亮）。
-        if (animating) return
+        // 飞行途中按钮仍绑定在**正在离场那张卡**上，此刻直接结算会把同一张卡评两次
+        // （currentIndex 要等飞离协程的 finally 才落）。所以这里不吞输入，而是**排队**：
+        // 手指落下的这一次评分照样算数，只是等这一张真正翻走之后，落到"当时露出来的那张"上。
+        // 旧写法 `if (animating) return` 是直接把点击丢掉，用户读成"点了没反应"。
+        if (animating) {
+            pendingRating = pendingRating ?: rating
+            haptic()
+            return
+        }
         haptic()
         val ts = System.currentTimeMillis()
         val next = FsrsEngine.review(states[item.key] ?: FsrsEngine.CardState(), rating, ts)
@@ -247,6 +317,16 @@ fun SentenceCardScreen(navController: NavController) {
             runCatching { fsrsStore.saveSentence(item.key, next) }
         }
         advance(forward = true)
+    }
+
+    // 这一张真正落位（currentIndex 已在飞离协程的 finally 里提交）之后，结算排队的那次评分。
+    // 用 LaunchedEffect 而不是在 finally 里直接调 rate：Kotlin 的局部函数之间不能互相前向引用，
+    // 且在那里调用会让 currentIndex 的读写缠进同一段协程。
+    LaunchedEffect(animating) {
+        if (animating) return@LaunchedEffect
+        val r = pendingRating ?: return@LaunchedEffect
+        pendingRating = null
+        queue?.getOrNull(currentIndex)?.let { rate(it, r) }
     }
 
     Box(
@@ -355,228 +435,274 @@ fun SentenceCardScreen(navController: NavController) {
             // 主动复习提示已改为系统 Toast（见顶栏「复习」按钮）——页面不再渲染提示行，
             // 复习态与常态的卡片布局因此完全一致（不会因提示行占位而变矮）。
 
-            when {
-                items == null -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
+            val deck = items
+            StateSwap(
+                targetState = when {
+                    deck == null -> 0
+                    deck.isEmpty() -> 1
+                    currentIndex >= deck.size -> 2
+                    else -> 3
+                },
+                label = "sentenceCardState"
+            ) { state ->
+                when (state) {
+                    0 -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                        }
                     }
-                }
-
-                items.isEmpty() -> {
-                    SentenceEmptyView(onBack = { navController.popBackStack() })
-                }
-
-                currentIndex >= items.size -> {
-                    val ratedCount = items.count { ratedToday(it.key) }
-                    val firstUnrated = items.indexOfFirst { !ratedToday(it.key) }
-                    SentenceDoneView(
-                        ratedCount = ratedCount,
-                        againCount = sessionRatings.values.count { it == FsrsEngine.Rating.AGAIN },
-                        hardCount = sessionRatings.values.count { it == FsrsEngine.Rating.HARD },
-                        goodCount = sessionRatings.values.count { it == FsrsEngine.Rating.GOOD },
-                        firstUnrated = firstUnrated,
-                        // 再复习一轮：全量重新排队并从头过一遍（用户主动复习的主入口之一）
-                        onReviewAgain = {
-                            sessionRatings.clear()
-                            reviewAll = true
-                            reviewRound++
-                        },
-                        onContinue = { currentIndex = firstUnrated },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                else -> {
-                    val current = items[currentIndex]
-                    // ── 堆叠区：当前卡可拖拽；后两张卡缩放任后（华为堆叠形态） ──
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(horizontal = 20.dp)
-                            .onSizeChanged { areaHeightPx = it.height }
-                            .clipToBounds(),
-                    ) {
-                        Box(Modifier.fillMaxSize().padding(top = 22.dp)) {
-                            // 层叠方向按拖动方向选择：前进（上滑）露「下一张」、回看（下拉）露「上一张」；
-                            // 缩放进度统一取 |dragY|：即将接棒的卡从 0.94 平滑放大到 1.0，动画结束
-                            // 正好以全尺寸成为顶层 —— 修复「回看时底层显示成下一张」与「卡片从
-                            // 被挡住的卡尺寸（0.94）突然跳大」的尺寸跳变（真机反馈）。
-                            val towardBack = dragY.value > 0f
-                            val secondItem = items.getOrNull(
-                                if (towardBack) currentIndex - 1 else currentIndex + 1
-                            )
-                            val thirdItem = items.getOrNull(
-                                if (towardBack) currentIndex - 2 else currentIndex + 2
-                            )
-                            val stackP = (kotlin.math.abs(dragY.value) / flyDistance).coerceIn(0f, 1f)
-                            // 后层卡（depth=2 最后画底层；上移偏移让顶部露边）
-                            thirdItem?.let { behind ->
+                    1 -> {
+                        SentenceEmptyView(onBack = { navController.popBackStack() })
+                    }
+                    2 -> {
+                        // 智能转换在 when(state) 里没了：这一臂要读 items.count/indexOfFirst，
+                        // 所以先取一份非空副本。退场那一帧 deck 可能已是 null，
+                        // 给空表而不是崩：完成页这时最多把统计显示成 0。
+                        val items = deck ?: emptyList()
+                        val ratedCount = items.count { ratedToday(it.key) }
+                        val firstUnrated = items.indexOfFirst { !ratedToday(it.key) }
+                        SentenceDoneView(
+                            ratedCount = ratedCount,
+                            againCount = sessionRatings.values.count { it == FsrsEngine.Rating.AGAIN },
+                            hardCount = sessionRatings.values.count { it == FsrsEngine.Rating.HARD },
+                            goodCount = sessionRatings.values.count { it == FsrsEngine.Rating.GOOD },
+                            firstUnrated = firstUnrated,
+                            // 再复习一轮：全量重新排队并从头过一遍（用户主动复习的主入口之一）
+                            onReviewAgain = {
+                                sessionRatings.clear()
+                                reviewAll = true
+                                reviewRound++
+                            },
+                            onContinue = { currentIndex = firstUnrated },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    // 卡组臂今天有两个根（堆叠 Box + 评分 Row），AnimatedContent 每态只许一根，
+                    // 所以收进一个 fillMaxSize 的普通 Column —— 堆叠 Box 的 weight(1f) 留在原位，
+                    // 它的父级现在是这个 Column，weight 仍然有效（直接挂在 swap 盒子下面才会失效）。
+                    // 退场那一帧 items 可能已被重载成 null：卫语句让这一臂渲染成空盒，
+                    // 而不是让下面 items[currentIndex] 越界崩。
+                    3 -> Column(Modifier.fillMaxSize()) {
+                        val items = deck ?: return@Column
+                        if (currentIndex >= items.size) return@Column
+                        val current = items[currentIndex]
+                        // ── 堆叠区：当前卡可拖拽；后两张卡缩放任后（华为堆叠形态） ──
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(horizontal = 20.dp)
+                                .onSizeChanged { areaHeightPx = it.height }
+                                .clipToBounds(),
+                        ) {
+                            Box(Modifier.fillMaxSize().padding(top = 22.dp)) {
+                                // 层叠方向按拖动方向选择：前进（上滑）露「下一张」、回看（下拉）露「上一张」；
+                                // 缩放进度统一取 |dragY|：即将接棒的卡从 0.94 平滑放大到 1.0，动画结束
+                                // 正好以全尺寸成为顶层 —— 修复「回看时底层显示成下一张」与「卡片从
+                                // 被挡住的卡尺寸（0.94）突然跳大」的尺寸跳变（真机反馈）。
+                                val towardBack = dragY.value > 0f
+                                val secondItem = items.getOrNull(
+                                    if (towardBack) currentIndex - 1 else currentIndex + 1
+                                )
+                                val thirdItem = items.getOrNull(
+                                    if (towardBack) currentIndex - 2 else currentIndex + 2
+                                )
+                                val stackP = (kotlin.math.abs(dragY.value) / flyDistance).coerceIn(0f, 1f)
+                                // 后层卡（depth=2 最后画底层；上移偏移让顶部露边）
+                                thirdItem?.let { behind ->
+                                    SentenceCardFace(
+                                        item = behind,
+                                        state = states[behind.key],
+                                        now = now,
+                                        tags = chipByArticle[behind.articleId].orEmpty(),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                val base = 0.88f
+                                                scaleX = base
+                                                scaleY = base
+                                                translationY = -18.dp.toPx()
+                                                alpha = 0.6f
+                                            },
+                                    )
+                                }
+                                // 次层卡（depth=1）：随拖动进度渐渐顶到最前（前进/回看两方向一致）
+                                secondItem?.let { behind ->
+                                    SentenceCardFace(
+                                        item = behind,
+                                        state = states[behind.key],
+                                        now = now,
+                                        tags = chipByArticle[behind.articleId].orEmpty(),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                val p = stackP
+                                                val base = 0.94f + (1f - 0.94f) * p
+                                                scaleX = base
+                                                scaleY = base
+                                                translationY = -10.dp.toPx() * (1f - p)
+                                                alpha = 0.85f + 0.15f * p
+                                            },
+                                    )
+                                }
+                                // 顶层卡：拖拽 + 无障碍操作
                                 SentenceCardFace(
-                                    item = behind,
-                                    state = states[behind.key],
+                                    item = current,
+                                    state = states[current.key],
                                     now = now,
-                                    tags = chipByArticle[behind.articleId].orEmpty(),
+                                    tags = chipByArticle[current.articleId].orEmpty(),
                                     modifier = Modifier
                                         .fillMaxSize()
+                                        .offset { IntOffset(0, dragY.value.roundToInt()) }
                                         .graphicsLayer {
-                                            val base = 0.88f
-                                            scaleX = base
-                                            scaleY = base
-                                            translationY = -18.dp.toPx()
-                                            alpha = 0.6f
-                                        },
-                                )
-                            }
-                            // 次层卡（depth=1）：随拖动进度渐渐顶到最前（前进/回看两方向一致）
-                            secondItem?.let { behind ->
-                                SentenceCardFace(
-                                    item = behind,
-                                    state = states[behind.key],
-                                    now = now,
-                                    tags = chipByArticle[behind.articleId].orEmpty(),
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer {
-                                            val p = stackP
-                                            val base = 0.94f + (1f - 0.94f) * p
-                                            scaleX = base
-                                            scaleY = base
-                                            translationY = -10.dp.toPx() * (1f - p)
-                                            alpha = 0.85f + 0.15f * p
-                                        },
-                                )
-                            }
-                            // 顶层卡：拖拽 + 无障碍操作
-                            SentenceCardFace(
-                                item = current,
-                                state = states[current.key],
-                                now = now,
-                                tags = chipByArticle[current.articleId].orEmpty(),
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .offset { IntOffset(0, dragY.value.roundToInt()) }
-                                    .graphicsLayer {
-                                        rotationZ = dragY.value / 56f
-                                        alpha = 1f - (-dragY.value / flyDistance).coerceIn(0f, 1f) * 0.25f
-                                    }
-                                    .pointerInput(currentIndex, items.size) {
-                                        detectVerticalDragGestures(
-                                            onVerticalDrag = { change, dragAmount ->
-                                                // 飞出动画期间忽略拖拽输入：避免 snapTo 与 animateTo 互抢同一 Animatable
-                                                if (!animating) {
+                                            rotationZ = dragY.value / 56f
+                                            alpha = 1f - (-dragY.value / flyDistance).coerceIn(0f, 1f) * 0.25f
+                                        }
+                                        .pointerInput(currentIndex, items.size) {
+                                            detectVerticalDragGestures(
+                                                onDragStart = {
+                                                    // 手指接管即作废排队的评分：用户注意力已经回到这张卡上，
+                                                    // 再按"上一次点击"结算会翻到他没想看的那张。
+                                                    pendingRating = null
+                                                    // 动画可以被手指打断：新按下先抢占上一次飞离，
+                                                    // 被打断那张的推进在 advance 的 finally 里照常完成。
+                                                    // 这里立刻归零 —— 否则新拖动会从旧卡飞出的半途偏移接着算。
+                                                    flyJob?.cancel()
+                                                    scope.launch { dragY.snapTo(0f) }
+                                                },
+                                                onVerticalDrag = { change, dragAmount ->
                                                     change.consume()
+                                                    // 采样手指位置，松手时算出速度喂给弹簧
+                                                    @Suppress("DEPRECATION")
+                                                    dragVelocity.addPosition(change.uptimeMillis, change.position)
                                                     scope.launch {
                                                         dragY.snapTo(
                                                             (dragY.value + dragAmount)
                                                                 .coerceIn(-flyDistance, flyDistance)
                                                         )
                                                     }
-                                                }
-                                            },
-                                            onDragEnd = {
-                                                val v = dragY.value
-                                                when {
-                                                    v <= -swipeThreshold -> advance(forward = true)
-                                                    v >= swipeThreshold -> advance(forward = false)
-                                                    else -> scope.launch { dragY.animateTo(0f, spring()) }
-                                                }
-                                            },
-                                            onDragCancel = {
-                                                scope.launch { dragY.animateTo(0f, spring()) }
-                                            },
-                                        )
-                                    }
-                                    .semantics {
-                                        contentDescription = buildString {
-                                            append("句子卡片，第 ").append(currentIndex + 1)
-                                                .append(" / ").append(items.size).append(" 张")
-                                            if (current.title.isNotBlank()) {
-                                                append("，来自《").append(current.title).append("》")
-                                            }
-                                            append("：").append(current.text)
-                                            if (ratedToday(current.key)) append("。已记录")
+                                                },
+                                                onDragEnd = {
+                                                    @Suppress("DEPRECATION")
+                                                    val v = dragVelocity.calculateVelocity().y
+                                                    dragVelocity.resetTracking()
+                                                    val offset = dragY.value
+                                                    // 距离够 **或** 甩得快 —— 两条任一成立即提交
+                                                    val goForward = offset <= -swipeThreshold || v <= -flingCommitPx
+                                                    val goBackward = offset >= swipeThreshold || v >= flingCommitPx
+                                                    when {
+                                                        goForward -> {
+                                                            if (canAdvance(true)) haptic() else reboundHaptic()
+                                                            advance(forward = true, releaseVelocity = v)
+                                                        }
+                                                        goBackward -> {
+                                                            if (canAdvance(false)) haptic() else reboundHaptic()
+                                                            advance(forward = false, releaseVelocity = v)
+                                                        }
+                                                        else -> {
+                                                            // 距离与速度都不够：回到原位，并把松手的动量一起还回去
+                                                            reboundHaptic()
+                                                            scope.launch { dragY.animateTo(0f, Motion.cardRebound(), initialVelocity = v) }
+                                                        }
+                                                    }
+                                                },
+                                                onDragCancel = {
+                                                    dragVelocity.resetTracking()
+                                                    scope.launch { dragY.animateTo(0f, Motion.cardRebound()) }
+                                                },
+                                            )
                                         }
-                                        customActions = listOf(
-                                            CustomAccessibilityAction("记住了") {
-                                                rate(current, FsrsEngine.Rating.GOOD); true
-                                            },
-                                            CustomAccessibilityAction("不熟") {
-                                                rate(current, FsrsEngine.Rating.HARD); true
-                                            },
-                                            CustomAccessibilityAction("忘记") {
-                                                rate(current, FsrsEngine.Rating.AGAIN); true
-                                            },
-                                            CustomAccessibilityAction("下一个") {
-                                                advance(forward = true); true
-                                            },
-                                        )
-                                    },
+                                        .semantics {
+                                            contentDescription = buildString {
+                                                append("句子卡片，第 ").append(currentIndex + 1)
+                                                    .append(" / ").append(items.size).append(" 张")
+                                                if (current.title.isNotBlank()) {
+                                                    append("，来自《").append(current.title).append("》")
+                                                }
+                                                append("：").append(current.text)
+                                                if (ratedToday(current.key)) append("。已记录")
+                                            }
+                                            customActions = listOf(
+                                                CustomAccessibilityAction("记住了") {
+                                                    rate(current, FsrsEngine.Rating.GOOD); true
+                                                },
+                                                CustomAccessibilityAction("不熟") {
+                                                    rate(current, FsrsEngine.Rating.HARD); true
+                                                },
+                                                CustomAccessibilityAction("忘记") {
+                                                    rate(current, FsrsEngine.Rating.AGAIN); true
+                                                },
+                                                CustomAccessibilityAction("下一个") {
+                                                    advance(forward = true); true
+                                                },
+                                            )
+                                        },
+                                )
+                            }
+                        }
+
+                        // 手势提示（仅首次使用展示一次；操作细节在帮助文档）
+                        if (showSwipeHint) {
+                            Text(
+                                "上滑看下一张 · 下滑回看上一张",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(top = 8.dp)
+                                    .semantics { liveRegion = LiveRegionMode.Polite },
                             )
                         }
-                    }
 
-                    // 手势提示（仅首次使用展示一次；操作细节在帮助文档）
-                    if (showSwipeHint) {
-                        Text(
-                            "上滑看下一张 · 下滑回看上一张",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                        // ── 三键评级（左→右：忘记 / 不熟 / 记住了，记住了主色强调） ──
+                        // 所选评级回显：会话内最新选择优先，否则取持久化的上次评级；未评卡不高亮
+                        // （避免预设误导）。点击即时选中与回看回显共用同一 selected 样式；
+                        // 按钮不再因「今日已评」禁用（支持改判），动画防连点由 rate() 内部 guard 兜底。
+                        val selectedRating: FsrsEngine.Rating? =
+                            if (ratedToday(current.key)) {
+                                resolveDisplayedRating(
+                                    session = sessionRatings[current.key],
+                                    persisted = states[current.key]?.lastRating,
+                                )
+                            } else null
+                        Row(
                             modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .padding(top = 8.dp)
-                                .semantics { liveRegion = LiveRegionMode.Polite },
-                        )
-                    }
-
-                    // ── 三键评级（左→右：忘记 / 不熟 / 记住了，记住了主色强调） ──
-                    // 所选评级回显：会话内最新选择优先，否则取持久化的上次评级；未评卡不高亮
-                    // （避免预设误导）。点击即时选中与回看回显共用同一 selected 样式；
-                    // 按钮不再因「今日已评」禁用（支持改判），动画防连点由 rate() 内部 guard 兜底。
-                    val selectedRating: FsrsEngine.Rating? =
-                        if (ratedToday(current.key)) {
-                            resolveDisplayedRating(
-                                session = sessionRatings[current.key],
-                                persisted = states[current.key]?.lastRating,
-                            )
-                        } else null
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 20.dp, end = 20.dp, top = 10.dp)
-                            .navigationBarsPadding()
-                            .padding(bottom = 18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        RatingButton(
-                            label = "忘记",
-                            desc = "忘记了：下次复习间隔会缩短",
-                            container = MaterialTheme.colorScheme.errorContainer,
-                            content = MaterialTheme.colorScheme.onErrorContainer,
-                            enabled = true,
-                            modifier = Modifier.weight(1f),
-                            selected = selectedRating == FsrsEngine.Rating.AGAIN,
-                        ) { rate(current, FsrsEngine.Rating.AGAIN) }
-                        RatingButton(
-                            label = "不熟",
-                            desc = "不熟：下次复习间隔略短",
-                            container = MaterialTheme.colorScheme.secondaryContainer,
-                            content = MaterialTheme.colorScheme.onSecondaryContainer,
-                            enabled = true,
-                            modifier = Modifier.weight(1f),
-                            selected = selectedRating == FsrsEngine.Rating.HARD,
-                        ) { rate(current, FsrsEngine.Rating.HARD) }
-                        RatingButton(
-                            label = "记住了",
-                            desc = "记住了：下次复习间隔将变长",
-                            container = MaterialTheme.colorScheme.primary,
-                            content = MaterialTheme.colorScheme.onPrimary,
-                            enabled = true,
-                            modifier = Modifier.weight(1f),
-                            selected = selectedRating == FsrsEngine.Rating.GOOD,
-                            // 主色底上的白色描边不可见：改黑色，与另两键的深色描边拉齐（仅颜色差异）
-                            borderColor = Color.Black,
-                        ) { rate(current, FsrsEngine.Rating.GOOD) }
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, end = 20.dp, top = 10.dp)
+                                .navigationBarsPadding()
+                                .padding(bottom = 18.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            RatingButton(
+                                label = "忘记",
+                                desc = "忘记了：下次复习间隔会缩短",
+                                container = MaterialTheme.colorScheme.errorContainer,
+                                content = MaterialTheme.colorScheme.onErrorContainer,
+                                enabled = true,
+                                modifier = Modifier.weight(1f),
+                                selected = selectedRating == FsrsEngine.Rating.AGAIN,
+                            ) { rate(current, FsrsEngine.Rating.AGAIN) }
+                            RatingButton(
+                                label = "不熟",
+                                desc = "不熟：下次复习间隔略短",
+                                container = MaterialTheme.colorScheme.secondaryContainer,
+                                content = MaterialTheme.colorScheme.onSecondaryContainer,
+                                enabled = true,
+                                modifier = Modifier.weight(1f),
+                                selected = selectedRating == FsrsEngine.Rating.HARD,
+                            ) { rate(current, FsrsEngine.Rating.HARD) }
+                            RatingButton(
+                                label = "记住了",
+                                desc = "记住了：下次复习间隔将变长",
+                                container = MaterialTheme.colorScheme.primary,
+                                content = MaterialTheme.colorScheme.onPrimary,
+                                enabled = true,
+                                modifier = Modifier.weight(1f),
+                                selected = selectedRating == FsrsEngine.Rating.GOOD,
+                                // 主色底上的白色描边不可见：改黑色，与另两键的深色描边拉齐（仅颜色差异）
+                                borderColor = Color.Black,
+                            ) { rate(current, FsrsEngine.Rating.GOOD) }
+                        }
                     }
                 }
             }
@@ -634,7 +760,7 @@ fun SentenceCardScreen(navController: NavController) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .pressClick {
                                         val next = validSentenceFilter.toMutableSet()
                                         if (!next.add(tag.id)) next.remove(tag.id)
                                         AppPrefs.setSentenceTagFilter(next)
@@ -685,7 +811,7 @@ fun SentenceCardScreen(navController: NavController) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .pressClick {
                                         val next = validArticleFilter.toMutableSet()
                                         if (!next.add(a.id)) next.remove(a.id)
                                         AppPrefs.setSentenceArticleFilter(next)
@@ -780,3 +906,13 @@ private val SessionRatingsSaver = Saver<SnapshotStateMap<String, FsrsEngine.Rati
         }
     },
 )
+
+/**
+ * 翻卡该落到第几张：基准 = 已提交的 index + 还在飞的推进数。
+ *
+ * 单独抽成纯函数是为了能被 JVM 测到 —— 竞态的后果全部体现在这个数上，
+ * 而它发生在协程与动画之间，屏幕上看不出来（少一张卡只是「划得挺顺」）。
+ * 上界用 size（不是 size-1）：那一档是「完成」页。
+ */
+internal fun advanceTargetIndex(current: Int, inFlight: Int, forward: Boolean, size: Int): Int =
+    (current + inFlight + if (forward) 1 else -1).coerceIn(0, size)

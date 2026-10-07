@@ -51,12 +51,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -78,6 +76,10 @@ import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.ImmersiveSystemBarsEffect
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.HapticTier
+import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.ReadingMaxWidth
 import com.ilyskyo.blancall.ui.common.pinchZoomByTouch
 import com.ilyskyo.blancall.ui.common.tapGesturesPenAware
@@ -132,7 +134,9 @@ internal const val LgRefractionOffsetDp = 70f // 20-120dp：采样偏移（对�
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
-    val haptic = LocalHapticFeedback.current
+    // 章节翻页的回执：「跨过去一页」是轻的一下（Toggle），
+    // 而不是 Compose 语义类型那一下 —— 与 ui/common/Haptics.kt 同一套直振栈。
+    val pageHaptic = rememberHaptic(HapticTier.Toggle)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -651,7 +655,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     // 隐藏时仅不组合可点击按钮，触摸自然穿透到正文层（正文 tap 再唤回控件）。
     val controlsAlpha by animateFloatAsState(
         targetValue = if (controlsVisible) 1f else 0f,
-        animationSpec = tween(180),
+        animationSpec = MotionFade.number(MotionFade.enter),
         label = "ctrlAlpha"
     )
     // 胶囊触摸拦截：玻璃显示时其区域点击 = 隐藏控件（且下层正文不可点，保持现状）；
@@ -759,7 +763,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                         onClick = {
                             if (pagerState.currentPage > 0) {
                                 scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                pageHaptic()
                             }
                         },
                         enabled = pagerState.currentPage > 0,
@@ -808,7 +812,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                         onClick = {
                             if (pagerState.currentPage < sections.size - 1) {
                                 scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                pageHaptic()
                             }
                         },
                         enabled = pagerState.currentPage < sections.size - 1,
@@ -878,15 +882,87 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     // 一小段时间内仍浮于 Activity 内容之上 —— Compose 内浮层用的 zIndex 只在同一 window 内比较层级，
     // 压不过这个残留窗口，于是被遮挡并可能吞掉点击，表现为「点自定义后要再点一下才进得去」。
     // 改为 Dialog 后本浮层也是独立 window，且创建时间晚于 sheet 的 Dialog，层级天然更高、立即显示。
-    if (maskOverlay != null) {
+    // ── 遮罩配置浮层：入场与退场都要播 ──
+    // 改造前这块是全 app 最大的零动效面积：打开＝整屏瞬间换成配置页，关闭＝瞬间换回正文。
+    // 窗口存活条件带上「退场还在播」那一项（与阅读页的全屏编辑对话框同一处理）；
+    // 减动效时 alpha 走 snap 同帧归零，条件同帧失效 —— 是跳过动画，不是延后 dismiss。
+    MaskOverlayWindow(
+        shown = maskOverlay != null,
+        onDismissRequest = {
+            if (maskOverlay == "edit") maskOverlay = "list" else maskOverlay = null
+        },
+    ) {
+        if (maskOverlay == "edit") {
+            // key(会话)：见 maskEditSession 注释 —— 不同编辑会话的状态完全隔离。
+            // 前缀 "maskEdit" 用于升级换代：换 tag 即整体更换槽位键命名空间，
+            // 旧版本残留的已保存状态不会再被任何新会话命中/消费。
+            androidx.compose.runtime.key("maskEdit", maskEditSession) {
+                MaskConfigEditScreen(
+                    article = article,
+                    configId = maskEditConfigId,
+                    onBack = { maskOverlay = "list" }
+                )
+            }
+        } else {
+            MaskConfigListScreen(
+                articleId = article.id,
+                onBack = { maskOverlay = null },
+                onEdit = { id ->
+                    maskEditConfigId = id
+                    maskEditSession++
+                    maskOverlay = "edit"
+                },
+                onNew = {
+                    maskEditConfigId = -1L
+                    maskEditSession++
+                    maskOverlay = "edit"
+                }
+            )
+        }
+    }
+}
+
+}
+
+
+/**
+ * 遮挡配置浮层的独立窗口：淡入 + 被物理带走的缩放，退场播完之后窗口才拆。
+ *
+ * 与 `FadeDialogWindow` 同款理由 —— 补间器必须住在比宿主页面更低的层：之前这块在
+ * ReadingModeScreen 自己的组合作用域里读 `maskAlpha > 0f` 当窗口存活判据，于是浮层淡入的
+ * 每一帧都重组整页正文（阅读模式页是全文渲染，逐帧重组最贵）。现在动画值只在下面的
+ * graphicsLayer 里读，宿主只在 maskOverlay 真的翻动时重组一次。
+ *
+ * 与 FadeDialogWindow 分开而不是加参数合并：这里的物理不同（缩放用 Motion.Scale.dismissTo +
+ * Motion.lift()、decorFitsSystemWindows=false、整屏拦截点击、返回键是「编辑器→列表→关闭」
+ * 的逐级退出），揉成一个组件只会让两边都难读。
+ */
+@Composable
+internal fun MaskOverlayWindow(
+    shown: Boolean,
+    onDismissRequest: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    var visible by remember { mutableStateOf(shown) }
+    LaunchedEffect(shown) { visible = shown }
+    val windowAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = MotionFade.alpha(MotionFade.enter),
+        label = "maskFade"
+    )
+    // 缩放负责「被物理带走」的重量，起点/终点用 Motion.Scale.dismissTo 那一档。
+    val windowScale by animateFloatAsState(
+        targetValue = if (visible) 1f else Motion.Scale.dismissTo,
+        animationSpec = Motion.lift(),
+        label = "maskScale"
+    )
+    if (shown || windowAlpha > 0f) {
         Dialog(
             // 系统返回键逐级退出：编辑器 → 列表 → 关闭。
             // 走 Dialog 的 onDismissRequest（配合下方 dismissOnBackPress），而不是在 Dialog 内容里
             // 注册 BackHandler：Compose Dialog 的返回键由 dialog 窗口自身处理（DialogWrapper 直接回调
             // onDismissRequest），不经过 Activity 的 OnBackPressedDispatcher，BackHandler 并不可靠。
-            onDismissRequest = {
-                if (maskOverlay == "edit") maskOverlay = "list" else maskOverlay = null
-            },
+            onDismissRequest = onDismissRequest,
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,   // 允许铺满屏幕
                 dismissOnBackPress = true,          // 返回键逐级退出（见上方 onDismissRequest）
@@ -898,41 +974,18 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
+                    .graphicsLayer {
+                        alpha = windowAlpha
+                        scaleX = windowScale
+                        scaleY = windowScale
+                    }
                     // 拦截全部点击：空区域不再穿透到正文（防止误触发正文控制条/揭块）
                     .pointerInput(Unit) { detectTapGestures { } }
             ) {
-                if (maskOverlay == "edit") {
-                    // key(会话)：见 maskEditSession 注释 —— 不同编辑会话的状态完全隔离。
-                    // 前缀 "maskEdit" 用于升级换代：换 tag 即整体更换槽位键命名空间，
-                    // 旧版本残留的已保存状态不会再被任何新会话命中/消费。
-                    androidx.compose.runtime.key("maskEdit", maskEditSession) {
-                        MaskConfigEditScreen(
-                            article = article,
-                            configId = maskEditConfigId,
-                            onBack = { maskOverlay = "list" }
-                        )
-                    }
-                } else {
-                    MaskConfigListScreen(
-                        articleId = article.id,
-                        onBack = { maskOverlay = null },
-                        onEdit = { id ->
-                            maskEditConfigId = id
-                            maskEditSession++
-                            maskOverlay = "edit"
-                        },
-                        onNew = {
-                            maskEditConfigId = -1L
-                            maskEditSession++
-                            maskOverlay = "edit"
-                        }
-                    )
-                }
+                content()
             }
         }
     }
-}
-
 }
 
 // ========== 章节分页与进度辅助 ==========

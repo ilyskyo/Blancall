@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -46,16 +45,21 @@ fun GlassButton(
         MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
     }
     val shape = RoundedCornerShape(14.dp)
+    // 按压反馈走统一档（缩放＋亮度＋焦点/悬停），涟漪退出这里。
+    // 改造前这个组件是**显式** `indication = ripple()` —— 全 app 唯一主动要涟漪的地方，
+    // 而它是一块 14dp 圆角的玻璃面，水波从文字底下铺开的观感和「玻璃被按下去」是两种语言。
+    val src = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
+            .pressFeedback(src, PressTier.Container, enabled = enabled)
             .alpha(if (enabled) 1f else 0.4f)
             .clip(shape)
             .background(bgColor)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(),
+                interactionSource = src,
+                indication = null,
                 enabled = enabled,
                 onClick = onClick
             ),

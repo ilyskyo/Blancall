@@ -3,6 +3,9 @@
 
 package com.ilyskyo.blancall.ui.western
 
+import com.ilyskyo.blancall.ui.common.rememberEnteredOnFirstFrame
+import com.ilyskyo.blancall.ui.common.MotionFade
+import androidx.compose.animation.core.animateFloatAsState
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
@@ -125,9 +128,19 @@ internal fun ZoomablePdfPage(
         }
     }
     bitmap?.let { bmp ->
+        // 位图到位时淡入，而不是凭空出现。刻意不用 Crossfade / StateSwap：那会让新旧两页
+        // 位图同时组合，2 倍分辨率下单页就有几 MB，88 页滚动时峰值内存直接翻倍；
+        // 而下面 onDispose 里「只在离屏时回收」的纪律，正是为了不让仍在绘制的位图被回收。
+        val entered = rememberEnteredOnFirstFrame()
+        val pageAlpha by animateFloatAsState(
+            if (entered) 1f else 0f,
+            MotionFade.alpha(MotionFade.itemEnter),
+            label = "pdfPageIn"
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .graphicsLayer { alpha = pageAlpha }
                 .onSizeChanged { boxSize = it }
                 .pointerInput(Unit) {
                     awaitEachGesture {

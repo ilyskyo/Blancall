@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.statistics
 
 import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +37,8 @@ import com.ilyskyo.blancall.data.repository.InkBatch
 import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
+import com.ilyskyo.blancall.ui.common.animateListItem
+import androidx.compose.foundation.layout.Box
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.theme.Macaron
@@ -44,6 +47,7 @@ import com.ilyskyo.blancall.ui.common.GaugeProgress
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.StatItem
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.handwriting.InkThumbnail
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
@@ -445,10 +449,13 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
             }
         } else {
             items(filteredRecords, key = { it.id }) { record ->
-                RecordCard(record, dateFormat) {
-                    // 按该记录的实际练习模式进入薄弱集训：
-                    // 反向默写 → REVERSE、句子挖空 → SENTENCE、字词挖空 → WORD
-                    navController.navigate("practice/$articleId?mode=${record.mode}&sectionMode=WEAKNESS")
+                // 筛选条件一变，记录集就整体换血：item 的入场/换位/退场统一由 animateListItem 管
+                Box(modifier = animateListItem()) {
+                    RecordCard(record, dateFormat) {
+                        // 按该记录的实际练习模式进入薄弱集训：
+                        // 反向默写 → REVERSE、句子挖空 → SENTENCE、字词挖空 → WORD
+                        navController.navigate("practice/$articleId?mode=${record.mode}&sectionMode=WEAKNESS")
+                    }
                 }
             }
         }
@@ -464,7 +471,7 @@ private fun AnimatedStatCard(content: @Composable () -> Unit) {
     LaunchedEffect(Unit) { played = true }
     val progress by animateFloatAsState(
         targetValue = if (played) 1f else 0f,
-        animationSpec = tween(380, delayMillis = 40),
+        animationSpec = MotionFade.number(MotionFade.scoreReveal, 40),
         label = "statCardEnter"
     )
     Box(
@@ -551,7 +558,7 @@ private fun RecordCard(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onErrorClick() }
+                                .pressClick { onErrorClick() }
                                 .padding(vertical = 3.dp),
                             verticalAlignment = Alignment.Top
                         ) {
@@ -573,7 +580,7 @@ private fun RecordCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 2.dp, bottom = 2.dp, start = 4.dp, end = 4.dp)
-                                    .clickable { enlarged = BlankInk(m.blankIndex, batches) }
+                                    .pressClick { enlarged = BlankInk(m.blankIndex, batches) }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -602,7 +609,7 @@ private fun RecordCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onErrorClick() }
+                        .pressClick { onErrorClick() }
                         .padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

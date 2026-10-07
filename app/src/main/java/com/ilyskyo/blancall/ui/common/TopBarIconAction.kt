@@ -4,11 +4,13 @@
 package com.ilyskyo.blancall.ui.common
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,11 +33,15 @@ fun TopBarIconAction(
     contentDescription: String? = null,
     modifier: Modifier = Modifier
 ) {
+    // 图标按钮行程短，用最大那一档收缩（Motion.Scale.icon）才读得出「按下去了」；
+    // 焦点与悬停的高亮由 pressFeedback 补回，关涟漪不连带失去无障碍可见性。
+    val src = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .size(36.dp)
+            .pressFeedback(src, PressTier.Icon, enabled = enabled)
             .clip(RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         AppIcon(

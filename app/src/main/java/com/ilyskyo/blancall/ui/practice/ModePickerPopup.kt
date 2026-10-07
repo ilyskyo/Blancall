@@ -6,12 +6,7 @@ package com.ilyskyo.blancall.ui.practice
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -41,13 +36,17 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
+import androidx.compose.animation.animateColorAsState
 import com.ilyskyo.blancall.ui.common.LiquidGlassPopupBackdrop
 import com.ilyskyo.blancall.ui.common.PopupGlassPlate
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import kotlin.math.max
-import kotlin.math.min
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * 模式选择结果：基础三模式，或「自定义挖空」（不带 BlancallMode，由调用方导航到
@@ -78,28 +77,26 @@ private data class MorphTransform(
 )
 
 // ── 动画规格 ──
-// 容器进出场与 TouchRevealTransition（全局数据/我的文章页转场）同款节奏：
-// 进入 320ms FastOutSlowInEasing，退出 180ms LinearOutSlowInEasing，
-// 缩放 0.8 → 1，无 spring 弹性拖尾，手感顺滑统一。
-private val ContainerEnterTween = tween<Float>(320, easing = FastOutSlowInEasing)
-private val ContainerExitTween = tween<Float>(180, easing = LinearOutSlowInEasing)
-private val PressSpring = spring<Float>(
-    dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = Spring.StiffnessHigh
-)
+// 原先这里躺着三个 private 常量（320/180 两套 tween + 一个 PressSpring），
+// 注释说要与「当时那套手写转场」（TouchRevealTransition，已删）保持一致，却复制了一份私有的数字 ——
+// 词表的意义就在于「同一件事只有一个数」，所以三条都改成从 Motion 取：
+// 容器进出场用 Motion.reveal() / Motion.revealOut()，按压用 Motion.press()。
 
 /**
  * 自适应模式选择弹窗（生产级动效版）。
  *
  * 设计目标：
- * 1. **统一动画时钟**：容器 + 项共享同一进度源；容器缩放采用与
- *    TouchRevealTransition（全局数据/我的文章页转场）同款的 tween 曲线
+ * 1. **统一动画时钟**：容器 + 项共享同一进度源；容器进/退场的推进谱取自全局词表
+ *    （[com.ilyskyo.blancall.ui.common.Motion.reveal] / [com.ilyskyo.blancall.ui.common.Motion.revealOut]，
+ *    两条都 NoBouncy —— 这里推的是 0..1 的进度值，过冲越过 1 会让换算出的缩放大于目标尺寸）
  * 2. **平滑切换**：按钮 → 面板（PPT Morph 效果）：以按钮中心为锚点，
  *    宽、高分别从按钮尺寸插值到面板尺寸，按钮平滑"长成"选项卡
  * 3. **错峰顺滑**：进度分段错峰，三项像被同一只手依次"摆"出来，无跳变
  * 4. **背景遮罩 fade**：220ms 同步淡入，让内容"从背后抬起"而非"凭空出现"
- * 5. **按压反馈**：每项按下时 0.97 缩放 + 高 stiffness spring，跟手即响应
- * 6. **退场：原路收回**：180ms 反向缩放回按钮中心（transformOrigin 锚点），
+ * 5. **按压反馈**：缩放取词表的 Container 档（`Motion.Scale.container`），
+ *    并且缩放、底色、tonalElevation 三件都由**同一个** pressT 进度派生 —— 同一拍，
+ *    不再出现「东西沉下去了、光没跟上」（改造前底色与 elevation 是硬切）
+ * 6. **退场：原路收回**：反向缩放回按钮中心（transformOrigin 锚点），
  *    末段快速淡出，无生硬 fadeOut
  */
 @Composable
@@ -232,7 +229,7 @@ fun AdaptiveModePicker(
         if (!visible) {
             // 反向收回：180ms 缩回按钮中心（transformOrigin 锚在按钮），利落退场
             isExiting = true
-            containerProgress.animateTo(0f, ContainerExitTween)
+            containerProgress.animateTo(0f, Motion.revealOut())
             isShowing = false
             return@LaunchedEffect
         }
@@ -256,7 +253,7 @@ fun AdaptiveModePicker(
             originX = ((effectiveAnchor.left + effectiveAnchor.right) / 2f - popupX) / popupW,
             originY = ((effectiveAnchor.top + effectiveAnchor.bottom) / 2f - popupY) / popupH
         )
-        containerProgress.animateTo(1f, ContainerEnterTween)
+        containerProgress.animateTo(1f, Motion.reveal())
     }
 
     val cp = containerProgress.value
@@ -415,7 +412,7 @@ private fun ModeListContent(
     val steps = entries.size + 1  // 标题 + entries
     fun itemProgress(index: Int): Float {
         // 退出时所有项保持完整（alpha=1），由容器整体缩放 + 末段淡出统一收场，
-        // 避免内容逐项消失的"散架感"，与 TouchReveal 整体缩回手感一致。
+        // 避免内容逐项消失的"散架感"：整体缩回读起来像一个物体在离开，逐项淡出像页面在坏。
         if (isExiting) return 1f
         // 把总进度 [0, 1] 切成 steps 段，每段长度一致
         val seg = 1f / steps
@@ -490,11 +487,25 @@ private fun PressableModeItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    // 按压：0.97 缩放，高 stiffness spring 跟手
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = PressSpring,
-        label = "pressScale"
+    // 按下的**一个**进度量（0=未按，1=按到底）：缩放与 tonalElevation 都从它派生，
+    // 保证两件事同一拍。改造前缩放走弹簧、底色与 tonalElevation 在 isPressed 那一帧
+    // 硬切 —— 东西沉下去了、光却没跟上，读起来像两个动画打架。
+    // 幅度用词表里的 Container 档（0.97，与这里的原值一致）。
+    val pressT by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = Motion.press(),
+        label = "modeCardPress"
+    )
+    val pressScale = 1f - (1f - Motion.Scale.container) * pressT
+    // 底色按词表走 tween（alpha/颜色不用弹簧：没有位移可言）
+    val itemColor by animateColorAsState(
+        targetValue = if (isPressed)
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        else
+            // 不透明实色：与半透明玻璃背景形成明暗层次（不能改成半透明，否则又糊在一起）
+            MaterialTheme.colorScheme.surface,
+        animationSpec = MotionFade.color(MotionFade.pressAlpha),
+        label = "modeCardColor"
     )
 
     val itemShape = RoundedCornerShape(14.dp)
@@ -526,12 +537,8 @@ private fun PressableModeItem(
                 onClick = onClick
             ),
         shape = itemShape,
-        color = if (isPressed)
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        else
-        // 不透明实色：与半透明玻璃背景形成明暗层次（不能改成半透明，否则又糊在一起）
-            MaterialTheme.colorScheme.surface,
-        tonalElevation = if (isPressed) 2.dp else 0.dp
+        color = itemColor,
+        tonalElevation = 2.dp * pressT
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),

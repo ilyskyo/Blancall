@@ -3,6 +3,12 @@
 
 package com.ilyskyo.blancall.ui.tag
 
+import com.ilyskyo.blancall.ui.common.StateSwap
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.Motion
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -101,115 +107,126 @@ fun TagColorPicker(
 
         Spacer(Modifier.height(10.dp))
 
-        if (mode == 0) {
-            // ── 色环（居中摆放）──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Canvas(
-                    modifier = Modifier
-                        .size(200.dp)
-                        .pointerInput(Unit) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown()
-                                val center = Offset(size.width / 2f, size.height / 2f)
-                                val radius = minOf(size.width, size.height) / 2f
-                                fun pick(pos: Offset) {
-                                    val dx = pos.x - center.x
-                                    val dy = pos.y - center.y
-                                    val r = sqrt(dx * dx + dy * dy)
-                                    val sat = (r / radius).coerceIn(0f, 1f)
-                                    var deg = Math.toDegrees(
-                                        atan2(dy.toDouble(), dx.toDouble())
-                                    ).toFloat()
-                                    if (deg < 0f) deg += 360f
-                                    pickRef.value(deg, sat)
-                                }
-                                down.consume()
-                                pick(down.position)
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    change.consume()
-                                    if (!change.pressed) break
-                                    pick(change.position)
+        // 两种取色 UI 之间现在是硬切：点「色系套装」时色环与明度条瞬间换成四套色点，
+        // 看不出是同一个面板换了内容。父 Column 没有 verticalArrangement，所以各臂的多根
+        // 收进一个 fillMaxWidth 的 Column 是逐像素等价的（AnimatedContent 每态只许一根）。
+        StateSwap(
+            targetState = mode,
+            label = "colorPickerMode"
+        ) { m ->
+            when (m) {
+                0 -> Column(Modifier.fillMaxWidth()) {
+                    // ── 色环（居中摆放）──
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Canvas(
+                            modifier = Modifier
+                                .size(200.dp)
+                                .pointerInput(Unit) {
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown()
+                                        val center = Offset(size.width / 2f, size.height / 2f)
+                                        val radius = minOf(size.width, size.height) / 2f
+                                        fun pick(pos: Offset) {
+                                            val dx = pos.x - center.x
+                                            val dy = pos.y - center.y
+                                            val r = sqrt(dx * dx + dy * dy)
+                                            val sat = (r / radius).coerceIn(0f, 1f)
+                                            var deg = Math.toDegrees(
+                                                atan2(dy.toDouble(), dx.toDouble())
+                                            ).toFloat()
+                                            if (deg < 0f) deg += 360f
+                                            pickRef.value(deg, sat)
+                                        }
+                                        down.consume()
+                                        pick(down.position)
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                            change.consume()
+                                            if (!change.pressed) break
+                                            pick(change.position)
+                                        }
+                                    }
+                                },
+                        ) {
+                            val radius = size.minDimension / 2f
+                            val center = this.center
+                            // 饱和盘：色相环（V=1）+ 白心（半径 = 饱和度）
+                            drawCircle(brush = Brush.sweepGradient(HUE_STOPS), radius = radius, center = center)
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(Color.White, Color.White.copy(alpha = 0f)),
+                                    center = center,
+                                    radius = radius,
+                                ),
+                                radius = radius,
+                                center = center,
+                            )
+                            // 指示器：当前色相/饱和度位置（白描边 + 半透明黑外环，任意底色都可见）
+                            val ang = Math.toRadians(hsv[0].toDouble())
+                            val px = center.x + hsv[1] * radius * cos(ang).toFloat()
+                            val py = center.y + hsv[1] * radius * sin(ang).toFloat()
+                            drawCircle(Color.White, radius = 9f, center = Offset(px, py), style = Stroke(2.5f))
+                            drawCircle(
+                                Color.Black.copy(alpha = 0.35f),
+                                radius = 10.5f,
+                                center = Offset(px, py),
+                                style = Stroke(1f),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // 明度滑条（盘面固定 V=1 展示纯色相/饱和度；实际颜色 = 盘面色 × 明度）
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "明度",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Slider(
+                            value = hsv[2],
+                            onValueChange = { v ->
+                                val next = hsv.copyOf()
+                                next[2] = v.coerceIn(0f, 1f)
+                                hsv = next
+                                onColorChange(ColorOps.hsvToRgb(next[0], next[1], next[2]))
+                            },
+                            valueRange = 0f..1f,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                else -> Column(Modifier.fillMaxWidth()) {
+                    // ── 预设色系套装（4 套 × 8 色，点选即赋色）──
+                    ColorOps.PRESET_PALETTES.forEachIndexed { presetIndex, preset ->
+                        if (presetIndex > 0) Spacer(Modifier.height(10.dp))
+                        Text(
+                            preset.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        preset.colors.chunked(4).forEachIndexed { rowIndex, rowColors ->
+                            if (rowIndex > 0) Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                rowColors.forEach { c ->
+                                    PresetDot(
+                                        color = c,
+                                        selected = c == color,
+                                        onClick = { onColorChange(c) },
+                                    )
                                 }
                             }
-                        },
-                ) {
-                    val radius = size.minDimension / 2f
-                    val center = this.center
-                    // 饱和盘：色相环（V=1）+ 白心（半径 = 饱和度）
-                    drawCircle(brush = Brush.sweepGradient(HUE_STOPS), radius = radius, center = center)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color.White, Color.White.copy(alpha = 0f)),
-                            center = center,
-                            radius = radius,
-                        ),
-                        radius = radius,
-                        center = center,
-                    )
-                    // 指示器：当前色相/饱和度位置（白描边 + 半透明黑外环，任意底色都可见）
-                    val ang = Math.toRadians(hsv[0].toDouble())
-                    val px = center.x + hsv[1] * radius * cos(ang).toFloat()
-                    val py = center.y + hsv[1] * radius * sin(ang).toFloat()
-                    drawCircle(Color.White, radius = 9f, center = Offset(px, py), style = Stroke(2.5f))
-                    drawCircle(
-                        Color.Black.copy(alpha = 0.35f),
-                        radius = 10.5f,
-                        center = Offset(px, py),
-                        style = Stroke(1f),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // 明度滑条（盘面固定 V=1 展示纯色相/饱和度；实际颜色 = 盘面色 × 明度）
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "明度",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(8.dp))
-                Slider(
-                    value = hsv[2],
-                    onValueChange = { v ->
-                        val next = hsv.copyOf()
-                        next[2] = v.coerceIn(0f, 1f)
-                        hsv = next
-                        onColorChange(ColorOps.hsvToRgb(next[0], next[1], next[2]))
-                    },
-                    valueRange = 0f..1f,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        } else {
-            // ── 预设色系套装（4 套 × 8 色，点选即赋色）──
-            ColorOps.PRESET_PALETTES.forEachIndexed { presetIndex, preset ->
-                if (presetIndex > 0) Spacer(Modifier.height(10.dp))
-                Text(
-                    preset.name,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(6.dp))
-                preset.colors.chunked(4).forEachIndexed { rowIndex, rowColors ->
-                    if (rowIndex > 0) Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        rowColors.forEach { c ->
-                            PresetDot(
-                                color = c,
-                                selected = c == color,
-                                onClick = { onColorChange(c) },
-                            )
                         }
                     }
                 }
@@ -240,14 +257,23 @@ private fun PresetDot(
 ) {
     val ring = MaterialTheme.colorScheme.primary
     val outline = MaterialTheme.colorScheme.outlineVariant
+
+    // 选中环是「尺寸 + 颜色」两件事：环宽按 Float 补弹簧（词表里 press 是 Float 档，
+    // Dp 档的弹簧是给位移用的），颜色走补间。border 不参与测量，所以选中一次不重排整页。
+    val ringW by animateFloatAsState(if (selected) 2f else 1f, Motion.press(), label = "presetRingWidth")
+    val ringC by animateColorAsState(
+        if (selected) ring else outline.copy(alpha = 0.6f),
+        MotionFade.color(MotionFade.enter),
+        label = "presetRingColor",
+    )
     Box(
         modifier = Modifier
             .size(26.dp)
             .clip(CircleShape)
             .background(Color(0xFF000000.toInt() or (color and 0xFFFFFF)))
             .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) ring else outline.copy(alpha = 0.6f),
+                width = ringW.dp,
+                color = ringC,
                 shape = CircleShape,
             )
             .pointerInput(color) {

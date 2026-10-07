@@ -93,6 +93,14 @@ object AppPrefs {
     /** PDF 预览视图模式：text=纯文本排版，image=原 PDF 图片渲染；跨篇目持久记忆 */
     val pdfViewModeFlow: StateFlow<String> = _pdfViewModeFlow.asStateFlow()
 
+    /**
+     * 触感强度：off / light / standard / strong，默认 standard。
+     * 存字符串而不是枚举：本对象不依赖 ui 层类型（枚举在 ui.common.Haptics 里），
+     * 也便于两版各自加同一条 key 时不必同步枚举定义。
+     */
+    private val _hapticLevelFlow = MutableStateFlow("standard")
+    val hapticLevelFlow: StateFlow<String> = _hapticLevelFlow.asStateFlow()
+
     /** 保留错题手写墨迹（错题回顾）：默认开启；关闭后新练习不再存档，已存数据保留 */
     private val _keepInkEnabledFlow = MutableStateFlow(true)
     val keepInkEnabledFlow: StateFlow<Boolean> = _keepInkEnabledFlow.asStateFlow()
@@ -144,6 +152,7 @@ object AppPrefs {
         _onboardingSeenFlow.value = prefs.getBoolean("onboarding_seen", false)
         _libraryDisclaimerSeenFlow.value = prefs.getStringSet("library_disclaimer_seen", emptySet())?.toSet() ?: emptySet()
         _pdfViewModeFlow.value = prefs.getString("pdf_view_mode", "text") ?: "text"
+        _hapticLevelFlow.value = prefs.getString("haptic_level", "standard") ?: "standard"
         _handwritingInputEnabledFlow.value = prefs.getBoolean("handwriting_input_enabled", false)
         _keepInkEnabledFlow.value = prefs.getBoolean("keep_ink_enabled", true)
         _articleTagFilterFlow.value = prefs.getStringSet("article_tag_filter", emptySet())
@@ -368,6 +377,13 @@ object AppPrefs {
         if (!::prefs.isInitialized) return
         prefs.edit { putString("pdf_view_mode", mode) }
         _pdfViewModeFlow.value = mode
+    }
+
+    /** 设置触感强度：off / light / standard / strong（枚举定义在 ui.common.Haptics） */
+    fun setHapticLevel(level: String) {
+        if (!::prefs.isInitialized) return
+        prefs.edit { putString("haptic_level", level) }
+        _hapticLevelFlow.value = level
     }
 
     /** 当前 PDF 预览视图模式（text=纯文本排版 / image=原 PDF 图片渲染） */

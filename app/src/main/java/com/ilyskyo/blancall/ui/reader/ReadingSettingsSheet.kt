@@ -7,6 +7,10 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,7 +36,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressFeedback
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.Motion
+import androidx.compose.material3.SheetValue
 import com.ilyskyo.blancall.ui.common.GlassSwitch
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.theme.Macaron
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -74,7 +85,30 @@ internal fun ReadingSettingsSheet(
     isDark: Boolean,
     accent: Color
 ) {
-    if (!visible) return
+    // ── 面板存活到「收起动画播完」为止 ──
+    // 改造前这里就是 `if (!visible) return`：flag 一翻，整块 ModalBottomSheet 同帧出组合，
+    // 而它把下滑退场与 scrim 淡出都演在自己的窗口里 —— 窗口没了，动画就没有载体，
+    // 用户看到的是「面板被删除」而不是「面板被收走」。
+    // 判据用 sheetState.currentValue 而不是「谁调了 hide()」：
+    // 拖到底、点遮罩、程序化关闭三条路最终都落到 Hidden，一处判据就能收干净，
+    // 不会出现「调用方以为关了、窗口还浮着」的孤儿面板。
+    // 减动效走「跳过动画」而不是「等一个不会到来的完成信号」。
+    var alive by remember { mutableStateOf(visible) }
+    LaunchedEffect(visible, sheetState.currentValue) {
+        when {
+            visible -> alive = true
+            !alive -> Unit
+            sheetState.currentValue == SheetValue.Hidden || !Motion.exitsAreAnimated -> alive = false
+            else -> {
+                runCatching { sheetState.hide() }
+                // hide() 可能抛（状态被 veto、协程被取消），一抛就没有 currentValue 变化来唤醒本 effect，
+                // 两个 key 也不再变动 —— 面板会永远浮在那里，scrim 吃掉整页输入。
+                // 兜底直接收掉：宁可少播一次退场，也不留孤儿面板（这个形状 ModePickerPopup 踩过）。
+                if (!visible && sheetState.currentValue != SheetValue.Hidden) alive = false
+            }
+        }
+    }
+    if (!alive) return
     val context = LocalContext.current
 
     // ── 字体候选：预置 + 系统字体（IO 线程扫描，避免卡顿）+ 导入字体 ──
@@ -111,6 +145,9 @@ internal fun ReadingSettingsSheet(
 
     GlassModalBottomSheet(
         onDismissRequest = onDismiss,
+        // 转发调用方外提的那份 sheetState：退场由上方 LaunchedEffect 驱动它收到 Hidden，
+        // 不转发时调用方持有的 state 是个死对象（改造前正是如此）。
+        sheetState = sheetState,
         dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isDark) Color(0x66FFFFFF) else Color(0x33000000)))
         } }
@@ -187,7 +224,7 @@ internal fun ReadingSettingsSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .clickable { fontsExpanded = !fontsExpanded }
+                    .pressClick { fontsExpanded = !fontsExpanded }
                     .padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -211,7 +248,15 @@ internal fun ReadingSettingsSheet(
                     modifier = Modifier.size(20.dp)
                 )
             }
-            AnimatedVisibility(visible = fontsExpanded) {
+            // 展开设置分组：库默认那对 fadeIn()+expandVertically() 的时序写死在库里，
+            // 减动效时不会坍缩。改走词表 —— 尺寸=弹簧、alpha=tween。
+            AnimatedVisibility(
+                visible = fontsExpanded,
+                enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                    expandVertically(Motion.contentSize()),
+                exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                    shrinkVertically(Motion.contentSize())
+            ) {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -346,7 +391,7 @@ internal fun ReadingSettingsSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable {
+                            .pressClick {
                                 importLauncher.launch(
                                     arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/octet-stream")
                                 )
@@ -480,7 +525,13 @@ internal fun ReadingSettingsSheet(
                 )
             }
             // 开启后浮现遮挡粒度子项（短=字词 / 长=复句 / 混合=逐句随机长或短，均为本地算法）
-            AnimatedVisibility(visible = occlusionEnabled) {
+            AnimatedVisibility(
+                visible = occlusionEnabled,
+                enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                    expandVertically(Motion.contentSize()),
+                exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                    shrinkVertically(Motion.contentSize())
+            ) {
                 Column(Modifier.padding(top = 10.dp)) {
                     // FlowRow：窄屏单行放不下（三 chip + 自定义）时自动换行，避免右侧被裁切
                     FlowRow(
@@ -574,7 +625,7 @@ internal fun ReadingSettingsSheet(
                                         color = if (sel) accent else (if (isDark) Color(0x59FFFFFF) else Color(0x33000000)),
                                         shape = RoundedCornerShape(50)
                                     )
-                                    .clickable { onOcclusionColorChange(idx) },
+                                    .pressClick { onOcclusionColorChange(idx) },
                                 contentAlignment = Alignment.Center
                             ) {}
                         }
@@ -598,12 +649,16 @@ internal fun FontPickerRow(
     onClick: () -> Unit,
     trailing: @Composable (() -> Unit)? = null
 ) {
+    val optionSrc = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // 选项行是整行宽 → 只压暗不缩（PressTier.Plain）；
+            // 选中那格的 accent 底色由 background 画在本修饰符之后，所以淡出能盖住它。
+            .pressFeedback(optionSrc, PressTier.Plain)
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) accent.copy(alpha = 0.10f) else Color.Transparent)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = optionSrc, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

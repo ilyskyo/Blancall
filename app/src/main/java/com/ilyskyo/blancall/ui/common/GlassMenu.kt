@@ -3,7 +3,6 @@
 
 package com.ilyskyo.blancall.ui.common
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -107,18 +107,10 @@ private fun GlassMenuCard(
             .clip(shape)
             .border(1.dp, outlineColor.copy(alpha = 0.5f), shape)
     ) {
-        // 1) 真实 backdrop blur 层（API31+）：克隆氛围背景并模糊，形成真实玻璃感。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .glassSurface(radiusPx = 22f)
-            ) { AmbientBackground() }
-        }
-        // 2) 半透明染色层：让背后内容可见，同时保证文字对比。
+        // 1) 半透明染色层：让背后内容可见，同时保证文字对比。
+        //    （原先此层之上还有一层 glassSurface 模糊，但它模糊的是空容器，白付一次全屏 GPU 开销。）
         Box(Modifier.matchParentSize().background(stainColor))
-        // 内容：可滚动，保留竖向留白。
+        // 2) 内容：可滚动，保留竖向留白。
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())
@@ -146,12 +138,19 @@ fun GlassMenuItem(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val hovered by interaction.collectIsHoveredAsState()
-    val bg = when {
-        !enabled -> Color.Transparent
-        pressed -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-        hovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
-        else -> Color.Transparent
-    }
+    // 底色要 tween：改造前 pressed/hovered 是直接换一个 Color ——
+    // 菜单项按下去「唰」地出现一层底色、松手「唰」地没了，和同一块玻璃面板上
+    // 其它东西的弹簧节奏完全对不上。词表：位移＝弹簧，颜色＝tween。
+    val bg by animateColorAsState(
+        targetValue = when {
+            !enabled -> Color.Transparent
+            pressed -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+            hovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+            else -> Color.Transparent
+        },
+        animationSpec = MotionFade.color(MotionFade.pressAlpha),
+        label = "menuItemBg"
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()

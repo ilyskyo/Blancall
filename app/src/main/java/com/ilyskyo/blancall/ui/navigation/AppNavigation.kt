@@ -10,9 +10,6 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -29,7 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,8 +40,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,15 +52,13 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.ilyskyo.blancall.ui.common.BottomNavBar
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.NavBarAutoHide
 import com.ilyskyo.blancall.ui.common.NavRail
 import com.ilyskyo.blancall.ui.common.NavRailWidth
-import com.ilyskyo.blancall.ui.common.RevealNav
-import com.ilyskyo.blancall.ui.common.RevealPageShell
-import com.ilyskyo.blancall.ui.common.revealEnter
-import com.ilyskyo.blancall.ui.common.revealExit
-import com.ilyskyo.blancall.ui.common.revealPopEnter
-import com.ilyskyo.blancall.ui.common.revealPopExit
+import com.ilyskyo.blancall.ui.common.HeroEntry
+import com.ilyskyo.blancall.ui.common.HeroTransitionHost
 import com.ilyskyo.blancall.ui.home.HomeScreen
 import com.ilyskyo.blancall.ui.home.SentenceCardScreen
 import com.ilyskyo.blancall.ui.import.ImportScreen
@@ -165,39 +157,75 @@ fun AppNavigation() {
 
     // ══════════════════════════════════════════════════════
     // 导航过渡动画
-    // 原则：enableEdgeToEdge() 已提供系统级预测性返回动画，
-    // Compose 只做辅助淡出，避免双动画叠加导致返回变慢。
+    //
+    // 方向语义（极易写反，已对 AnimatedContent 源码核对）：
+    // SlideDirection 说的是**内容移动的方向**，不是「从哪一侧来」——
+    //   Left  = 内容向左移 = 进场页从右边缘来 / 退场页往左边缘去
+    //   Right = 内容向右移 = 进场页从左边缘来 / 退场页往右边缘去
+    // 于是规范配对是：前进两个都用 Left（两页一起向左走，像一张纸被推走），
+    // 返回两个都用 Right（两页一起向右走）。
+    //
+    // 改造前这里是 exitSlide=Right、popEnter=Left、popExit 只有淡出 ——
+    // 三处方向互相矛盾，返回时播放的其实是一套「前进」的动效语言。
+    //
+    // 视差：跟随方向的那一页走满幅（它要把对面完全盖住/让开），
+    // 另一页只走 Motion.slideParallax，读起来像「一层被掀开」而不是两页对撞。
+    //
+    // 位移一律弹簧、alpha 一律 tween（参数见 Motion / MotionFade）：
+    // 进场页用 NoBouncy，因为滑动终点是 x=0，任何过冲都会推过终点、
+    // 在 trailing 边缘露出窗口底色，在最整宽的页面滑动上表现为一次白闪。
+    //
+    // 跟手不用自己写：NavHost 内部用 SeekableTransitionState + PredictiveBackHandler
+    // 把下面声明的 pop 转场直接 seek 到手势进度。前提是没有自装的 BackHandler
+    // 抢掉这次手势 —— 各页只在「返回有别的含义」时才注册（见各页的 enabled 条件）。
+    //
+    // 已核 activity-compose 1.10.1 源码：NavHost 跑在嵌套 ComposeView 里也能拿到分发器，
+    // 因为 LocalOnBackPressedDispatcherOwner.current 会依次回退
+    // 「provides → view tree → LocalContext」，故无需再显式 provides 一次。
     // ══════════════════════════════════════════════════════
 
-    // enterTransition：前进导航 → 新页面从右侧滑入
-    // 说明：manifest 的 enableOnBackInvokedCallback 为静态属性无法运行时切换，
-    // 原预测性返回开关已移除，转场固定采用预测性返回风格的滑动动画。
+    // 前进导航：新页从右边缘推入
     val enterSlide: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = {
-        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(300)) +
-          fadeIn(tween(200))
+        slideIntoContainer(
+            AnimatedContentTransitionScope.SlideDirection.Left,
+            Motion.pageEnter()
+        )
     }
 
-    // exitTransition：前进导航 → 旧页面向右滑出（快速，不加缩放）
+    // 前进导航：旧页向左让位（只走视差量，末尾补一点淡出免得在左缘留一条残留）
     val exitSlide: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = {
-        slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(200))
+        slideOutOfContainer(
+            AnimatedContentTransitionScope.SlideDirection.Left,
+            Motion.pageExit(),
+            targetOffset = { (it * Motion.slideParallax).toInt() }
+        ) + fadeOut(MotionFade.alpha(MotionFade.exit))
     }
 
-    // popExitTransition：系统返回 / 预测性返回 → 当前页面退出
-    // 只做快速淡出，因为 enableEdgeToEdge() 已处理系统级滑动+缩放动画
+    // 返回：当前页向右推出（走满幅，下面的页面才露得干净）
     val popExitSlide: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = {
-        fadeOut(tween(200))
+        slideOutOfContainer(
+            AnimatedContentTransitionScope.SlideDirection.Right,
+            Motion.pageExit()
+        )
     }
 
-    // popEnterTransition：系统返回 → 上一页从左侧滑入
+    // 返回：上一页从左边缘回位（视差量 + 淡入补足）
     val popEnterSlide: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = {
-        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(250))
+        slideIntoContainer(
+            AnimatedContentTransitionScope.SlideDirection.Right,
+            Motion.pageEnter(),
+            initialOffset = { (it * Motion.slideParallax).toInt() }
+        ) + fadeIn(MotionFade.alpha(MotionFade.enter))
     }
 
     // 底部导航模式：根页面 tab 切换用极短渐隐（crossfade）。
     // 原本 EnterTransition.None 会让 AnimatedContent 在切换瞬间新旧两页同帧叠加残留（首页⇄我的文章时最易
     // 看出“Blancall”标题残影）；极短淡入淡出让旧页明确淡出、新页淡入，杜绝同帧残影且观感依旧利索。
-    val noneTransition: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = { fadeIn(tween(100)) }
-    val noneExitTransition: (AnimatedContentTransitionScope<*>.() -> ExitTransition) = { fadeOut(tween(100)) }
+    // 这不是动效而是「防残影」，所以刻意保持比任何入场动画都短，且进出等长。
+    val noneTransition: (AnimatedContentTransitionScope<*>.() -> EnterTransition) =
+        { fadeIn(MotionFade.alpha(MotionFade.tabCross)) }
+    val noneExitTransition: (AnimatedContentTransitionScope<*>.() -> ExitTransition) =
+        { fadeOut(MotionFade.alpha(MotionFade.tabCross)) }
 
     // ── 大屏适配：宽度 ≥600dp（平板竖屏 / 折叠屏展开 / 手机与平板横屏）改用侧边导航栏 ──
     // 依据 Material 3 规范：Compact(<600) 底栏 / Medium(600–839) 侧栏 / Expanded(≥840) 侧栏。
@@ -220,18 +248,6 @@ fun AppNavigation() {
     // padding 读取它（railWidthState.value），旋转/进出全屏时实时更新。
     val railWidthState = remember { mutableStateOf(0.dp) }
     val railReserved = if (isLargeScreen && currentTab >= 0) NavRailWidth else 0.dp
-
-    // 浮起转场：把当前导航表面尺寸（窗口 px）与大屏侧栏让位偏移同步给 RevealNav，
-    // 用于把触点 window 坐标换算为归一化变换原点（旋转 / 侧栏切换自动更新）
-    val windowInfo = LocalWindowInfo.current
-    val density = LocalDensity.current
-    SideEffect {
-        RevealNav.updateSurface(
-            windowInfo.containerSize.width,
-            windowInfo.containerSize.height,
-            with(density) { railReserved.toPx() },
-        )
-    }
 
     Box(
         modifier = Modifier
@@ -311,6 +327,7 @@ fun AppNavigation() {
                                         }
                                 )
                             }
+                            HeroTransitionHost {
                             NavHost(
         // 大屏时给悬浮侧栏让位（内容整体右移 76dp；窄屏为 0 不加边距）
         modifier = Modifier.padding(start = railWidthState.value),
@@ -328,7 +345,9 @@ fun AppNavigation() {
             popExitTransition = noneExitTransition,
             popEnterTransition = noneTransition
         ) {
-            HomeScreen(navController)
+            HeroEntry(this) {
+                HomeScreen(navController)
+            }
         }
 
         composable(
@@ -348,7 +367,9 @@ fun AppNavigation() {
             popExitTransition = noneExitTransition,
             popEnterTransition = noneTransition
         ) {
-            ListScreen(navController)
+            HeroEntry(this) {
+                ListScreen(navController)
+            }
         }
 
         composable(
@@ -356,13 +377,13 @@ fun AppNavigation() {
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType }
             ),
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            RevealPageShell(backStackEntry.id) {
+            HeroEntry(this) {
                 ReaderScreen(navController, articleId)
             }
         }
@@ -505,7 +526,9 @@ fun AppNavigation() {
             popExitTransition = popExitSlide,
             popEnterTransition = popEnterSlide
         ) {
-            SearchScreen(navController)
+            HeroEntry(this) {
+                SearchScreen(navController)
+            }
         }
 
         // 文章标签管理页（设置 → 内容管理 → 文章标签）
@@ -522,12 +545,12 @@ fun AppNavigation() {
         // 句子卡片大卡片界面（首页小卡片点入；华为堆叠形态：划卡 + 三键评级）
         composable(
             "sentence_cards",
-            enterTransition = { revealEnter(enterSlide()) },
-            exitTransition = { revealExit(exitSlide()) },
-            popExitTransition = { revealPopExit(popExitSlide()) },
-            popEnterTransition = { revealPopEnter(popEnterSlide()) }
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
         ) { backStackEntry ->
-            RevealPageShell(backStackEntry.id) {
+            HeroEntry(this) {
                 SentenceCardScreen(navController)
             }
         }
@@ -697,7 +720,8 @@ fun AppNavigation() {
             AiProfileEditScreen(navController, type = type, profileId = id)
         }
     } // close NavHost
-    } // close Box（全窗背景层——侧栏让位区的取样像素来源）
+
+                            }    } // close Box（全窗背景层——侧栏让位区的取样像素来源）
     } // close CompositionLocalProvider
     } // close setContent（NavHost 渲染进页面容器）
     } // close ComposeView.apply
@@ -735,17 +759,21 @@ fun AppNavigation() {
         // 走同一条下滑出场动画，退出状态自动滑回。
         AnimatedVisibility(
             visible = currentTab >= 0 && !isLargeScreen && !navBarAutoHidden,
+            // 进出等长等谱：改造前是 320/300 两套时长、入场淡入还多带 80ms 延迟，
+            // 收起与弹出的节奏对不上，快速滚动时底栏会「闪一下再走」。
+            // 位移交给弹簧（Motion.sheetSlide，NoBouncy：底栏终点贴屏幕边，过冲会露出底缝），
+            // 淡入淡出仍是等长 tween。
             enter = slideInVertically(
-                animationSpec = tween(320, easing = LinearOutSlowInEasing),
+                animationSpec = Motion.sheetSlide(),
                 initialOffsetY = { fullHeight -> fullHeight }
             ) + fadeIn(
-                animationSpec = tween(250, delayMillis = 80)
+                animationSpec = MotionFade.alpha(MotionFade.enter)
             ),
             exit = slideOutVertically(
-                animationSpec = tween(300, easing = FastOutSlowInEasing),
+                animationSpec = Motion.sheetSlide(),
                 targetOffsetY = { fullHeight -> fullHeight }
             ) + fadeOut(
-                animationSpec = tween(220)
+                animationSpec = MotionFade.alpha(MotionFade.enter)
             ),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {

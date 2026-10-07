@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      系统夜间模式下的冷启动底色。
+      此前只有 values/themes.xml 里的 Theme.Blancall.Splash 指向 splash_background，
+      而 splash_background 恒等于浅色底 → 夜间冷启动是「白帧 → 黑 app」的硬切。
+      windowBackground 在 Compose 读到 App 内主题偏好之前就已生效，所以这里只能跟随系统夜间；
+      用户手动选浅色而系统为夜间时仍会是深色底 —— 启动屏退场等首帧画好再播，正是为了把这一小段遮在后面。
+    -->
+    <color name="splash_background">@color/background_dark</color>
+</resources>

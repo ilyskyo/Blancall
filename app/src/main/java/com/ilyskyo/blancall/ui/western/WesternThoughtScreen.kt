@@ -13,8 +13,6 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +20,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
+import com.ilyskyo.blancall.ui.common.Motion
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.IconButton
@@ -81,6 +82,9 @@ import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressFeedback
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
@@ -89,6 +93,7 @@ import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
+import com.ilyskyo.blancall.ui.common.pressClick
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -186,15 +191,25 @@ private fun LibraryCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(104.dp)
+            // 改造前这里写的是 `indication = LocalIndication.current`：
+            // 名字看着像「跟随主题」，实际在默认主题下就是把涟漪原样请回来，
+            // 与同屏其他卡片「关涟漪、自己给缩放」的两套语言并存。
+            .pressFeedback(interactionSource, PressTier.Card)
             .clip(shape)
             .border(1.dp, hairline, shape)
             .clickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null,
                 onClick = { onClick() }
             ),
         shape = shape,
-        color = if (isPressed) pressedBg else bgColor,
+        // 按下的底色加深也要 tween（词表：位移=弹簧、颜色=tween）。
+        // 改造前这里是 `if (isPressed) … else …` 的布尔硬切，一按就跳。
+        color = animateColorAsState(
+            targetValue = if (isPressed) pressedBg else bgColor,
+            animationSpec = MotionFade.color(MotionFade.pressAlpha),
+            label = "libCardPressBg"
+        ).value,
         shadowElevation = 0.dp,
         tonalElevation = 0.dp
     ) {
@@ -349,12 +364,29 @@ fun LibraryContentPage(
     // 预测性返回手势：只用 PredictiveBackHandler（Android<13 自动退化为普通返回回调），
     // 不加普通 BackHandler——否则会压制系统侧滑返回的跟手动画。
     // 有站内历史则 WebView 站内返回，否则退出到素材库卡片页；手势取消则回弹不离开。
+    //
+    // 进度不再被丢弃：改造前 `progressFlow.collect { }` 是空 body，手势被这个 handler
+    // 抢走（nav 因此不播 pop），本页又毫无反馈 —— 用户滑完看到的是「什么都没发生，
+    // 然后内容整块一换」。现在站内返回由本页自己按进度缩退淡出；
+    // 无站内历史时不叠自己的动画，交给 nav 的 pop 转场，一次手势只放一套动画。
+    val webBackProgress = remember { Animatable(0f) }
     PredictiveBackHandler { progressFlow ->
+        var inPageBack: Boolean? = null
         try {
-            progressFlow.collect { }
+            progressFlow.collect { event ->
+                // 起手时读一次：一次手势之内 canGoBack() 不会变
+                if (inPageBack == null) inPageBack = webView?.canGoBack() == true
+                if (inPageBack == true) webBackProgress.snapTo(event.progress)
+            }
+            webBackProgress.snapTo(0f)
             onBack()
         } catch (_: CancellationException) {
-            // 手势取消 → 保持当前页
+            // 手势取消 → 弹簧回位；没动过就不必回位
+            if (webBackProgress.value > 0f) {
+                scope.launch {
+                    webBackProgress.animateTo(0f, Motion.gestureRecover())
+                }
+            }
         }
     }
 
@@ -363,6 +395,13 @@ fun LibraryContentPage(
             .fillMaxSize()
             .statusBarsPadding()
             .background(MaterialTheme.colorScheme.background)
+            .graphicsLayer {
+                val p = webBackProgress.value
+                val s = Motion.backShrinkScale(p)
+                scaleX = s
+                scaleY = s
+                alpha = 1f - p
+            }
     ) {
         Row(
             modifier = Modifier
@@ -389,7 +428,7 @@ fun LibraryContentPage(
                 Surface(
                     modifier = Modifier
                         .padding(end = 8.dp)
-                        .clickable {
+                        .pressClick {
                             // 练习「当前正在看的那一页」——有章节则只取该节，否则取整篇；
                             // 先弹出模式选择选项卡，用户选定后再导入并进入对应练习（不默认模式）。
                             // assets 读取 + HTML 解析切 IO 线程，避免点击回调阻塞主线程

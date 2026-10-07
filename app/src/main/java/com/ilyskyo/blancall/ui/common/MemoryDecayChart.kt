@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.common
 
 import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -54,7 +55,7 @@ fun MemoryDecayChart(
     // 曲线绘制动画：从左到右展开
     val animated by animateFloatAsState(
         targetValue = if (played) 1f else 0f,
-        animationSpec = tween(800, delayMillis = 60),
+        animationSpec = MotionFade.number(MotionFade.chartReveal, 60),
         label = "decayChartEnter"
     )
 

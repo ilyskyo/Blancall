@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.statistics
 
 import androidx.activity.compose.BackHandler
+import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -81,6 +82,7 @@ import com.ilyskyo.blancall.ui.common.MemoryDecayChart
 import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.RadarChart
 import com.ilyskyo.blancall.ui.common.StatItem
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -965,7 +967,7 @@ private fun AnimatedOverviewCard(content: @Composable () -> Unit) {
     LaunchedEffect(Unit) { played = true }
     val progress by animateFloatAsState(
         targetValue = if (played) 1f else 0f,
-        animationSpec = tween(380, delayMillis = 40),
+        animationSpec = MotionFade.number(MotionFade.scoreReveal, 40),
         label = "overviewCardEnter"
     )
     Box(
@@ -1203,7 +1205,7 @@ private fun ForgettingPredictionCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
+                        .pressClick {
                             // 切换展开/收起；不直接跳练习，避免误触
                             expandedId = if (expanded) null else p.articleId
                         }

@@ -20,6 +20,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,7 +88,8 @@ private fun MistakeRow(label: String, count: Int, total: Int, color: Color) {
     LaunchedEffect(Unit) { played = true }
     val animatedFraction by animateFloatAsState(
         targetValue = if (played) fraction else 0f,
-        animationSpec = tween(600),
+        // 条形图的数值揭示 → 词表的 chartReveal 档（改造前是这里独有一个 600ms）
+        animationSpec = MotionFade.number(MotionFade.chartReveal),
         label = "mistakeBar"
     )
     Row(
@@ -108,9 +112,17 @@ private fun MistakeRow(label: String, count: Int, total: Int, color: Color) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .fillMaxWidth(animatedFraction)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(color.copy(alpha = 0.75f))
+                    .fillMaxWidth()
+                    // 进度长度放在**绘制期**算：改造前是 `fillMaxWidth(animatedFraction)`，
+                    // 每次数值变化都要重测自己与同一行右侧的计数文字。
+                    // 这里也没用 scaleX —— 那会把 6dp 圆角一起拉扁；drawRoundRect 画多大就是多大。
+                    .drawBehind {
+                        drawRoundRect(
+                            color = color.copy(alpha = 0.75f),
+                            cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+                            size = Size(size.width * animatedFraction, size.height),
+                        )
+                    }
             )
         }
         Spacer(Modifier.width(8.dp))

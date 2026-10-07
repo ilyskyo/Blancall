@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.tag
 
+import com.ilyskyo.blancall.ui.common.StateSwap
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,7 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TagDot
+import com.ilyskyo.blancall.ui.common.pressClick
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -138,53 +140,64 @@ fun TagPickerSheet(
 
             Spacer(Modifier.height(8.dp))
 
-            if (tags.isEmpty()) {
-                Text(
-                    "还没有标签，先新建一个吧",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(vertical = 10.dp),
-                )
-            } else {
-                tags.forEach { tag ->
-                    val state = states[tag.id] ?: TagOps.PickerState.NONE
-                    val toggleState = when {
-                        tag.id in addedSet -> ToggleableState.On
-                        tag.id in removedSet -> ToggleableState.Off
-                        state == TagOps.PickerState.ALL -> ToggleableState.On
-                        state == TagOps.PickerState.MIXED -> ToggleableState.Indeterminate
-                        else -> ToggleableState.Off
+            // 空态与标签列表今天硬切：新建第一个标签时那行提示瞬间被整列表顶掉。
+            // 父 Column 没有 verticalArrangement，所以把 forEach 摊出来的 N 个 Row 收进一个
+            // fillMaxWidth 的 Column 是逐像素等价的（AnimatedContent 每态只许一个根）。
+            StateSwap(
+                targetState = if (tags.isEmpty()) 0 else 1,
+                label = "tagPickerListState"
+            ) { state ->
+                when (state) {
+                    0 -> {
+                    Text(
+                        "还没有标签，先新建一个吧",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    )
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                val a = added.toMutableSet()
-                                val r = removed.toMutableSet()
-                                TagOps.togglePickerTag(tag.id, state, a, r)
-                                added = a.toLongArray()
-                                removed = r.toLongArray()
-                            }
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TriStateCheckbox(state = toggleState, onClick = null)
-                        Spacer(Modifier.width(4.dp))
-                        TagDot(tag = TagChipUi(tag.name, tag.color))
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            tag.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            "${counts[tag.id] ?: 0} 篇",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        )
+                    else -> Column(Modifier.fillMaxWidth()) {
+                    tags.forEach { tag ->
+                        val state = states[tag.id] ?: TagOps.PickerState.NONE
+                        val toggleState = when {
+                            tag.id in addedSet -> ToggleableState.On
+                            tag.id in removedSet -> ToggleableState.Off
+                            state == TagOps.PickerState.ALL -> ToggleableState.On
+                            state == TagOps.PickerState.MIXED -> ToggleableState.Indeterminate
+                            else -> ToggleableState.Off
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .pressClick {
+                                    val a = added.toMutableSet()
+                                    val r = removed.toMutableSet()
+                                    TagOps.togglePickerTag(tag.id, state, a, r)
+                                    added = a.toLongArray()
+                                    removed = r.toLongArray()
+                                }
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TriStateCheckbox(state = toggleState, onClick = null)
+                            Spacer(Modifier.width(4.dp))
+                            TagDot(tag = TagChipUi(tag.name, tag.color))
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                tag.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                "${counts[tag.id] ?: 0} 篇",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
                     }
                 }
             }
@@ -196,7 +209,7 @@ fun TagPickerSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
+                        .pressClick {
                             creating = true
                             createError = false
                         }

@@ -3,6 +3,12 @@
 
 package com.ilyskyo.blancall.ui.list
 
+import com.ilyskyo.blancall.ui.common.MotionFade
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 
@@ -24,6 +30,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.animateListItem
+import com.ilyskyo.blancall.ui.common.heroElement
+import com.ilyskyo.blancall.ui.common.Motion
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.graphics.graphicsLayer
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
@@ -62,11 +73,13 @@ import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GridMaxWidth
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.NavBarAutoHide
+import com.ilyskyo.blancall.ui.common.StateSwap
 import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TagDot
 import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
 import com.ilyskyo.blancall.ui.common.toChipUis
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.tag.TagPickerSheet
@@ -195,15 +208,24 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         if (crossSelectMode) exitCrossSelect()
     }
 
+    // 多选返回手势的跟手进度。用 Animatable 而不是丢弃进度：
+    // 改造前 `progress.collect { }` 是空 body —— 手势照样被这个 handler 抢走，
+    // 于是 nav 自带的跟手 pop 也不播、这里又没有任何视觉反馈，
+    // 用户看到的就是「滑了，但什么都没发生」。
+    val crossBackProgress = remember { Animatable(0f) }
     // 多选模式下拦截返回手势（侧滑/系统返回）：先退出多选回到文章列表，
     // 而非直接返回上一页；返回手势就是取消多选的唯一方式
     PredictiveBackHandler(enabled = crossSelectMode) { progress ->
         try {
-            progress.collect { }
+            progress.collect { crossBackProgress.snapTo(it.progress) }
             // 手势完成 → 退出多选
+            crossBackProgress.snapTo(0f)
             exitCrossSelect()
         } catch (e: kotlinx.coroutines.CancellationException) {
-            // 手势取消 → 保持多选状态
+            // 手势取消 → 操作条弹簧回位，多选状态保持
+            scope.launch {
+                crossBackProgress.animateTo(0f, Motion.gestureRecover())
+            }
         }
     }
 
@@ -240,68 +262,79 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 多选模式下右上角显示"全选/取消全选"
-                if (crossSelectMode) {
-                    // 全选/取消全选：与导入/导出同款磨砂玻璃样式（原 OutlinedButton 与之不一致）
-                    GlassButton(
-                        onClick = {
-                            selectedIds = if (selectedIds.size == filteredArticles.size) emptySet()
-                            else filteredArticles.map { it.id }.toSet()
-                        },
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Text(if (selectedIds.size == articles.size) "取消全选" else "全选",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface)
-                    }
-                    // 导出：仅选中 1 篇时可用（多选批量导出置灰——导出为单篇功能）
-                    GlassButton(
-                        onClick = {
-                            val id = selectedIds.singleOrNull() ?: return@GlassButton
-                            val art = articles.firstOrNull { it.id == id } ?: return@GlassButton
-                            exportPreselectId = art.id
-                            showExportDialog = true
-                        },
-                        enabled = selectedIds.size == 1,
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Text("导出", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface)
-                    }
-                }
-                if (!crossSelectMode) {
-                    // AI 历史记录入口（启用 AI 且开启「保存与 AI 的对话」时显示）
-                    val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
-                    val aiHistoryEnabled by AppPrefs.aiHistoryEnabledFlow.collectAsState()
-                    if (aiEnabled && aiHistoryEnabled) {
-                        GlassButton(
-                            onClick = { navController.navigate("ai_history") },
-                            modifier = Modifier.height(40.dp)
-                        ) {
-                            Text("AI对话记录", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface)
+                // 进/出多选时右上角那组键是整块换脸的：原来是同帧替换，看着像卡了一下。
+                // 常态那臂本来有 2~3 个根（AI 记录 / 导入 / 导出），AnimatedContent 每态只许一根，
+                // 所以各收进一个同 spacedBy 的 Row —— 稳态排布与改前逐像素相同。
+                StateSwap(
+                    targetState = crossSelectMode,
+                    label = "listTopBarActions"
+                ) { selecting ->
+                    if (selecting) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                // 全选/取消全选：与导入/导出同款磨砂玻璃样式（原 OutlinedButton 与之不一致）
+                                                GlassButton(
+                                                    onClick = {
+                                                        selectedIds = if (selectedIds.size == filteredArticles.size) emptySet()
+                                                        else filteredArticles.map { it.id }.toSet()
+                                                    },
+                                                    modifier = Modifier.height(40.dp)
+                                                ) {
+                                                    Text(if (selectedIds.size == articles.size) "取消全选" else "全选",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface)
+                                                }
+                                                // 导出：仅选中 1 篇时可用（多选批量导出置灰——导出为单篇功能）
+                                                GlassButton(
+                                                    onClick = {
+                                                        val id = selectedIds.singleOrNull() ?: return@GlassButton
+                                                        val art = articles.firstOrNull { it.id == id } ?: return@GlassButton
+                                                        exportPreselectId = art.id
+                                                        showExportDialog = true
+                                                    },
+                                                    enabled = selectedIds.size == 1,
+                                                    modifier = Modifier.height(40.dp)
+                                                ) {
+                                                    Text("导出", style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface)
+                                                }
                         }
-                    }
-                    // 与首页右上角同款磨砂玻璃风格
-                    GlassButton(
-                        onClick = { navController.navigate("import") },
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Text("导入", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface)
-                    }
-                    GlassButton(
-                        onClick = {
-                            if (articles.isEmpty()) {
-                                Toast.makeText(context, "暂无文章可导出", Toast.LENGTH_SHORT).show()
-                            } else {
-                                exportPreselectId = -1L
-                                showExportDialog = true
-                            }
-                        },
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Text("导出", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface)
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                // AI 历史记录入口（启用 AI 且开启「保存与 AI 的对话」时显示）
+                                                val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
+                                                val aiHistoryEnabled by AppPrefs.aiHistoryEnabledFlow.collectAsState()
+                                                if (aiEnabled && aiHistoryEnabled) {
+                                                    GlassButton(
+                                                        onClick = { navController.navigate("ai_history") },
+                                                        modifier = Modifier.height(40.dp)
+                                                    ) {
+                                                        Text("AI对话记录", style = MaterialTheme.typography.labelMedium,
+                                                            color = MaterialTheme.colorScheme.onSurface)
+                                                    }
+                                                }
+                                                // 与首页右上角同款磨砂玻璃风格
+                                                GlassButton(
+                                                    onClick = { navController.navigate("import") },
+                                                    modifier = Modifier.height(40.dp)
+                                                ) {
+                                                    Text("导入", style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface)
+                                                }
+                                                GlassButton(
+                                                    onClick = {
+                                                        if (articles.isEmpty()) {
+                                                            Toast.makeText(context, "暂无文章可导出", Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            exportPreselectId = -1L
+                                                            showExportDialog = true
+                                                        }
+                                                    },
+                                                    modifier = Modifier.height(40.dp)
+                                                ) {
+                                                    Text("导出", style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface)
+                                                }
+                        }
                     }
                 }
             }
@@ -327,6 +360,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 items(tagData.tags, key = { "tag_${it.id}" }) { tag ->
                     FilterChip(
                         selected = tag.id in validTagFilter,
+                        modifier = animateListItem(),
                         onClick = {
                             val next = validTagFilter.toMutableSet()
                             if (!next.add(tag.id)) next.remove(tag.id)
@@ -346,168 +380,203 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             }
         }
 
-        if (articles.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AppIcon(
-                        kind = AppIconKind.Inbox,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "暂无文章",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = { navController.navigate("import") },
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("导入第一篇文章")
-                    }
-                }
-            }
-        } else if (filteredArticles.isEmpty()) {
-            // 筛选后无结果：给出清除入口（避免"文章凭空消失"的困惑）
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "当前筛选下没有文章",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { applyTagFilter(emptySet(), false) }) {
-                        Text("清除筛选")
-                    }
-                }
-            }
-        } else {
-            // 列数按窗口档位自适应（与底栏/侧栏同一 M3 边界 600dp）：
-            // 手机（<600dp）单列 —— 双列时卡片过窄、标题不易读；平板（≥600dp，含横屏）双列。
-            // ⚠️ 旧实现 gridColumnsFor(width, 260f) 内部 coerceIn(2, 6) 把下限锁死为 2 列，
-            // 手机也排成双列、标题被截断（真机反馈）；该函数下限已放通到 1 列（见 Adaptive.kt）。
-            val gridColumns = if (LocalIsLargeScreen) 2 else 1
-            if (gridColumns > 1) {
-                // 双列用**交错网格**（每列独立纵向流式）而非等高行网格：
-                // 标题超长的卡片会完整撑高（标题不截断，见 ArticleCard 的硬性要求），
-                // 等高行网格下同行较矮卡的正常槽位会因该行被撑高而露出大块空白
-                //（真机反馈「超长标题卡之后莫名空一块」）。交错网格下每张卡紧跟本列
-                // 上一张继续排列，空白完全消除；卡片尺寸（内容自适应）、间距（10dp）
-                // 与阅读顺序均保持不变。
-                LazyVerticalStaggeredGrid(
-                    modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
-                    columns = StaggeredGridCells.Fixed(gridColumns),
-                    verticalItemSpacing = 10.dp,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 12.dp)
+        // 空态 ⇄ 筛选无结果 ⇄ 列表三块内容原先各自换 subtree，切换时整块硬切
+        StateSwap(
+            targetState = when {
+                articles.isEmpty() -> 0
+                filteredArticles.isEmpty() -> 1
+                else -> 2
+            },
+            label = "listEmptySwap",
+            modifier = Modifier.weight(1f),
+        ) {
+            when (it) {
+                0 -> Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
                 ) {
-                staggeredItems(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
-                    ArticleCard(
-                        article = article,
-                        tags = chipTagsByArticle[article.id].orEmpty(),
-                        dateFormat = dateFormat,
-                        reviewStatus = reviewStatusByArticle[article.id]
-                            ?: EbbinghausScheduler.ReviewStatus.NOT_STARTED,
-                            onClick = {
-                                if (crossSelectMode) {
-                                    selectedIds = if (article.id in selectedIds)
-                                        selectedIds - article.id
-                                    else selectedIds + article.id
-                                } else {
-                                    navController.navigate("reader/${article.id}")
-                                }
-                            },
-                            onLongClick = {
-                                if (!crossSelectMode) {
-                                    crossSelectMode = true
-                                    selectedIds = setOf(article.id)
-                                } else {
-                                    selectedIds = if (article.id in selectedIds)
-                                        selectedIds - article.id
-                                    else selectedIds + article.id
-                                }
-                            },
-                            onPractice = {
-                                    pendingPracticeArticleId = article.id
-                                    showModePicker = true
-                                },
-                            showCheckbox = crossSelectMode,
-                            isSelected = article.id in selectedIds,
-                            practiceModifier = if (article.id == pendingPracticeArticleId) Modifier.onGloballyPositioned { coords ->
-                                val pos = coords.positionInWindow()
-                                practiceButtonRect = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
-                            } else Modifier
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        AppIcon(
+                            kind = AppIconKind.Inbox,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "暂无文章",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { navController.navigate("import") },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("导入第一篇文章")
+                        }
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    // 底部只需呼吸留白：导航栏改为「滚动/长按自动收起」，滚到底时已让位，
-                    // 不再需要 120dp 的避让留白（用户要求：取消一切为导航栏预留的底距）
-                    contentPadding = PaddingValues(bottom = 12.dp)
+                // 筛选后无结果：给出清除入口（避免"文章凭空消失"的困惑）
+                1 -> Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
                 ) {
-                items(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
-                    ArticleCard(
-                        article = article,
-                        tags = chipTagsByArticle[article.id].orEmpty(),
-                        dateFormat = dateFormat,
-                        reviewStatus = reviewStatusByArticle[article.id]
-                            ?: EbbinghausScheduler.ReviewStatus.NOT_STARTED,
-                            onClick = {
-                                if (crossSelectMode) {
-                                    selectedIds = if (article.id in selectedIds)
-                                        selectedIds - article.id
-                                    else selectedIds + article.id
-                                } else {
-                                    navController.navigate("reader/${article.id}")
-                                }
-                            },
-                            onLongClick = {
-                                if (!crossSelectMode) {
-                                    crossSelectMode = true
-                                    selectedIds = setOf(article.id)
-                                } else {
-                                    selectedIds = if (article.id in selectedIds)
-                                        selectedIds - article.id
-                                    else selectedIds + article.id
-                                }
-                            },
-                            onPractice = {
-                                    pendingPracticeArticleId = article.id
-                                    showModePicker = true
-                                },
-                            showCheckbox = crossSelectMode,
-                            isSelected = article.id in selectedIds,
-                            practiceModifier = if (article.id == pendingPracticeArticleId) Modifier.onGloballyPositioned { coords ->
-                                val pos = coords.positionInWindow()
-                                practiceButtonRect = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
-                            } else Modifier
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "当前筛选下没有文章",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = { applyTagFilter(emptySet(), false) }) {
+                            Text("清除筛选")
+                        }
+                    }
+                }
+                2 -> {
+                    // 列数按窗口档位自适应（与底栏/侧栏同一 M3 边界 600dp）：
+                    // 手机（<600dp）单列 —— 双列时卡片过窄、标题不易读；平板（≥600dp，含横屏）双列。
+                    // ⚠️ 旧实现 gridColumnsFor(width, 260f) 内部 coerceIn(2, 6) 把下限锁死为 2 列，
+                    // 手机也排成双列、标题被截断（真机反馈）；该函数下限已放通到 1 列（见 Adaptive.kt）。
+                    val gridColumns = if (LocalIsLargeScreen) 2 else 1
+                    if (gridColumns > 1) {
+                        // 双列用**交错网格**（每列独立纵向流式）而非等高行网格：
+                        // 标题超长的卡片会完整撑高（标题不截断，见 ArticleCard 的硬性要求），
+                        // 等高行网格下同行较矮卡的正常槽位会因该行被撑高而露出大块空白
+                        //（真机反馈「超长标题卡之后莫名空一块」）。交错网格下每张卡紧跟本列
+                        // 上一张继续排列，空白完全消除；卡片尺寸（内容自适应）、间距（10dp）
+                        // 与阅读顺序均保持不变。
+                        LazyVerticalStaggeredGrid(
+                            modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
+                            columns = StaggeredGridCells.Fixed(gridColumns),
+                            verticalItemSpacing = 10.dp,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(bottom = 12.dp)
+                        ) {
+                        staggeredItems(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
+                            ArticleCard(
+                                article = article,
+                                // 筛选/删除/多选都会整体增删行：入场、换位、退场统一由 animateListItem 管
+                                // （单列 LazyColumn 与双列交错网格共用同一组 spec）
+                                modifier = animateListItem(),
+                                tags = chipTagsByArticle[article.id].orEmpty(),
+                                dateFormat = dateFormat,
+                                reviewStatus = reviewStatusByArticle[article.id]
+                                    ?: EbbinghausScheduler.ReviewStatus.NOT_STARTED,
+                                    onClick = {
+                                        if (crossSelectMode) {
+                                            selectedIds = if (article.id in selectedIds)
+                                                selectedIds - article.id
+                                            else selectedIds + article.id
+                                        } else {
+                                            navController.navigate("reader/${article.id}")
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!crossSelectMode) {
+                                            crossSelectMode = true
+                                            selectedIds = setOf(article.id)
+                                        } else {
+                                            selectedIds = if (article.id in selectedIds)
+                                                selectedIds - article.id
+                                            else selectedIds + article.id
+                                        }
+                                    },
+                                    onPractice = {
+                                            pendingPracticeArticleId = article.id
+                                            showModePicker = true
+                                        },
+                                    showCheckbox = crossSelectMode,
+                                    isSelected = article.id in selectedIds,
+                                    practiceModifier = if (article.id == pendingPracticeArticleId) Modifier.onGloballyPositioned { coords ->
+                                        val pos = coords.positionInWindow()
+                                        practiceButtonRect = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                                    } else Modifier
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            // 底部只需呼吸留白：导航栏改为「滚动/长按自动收起」，滚到底时已让位，
+                            // 不再需要 120dp 的避让留白（用户要求：取消一切为导航栏预留的底距）
+                            contentPadding = PaddingValues(bottom = 12.dp)
+                        ) {
+                        items(filteredArticles, key = { it.id }, contentType = { "article" }) { article ->
+                            ArticleCard(
+                                article = article,
+                                // 筛选/删除/多选都会整体增删行：入场、换位、退场统一由 animateListItem 管
+                                // （单列 LazyColumn 与双列交错网格共用同一组 spec）
+                                modifier = animateListItem(),
+                                tags = chipTagsByArticle[article.id].orEmpty(),
+                                dateFormat = dateFormat,
+                                reviewStatus = reviewStatusByArticle[article.id]
+                                    ?: EbbinghausScheduler.ReviewStatus.NOT_STARTED,
+                                    onClick = {
+                                        if (crossSelectMode) {
+                                            selectedIds = if (article.id in selectedIds)
+                                                selectedIds - article.id
+                                            else selectedIds + article.id
+                                        } else {
+                                            navController.navigate("reader/${article.id}")
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!crossSelectMode) {
+                                            crossSelectMode = true
+                                            selectedIds = setOf(article.id)
+                                        } else {
+                                            selectedIds = if (article.id in selectedIds)
+                                                selectedIds - article.id
+                                            else selectedIds + article.id
+                                        }
+                                    },
+                                    onPractice = {
+                                            pendingPracticeArticleId = article.id
+                                            showModePicker = true
+                                        },
+                                    showCheckbox = crossSelectMode,
+                                    isSelected = article.id in selectedIds,
+                                    practiceModifier = if (article.id == pendingPracticeArticleId) Modifier.onGloballyPositioned { coords ->
+                                        val pos = coords.positionInWindow()
+                                        practiceButtonRect = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                                    } else Modifier
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
 
         // 多选模式底部操作栏：删除选中 + 跨文复习（≥2篇）+ 取消
-        if (crossSelectMode) {
+        // 多选操作条原来是整块凭空出现、同帧把列表高度顶掉。AnimatedVisibility 的内容本身
+        // 就是一个 ColumnScope，所以 Spacer + Row 两根可以原样留着不用包。
+        // 淡入走补间、位移走弹簧（词表：alpha=tween、位移=弹簧），滑入用 sheet 那一档，
+        // 与所有底部弹层的语言一致；退出同样播，不再「啪」地消失。
+        AnimatedVisibility(
+            visible = crossSelectMode,
+            enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                slideInVertically(Motion.sheetSlide()) { it },
+            exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                slideOutVertically(Motion.sheetSlide()) { it },
+        ) {
             Spacer(modifier = Modifier.height(8.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 返回手势进行中：操作条随进度下沉并淡出，读作「被手势收走」；
+                    // 松手回位由 crossBackProgress 的弹簧负责（见上方 handler）。
+                    .graphicsLayer {
+                        val p = crossBackProgress.value
+                        alpha = 1f - p
+                        translationY = p * size.height * 0.6f
+                    },
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 删除选中（数量由「已选 N 篇」标题与确认弹窗展示；按钮文案保持 4 字居中——
@@ -688,7 +757,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { selectedArticle = article },
+                                    .pressClick { selectedArticle = article },
                                 shape = RoundedCornerShape(8.dp),
                                 color = if (isSelected)
                                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -769,6 +838,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
 @Composable
 private fun ArticleCard(
     article: Article,
+    /** 列表项动效（`animateListItem`）由调用方传入并挂在卡片根上 —— 少一层包装节点 */
+    modifier: Modifier = Modifier,
     /** 已绑定标签（卡片左上角徽标；最多 2 枚 + 「+N」） */
     tags: List<TagChipUi> = emptyList(),
     dateFormat: SimpleDateFormat,
@@ -787,7 +858,7 @@ private fun ArticleCard(
         is EbbinghausScheduler.ReviewStatus.COMPLETED -> "已掌握" to MaterialTheme.colorScheme.primary
     }
     GlassCard(
-        modifier = Modifier
+        modifier = modifier.heroElement("article/${article.id}")
             .fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         // 列表含数十张卡片：关闭逐卡毛玻璃模糊背板，改用半透明染色层，

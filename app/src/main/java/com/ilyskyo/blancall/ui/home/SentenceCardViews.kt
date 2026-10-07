@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.home
 
 import androidx.compose.animation.animateColorAsState
+import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -159,7 +160,7 @@ internal fun RatingButton(
     // 点击即时选中与「回看已评卡回显上次所选」共用同一样式，不引入第二套高亮
     val selectedBorder by animateColorAsState(
         targetValue = if (selected) borderColor else Color.Transparent,
-        animationSpec = tween(200),
+        animationSpec = MotionFade.color(MotionFade.enter),
         label = "ratingSelectedBorder",
     )
     Button(

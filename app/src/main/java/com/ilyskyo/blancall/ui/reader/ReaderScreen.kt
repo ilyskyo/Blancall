@@ -3,10 +3,12 @@
 
 package com.ilyskyo.blancall.ui.reader
 
+import com.ilyskyo.blancall.ui.common.FadeDialogWindow
+import com.ilyskyo.blancall.ui.common.StateSwap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -24,6 +26,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressFeedback
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.LiquidGlassPageBar
@@ -44,20 +51,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.heroElement
 import com.ilyskyo.blancall.ui.common.DeleteConfirmDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.toChipUis
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.tag.TagPickerSheet
@@ -89,9 +96,11 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     var showFullscreenEdit by remember { mutableStateOf(false) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     // 预测性返回跟手进度：编辑模式下侧滑返回时驱动编辑界面缩放/淡出动画
-    var editBackProgress by remember { mutableStateOf(0f) }
+    // 用 Animatable 而不是 mutableStateOf —— 手势**取消**时要弹簧回位，
+    // 直接写回 0f 会让停在半途的界面跳一下，读起来像丢帧而不是「东西回来了」。
+    val editBackProgress = remember { Animatable(0f) }
     // 阅读模式返回跟手进度：侧滑返回时驱动阅读界面缩退淡出
-    var readingBackProgress by remember { mutableStateOf(0f) }
+    val readingBackProgress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
 
     // ── 文章标签：编辑态标签行（即时生效）+ 选择面板 ──
@@ -114,15 +123,17 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     PredictiveBackHandler(enabled = isEditing) { progressFlow ->
         try {
             progressFlow.collect { backEvent ->
-                editBackProgress = backEvent.progress
+                // 拖动中逐事件 snapTo：这一帧必须 1:1 跟手，排在补间后面就成「慢半拍」
+                editBackProgress.snapTo(backEvent.progress)
             }
             // 手势完成 → 先关闭全屏，再退出编辑
             if (showFullscreenEdit) showFullscreenEdit = false
             else isEditing = false
-            editBackProgress = 0f
+            // 界面随即整体退场，进度归零不必补间
+            editBackProgress.snapTo(0f)
         } catch (e: CancellationException) {
-            // 手势取消 → 回弹
-            editBackProgress = 0f
+            // 手势取消 → 从半途弹簧回位
+            scope.launch { editBackProgress.animateTo(0f, Motion.gestureRecover()) }
         }
     }
 
@@ -130,11 +141,11 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     // 用 progressFlow 驱动阅读界面缩退，让「返回」有预测性跟手动画（ReadingModeScreen 内部响应）
     PredictiveBackHandler(enabled = readingMode) { progressFlow ->
         try {
-            progressFlow.collect { readingBackProgress = it.progress }
+            progressFlow.collect { readingBackProgress.snapTo(it.progress) }
             readingMode = false
-            readingBackProgress = 0f
+            readingBackProgress.snapTo(0f)
         } catch (e: CancellationException) {
-            readingBackProgress = 0f
+            scope.launch { readingBackProgress.animateTo(0f, Motion.gestureRecover()) }
         }
     }
 
@@ -172,8 +183,8 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                 //（透明度随进度 1→0 逐渐变透明，露出下层阅读内容）
                 .then(
                     if (isEditing) Modifier.graphicsLayer {
-                        val p = editBackProgress
-                        val s = 1f - 0.08f * p
+                        val p = editBackProgress.value
+                        val s = Motion.backShrinkScale(p)
                         scaleX = s
                         scaleY = s
                         alpha = 1f - p
@@ -230,7 +241,8 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(start = 12.dp),
+                            .padding(start = 12.dp)
+                            .heroElement("article/${art.id}"),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -332,7 +344,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            alpha = if (isEditing) editBackProgress else 1f
+                            alpha = if (isEditing) editBackProgress.value else 1f
                         }
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -349,7 +361,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                         .graphicsLayer {
                             // 编辑模式手势返回：阅读内容随进度从透明渐现（与覆盖层渐隐互补，
                             // 确保下层详情页内容一定可见，而不是露出纯色背景）
-                            alpha = if (isEditing) editBackProgress else 1f
+                            alpha = if (isEditing) editBackProgress.value else 1f
                         }
                 ) {
                     // 正文区顶部留白：让正文蓝色卡片从分割线下方开始（适度下移，避免整屏空洞）
@@ -404,8 +416,8 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.background)
                             .graphicsLayer {
-                                val p = editBackProgress
-                                val s = 1f - 0.08f * p
+                                val p = editBackProgress.value
+                                val s = Motion.backShrinkScale(p)
                                 scaleX = s
                                 scaleY = s
                                 alpha = 1f - p
@@ -452,18 +464,26 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                             RoundedCornerShape(10.dp)
                                         )
-                                        .clickable { showTagPicker = true }
+                                        .pressClick { showTagPicker = true }
                                         .padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (myTags.isEmpty()) {
-                                        Text(
-                                            "点击选择标签",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                        )
-                                    } else {
-                                        TagChipRow(tags = myTags, maxChips = 3)
+                                    // 选完标签的一瞬间这块从提示文字变成徽标行；原来是硬切，
+                                    // 看不出是同一个字段被填上了。两臂各自单根，后面的
+                                    // Spacer(weight) 会把淡入期间多出来的宽度吸收掉。
+                                    StateSwap(
+                                        targetState = myTags.isEmpty(),
+                                        label = "readerTagField"
+                                    ) { empty ->
+                                        if (empty) {
+                                            Text(
+                                                "点击选择标签",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        } else {
+                                            TagChipRow(tags = myTags, maxChips = 3)
+                                        }
                                     }
                                     Spacer(Modifier.weight(1f))
                                     AppIcon(
@@ -525,7 +545,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
             val barVisible = !isEditing && !readingMode
             val barAlpha by animateFloatAsState(
                 targetValue = if (barVisible) 1f else 0f,
-                animationSpec = tween(200),
+                animationSpec = MotionFade.number(MotionFade.enter),
                 label = "actionBarAlpha"
             )
             val barCornerPx = with(LocalDensity.current) { 24.dp.toPx() }
@@ -618,8 +638,14 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        translationY = readingBackProgress * 24f
-                        alpha = 1f - readingBackProgress
+                        // 与编辑态同一套返回语言：缩放 + 淡出。改造前这里另写了
+                        // `translationY = 进度 × 24f`，24 是 px 而非常量密度，
+                        // 在 3x 屏上只有 8dp，几乎看不见；换成缩放后进度可感。
+                        val p = readingBackProgress.value
+                        val s = Motion.backShrinkScale(p)
+                        scaleX = s
+                        scaleY = s
+                        alpha = 1f - p
                     }
             ) {
                 ReadingModeScreen(
@@ -677,71 +703,56 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
         }
     }
 
-    // 全屏编辑对话框
-    if (showFullscreenEdit) {
-        Dialog(
-            onDismissRequest = { showFullscreenEdit = false },
-            properties = DialogProperties(
-                usePlatformDefaultWidth = false,
-                dismissOnBackPress = true,
-                dismissOnClickOutside = false
-            )
+    // ── 全屏编辑对话框 ──
+    // 窗口存活条件带一项「退场还在播」：改造前只写 `if (showFullscreenEdit)`，flag 一翻
+    // 窗口同帧被拆，于是下面那套 alpha + 14dp 位移只放过入场、退场从未上过屏。
+    // 减动效时 animateFloatAsState 收到 MotionFade.alpha 的 snap 分支，alpha 同帧到 0、
+    // 条件同帧失效 —— 是「跳过动画」，不是「等一个不会到来的完成信号」。
+    FadeDialogWindow(
+        visible = showFullscreenEdit,
+        onDismissRequest = { showFullscreenEdit = false },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp)
         ) {
-            // 入场动画：淡入 + 轻微上移（不整屏 scale，避免露出背景缝隙）。
-            // 注：外层是条件式 if(showFullscreenEdit)，dismiss 时 Dialog 立即移出组合，退场不播放。
-            var fsVisible by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) { fsVisible = true }
-            val fsAlpha by animateFloatAsState(targetValue = if (fsVisible) 1f else 0f, animationSpec = tween(180), label = "fsFade")
-            val fsOffset by animateDpAsState(targetValue = if (fsVisible) 0.dp else 14.dp, animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow), label = "fsSlide")
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = fsAlpha; translationY = fsOffset.toPx() },
-                color = MaterialTheme.colorScheme.background
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .imePadding()
-                        .statusBarsPadding()
-                        .navigationBarsPadding()
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("全屏编辑", style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { showFullscreenEdit = false }) {
-                            Text("完成")
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        OutlinedTextField(
-                            value = editContent,
-                            onValueChange = { editContent = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 400.dp),
-                            label = { Text("内容") },
-                            shape = RoundedCornerShape(10.dp),
-                            maxLines = Int.MAX_VALUE
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "${editContent.length} 字符",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Text("全屏编辑", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = { showFullscreenEdit = false }) {
+                    Text("完成")
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(
+                    value = editContent,
+                    onValueChange = { editContent = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 400.dp),
+                    label = { Text("内容") },
+                    shape = RoundedCornerShape(10.dp),
+                    maxLines = Int.MAX_VALUE
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "${editContent.length} 字符",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
     }
@@ -764,10 +775,19 @@ private fun GlassActionItem(
     } else {
         MaterialTheme.colorScheme.onSurface
     }
+    val pillSrc = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
+            // 顶端玻璃胶囊：涟漪换成统一的缩放＋亮度（Container 档），
+            // clip 仍在 clickable 之前 —— 指示层要跟着圆角裁，否则角上冒直角灰块。
+            .pressFeedback(pillSrc, PressTier.Container)
             .clip(RoundedCornerShape(18.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                interactionSource = pillSrc,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            )
             .padding(horizontal = 4.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {

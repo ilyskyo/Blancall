@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.common
 
 import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -39,7 +40,7 @@ fun ScrollProgressBadge(
     var visible by remember { mutableStateOf(false) }
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = MotionFade.number(MotionFade.enter),
         label = "scrollBadgeAlpha"
     )
     // 滚动中显示；停止后延时淡出（滚动中每跨一段都会重置计时）

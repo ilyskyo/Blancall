@@ -55,6 +55,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ilyskyo.blancall.data.handwriting.HandwritingRecognizer
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.data.handwriting.HandwritingResult
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressFeedback
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.ilyskyo.blancall.ui.common.StylusPresence
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import kotlinx.coroutines.Job
@@ -963,11 +966,17 @@ fun HandwritingPanel(
                 verticalArrangement = Arrangement.Center
             ) {
                 punctuationKeys(script).forEach { p ->
+                    val keySrc = remember { MutableInteractionSource() }
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
                             .padding(end = 4.dp)
+                            // 标点键：涟漪换成统一的缩放＋亮度（Container 档）。
+                            // pressFeedback 放在 clip 之前、Surface 传入的 modifier 上 ——
+                            // Surface 自己的底色是在这条链**之后**才画的，
+                            // 所以压暗能盖住键面；焦点/悬停高亮也由它补回。
+                            .pressFeedback(keySrc, PressTier.Container, enabled = enabled)
                             // ⚠️ clip 必须放在 clickable **之前**：clickable 的按压/悬停指示器
                             // 绘制在它自己的节点边界内，只有链上先 clip 才能把它裁成圆角；
                             // 否则圆角键上会浮出一个直角灰块（Surface 自己的 shape 只裁剪背景，
@@ -976,7 +985,11 @@ fun HandwritingPanel(
                             // 这里刻意**不**改成 Surface(onClick = …) 重载：那个重载会带上
                             // 48dp 最小交互尺寸，一行 6 个标点会被撑到近 300dp 宽、把操作行挤变形。
                             .clip(RoundedCornerShape(6.dp))
-                            .clickable(enabled = enabled) { commitChars(listOf(p)) }
+                            .clickable(
+                                interactionSource = keySrc,
+                                indication = null,
+                                enabled = enabled
+                            ) { commitChars(listOf(p)) }
                     ) {
                         Text(
                             p.toString(),

@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.onboarding
 
 import androidx.compose.animation.core.tween
+import com.ilyskyo.blancall.ui.common.Motion
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -215,7 +216,7 @@ fun OnboardingScreen(
                                     if (selected) accent
                                     else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                                 )
-                                .animateContentSize(tween(200))
+                                .animateContentSize(Motion.contentSize())
                         )
                     }
                 }
