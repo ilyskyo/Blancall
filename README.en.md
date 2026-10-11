@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Android-3DDC84)](https://www.android.com/) [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F52FF)](https://kotlinlang.org/) [![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)](https://developer.android.com/compose) [![Website](https://img.shields.io/badge/Website-Blancall-5b5bd6)](https://blancall-xak4i73i0k1.qoder.zone)
 
-> **Project intro site**: <https://blancall-xak4i73i0k1.qoder.zone> — cloze grading, occlusion masks and granularity splitting are all interactive there.
+> **[Blancall website](https://blancall-xak4i73i0k1.qoder.zone)**.
 
 **Not "blank all", but "recall".** Blancall turns any article into fill-in-the-blank exercises, helping you truly memorize what matters — in a modern, efficient, and trustworthy way.
 
