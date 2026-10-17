@@ -4,6 +4,8 @@
 package com.ilyskyo.blancall.ui.home
 
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -77,6 +79,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
@@ -108,6 +111,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.homeGridColumns
 import com.ilyskyo.blancall.ui.common.pressClick
+import com.ilyskyo.blancall.ui.common.navigateReveal
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -324,18 +328,23 @@ fun HomeScreen(
     val fsrsStore = remember {
         FsrsStateStore.getInstance(context.filesDir.resolve("fsrs_state.json").absolutePath)
     }
+    // 用户选的复习计划要真的参与判定：这里以前不传模板，兜底路径一律按 STANDARD 算，
+    // 于是选「冲刺备考」后首页对存量老文章的提醒密度毫无变化，而统计页已经变快了 ——
+    // 同一篇文章在两个界面给出相反结论。映射只有 ReviewTemplate.fromId 这一处。
+    val reviewTemplateId by AppPrefs.reviewTemplateFlow.collectAsState()
+    val reviewTemplate = remember(reviewTemplateId) { ReviewTemplate.fromId(reviewTemplateId) }
     // FSRS 状态后台加载：首帧先渲染，加载完成后刷新，避免同步读文件卡顿
     var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
     LaunchedEffect(Unit) {
         fsrsStore.awaitLoaded()
         fsrsStates = fsrsStore.allStates()
     }
-    val dueArticles = remember(articles, allRecords, fsrsStates) {
+    val dueArticles = remember(articles, allRecords, fsrsStates, reviewTemplate) {
         // 先一次性按文章分组建索引，避免对每篇文章重复 filter 全表（O(文章×记录) → O(文章+记录)）
         val recordsByArticle = allRecords.groupBy { it.articleId }
         articles.filter { article ->
             val records = recordsByArticle[article.id].orEmpty()
-            EbbinghausScheduler.getReviewStatus(fsrsStates[article.id], records) is EbbinghausScheduler.ReviewStatus.DUE
+            EbbinghausScheduler.getReviewStatus(fsrsStates[article.id], records, reviewTemplate) is EbbinghausScheduler.ReviewStatus.DUE
         }
     }
 
@@ -441,7 +450,7 @@ fun HomeScreen(
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        "保存成功",
+                        stringResource(com.ilyskyo.blancall.R.string.save_succeeded),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -453,7 +462,7 @@ fun HomeScreen(
                             kind = AppIconKind.Close,
                             modifier = Modifier.size(22.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            contentDescription = "关闭"
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.close)
                         )
                     }
                 }
@@ -461,7 +470,7 @@ fun HomeScreen(
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        "文章已保存，接下来做什么？",
+                        stringResource(com.ilyskyo.blancall.R.string.saved_next_prompt),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -485,7 +494,7 @@ fun HomeScreen(
                             modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(14.dp)
                         ) {
-                            Text("开始练习")
+                            Text(stringResource(com.ilyskyo.blancall.R.string.reader_start_practice))
                         }
                         // 继续导入
                         OutlinedButton(
@@ -496,7 +505,7 @@ fun HomeScreen(
                             modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(14.dp)
                         ) {
-                            Text("继续导入")
+                            Text(stringResource(com.ilyskyo.blancall.R.string.continue_import))
                         }
                     }
                 }
@@ -713,22 +722,22 @@ fun HomeScreen(
                             onResumePractice = { item ->
                                 navController.navigate("practice/${item.articleId}?resume=true")
                             },
-                            onOpenArticle = { article ->
-                                navController.navigate("reader/${article.id}")
+                            onOpenArticle = { article, anchor ->
+                                navController.navigateReveal("reader/${article.id}", anchor)
                             },
                             onViewAllArticles = { navController.navigateToTab("list") },
                             onAddArticle = { navController.navigate("import") },
                             onOpenClozeConfig = { articleId, configId ->
                                 navController.navigate("practice/$articleId?configId=$configId")
                             },
-                            onOpenMaskConfig = { articleId, _ ->
-                                navController.navigate("reader/$articleId")
+                            onOpenMaskConfig = { articleId, _, anchor ->
+                                navController.navigateReveal("reader/$articleId", anchor)
                             },
                             stats = homeStats,
                             onOpenStats = { navController.navigateToTab("overview") },
                             sentenceUi = sentenceUi,
-                            onOpenSentenceCard = {
-                                navController.navigate("sentence_cards")
+                            onOpenSentenceCard = { anchor ->
+                                navController.navigateReveal("sentence_cards", anchor)
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -743,14 +752,46 @@ fun HomeScreen(
             // ── 添加卡片：由画布顶部「+」唤起，列出未加入的系统卡与全部自定义配置 ──
             if (showAddCardSheet) {
                 val systemAddable = listOf(
-                    Triple(HomeLayoutStore.CardType.DUE, "待复习", "今日需要复习的文章"),
-                    Triple(HomeLayoutStore.CardType.CONTINUE, "继续做", "未完成的练习进度"),
-                    Triple(HomeLayoutStore.CardType.RECENT, "最近文章", "最近打开过的文章"),
-                    Triple(HomeLayoutStore.CardType.ARTICLE, "文章卡片", "把某一篇文章单独放成一张卡"),
-                    Triple(HomeLayoutStore.CardType.SENTENCE, "句子卡片", "每天一句 · 间隔复习"),
-                    Triple(HomeLayoutStore.CardType.STATS, "学习数据", "练习次数与正确率"),
-                    Triple(HomeLayoutStore.CardType.GLOBAL_STATS, "全局数据", "累计统计概览"),
-                    Triple(HomeLayoutStore.CardType.ADD_ARTICLE, "添加文章", "导入新文章的入口")
+                    Triple(
+                        HomeLayoutStore.CardType.DUE,
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_due_label),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_due_desc)
+                    ),
+                    Triple(
+                        HomeLayoutStore.CardType.CONTINUE,
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_continue_label),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_continue_desc)
+                    ),
+                    Triple(
+                        HomeLayoutStore.CardType.RECENT,
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_recent_label),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_recent_desc)
+                    ),
+                    Triple(
+                        HomeLayoutStore.CardType.ARTICLE,
+                        stringResource(com.ilyskyo.blancall.R.string.article_cards_title),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_article_desc)
+                    ),
+                    Triple(
+                        HomeLayoutStore.CardType.SENTENCE,
+                        stringResource(com.ilyskyo.blancall.R.string.sentence_cards),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_sentence_desc)
+                    ),
+                    Triple(
+                        HomeLayoutStore.CardType.STATS,
+                        stringResource(com.ilyskyo.blancall.R.string.study_data),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_stats_desc)
+                    ),
+                    Triple(
+                        HomeLayoutStore.CardType.GLOBAL_STATS,
+                        stringResource(com.ilyskyo.blancall.R.string.global_data),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_global_desc)
+                    ),
+                    Triple(
+                        HomeLayoutStore.CardType.ADD_ARTICLE,
+                        stringResource(com.ilyskyo.blancall.R.string.add_article),
+                        stringResource(com.ilyskyo.blancall.R.string.add_card_article_entry_desc)
+                    )
                 ).filter { (t, _, _) ->
                     // 文章卡片可以放多张（每篇一张）：只要还有未添加的文章就始终可选
                     if (t == HomeLayoutStore.CardType.ARTICLE) {
@@ -839,7 +880,7 @@ fun HomeScreen(
             ) {
                 // 系统黑体（SansSerif）：主操作按钮，不用主题的楷体/衬线体
                 Text(
-                    "完成",
+                    stringResource(com.ilyskyo.blancall.R.string.done),
                     style = MaterialTheme.typography.titleSmall,
                     fontFamily = FontFamily.SansSerif,
                 )
@@ -914,14 +955,14 @@ fun HomeScreen(
                     .padding(start = 24.dp, end = 24.dp, bottom = 28.dp)
             ) {
                 Text(
-                    "管理最近文章",
+                    stringResource(com.ilyskyo.blancall.R.string.manage_recent_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "从首页移除后不再出现在「最近使用」卡片里，文章本身不会被删除。",
+                    stringResource(com.ilyskyo.blancall.R.string.manage_recent_desc),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -934,7 +975,7 @@ fun HomeScreen(
                 ) {
                     if (recentArticles.isEmpty()) {
                         Text(
-                            "首页已经没有可移除的文章了",
+                            stringResource(com.ilyskyo.blancall.R.string.nothing_to_remove),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 12.dp)
@@ -959,7 +1000,7 @@ fun HomeScreen(
                     onClick = { showManageArticlesSheet = false },
                     modifier = Modifier.align(Alignment.End)
                 ) {
-                    Text("完成", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(com.ilyskyo.blancall.R.string.done), style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -1027,7 +1068,7 @@ private fun HomeSearchBar(
                 Spacer(Modifier.width(4.dp))
                 // 提示字：紧贴搜索符号（点击整框进入搜索页）
                 Text(
-                    text = "搜索",
+                    text = stringResource(com.ilyskyo.blancall.R.string.search),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1036,11 +1077,13 @@ private fun HomeSearchBar(
         Spacer(Modifier.width(10.dp))
         // 设置按钮（占据原「添加」键的位置与尺寸）：点击进入设置页。
         // 首页不再有「添加」键——添加卡片由画布「＋」卡片承接。
+        // 同上：semantics {} 里不能调 stringResource，先取好
+        val settingsLabel = stringResource(com.ilyskyo.blancall.R.string.settings)
         GlassButton(
             onClick = { onSettings() },
             modifier = Modifier
                 .height(46.dp)
-                .semantics { contentDescription = "设置" }
+                .semantics { contentDescription = settingsLabel }
         ) {
             SettingsGearIcon(color = MaterialTheme.colorScheme.onSurface)
         }
@@ -1154,7 +1197,7 @@ private fun HomeAddCardSheet(
                 .padding(start = 24.dp, end = 24.dp, bottom = 36.dp)
         ) {
             Text(
-                "添加卡片",
+                stringResource(com.ilyskyo.blancall.R.string.add_card),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -1172,18 +1215,20 @@ private fun HomeAddCardSheet(
                 if (customAddable.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "自定义配置",
+                        stringResource(com.ilyskyo.blancall.R.string.custom_config_group),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(4.dp))
                     customAddable.forEach { c ->
                         HomeAddCardRow(
-                            label = c.title.ifBlank { "自定义配置" },
+                            label = c.title.ifBlank {
+                                stringResource(com.ilyskyo.blancall.R.string.custom_config_group)
+                            },
                             desc = if (c.type == HomeLayoutStore.CardType.CUSTOM_CLOZE) {
-                                "自定义挖空"
+                                stringResource(com.ilyskyo.blancall.R.string.custom_cloze)
                             } else {
-                                "自定义遮挡"
+                                stringResource(com.ilyskyo.blancall.R.string.custom_mask)
                             }
                         ) { onAddCustom(c) }
                     }
@@ -1234,14 +1279,14 @@ private fun HomeArticlePickerSheet(
                 .padding(start = 24.dp, end = 24.dp, bottom = 36.dp)
         ) {
             Text(
-                "选择文章",
+                stringResource(com.ilyskyo.blancall.R.string.select_article_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "选中的文章会单独成为一张卡片，随时可以开始练习。",
+                stringResource(com.ilyskyo.blancall.R.string.select_article_desc),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1254,7 +1299,7 @@ private fun HomeArticlePickerSheet(
             ) {
                 if (articles.isEmpty()) {
                     Text(
-                        "还没有文章，先去导入一篇吧",
+                        stringResource(com.ilyskyo.blancall.R.string.no_articles_import_first),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 12.dp)
@@ -1266,7 +1311,11 @@ private fun HomeArticlePickerSheet(
                             title = a.title,
                             subtitle = buildString {
                                 if (a.author.isNotBlank()) append(a.author.trim()).append(" · ")
-                                append(a.content.length).append(" 字符")
+                                append(
+                                    pluralStringResource(
+                                        com.ilyskyo.blancall.R.plurals.char_count, a.content.length, a.content.length
+                                    )
+                                )
                             },
                             added = added,
                         ) { if (!added) onPick(a) }
@@ -1320,7 +1369,8 @@ private fun HomeArticlePickRow(
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            if (added) "已添加" else "添加",
+            if (added) stringResource(com.ilyskyo.blancall.R.string.added_action)
+            else stringResource(com.ilyskyo.blancall.R.string.add_action),
             style = MaterialTheme.typography.labelMedium,
             color = if (added) {
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1364,7 +1414,7 @@ private fun HomeAddCardRow(label: String, desc: String, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            "添加",
+            stringResource(com.ilyskyo.blancall.R.string.add_action),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1
@@ -1400,7 +1450,7 @@ private fun ManageArticleRow(title: String, subtitle: String, onRemove: () -> Un
         Spacer(Modifier.width(10.dp))
         TextButton(onClick = onRemove) {
             Text(
-                "移除",
+                stringResource(com.ilyskyo.blancall.R.string.remove_action),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.error
             )
@@ -1528,7 +1578,7 @@ private fun StatsPopupCard(
                 Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "学习数据",
+                    stringResource(com.ilyskyo.blancall.R.string.study_data),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -1553,15 +1603,30 @@ private fun StatsPopupCard(
                         kind = AppIconKind.Close,
                         modifier = Modifier.size(15.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        contentDescription = "关闭"
+                        contentDescription = stringResource(com.ilyskyo.blancall.R.string.close)
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth().padding(end = 6.dp)) {
-                StatMetric("$practices", "累计练习", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                StatMetric("${(rate * 100).toInt()}%", "正确率", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                StatMetric("$blanks", "累计填空", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                StatMetric(
+                    "$practices",
+                    stringResource(com.ilyskyo.blancall.R.string.stat_total_practices),
+                    MaterialTheme.colorScheme.primary,
+                    Modifier.weight(1f)
+                )
+                StatMetric(
+                    "${(rate * 100).toInt()}%",
+                    stringResource(com.ilyskyo.blancall.R.string.stat_accuracy),
+                    MaterialTheme.colorScheme.primary,
+                    Modifier.weight(1f)
+                )
+                StatMetric(
+                    "$blanks",
+                    stringResource(com.ilyskyo.blancall.R.string.total_blanks),
+                    MaterialTheme.colorScheme.primary,
+                    Modifier.weight(1f)
+                )
             }
             Spacer(Modifier.height(14.dp))
             Button(
@@ -1572,7 +1637,7 @@ private fun StatsPopupCard(
                     .height(44.dp),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Text("查看详情", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(com.ilyskyo.blancall.R.string.view_details), style = MaterialTheme.typography.labelLarge)
             }
         }
     }

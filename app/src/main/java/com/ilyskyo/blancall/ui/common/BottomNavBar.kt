@@ -65,6 +65,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -111,14 +112,16 @@ private const val LgSliderDispersion = 0f
  * 导航项定义（底栏与侧栏共用）：
  * [AppIconKind] 是应用自有图标集，避免引入 material-icons-extended 的额外体积。
  */
-private val BaseNavTabs: List<Pair<String, AppIconKind>> = listOf(
-    "首页" to AppIconKind.Home,
-    "我的文章" to AppIconKind.Articles,
-    "数据" to AppIconKind.Insights,
+// 标签存 @StringRes 而不是写死的中文：底栏是每屏都在的界面，也是国际化最先要落地的一处。
+private val BaseNavTabs: List<Pair<Int, AppIconKind>> = listOf(
+    com.ilyskyo.blancall.R.string.nav_home to AppIconKind.Home,
+    com.ilyskyo.blancall.R.string.nav_articles to AppIconKind.Articles,
+    com.ilyskyo.blancall.R.string.nav_stats to AppIconKind.Insights,
 )
 
-private fun navTabsFor(showLibraryTab: Boolean): List<Pair<String, AppIconKind>> =
-    if (showLibraryTab) BaseNavTabs + ("素材库" to AppIconKind.Library) else BaseNavTabs
+private fun navTabsFor(showLibraryTab: Boolean): List<Pair<Int, AppIconKind>> =
+    if (showLibraryTab) BaseNavTabs + (com.ilyskyo.blancall.R.string.nav_library to AppIconKind.Library)
+    else BaseNavTabs
 
 /**
  * 大屏侧边导航栏（Tablet / 折叠屏展开 / 横屏，Material 3 NavigationRail 规范）。
@@ -153,6 +156,20 @@ fun NavRail(
     // 越界虽被绘制端夹住，但视觉上会在「关」的那一刻先暗一下再消失。
     val railGlassAlpha by animateFloatAsState(
         if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "railGlassAlpha")
+
+    // 与底栏同一件事：alpha 归零不等于不绘制，采样源仍每帧整栏重录。淡出走完后把宿主置
+    // INVISIBLE，由 LiquidGlassimpl.record 的可见性短路挡掉（见收录改动⑥）。不能移出组合树。
+    var railGlassShown by remember { mutableStateOf(navGlass) }
+    LaunchedEffect(navGlass) {
+        if (navGlass) {
+            railGlassShown = true
+        } else {
+            delay((MotionFade.enter + 60).toLong())
+            if (!navGlass) railGlassShown = false
+        }
+    }
+    // 同底栏：update 里读不到状态订阅，必须先在组合期读出来
+    val railGlassVisible = railGlassShown
 
     val railWidthDp = NavRailWidth
     val railCornerDp = 28.dp
@@ -252,6 +269,9 @@ fun NavRail(
                             railGlassRef.set(this)
                         }
                     },
+                    update = { view ->
+                        view.visibility = if (railGlassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
+                    },
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(0f)
@@ -330,6 +350,9 @@ fun NavRail(
                                 railSelGlassRef.set(this)
                             }
                         },
+                        update = { view ->
+                            view.visibility = if (railGlassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
+                        },
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { alpha = railGlassAlpha * switchFade.value }
@@ -361,7 +384,8 @@ fun NavRail(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top
             ) {
-                tabs.forEachIndexed { index, (label, kind) ->
+                tabs.forEachIndexed { index, (labelId, kind) ->
+                    val label = stringResource(labelId)
                     val selected = index == currentTab
                     val tint = if (selected) accent else subTint
                     Box(
@@ -489,6 +513,23 @@ fun BottomNavBar(
         if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "barGlassAlpha")
     val sliderGlassAlpha by animateFloatAsState(
         if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "sliderGlassAlpha")
+
+    // alpha 归零的 View 仍然是 shown 状态，玻璃照旧每帧把整屏采样源重录两遍（底栏 + 滑块各
+    // 一颗，见 LiquidGlassimpl.record 收录改动⑥）。淡出走完之后把宿主 View 置 INVISIBLE 才挡得住，
+    // 但绝不能移出组合树 —— detach 态的 PreDraw 回调会崩（本文件多处注释记录过这个真机坑）。
+    // 等满 enter 时长再遮，是为了不砍掉那 180ms 的渐隐观感。
+    var glassShown by remember { mutableStateOf(navGlass) }
+    LaunchedEffect(navGlass) {
+        if (navGlass) {
+            glassShown = true
+        } else {
+            delay((MotionFade.enter + 60).toLong())
+            if (!navGlass) glassShown = false   // 这段时间里又被打开，就不许遮下去
+        }
+    }
+    // 必须在组合期先把状态读出来：AndroidView 的 update 不是 composable 作用域，只在
+    // update 里读 state 不会订阅重组，翻转就永远走不到那行赋值（改在这里，别挪回 update）。
+    val glassVisible = glassShown
 
     val barHeightDp = 64.dp
     val barCornerDp = 28.dp
@@ -672,6 +713,9 @@ fun BottomNavBar(
                             barGlassRef.set(this)
                         }
                     },
+                    update = { view ->
+                        view.visibility = if (glassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
+                    },
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(0f)
@@ -736,7 +780,8 @@ fun BottomNavBar(
                 modifier = Modifier.fillMaxSize().zIndex(2f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                tabs.forEachIndexed { index, (label, kind) ->
+                tabs.forEachIndexed { index, (labelId, kind) ->
+                    val label = stringResource(labelId)
                     val selected = index == currentTab
                     // 选中项用主题色（浮在浅色玻璃滑块上对比清晰，参考新一代系统风格）
                     val tint = if (selected) accent else subTint
@@ -825,6 +870,9 @@ fun BottomNavBar(
                                 setTouchEffectEnabled(false)
                                 sliderGlassRef.set(this)
                             }
+                        },
+                        update = { view ->
+                            view.visibility = if (glassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
                         },
                         modifier = Modifier
                             .size(width = sliderWDp, height = 48.dp)

@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.settings
 
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -28,12 +29,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.AppIcon
+import com.ilyskyo.blancall.ui.common.AppLocale
+
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
+import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -44,6 +50,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -56,6 +69,9 @@ import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.data.ai.AiConfigStore
 import com.ilyskyo.blancall.data.backup.BackupManager
 import com.ilyskyo.blancall.data.repository.InkStore
+import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.data.model.PracticeRecord
+import com.ilyskyo.blancall.data.backup.LearningDataReloader
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.pressClick
@@ -69,7 +85,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.system.exitProcess
 
 @Composable
 fun SettingsScreen(navController: NavController) {
@@ -85,6 +100,22 @@ fun SettingsScreen(navController: NavController) {
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     // 导入成功后的重启提示；非空即弹窗
     var backupRestartMessage by remember { mutableStateOf<String?>(null) }
+    // ── 练习记录体积可见性（审计 2.2-15）──
+    // records.json 是无界追加的学习档案：用户看不到它有多大，也就无从判断该不该归档。
+    // 这里只做「可见性 + 超预算提示」，不做任何静默淘汰 —— 删用户的学习记录必须由用户自己发起。
+    val recordsFile = remember { File(backupContext.filesDir, "records.json") }
+    // null = 还没有记录文件（新装/刚清过）：这时不该显示「当前 0 B」，
+    // 那会被读成「有记录但很小」，而事实是「还没有记录」。
+    var recordsSizeBytes by remember { mutableStateOf<Long?>(null) }
+    // 刷新触发器必须是**数据版本**，不能借某条 UI 文案当 key：早先挂在 backupRestartMessage 上，
+    // 语义是错位的（改文案会触发重算、数据变了不一定触发），而且练完一轮回到设置页时体积根本不更新。
+    // 导入备份会整体替换文件，所以导入成功时 +1 就够覆盖真正的变化。
+    var recordsVersion by remember { mutableIntStateOf(0) }
+    LaunchedEffect(recordsVersion) {
+        recordsSizeBytes = withContext(Dispatchers.IO) {
+            if (recordsFile.exists()) recordsFile.length() else null
+        }
+    }
     val backupExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
@@ -94,17 +125,59 @@ fun SettingsScreen(navController: NavController) {
                     runCatching {
                         backupContext.contentResolver.openOutputStream(uri)?.use { out ->
                             BackupManager.exportZip(backupContext.filesDir, out)
-                        } ?: error("无法写入所选文件")
-                    }.exceptionOrNull()?.message
+                        } ?: throw BackupManager.BackupError.CannotWrite()
+                    }.exceptionOrNull()
                 }
                 Toast.makeText(
                     backupContext,
-                    if (failure == null) "备份文件已导出，请妥善保存" else "导出失败：$failure",
+                    if (failure == null) backupContext.getString(R.string.backup_export_done)
+                    else backupContext.getString(
+                        R.string.backup_export_failed, backupErrorMessage(backupContext, failure)
+                    ),
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
     }
+    // ── 「导出并归档旧记录」（审计 2.2-15）：确认 → 选文件 → 导出成功后才裁剪 ──
+    // 两步之间任何一步失败都不删数据：宁可归档不成，不可静默淘汰用户履历。
+    val archiveRecordRepo = remember { RecordRepository.getInstance(recordsFile.absolutePath) }
+    var archiveDialogVisible by remember { mutableStateOf(false) }
+    var archiveCandidateCount by remember { mutableStateOf(0) }
+    var pendingArchive by remember { mutableStateOf<List<PracticeRecord>?>(null) }
+    val recordsArchiveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val toArchive = pendingArchive
+        pendingArchive = null
+        if (uri == null || toArchive == null) return@rememberLauncherForActivityResult
+        backupScope.launch {
+            val failure = withContext(Dispatchers.IO) {
+                runCatching {
+                    backupContext.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(archiveRecordRepo.archiveJson(toArchive).toByteArray(Charsets.UTF_8))
+                    } ?: throw BackupManager.BackupError.CannotWrite()
+                    // 导出成功后才裁剪；上面任何一步失败都会走 catch，一条都不删
+                    archiveRecordRepo.removeByIds(toArchive.map { it.id }.toSet())
+                }.exceptionOrNull()
+            }
+            if (failure == null) {
+                recordsVersion++
+                Toast.makeText(
+                    backupContext,
+                    backupContext.getString(com.ilyskyo.blancall.R.string.data_archive_done, toArchive.size),
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                Toast.makeText(
+                    backupContext,
+                    backupContext.getString(com.ilyskyo.blancall.R.string.data_archive_failed),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
     val backupImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -136,7 +209,7 @@ fun SettingsScreen(navController: NavController) {
         ) {
             BackButton(onClick = { navController.popBackStack() })
             Spacer(Modifier.width(12.dp))
-            Text("设置", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
+            Text(stringResource(com.ilyskyo.blancall.R.string.settings), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         }
 
         Spacer(Modifier.height(24.dp))
@@ -146,7 +219,7 @@ fun SettingsScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // ── 外观 ──
-            Text("外观", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.appearance), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -160,24 +233,98 @@ fun SettingsScreen(navController: NavController) {
 
                     // 主题模式：固定 3 行列表（与米黄底色开关无关）
                     OptionRow(
-                        label = "浅色模式",
+                        label = stringResource(com.ilyskyo.blancall.R.string.theme_light),
                         selected = themeMode == ThemeMode.LIGHT,
                         onClick = { ThemeManager.setThemeMode(ThemeMode.LIGHT) }
                     )
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     OptionRow(
-                        label = "深色模式",
+                        label = stringResource(com.ilyskyo.blancall.R.string.theme_dark),
                         selected = themeMode == ThemeMode.DARK,
                         onClick = { ThemeManager.setThemeMode(ThemeMode.DARK) }
                     )
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     OptionRow(
-                        label = "跟随系统",
+                        label = stringResource(com.ilyskyo.blancall.R.string.theme_system),
                         selected = themeMode == ThemeMode.SYSTEM,
                         onClick = { ThemeManager.setThemeMode(ThemeMode.SYSTEM) }
                     )
+
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    // ── 界面语言 ──
+                    // 语言名用各自语言的写法（见 AppLocale 注释）：切换入口若跟着当前语言走，
+                    // 换错一次就找不到回来的那一项。「跟随系统」是模式不是语言，跟着界面走。
+                    // 13 以上走框架 LocaleManager，13 以下走本地 tag + attachBaseContext 注入，
+                    // 两条通道都能切，所以不按版本设门。
+                    // 七个选项不再整列摊在设置页里（那会占掉大半屏）：
+                    // 点这一行就地弹出选项卡，选完立刻收起。
+                    val localeContext = LocalContext.current
+                    val currentLocale = AppLocale.current(localeContext)
+                    var showLocaleMenu by remember { mutableStateOf(false) }
+                    val localeLabel: @Composable (AppLocale) -> String = { choice: AppLocale ->
+                        if (choice == AppLocale.FollowSystem)
+                            stringResource(com.ilyskyo.blancall.R.string.theme_system) else choice.nativeName
+                    }
+                    Box {
+                        Surface(
+                            onClick = { showLocaleMenu = true },
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.ui_language),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.ui_language_desc),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(localeLabel(currentLocale),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                        GlassDropdownMenu(
+                            expanded = showLocaleMenu,
+                            onDismissRequest = { showLocaleMenu = false }
+                        ) {
+                            AppLocale.entries.forEach { choice ->
+                                val picked = currentLocale == choice
+                                GlassMenuItem(
+                                    onClick = {
+                                        showLocaleMenu = false
+                                        // 13+ 由框架重建，13 以下由 AppLocale.apply 自己 recreate
+                                        AppLocale.apply(localeContext, choice)
+                                    },
+                                    label = {
+                                        Text(localeLabel(choice),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (picked) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface)
+                                    },
+                                    trailing = {
+                                        if (picked) AppIcon(
+                                            kind = AppIconKind.Check,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
 
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -187,9 +334,9 @@ fun SettingsScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("米黄底色", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.beige_background), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
-                            Text("开启后，在浅色模式下软件界面使用米黄底色，不影响深色模式。",
+                            Text(stringResource(com.ilyskyo.blancall.R.string.beige_background_desc),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -209,9 +356,9 @@ fun SettingsScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("导航栏液态玻璃", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.nav_glass), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
-                            Text("底部导航栏的真液态玻璃折射效果，关闭后改为纯色底，更省电。",
+                            Text(stringResource(com.ilyskyo.blancall.R.string.nav_glass_desc),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -228,29 +375,64 @@ fun SettingsScreen(navController: NavController) {
                     // 弱化到无感」而写的（见 ui/common/Haptics.kt），镜像开关等于把那个
                     // 老问题重新请回来。想关，就用这里的「关」。
                     val hapticLevel by AppPrefs.hapticLevelFlow.collectAsState()
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("触感强度", style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface)
-                            Text("翻卡提交、拖拽落位、开关与删除回执的震动轻重。选「关」则完全不振。",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    var showHapticMenu by remember { mutableStateOf(false) }
+                    // 存进偏好的是字符串档名；认不出来时按「标准」显示，不给空标签
+                    val hapticLabelRes = hapticLevelChoices
+                        .firstOrNull { it.first == hapticLevel }?.second
+                        ?: hapticLevelChoices[1].second
+                    Box {
+                        Surface(
+                            onClick = { showHapticMenu = true },
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.haptic_strength), style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.haptic_strength_desc),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(stringResource(hapticLabelRes),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                         }
-                    }
-                    Row(
-                        Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        hapticLevelChoices.forEach { (value, label) ->
-                            FilterChip(
-                                selected = hapticLevel == value,
-                                onClick = { AppPrefs.setHapticLevel(value) },
-                                label = { Text(label) },
-                            )
+                        GlassDropdownMenu(
+                            expanded = showHapticMenu,
+                            onDismissRequest = { showHapticMenu = false }
+                        ) {
+                            hapticLevelChoices.forEach { (value, labelId) ->
+                                val picked = hapticLevel == value
+                                GlassMenuItem(
+                                    onClick = {
+                                        showHapticMenu = false
+                                        AppPrefs.setHapticLevel(value)
+                                    },
+                                    label = {
+                                        Text(stringResource(labelId),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (picked) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface)
+                                    },
+                                    trailing = {
+                                        if (picked) AppIcon(
+                                            kind = AppIconKind.Check,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
 
@@ -266,13 +448,13 @@ fun SettingsScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("首页副标题", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.home_subtitle), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
-                            Text("首页品牌栏下方的标语，点击编辑",
+                            Text(stringResource(com.ilyskyo.blancall.R.string.home_subtitle_desc),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text("编辑 ›", style = MaterialTheme.typography.labelMedium,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.edit), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary)
                     }
 
@@ -283,7 +465,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 主题色 ──
-            Text("主题色", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.theme_color), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -340,7 +522,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 特性 ──
-            Text("特性", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.features), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -356,9 +538,9 @@ fun SettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("段落首行缩进", style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.indent_first_line), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("开启后，导入纯文本/粘贴文章时自动为每段首行补两个空格；PDF、Word 等文档保持原文不动",
+                        Text(stringResource(com.ilyskyo.blancall.R.string.indent_first_line_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = 16.dp))
@@ -382,9 +564,9 @@ fun SettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("保留错题手写墨迹", style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.keep_wrong_ink), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("手写作答的错题笔迹会存档，可在学习统计的练习历史中回看「当时写的」；仅存本机",
+                        Text(stringResource(com.ilyskyo.blancall.R.string.keep_wrong_ink_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = 16.dp))
@@ -408,7 +590,7 @@ fun SettingsScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("清空已存的错题墨迹", style = MaterialTheme.typography.bodyLarge,
+                    Text(stringResource(com.ilyskyo.blancall.R.string.clear_saved_ink), style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f))
                     TextButton(onClick = {
@@ -421,7 +603,7 @@ fun SettingsScreen(navController: NavController) {
                             Toast.makeText(inkContext, "已清空错题墨迹", Toast.LENGTH_SHORT).show()
                         }
                     }) {
-                        Text("清空")
+                        Text(stringResource(com.ilyskyo.blancall.R.string.clear))
                     }
                 }
             }
@@ -445,7 +627,7 @@ fun SettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("启用 AI 功能", style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_enable), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                     }
                     GlassSwitch(
@@ -481,7 +663,7 @@ fun SettingsScreen(navController: NavController) {
                             backdrop = false
                         ) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                                Text("AI 功能设置", style = MaterialTheme.typography.labelSmall,
+                                Text(stringResource(com.ilyskyo.blancall.R.string.ai_settings), style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(top = 6.dp))
@@ -493,11 +675,36 @@ fun SettingsScreen(navController: NavController) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("使用AI挖空", style = MaterialTheme.typography.bodyLarge,
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.ai_cloze), style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurface)
                                     GlassSwitch(
                                         checked = useAiCloze,
                                         onCheckedChange = { AppPrefs.useAiCloze = it }
+                                    )
+                                }
+
+                                // ── AI 等价复核（Pro 旁路，默认关；只影响分析输入，不改判分）──
+                                val aiEquivalenceReview by AppPrefs.aiEquivalenceReviewFlow.collectAsState()
+                                Row(
+                                    Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            stringResource(com.ilyskyo.blancall.R.string.ai_equivalence_review),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            stringResource(com.ilyskyo.blancall.R.string.ai_equivalence_review_desc),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    GlassSwitch(
+                                        checked = aiEquivalenceReview,
+                                        onCheckedChange = { AppPrefs.aiEquivalenceReview = it }
                                     )
                                 }
 
@@ -514,16 +721,16 @@ fun SettingsScreen(navController: NavController) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text("对话配置", style = MaterialTheme.typography.bodyLarge,
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_chat_profile), style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface)
                                         Text(
-                                            if (activeChat != null) "已开启「${activeChat.name}」" else "当前还未选择",
+                                            if (activeChat != null) stringResource(com.ilyskyo.blancall.R.string.profile_in_use, activeChat.name) else stringResource(com.ilyskyo.blancall.R.string.not_selected_yet),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (activeChat != null) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    Text("管理 ›", style = MaterialTheme.typography.labelMedium,
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.manage_arrow), style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary)
                                 }
                                 if (chatProfiles.isEmpty()) {
@@ -532,7 +739,7 @@ fun SettingsScreen(navController: NavController) {
                                         modifier = Modifier.fillMaxWidth().height(40.dp),
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
-                                        Text("点击创建配置信息", style = MaterialTheme.typography.labelMedium)
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_tap_to_create), style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
 
@@ -548,9 +755,9 @@ fun SettingsScreen(navController: NavController) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text("保存与 AI 的对话", style = MaterialTheme.typography.bodyLarge,
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_save_chats), style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface)
-                                        Text("开启后对话自动保存在本机，在「我的文章」页可查看历史对话",
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_save_chats_desc),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(end = 16.dp))
@@ -572,9 +779,9 @@ fun SettingsScreen(navController: NavController) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text("联网搜索", style = MaterialTheme.typography.bodyLarge,
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_web_search), style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface)
-                                        Text("开启后，在对话时AI可以联网搜索信息",
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_web_search_desc),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
@@ -597,16 +804,16 @@ fun SettingsScreen(navController: NavController) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text("搜索配置", style = MaterialTheme.typography.bodyLarge,
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_search_profile), style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface)
                                         Text(
-                                            if (activeSearch != null) "已开启「${activeSearch.name}」" else "当前还未选择",
+                                            if (activeSearch != null) stringResource(com.ilyskyo.blancall.R.string.profile_in_use, activeSearch.name) else stringResource(com.ilyskyo.blancall.R.string.not_selected_yet),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (activeSearch != null) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    Text("管理 ›", style = MaterialTheme.typography.labelMedium,
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.manage_arrow), style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary)
                                 }
                                 if (searchProfiles.isEmpty()) {
@@ -615,7 +822,7 @@ fun SettingsScreen(navController: NavController) {
                                         modifier = Modifier.fillMaxWidth().height(40.dp),
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
-                                        Text("点击创建配置信息", style = MaterialTheme.typography.labelMedium)
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_tap_to_create), style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                                 Spacer(Modifier.height(4.dp))
@@ -628,7 +835,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 复习 ──
-            Text("记忆方案", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.memory_plan), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -644,9 +851,9 @@ fun SettingsScreen(navController: NavController) {
                         OptionRow(
                             label = template.name,
                             description = when (template.id) {
-                                "sprint" -> "复习更勤快"
-                                "deep" -> "间隔更长"
-                                else -> "均衡节奏"
+                                "sprint" -> stringResource(com.ilyskyo.blancall.R.string.plan_aggressive)
+                                "deep" -> stringResource(com.ilyskyo.blancall.R.string.plan_relaxed)
+                                else -> stringResource(com.ilyskyo.blancall.R.string.plan_balanced)
                             },
                             selected = isSelected,
                             onClick = { AppPrefs.reviewTemplateId = template.id }
@@ -662,7 +869,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 学习提醒 ──
-            Text("学习提醒", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.study_reminder), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -671,7 +878,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 帮助 ──
-            Text("帮助", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.help_section), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -692,7 +899,7 @@ fun SettingsScreen(navController: NavController) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("🎓", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.width(10.dp))
-                            Text("使用引导", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.guided_tour), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
                         }
                         Text("→", style = MaterialTheme.typography.titleSmall,
@@ -716,7 +923,7 @@ fun SettingsScreen(navController: NavController) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("📖", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.width(10.dp))
-                            Text("帮助与说明", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.help_about), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
                         }
                         Text("→", style = MaterialTheme.typography.titleSmall,
@@ -728,7 +935,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 内容管理 ──
-            Text("内容管理", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.content_management), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -754,9 +961,9 @@ fun SettingsScreen(navController: NavController) {
                             )
                             Spacer(Modifier.width(10.dp))
                             Column {
-                                Text("文章标签", style = MaterialTheme.typography.bodyLarge,
+                                Text(stringResource(com.ilyskyo.blancall.R.string.article_tags), style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface)
-                                Text("为文章分类、配色，卡片徽标展示",
+                                Text(stringResource(com.ilyskyo.blancall.R.string.article_tags_desc),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -770,7 +977,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 数据（学习数据整机备份，换机/重装可一键迁移） ──
-            Text("数据", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.data_section), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -779,22 +986,79 @@ fun SettingsScreen(navController: NavController) {
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Column(Modifier.padding(4.dp)) {
+                    // 体积可见性：只报数 + 超预算时给一句提示，不做任何删除动作。
+                    // 没有记录文件时整行连同分隔线一起不出现 —— 显示「当前 0 B」会被读成
+                    // 「有记录但很小」，而事实是「还没有记录」。
+                    recordsSizeBytes?.let { size ->
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(com.ilyskyo.blancall.R.string.data_records_size_title),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.data_records_size_value,
+                                        formatFileSize(size)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (size >= RECORDS_SIZE_BUDGET_BYTES) {
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.data_records_size_warn),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.tertiary)
+                                }
+                            }
+                            // 归档出口（审计 2.2-15）：只在记录多到能归档时才做动作；
+                            // 数量不足时按钮仍在（教用户有这个能力），点击给一句「暂无需归档」
+                            TextButton(onClick = {
+                                backupScope.launch {
+                                    val total = withContext(Dispatchers.IO) {
+                                        archiveRecordRepo.awaitLoaded()
+                                        archiveRecordRepo.records.value.size
+                                    }
+                                    archiveCandidateCount =
+                                        (total - RecordRepository.ARCHIVE_KEEP_RECENT).coerceAtLeast(0)
+                                    if (archiveCandidateCount <= 0) {
+                                        Toast.makeText(
+                                            backupContext,
+                                            backupContext.getString(com.ilyskyo.blancall.R.string.data_archive_none),
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        archiveDialogVisible = true
+                                    }
+                                }
+                            }) {
+                                Text(stringResource(com.ilyskyo.blancall.R.string.data_archive_action))
+                            }
+                        }
+
+                        HorizontalDivider(
+                            Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                        )
+                    }
+
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("一键导出备份", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.export_backup), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
-                            Text("文章库与练习进度等学习数据打包成一个备份文件，不含界面偏好设置",
+                            Text(stringResource(com.ilyskyo.blancall.R.string.export_backup_desc),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         TextButton(onClick = {
                             val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
                             backupExportLauncher.launch("blancall_backup_$stamp.zip")
-                        }) { Text("导出") }
+                        }) { Text(stringResource(com.ilyskyo.blancall.R.string.export_action)) }
                     }
 
                     HorizontalDivider(
@@ -808,9 +1072,9 @@ fun SettingsScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("一键导入备份", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.import_backup), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
-                            Text("从备份文件恢复学习数据，会覆盖当前数据，完成后需重启应用",
+                            Text(stringResource(com.ilyskyo.blancall.R.string.import_backup_desc),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -818,7 +1082,7 @@ fun SettingsScreen(navController: NavController) {
                             // 放开 MIME 过滤：部分文件管理器返回的备份类型不固定，
                             // 内容合法性由导入时的备份清单校验兜底
                             backupImportLauncher.launch(arrayOf("*/*"))
-                        }) { Text("导入") }
+                        }) { Text(stringResource(com.ilyskyo.blancall.R.string.import_action)) }
                     }
                 }
             }
@@ -826,7 +1090,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 拓展功能 ──
-            Text("拓展功能", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.extensions), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -835,7 +1099,7 @@ fun SettingsScreen(navController: NavController) {
                 shape = RoundedCornerShape(14.dp)
             ) {
                 // ── 内置素材库：多库各自可启用，未来可继续追加 ──
-                Text("内置素材库", style = MaterialTheme.typography.titleSmall,
+                Text(stringResource(com.ilyskyo.blancall.R.string.built_in_library), style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
@@ -846,7 +1110,7 @@ fun SettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("西方思想写作素材", style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.western_thoughts), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                     }
                     GlassSwitch(
@@ -860,7 +1124,7 @@ fun SettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("高考必背篇目", style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.library_gaokao), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                     }
                     GlassSwitch(
@@ -874,7 +1138,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 关于 ──
-            Text("关于", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.about_section), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -890,11 +1154,11 @@ fun SettingsScreen(navController: NavController) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(6.dp))
-                    Text("挖空记忆助手 · by ilyskyo",
+                    Text(stringResource(com.ilyskyo.blancall.R.string.app_tagline),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
-                    Text("导入文本 · 自动挖空 · FSRS 智能复习",
+                    Text(stringResource(com.ilyskyo.blancall.R.string.app_features_line),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
@@ -903,7 +1167,7 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 赞赏区 ──
-            Text("赞赏区·本软件完全免费", style = MaterialTheme.typography.titleSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.donation_title), style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -915,19 +1179,19 @@ fun SettingsScreen(navController: NavController) {
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("求求了，如果可以的话，请扫码支持一下我 🥹",
+                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_ask),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center)
                     Spacer(Modifier.height(4.dp))
-                    Text("哪怕一分钱，也是坚持更新下去的动力",
+                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_motive),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
                     Image(
                         painter = painterResource(id = R.drawable.appreciation_qr),
-                        contentDescription = "赞赏二维码",
+                        contentDescription = stringResource(com.ilyskyo.blancall.R.string.donation_qr),
                         modifier = Modifier
                             .fillMaxWidth(0.6f)
                             .aspectRatio(1f),
@@ -960,7 +1224,7 @@ fun SettingsScreen(navController: NavController) {
         var editText by remember(homeSubtitle) { mutableStateOf(homeSubtitle) }
         BlancallAlertDialog(
             onDismissRequest = { showSubtitleDialog = false },
-            title = { Text("编辑首页副标题") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.edit_home_subtitle)) },
             text = {
                 Column {
                     OutlinedTextField(
@@ -969,7 +1233,7 @@ fun SettingsScreen(navController: NavController) {
                         onValueChange = { editText = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        label = { Text("自定义副标题") },
+                        label = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_subtitle)) },
                         shape = RoundedCornerShape(12.dp)
                     )
                 }
@@ -990,14 +1254,51 @@ fun SettingsScreen(navController: NavController) {
         )
     }
 
+    // ── 归档确认弹窗：确认后才导出并裁剪 ──
+    if (archiveDialogVisible) {
+        BlancallAlertDialog(
+            onDismissRequest = { archiveDialogVisible = false },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.data_archive_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        com.ilyskyo.blancall.R.string.data_archive_confirm_body,
+                        archiveCandidateCount, RecordRepository.ARCHIVE_KEEP_RECENT
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        archiveDialogVisible = false
+                        backupScope.launch {
+                            val olds = withContext(Dispatchers.IO) {
+                                archiveRecordRepo.oldestRecords(archiveCandidateCount)
+                            }
+                            if (olds.isEmpty()) return@launch
+                            pendingArchive = olds
+                            val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+                            recordsArchiveLauncher.launch("blancall_records_archive_$stamp.json")
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.data_archive_action)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { archiveDialogVisible = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
+            }
+        )
+    }
+
     // ── 导入备份确认弹窗：确认后才覆盖当前学习数据 ──
     pendingImportUri?.let { importUri ->
         BlancallAlertDialog(
             onDismissRequest = { pendingImportUri = null },
-            title = { Text("导入备份") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.import_backup_title)) },
             text = {
-                Text("将用备份文件整体替换当前的文章库与练习进度，" +
-                    "现有学习数据会被覆盖且无法撤销。导入完成后应用需重启一次才能生效。")
+                Text(stringResource(com.ilyskyo.blancall.R.string.import_backup_warning))
             },
             confirmButton = {
                 Button(
@@ -1010,21 +1311,46 @@ fun SettingsScreen(navController: NavController) {
                                     val temp = File(backupContext.cacheDir, "backup_import.zip")
                                     backupContext.contentResolver.openInputStream(importUri)?.use { input ->
                                         temp.outputStream().use { output -> input.copyTo(output) }
-                                    } ?: error("无法读取备份文件")
+                                    } ?: throw BackupManager.BackupError.CannotRead()
                                     BackupManager.restoreZip(temp, backupContext.filesDir).also { temp.delete() }
                                 }
                             }
                             result.onSuccess {
-                                backupRestartMessage = "已恢复 ${it.restored} 个数据文件" +
-                                    if (it.removed > 0) "，并清理了 ${it.removed} 个备份外的旧文件" else "" +
-                                    "。点击「退出应用」后重新打开即可生效。"
+                                recordsVersion++   // 文件被整体替换 → 让体积那一行重算
+                                // 全量重载各 Store 的内存镜像（B1-3）：漏一个就会在下次写盘时
+                                // 用旧内存覆盖刚恢复的数据 —— 清单完整性由 LearningDataReloaderTest 钉死
+                                val reloadFailures = withContext(Dispatchers.IO) {
+                                    LearningDataReloader.reloadAll(backupContext)
+                                }
+                                val doneText = if (it.removed > 0) {
+                                    backupContext.getString(
+                                        R.string.backup_restore_done_cleaned, it.restored, it.removed
+                                    )
+                                } else {
+                                    backupContext.getString(R.string.backup_restore_done, it.restored)
+                                }
+                                backupRestartMessage = doneText +
+                                    backupContext.getString(R.string.backup_restore_applied_hint) +
+                                    if (reloadFailures > 0) {
+                                        // 个别 Store 重载失败：数据已在盘上、重启后必然生效 —— 如实说明
+                                        backupContext.getString(
+                                            R.string.backup_restore_reload_failed, reloadFailures
+                                        )
+                                    } else ""
                             }.onFailure {
-                                Toast.makeText(backupContext, "导入失败：${it.message}", Toast.LENGTH_LONG).show()
+                                Toast.makeText(
+                                    backupContext,
+                                    backupContext.getString(
+                                        R.string.backup_import_failed,
+                                        backupErrorMessage(backupContext, it)
+                                    ),
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         }
                     },
                     shape = RoundedCornerShape(14.dp)
-                ) { Text("导入") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.import_action)) }
             },
             dismissButton = {
                 TextButton(onClick = { pendingImportUri = null }) { Text("取消") }
@@ -1032,17 +1358,17 @@ fun SettingsScreen(navController: NavController) {
         )
     }
 
-    // ── 导入成功提示：必须重启进程，否则各 Store 旧内存会覆盖刚恢复的文件 ──
+    // ── 导入成功提示：各 Store 已全量重载（B1-3），无需重启 ──
     backupRestartMessage?.let { message ->
         BlancallAlertDialog(
-            onDismissRequest = { },
-            title = { Text("导入成功") },
+            onDismissRequest = { backupRestartMessage = null },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.import_success)) },
             text = { Text(message) },
             confirmButton = {
                 Button(
-                    onClick = { exitProcess(0) },
+                    onClick = { backupRestartMessage = null },
                     shape = RoundedCornerShape(14.dp)
-                ) { Text("退出应用") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.done)) }
             }
         )
     }
@@ -1050,14 +1376,56 @@ fun SettingsScreen(navController: NavController) {
 }
 
 /**
+ * 练习记录体积预算：超过就在设置页给一句「建议导出备份」。
+ *
+ * 为什么是 20 MB：`records.json` 是全量常驻内存的 JSONL，审计估 1 万条约 15–25 MB，
+ * 到那个量级时冷启动解析已经开始可感。这里只在用户看得见的地方点出来 ——
+ * **不做静默淘汰**：删掉的是用户自己练出来的履历，只能由用户自己决定。
+ */
+private const val RECORDS_SIZE_BUDGET_BYTES = 20L * 1024 * 1024
+
+/**
+ * 文件大小的人类可读写法（B/KB/MB/GB，一位小数）。
+ * 用 [Locale.US] 固定小数点，避免在逗号做小数分隔符的语言里出现「1,5 MB」这种和别处不一致的写法。
+ */
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1L shl 30 -> String.format(Locale.US, "%.1f GB", bytes.toDouble() / (1L shl 30))
+    bytes >= 1L shl 20 -> String.format(Locale.US, "%.1f MB", bytes.toDouble() / (1L shl 20))
+    bytes >= 1L shl 10 -> String.format(Locale.US, "%.1f KB", bytes.toDouble() / (1L shl 10))
+    else -> "$bytes B"
+}
+
+/**
+ * 备份错误 → 本地化展示文案。
+ *
+ * Toast 在协程里弹（`backupScope.launch`），取不到 @Composable 上下文，所以用
+ * `Context.getString` 而不是 `stringResource`；数据层只给错误类型
+ * （[BackupManager.BackupError]），文案归属这条线不断（键 `backup_err_*`）。
+ */
+private fun backupErrorMessage(context: Context, e: Throwable): String = when (e) {
+    is BackupManager.BackupError.NotABackup -> context.getString(R.string.backup_err_not_backup)
+    is BackupManager.BackupError.CorruptManifest -> context.getString(R.string.backup_err_corrupt)
+    is BackupManager.BackupError.UnsupportedVersion -> context.getString(R.string.backup_err_version)
+    is BackupManager.BackupError.Incomplete -> context.getString(R.string.backup_err_incomplete, e.entryName)
+    is BackupManager.BackupError.TooLarge -> context.getString(R.string.backup_err_too_large)
+    is BackupManager.BackupError.UnsafeEntry -> context.getString(R.string.backup_err_unsafe, e.entryName)
+    is BackupManager.BackupError.EmptyData -> context.getString(R.string.backup_err_empty)
+    is BackupManager.BackupError.NothingToExport -> context.getString(R.string.backup_err_nothing)
+    is BackupManager.BackupError.CannotWrite -> context.getString(R.string.backup_err_cannot_write)
+    is BackupManager.BackupError.CannotRead -> context.getString(R.string.backup_err_cannot_read)
+    else -> context.getString(R.string.backup_err_unknown)
+}
+
+/**
  * 触感强度的四个可选项：`value` 存进偏好（与 ui.common.HapticLevel 的字符串一一对应），
  * `label` 上屏。顺序就是屏幕上从左到右 —— 「关」放最后，避免手滑点掉全部反馈。
  */
+// 顶层数据表不是组合上下文，所以存 @StringRes，由渲染处解出来（与底栏 tab 同一做法）
 private val hapticLevelChoices = listOf(
-    "light" to "弱",
-    "standard" to "标准",
-    "strong" to "强",
-    "off" to "关",
+    "light" to com.ilyskyo.blancall.R.string.haptic_weak,
+    "standard" to com.ilyskyo.blancall.R.string.haptic_standard,
+    "strong" to com.ilyskyo.blancall.R.string.haptic_strong,
+    "off" to com.ilyskyo.blancall.R.string.haptic_off,
 )
 
 @Composable
@@ -1129,11 +1497,11 @@ private fun ReminderSettingsCard() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("开启提醒", style = MaterialTheme.typography.bodyLarge,
+                    Text(stringResource(com.ilyskyo.blancall.R.string.reminder_enable), style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        if (enabled) "已开启 · ${String.format("%02d:%02d", hour, minute)}"
-                        else "关闭",
+                        if (enabled) stringResource(com.ilyskyo.blancall.R.string.reminder_on_at, String.format("%02d:%02d", hour, minute))
+                        else stringResource(com.ilyskyo.blancall.R.string.reminder_off_state),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1176,7 +1544,7 @@ private fun ReminderSettingsCard() {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("提醒时间", style = MaterialTheme.typography.bodyLarge,
+                            Text(stringResource(com.ilyskyo.blancall.R.string.reminder_time), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -1199,7 +1567,7 @@ private fun ReminderSettingsCard() {
 
                     // 每日学习目标
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text("每日学习目标", style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.daily_goal), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1207,7 +1575,7 @@ private fun ReminderSettingsCard() {
                                 FilterChip(
                                     selected = goalMinutes == mins,
                                     onClick = { ReminderPrefs.goalMinutes = mins },
-                                    label = { AdaptiveChipLabel("${mins}分钟") },
+                                    label = { AdaptiveChipLabel(stringResource(com.ilyskyo.blancall.R.string.minutes_unit, mins)) },
                                     shape = RoundedCornerShape(8.dp)
                                 )
                             }
@@ -1220,7 +1588,7 @@ private fun ReminderSettingsCard() {
                                 },
                                 label = {
                                     AdaptiveChipLabel(
-                                        if (goalMinutes in listOf(5, 10, 20)) "自定义" else "${goalMinutes}分钟"
+                                        if (goalMinutes in listOf(5, 10, 20)) stringResource(com.ilyskyo.blancall.R.string.custom) else stringResource(com.ilyskyo.blancall.R.string.minutes_unit, goalMinutes)
                                     )
                                 },
                                 shape = RoundedCornerShape(8.dp)
@@ -1235,7 +1603,7 @@ private fun ReminderSettingsCard() {
 
                     // 提醒频率
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text("提醒频率", style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.reminder_frequency), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1273,15 +1641,15 @@ private fun ReminderSettingsCard() {
     if (showCustomMinutesDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showCustomMinutesDialog = false },
-            title = { Text("自定义每日学习时长") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_daily_goal_title)) },
             text = {
                 OutlinedTextField(
                     value = customMinutesInput,
                     onValueChange = { input ->
                         customMinutesInput = input.filter { it.isDigit() }.take(3)
                     },
-                    label = { Text("分钟数") },
-                    suffix = { Text("分钟") },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.minutes_field_label)) },
+                    suffix = { Text(stringResource(com.ilyskyo.blancall.R.string.minutes_word)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
@@ -1293,7 +1661,7 @@ private fun ReminderSettingsCard() {
                         customMinutesInput.toIntOrNull()?.let { ReminderPrefs.goalMinutes = it.coerceIn(1, 600) }
                         showCustomMinutesDialog = false
                     }
-                ) { Text("确定") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.ok)) }
             },
             dismissButton = {
                 TextButton(onClick = { showCustomMinutesDialog = false }) { Text("取消") }
@@ -1319,7 +1687,7 @@ private fun TimePickerDialog(
     BlancallAlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(20.dp),
-        title = { Text("设置提醒时间", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
+        title = { Text(stringResource(com.ilyskyo.blancall.R.string.set_reminder_time), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // 手动输入区域
@@ -1329,7 +1697,7 @@ private fun TimePickerDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("时", style = MaterialTheme.typography.labelSmall,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.hours_unit), style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
                         OutlinedTextField(
@@ -1349,7 +1717,7 @@ private fun TimePickerDialog(
                     }
                     Text(" : ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("分", style = MaterialTheme.typography.labelSmall,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.minutes_short), style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
                         OutlinedTextField(
@@ -1378,11 +1746,11 @@ private fun TimePickerDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(
-                        "早上 8:00" to Pair(8, 0),
-                        "中午 12:30" to Pair(12, 30),
-                        "下午 6:00" to Pair(18, 0),
-                        "晚上 8:00" to Pair(20, 0),
-                        "晚上 9:00" to Pair(21, 0)
+                        stringResource(com.ilyskyo.blancall.R.string.preset_8am) to Pair(8, 0),
+                        stringResource(com.ilyskyo.blancall.R.string.preset_1230pm) to Pair(12, 30),
+                        stringResource(com.ilyskyo.blancall.R.string.preset_6pm) to Pair(18, 0),
+                        stringResource(com.ilyskyo.blancall.R.string.preset_8pm) to Pair(20, 0),
+                        stringResource(com.ilyskyo.blancall.R.string.preset_9pm) to Pair(21, 0)
                     ).forEach { (label, time) ->
                         val h = hourText.toIntOrNull() ?: -1
                         val m = minuteText.toIntOrNull() ?: -1
@@ -1412,7 +1780,7 @@ private fun TimePickerDialog(
                     onConfirm(h, m)
                 },
                 shape = RoundedCornerShape(10.dp)
-            ) { Text("确定") }
+            ) { Text(stringResource(com.ilyskyo.blancall.R.string.ok)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }

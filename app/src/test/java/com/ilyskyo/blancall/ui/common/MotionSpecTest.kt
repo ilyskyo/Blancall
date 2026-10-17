@@ -189,7 +189,17 @@ class MotionSpecTest {
         assertTrue("MotionFade 里没找到任何谱子（反射失效？）", fades.isNotEmpty())
 
         for (m in displacement) {
-            assertTrue("${m.name} 是位移类，必须是弹簧", m.callOn(Motion) is SpringSpec<*>)
+            val spec = m.callOn(Motion)
+            if (m.name in pageRevealSpecs) {
+                // 浮起一族豁免「必须是弹簧」，但仍必须是补间：
+                // 它推的是**整页**的缩放倍数，和并行的淡入是同一个动作，必须同一条时钟；
+                // 弹簧那种「起步快、慢慢贴终点」正是用户 2026-10-09 抱怨的「下一页面出来太慢」。
+                // 整页放大也谈不上「被物理带走」，法则一给它的重量在这儿用不上。
+                // 豁免只针对这一条判据 —— 减动效坍缩由下面的循环照旧全覆盖。
+                assertTrue("${m.name} 属浮起一族，豁免弹簧但仍须是补间", spec is TweenSpec<*>)
+            } else {
+                assertTrue("${m.name} 是位移类，必须是弹簧", spec is SpringSpec<*>)
+            }
         }
         for (m in fades) {
             assertTrue("${m.name} 是 alpha/色彩类，必须是补间", m.callOn(MotionFade) is TweenSpec<*>)
@@ -200,6 +210,15 @@ class MotionSpecTest {
             assertTrue("${m.name} 在减动效下没有坍缩，浮层会被卡在中间态", m.callOn(owner(m)) is SnapSpec<*>)
         }
     }
+
+    /**
+     * 「必须是弹簧」这条判据的唯一豁免名单（按方法名点名，新增谱子不许往里塞）。
+     *
+     * 名单外的任何 Motion 谱子仍一律要求弹簧，所以这不是把规则松掉了，
+     * 而是把一处刻意的例外写成要签字的样子 —— 用名字匹配而不是签名/返回值推断，
+     * 是因为只有写名字的人才会被这段注释绊一下。
+     */
+    private val pageRevealSpecs = setOf("revealScaleIn", "revealScaleOut", "revealShell")
 
     private fun Class<*>.specFactories(): List<java.lang.reflect.Method> =
         methods.filter {

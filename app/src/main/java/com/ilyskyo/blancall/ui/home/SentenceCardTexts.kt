@@ -42,7 +42,10 @@ internal fun sentenceStatusLine(state: FsrsEngine.CardState?, now: Long): String
 
 /** 大卡片底部状态：已记录 · 下次 M 天后 / 新句子 · 第一次记忆 / 第 N 次记忆 · 上次 X 天前 */
 internal fun sentenceCardStatus(state: FsrsEngine.CardState?, now: Long): String = when {
-    isRatedToday(state, now) -> "已记录 · 下次 ${nextDueDays(state!!, now)} 天后"
+    // 先写 `state != null &&` 再判，而不是靠 `state!!`：`isRatedToday(null, now)` 恒为 false，
+    // 所以两者语义相同，但前者让编译器**自己**知道 state 非空（智能转换），
+    // 后者是把「前提」写成断言 —— isRatedToday 的实现哪天改了，这里就当场 NPE。
+    state != null && isRatedToday(state, now) -> "已记录 · 下次 ${nextDueDays(state, now)} 天后"
     state == null || state.reviewCount <= 0 -> "新句子 · 第一次记忆"
     else -> "第 ${state.reviewCount} 次记忆 · 上次 ${daysAgo(state.lastReview, now)} 天前"
 }

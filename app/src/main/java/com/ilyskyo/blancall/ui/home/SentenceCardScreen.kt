@@ -12,6 +12,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -72,11 +73,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.SentenceCloze
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.TagData
 import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
+import com.ilyskyo.blancall.data.repository.ReviewLogStore
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
 import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AppIcon
@@ -100,6 +103,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 
 /**
  * 「句子卡片」大卡片界面（华为堆叠卡片形态的应用内复刻）。
@@ -164,6 +169,11 @@ fun SentenceCardScreen(navController: NavController) {
     // reviewRound 自增触发队列重建（点「复习」/「结束复习」/ 完成页「再复习一轮」）。
     var reviewAll by rememberSaveable { mutableStateOf(false) }
     var reviewRound by rememberSaveable { mutableIntStateOf(0) }
+    /**
+     * 回忆面是否已揭晓（Anki 的 Show Answer）。键含 [currentIndex] 与 [reviewRound]：
+     * 换卡 / 重排队即归位到「未揭晓」—— 否则上一张的揭晓状态会被下一张继承，直接漏答案。
+     */
+    var revealed by rememberSaveable(currentIndex, reviewRound) { mutableStateOf(false) }
     // 本次会话评级记录（完成页分布用；rememberSaveable 仅用于旋转恢复，不落盘）
     val sessionRatings = rememberSaveable(saver = SessionRatingsSaver) {
         mutableStateMapOf<String, FsrsEngine.Rating>()
@@ -308,13 +318,23 @@ fun SentenceCardScreen(navController: NavController) {
         }
         haptic()
         val ts = System.currentTimeMillis()
-        val next = FsrsEngine.review(states[item.key] ?: FsrsEngine.CardState(), rating, ts)
+        val prevState = states[item.key] ?: FsrsEngine.CardState()
+        val next = FsrsEngine.review(prevState, rating, ts)
         // 记录本次所选评级名称：回看该卡时回显对应高亮（随 fsrs_state.json 持久化）
         next.lastRating = rating.name
         states = states + (item.key to next)
         sessionRatings[item.key] = rating
         scope.launch(Dispatchers.IO) {
-            runCatching { fsrsStore.saveSentence(item.key, next) }
+            runCatching {
+                fsrsStore.saveSentence(item.key, next)
+                // 复习事件日志（B3-4）：句子卡的评级也是复习事件，与状态同批落盘
+                ReviewLogStore.append(
+                    context.filesDir.resolve(ReviewLogStore.FILE_NAME),
+                    item.key, ts, rating.value,
+                    elapsedMs = if (prevState.lastReview > 0) ts - prevState.lastReview else 0L,
+                    state = next
+                )
+            }
         }
         advance(forward = true)
     }
@@ -350,7 +370,7 @@ fun SentenceCardScreen(navController: NavController) {
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "句子卡片",
+                    stringResource(com.ilyskyo.blancall.R.string.sentence_cards),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -358,7 +378,7 @@ fun SentenceCardScreen(navController: NavController) {
                 Spacer(Modifier.weight(1f))
                 if (items != null && items.isNotEmpty()) {
                     Text(
-                        if (currentIndex >= items.size) "完成"
+                        if (currentIndex >= items.size) stringResource(com.ilyskyo.blancall.R.string.done)
                         else "${currentIndex + 1}/${items.size}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -376,7 +396,7 @@ fun SentenceCardScreen(navController: NavController) {
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            if (validSentenceFilter.isEmpty() && validArticleFilter.isEmpty()) "筛选" else "已筛选",
+                            if (validSentenceFilter.isEmpty() && validArticleFilter.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.filter) else stringResource(com.ilyskyo.blancall.R.string.filtered),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -395,7 +415,7 @@ fun SentenceCardScreen(navController: NavController) {
                                 // 主动复习轻提示：系统 Toast 弹出（不再占用页面高度，卡片尺寸与常态一致）
                                 Toast.makeText(
                                     context,
-                                    "已进入主动复习：全部句子已入队",
+                                    context.getString(com.ilyskyo.blancall.R.string.review_started_all),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
@@ -410,7 +430,8 @@ fun SentenceCardScreen(navController: NavController) {
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            if (reviewAll) "结束复习" else "复习",
+                            if (reviewAll) stringResource(com.ilyskyo.blancall.R.string.end_review)
+                            else stringResource(com.ilyskyo.blancall.R.string.review_action),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -422,10 +443,16 @@ fun SentenceCardScreen(navController: NavController) {
             if (validSentenceFilter.isNotEmpty() || validArticleFilter.isNotEmpty()) {
                 Text(
                     buildString {
-                        append("已限定抽句范围：")
-                        if (validSentenceFilter.isNotEmpty()) append("${validSentenceFilter.size} 个标签")
+                        append(context.getString(com.ilyskyo.blancall.R.string.filter_scope_prefix))
+                        if (validSentenceFilter.isNotEmpty()) append(
+                            context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.tag_filter_count,
+                                validSentenceFilter.size, validSentenceFilter.size)
+                        )
                         if (validSentenceFilter.isNotEmpty() && validArticleFilter.isNotEmpty()) append(" · ")
-                        if (validArticleFilter.isNotEmpty()) append("${validArticleFilter.size} 篇文章")
+                        if (validArticleFilter.isNotEmpty()) append(
+                            context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.article_filter_count,
+                                validArticleFilter.size, validArticleFilter.size)
+                        )
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
@@ -486,6 +513,19 @@ fun SentenceCardScreen(navController: NavController) {
                         val items = deck ?: return@Column
                         if (currentIndex >= items.size) return@Column
                         val current = items[currentIndex]
+                        // ── 回忆面 / 答案面（Anki 的 front / back）──
+                        // 「已学过但今天还没评」的句子先只给分句首字提示，逼一次主动检索；
+                        // 新句（第一次认读）与已评卡（回看）不需要这道门，直接给整句。
+                        // 挖不出空（极端短句）也直接放行，避免「点了没反应」。
+                        val currentState = states[current.key]
+                        // 「挖不挖得出空」只由句子文本决定，remember 之后重组帧不再重算
+                        val currentHidesAnything = remember(current.text) {
+                            SentenceCloze.hidesAnything(current.text)
+                        }
+                        val needsReveal = !ratedToday(current.key) &&
+                            (currentState?.reviewCount ?: 0) > 0 &&
+                            currentHidesAnything
+                        val showAnswer = !needsReveal || revealed
                         // ── 堆叠区：当前卡可拖拽；后两张卡缩放任后（华为堆叠形态） ──
                         Box(
                             modifier = Modifier
@@ -515,6 +555,9 @@ fun SentenceCardScreen(navController: NavController) {
                                         state = states[behind.key],
                                         now = now,
                                         tags = chipByArticle[behind.articleId].orEmpty(),
+                                        // 背景卡（下一张/上一张）用各自的未揭晓态：拖动中它逐渐露出来，
+                                        // 若跟着顶层卡的 revealed 走，拖动过半就会把下一句的答案先漏出去。
+                                        revealed = false,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer {
@@ -533,6 +576,9 @@ fun SentenceCardScreen(navController: NavController) {
                                         state = states[behind.key],
                                         now = now,
                                         tags = chipByArticle[behind.articleId].orEmpty(),
+                                        // 背景卡（下一张/上一张）用各自的未揭晓态：拖动中它逐渐露出来，
+                                        // 若跟着顶层卡的 revealed 走，拖动过半就会把下一句的答案先漏出去。
+                                        revealed = false,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer {
@@ -545,18 +591,25 @@ fun SentenceCardScreen(navController: NavController) {
                                             },
                                     )
                                 }
-                                // 顶层卡：拖拽 + 无障碍操作
+                                // 顶层卡：拖拽 + 点按揭晓 + 无障碍操作
                                 SentenceCardFace(
                                     item = current,
-                                    state = states[current.key],
+                                    state = currentState,
                                     now = now,
                                     tags = chipByArticle[current.articleId].orEmpty(),
+                                    revealed = revealed,
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .offset { IntOffset(0, dragY.value.roundToInt()) }
                                         .graphicsLayer {
                                             rotationZ = dragY.value / 56f
                                             alpha = 1f - (-dragY.value / flyDistance).coerceIn(0f, 1f) * 0.25f
+                                        }
+                                        // 点按揭晓：与「显示答案」按钮同一件事的另一条入口（Anki 里也是点卡片）。
+                                        // 单独一个 pointerInput 不会和下面的竖直拖拽打架 —— 手指一旦移动超过
+                                        // 触摸阈值，tap 检测器自己取消，拖动照旧由 detectVerticalDragGestures 接管。
+                                        .pointerInput(currentIndex) {
+                                            detectTapGestures { revealed = true }
                                         }
                                         .pointerInput(currentIndex, items.size) {
                                             detectVerticalDragGestures(
@@ -614,28 +667,42 @@ fun SentenceCardScreen(navController: NavController) {
                                         }
                                         .semantics {
                                             contentDescription = buildString {
-                                                append("句子卡片，第 ").append(currentIndex + 1)
-                                                    .append(" / ").append(items.size).append(" 张")
-                                                if (current.title.isNotBlank()) {
-                                                    append("，来自《").append(current.title).append("》")
-                                                }
-                                                append("：").append(current.text)
-                                                if (ratedToday(current.key)) append("。已记录")
+                                                append(context.getString(
+                                                    com.ilyskyo.blancall.R.string.sentence_card_announce,
+                                                    currentIndex + 1, items.size
+                                                ))
+                                                if (current.title.isNotBlank()) append(
+                                                    context.getString(
+                                                        com.ilyskyo.blancall.R.string.sentence_card_from, current.title
+                                                    )
+                                                )
+                                                append(context.getString(com.ilyskyo.blancall.R.string.sentence_card_colon))
+                                                    // 未揭晓时播报挖空提示而不是整句 —— 读屏用户也走同一套
+                                                    // 「先回忆再揭晓」，直接把答案念出来等于替他把题做了
+                                                    .append(if (showAnswer) current.text else SentenceCloze.cue(current.text))
+                                                if (ratedToday(current.key)) append(
+                                                    context.getString(com.ilyskyo.blancall.R.string.sentence_card_rated)
+                                                )
                                             }
-                                            customActions = listOf(
-                                                CustomAccessibilityAction("记住了") {
-                                                    rate(current, FsrsEngine.Rating.GOOD); true
-                                                },
-                                                CustomAccessibilityAction("不熟") {
-                                                    rate(current, FsrsEngine.Rating.HARD); true
-                                                },
-                                                CustomAccessibilityAction("忘记") {
-                                                    rate(current, FsrsEngine.Rating.AGAIN); true
-                                                },
-                                                CustomAccessibilityAction("下一个") {
-                                                    advance(forward = true); true
-                                                },
-                                            )
+                                            customActions = buildList {
+                                                if (!showAnswer) add(
+                                                    CustomAccessibilityAction(
+                                                        context.getString(com.ilyskyo.blancall.R.string.show_answer)
+                                                    ) { revealed = true; true }
+                                                )
+                                                add(CustomAccessibilityAction(
+                                                    context.getString(com.ilyskyo.blancall.R.string.rate_remember)
+                                                ) { rate(current, FsrsEngine.Rating.GOOD); true })
+                                                add(CustomAccessibilityAction(
+                                                    context.getString(com.ilyskyo.blancall.R.string.rate_hard)
+                                                ) { rate(current, FsrsEngine.Rating.HARD); true })
+                                                add(CustomAccessibilityAction(
+                                                    context.getString(com.ilyskyo.blancall.R.string.rate_again)
+                                                ) { rate(current, FsrsEngine.Rating.AGAIN); true })
+                                                add(CustomAccessibilityAction(
+                                                    context.getString(com.ilyskyo.blancall.R.string.rate_next)
+                                                ) { advance(forward = true); true })
+                                            }
                                         },
                                 )
                             }
@@ -644,7 +711,7 @@ fun SentenceCardScreen(navController: NavController) {
                         // 手势提示（仅首次使用展示一次；操作细节在帮助文档）
                         if (showSwipeHint) {
                             Text(
-                                "上滑看下一张 · 下滑回看上一张",
+                                stringResource(com.ilyskyo.blancall.R.string.swipe_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                                 modifier = Modifier
@@ -654,7 +721,10 @@ fun SentenceCardScreen(navController: NavController) {
                             )
                         }
 
-                        // ── 三键评级（左→右：忘记 / 不熟 / 记住了，记住了主色强调） ──
+                        // ── 底部区 ──
+                        // 回忆面未揭晓：只给一个「显示答案」（Anki 的 Show Answer），评级键这时候不出现 ——
+                        // 先回忆再自评是这套卡片的规矩，把评级键摆在那儿等于默许用户跳过回忆。
+                        // 揭晓后：三键评级（左→右 忘记 / 不熟 / 记住了），每键显示该档预测的下次间隔。
                         // 所选评级回显：会话内最新选择优先，否则取持久化的上次评级；未评卡不高亮
                         // （避免预设误导）。点击即时选中与回看回显共用同一 selected 样式；
                         // 按钮不再因「今日已评」禁用（支持改判），动画防连点由 rate() 内部 guard 兜底。
@@ -662,46 +732,65 @@ fun SentenceCardScreen(navController: NavController) {
                             if (ratedToday(current.key)) {
                                 resolveDisplayedRating(
                                     session = sessionRatings[current.key],
-                                    persisted = states[current.key]?.lastRating,
+                                    persisted = currentState?.lastRating,
                                 )
                             } else null
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 20.dp, top = 10.dp)
-                                .navigationBarsPadding()
-                                .padding(bottom = 18.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            RatingButton(
-                                label = "忘记",
-                                desc = "忘记了：下次复习间隔会缩短",
-                                container = MaterialTheme.colorScheme.errorContainer,
-                                content = MaterialTheme.colorScheme.onErrorContainer,
-                                enabled = true,
-                                modifier = Modifier.weight(1f),
-                                selected = selectedRating == FsrsEngine.Rating.AGAIN,
-                            ) { rate(current, FsrsEngine.Rating.AGAIN) }
-                            RatingButton(
-                                label = "不熟",
-                                desc = "不熟：下次复习间隔略短",
-                                container = MaterialTheme.colorScheme.secondaryContainer,
-                                content = MaterialTheme.colorScheme.onSecondaryContainer,
-                                enabled = true,
-                                modifier = Modifier.weight(1f),
-                                selected = selectedRating == FsrsEngine.Rating.HARD,
-                            ) { rate(current, FsrsEngine.Rating.HARD) }
-                            RatingButton(
-                                label = "记住了",
-                                desc = "记住了：下次复习间隔将变长",
-                                container = MaterialTheme.colorScheme.primary,
-                                content = MaterialTheme.colorScheme.onPrimary,
-                                enabled = true,
-                                modifier = Modifier.weight(1f),
-                                selected = selectedRating == FsrsEngine.Rating.GOOD,
-                                // 主色底上的白色描边不可见：改黑色，与另两键的深色描边拉齐（仅颜色差异）
-                                borderColor = Color.Black,
-                            ) { rate(current, FsrsEngine.Rating.GOOD) }
+                        val bottomBar = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 10.dp)
+                            .navigationBarsPadding()
+                            .padding(bottom = 18.dp)
+                        if (!showAnswer) {
+                            SentenceRevealButton(onClick = { revealed = true }, modifier = bottomBar)
+                        } else {
+                            // 间隔预览：与真实调度同公式、只跳过 ±5% 扰动，所以每档是个稳定可复现的数
+                            val previewState = currentState ?: FsrsEngine.CardState()
+                            val againDays = FsrsEngine.previewIntervalDays(previewState, FsrsEngine.Rating.AGAIN, now)
+                            val hardDays = FsrsEngine.previewIntervalDays(previewState, FsrsEngine.Rating.HARD, now)
+                            val goodDays = FsrsEngine.previewIntervalDays(previewState, FsrsEngine.Rating.GOOD, now)
+                            Row(
+                                modifier = bottomBar,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                RatingButton(
+                                    label = stringResource(com.ilyskyo.blancall.R.string.rate_again),
+                                    desc = stringResource(com.ilyskyo.blancall.R.string.rate_again_desc),
+                                    container = MaterialTheme.colorScheme.errorContainer,
+                                    content = MaterialTheme.colorScheme.onErrorContainer,
+                                    enabled = true,
+                                    modifier = Modifier.weight(1f),
+                                    selected = selectedRating == FsrsEngine.Rating.AGAIN,
+                                    intervalLabel = pluralStringResource(
+                                        com.ilyskyo.blancall.R.plurals.interval_days, againDays, againDays
+                                    ),
+                                ) { rate(current, FsrsEngine.Rating.AGAIN) }
+                                RatingButton(
+                                    label = stringResource(com.ilyskyo.blancall.R.string.rate_hard),
+                                    desc = stringResource(com.ilyskyo.blancall.R.string.rate_hard_desc),
+                                    container = MaterialTheme.colorScheme.secondaryContainer,
+                                    content = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    enabled = true,
+                                    modifier = Modifier.weight(1f),
+                                    selected = selectedRating == FsrsEngine.Rating.HARD,
+                                    intervalLabel = pluralStringResource(
+                                        com.ilyskyo.blancall.R.plurals.interval_days, hardDays, hardDays
+                                    ),
+                                ) { rate(current, FsrsEngine.Rating.HARD) }
+                                RatingButton(
+                                    label = stringResource(com.ilyskyo.blancall.R.string.rate_remember),
+                                    desc = stringResource(com.ilyskyo.blancall.R.string.rate_remember_desc),
+                                    container = MaterialTheme.colorScheme.primary,
+                                    content = MaterialTheme.colorScheme.onPrimary,
+                                    enabled = true,
+                                    modifier = Modifier.weight(1f),
+                                    selected = selectedRating == FsrsEngine.Rating.GOOD,
+                                    // 主色底上的白色描边不可见：改黑色，与另两键的深色描边拉齐（仅颜色差异）
+                                    borderColor = Color.Black,
+                                    intervalLabel = pluralStringResource(
+                                        com.ilyskyo.blancall.R.plurals.interval_days, goodDays, goodDays
+                                    ),
+                                ) { rate(current, FsrsEngine.Rating.GOOD) }
+                            }
                         }
                     }
                 }
@@ -720,14 +809,14 @@ fun SentenceCardScreen(navController: NavController) {
                     .padding(top = 6.dp, bottom = 20.dp),
             ) {
                 Text(
-                    "抽句范围",
+                    stringResource(com.ilyskyo.blancall.R.string.sentence_scope_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "按标签 / 文章限定抽句范围；两者都选时取交集，都不选 = 全部文章",
+                    stringResource(com.ilyskyo.blancall.R.string.sentence_scope_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -742,14 +831,14 @@ fun SentenceCardScreen(navController: NavController) {
                 ) {
                     // ── 维度一：按标签 ──
                     Text(
-                        "按标签",
+                        stringResource(com.ilyskyo.blancall.R.string.filter_by_tag),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(2.dp))
                     if (tagData.tags.isEmpty()) {
                         Text(
-                            "还没有标签，可在「设置 → 文章标签」中创建",
+                            stringResource(com.ilyskyo.blancall.R.string.no_tags_create_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             modifier = Modifier.padding(vertical = 10.dp),
@@ -793,14 +882,14 @@ fun SentenceCardScreen(navController: NavController) {
 
                     // ── 维度二：按文章（直接勾选具体文章）──
                     Text(
-                        "按文章",
+                        stringResource(com.ilyskyo.blancall.R.string.filter_by_article),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(2.dp))
                     if (articles.isEmpty()) {
                         Text(
-                            "还没有文章",
+                            stringResource(com.ilyskyo.blancall.R.string.no_articles),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             modifier = Modifier.padding(vertical = 10.dp),
@@ -822,7 +911,7 @@ fun SentenceCardScreen(navController: NavController) {
                                 Checkbox(checked = checked, onCheckedChange = null)
                                 Spacer(Modifier.width(4.dp))
                                 Text(
-                                    a.title.ifBlank { "未命名文章" },
+                                    a.title.ifBlank { stringResource(com.ilyskyo.blancall.R.string.untitled_article) },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
@@ -830,7 +919,9 @@ fun SentenceCardScreen(navController: NavController) {
                                     modifier = Modifier.weight(1f),
                                 )
                                 Text(
-                                    "${a.content.length} 字符",
+                                    pluralStringResource(
+                                        com.ilyskyo.blancall.R.plurals.char_count, a.content.length, a.content.length
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 )
@@ -849,11 +940,11 @@ fun SentenceCardScreen(navController: NavController) {
                         AppPrefs.setSentenceTagFilter(emptySet())
                         AppPrefs.setSentenceArticleFilter(emptySet())
                     }) {
-                        Text("清除筛选")
+                        Text(stringResource(com.ilyskyo.blancall.R.string.clear_filter))
                     }
                     Spacer(Modifier.weight(1f))
                     Button(onClick = { showFilterSheet = false }) {
-                        Text("完成")
+                        Text(stringResource(com.ilyskyo.blancall.R.string.done))
                     }
                 }
             }

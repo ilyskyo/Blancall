@@ -78,6 +78,35 @@ class BackupManagerTest {
         // 干扰文件不在还原范围内
         assertFalse(File(dst, "articles.json.bak").exists())
         assertFalse(File(dst, "crash.log").exists())
+        // 两段式写回的暂存文件不留残留
+        assertFalse(dst.walkTopDown().any { it.name.endsWith(".import") })
+    }
+
+    /**
+     * manifest 登记了、归档里却没有的条目必须让整包失败。
+     * 旧实现是 `?: continue`：被跳过的条目既进不了 data、也就不在 keep 集合里，
+     * 紧接着的孤儿清理会把磁盘上对应的真实数据当残留删除 —— 截断过的备份「恢复」一次，
+     * 那一类学习数据就归零。
+     */
+    @Test
+    fun `manifest 登记但归档缺条目时整包拒绝且不得删掉磁盘数据`() {
+        val dst = tempDir("shortzip")
+        File(dst, "articles.json").writeText("我的文章")
+        File(dst, "tags.json").writeText("我的标签")
+        val zip = File(tempDir("shortzipzip"), "cut.zip")
+        ZipOutputStream(zip.outputStream()).use { z ->
+            z.putNextEntry(ZipEntry("manifest.json"))
+            z.write("""{"formatVersion":1,"files":["files/articles.json","files/tags.json"]}""".toByteArray())
+            z.closeEntry()
+            // 只写 articles：tags 在 manifest 里登记了却不在包里
+            z.putNextEntry(ZipEntry("files/articles.json"))
+            z.write("新文章".toByteArray())
+            z.closeEntry()
+        }
+        expectReject<BackupManager.BackupError.Incomplete> { BackupManager.restoreZip(zip, dst) }
+        assertEquals("我的文章", File(dst, "articles.json").readText())
+        assertEquals("我的标签", File(dst, "tags.json").readText())
+        assertFalse(File(dst, "articles.json.import").exists())
     }
 
     @Test
@@ -108,13 +137,16 @@ class BackupManagerTest {
     fun exportEmptyDataThrows() {
         val empty = tempDir("empty")
         val zip = File(tempDir("emptyzip"), "backup.zip")
-        var thrown = false
+        var thrown: Throwable? = null
         try {
             BackupManager.exportZip(empty, zip.outputStream())
-        } catch (_: IllegalStateException) {
-            thrown = true
+        } catch (e: Throwable) {
+            thrown = e
         }
-        assertTrue("空数据目录应拒绝导出", thrown)
+        assertTrue(
+            "空数据目录应拒绝导出（期望 NothingToExport，实际 ${thrown?.let { it::class.simpleName }}）",
+            thrown is BackupManager.BackupError.NothingToExport
+        )
     }
 
     @Test
@@ -127,7 +159,7 @@ class BackupManagerTest {
         ZipOutputStream(plain.outputStream()).use {
             it.putNextEntry(ZipEntry("files/articles.json")); it.write("hacked".toByteArray()); it.closeEntry()
         }
-        expectReject { BackupManager.restoreZip(plain, dst) }
+        expectReject<BackupManager.BackupError.NotABackup> { BackupManager.restoreZip(plain, dst) }
 
         // 版本不符
         val future = File(tempDir("future"), "future.zip")
@@ -136,7 +168,7 @@ class BackupManagerTest {
             it.write("""{"formatVersion":99,"files":["files/articles.json"]}""".toByteArray())
             it.closeEntry()
         }
-        expectReject { BackupManager.restoreZip(future, dst) }
+        expectReject<BackupManager.BackupError.UnsupportedVersion> { BackupManager.restoreZip(future, dst) }
 
         // 路径穿越：manifest 合法但条目名恶意
         val traversal = File(tempDir("traversal"), "evil.zip")
@@ -148,20 +180,24 @@ class BackupManagerTest {
             zip.write("evil".toByteArray())
             zip.closeEntry()
         }
-        expectReject { BackupManager.restoreZip(traversal, dst) }
+        expectReject<BackupManager.BackupError.UnsafeEntry> { BackupManager.restoreZip(traversal, dst) }
 
         // 三次拒绝均未触碰磁盘
         assertEquals("original", File(dst, "articles.json").readText())
         assertFalse(File(dst.parentFile, "escape.json").exists())
     }
 
-    private fun expectReject(block: () -> Unit) {
-        var thrown = false
+    /** 断言拒绝的**错误类型**（而非中文措辞）：文案挪去资源层后，测试只认错误码。 */
+    private inline fun <reified T : BackupManager.BackupError> expectReject(block: () -> Unit) {
+        var thrown: Throwable? = null
         try {
             block()
-        } catch (_: IllegalArgumentException) {
-            thrown = true
+        } catch (e: Throwable) {
+            thrown = e
         }
-        assertTrue("非法备份应被拒绝", thrown)
+        assertTrue(
+            "非法备份应被拒绝（期望 ${T::class.simpleName}，实际 ${thrown?.let { it::class.simpleName }}）",
+            thrown is T
+        )
     }
 }

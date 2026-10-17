@@ -13,23 +13,40 @@ enum class PracticeMode {
     REVERSE
 }
 
-/** 错误类型枚举，对应 [MistakeDetail.errorType] 字符串字段 */
+/**
+ * 错误类型枚举，对应 [MistakeDetail.errorType] 字符串字段。
+ *
+ * 落盘的是字符串（`AnswerChecker` 直接写 `Result.name`），所以这份枚举必须**覆盖写方会产出的全部名字**：
+ * 原先缺 `INCORRECT`，于是那一类的错在盘上存在、在枚举里查无此值，汇总/雷达那 5 个字符串桶
+ * 与本枚举各说各话。[OTHER] 是兜底桶，专给手工编辑过或未来新增的值 —— 让它可见，
+ * 而不是在转换失败时静默丢掉一次错误记录。
+ *
+ * `GLYPH_CONFUSED` 是后加的（字形混淆）。旧记录里那一类错被写成了 `TYPO`，**不追溯重算**：
+ * 当时判题确实分不出形近与不相干，按今天的表去改写历史等于伪造证据；两桶分开计数，
+ * 旧数据随新练习积累自然稀释。
+ */
 enum class ErrorType {
-    /** 拼写错误 */
+    /** 记成他字：同一位置换成了不相干的字 */
     TYPO,
+    /** 字形混淆：同一位置换成了形近字（己→已、未→末） */
+    GLYPH_CONFUSED,
     /** 漏填 */
     MISSING,
     /** 多填 */
     EXTRA,
     /** 顺序错误 */
-    WRONG_ORDER
+    WRONG_ORDER,
+    /** 内容错误（AnswerChecker.Result.INCORRECT）：编辑距离过大，等于没记住 */
+    INCORRECT,
+    /** 认不出的值也计数，不静默丢弃 */
+    OTHER
 }
 
 /** 将字符串转换为 [PracticeMode]；无法识别时返回 null */
 fun String.toPracticeMode(): PracticeMode? = runCatching { PracticeMode.valueOf(this) }.getOrNull()
 
-/** 将字符串转换为 [ErrorType]；无法识别时返回 null */
-fun String.toErrorType(): ErrorType? = runCatching { ErrorType.valueOf(this) }.getOrNull()
+/** 将字符串转换为 [ErrorType]；认不出的归入 [ErrorType.OTHER]（统计口径不丢数） */
+fun String.toErrorType(): ErrorType = runCatching { ErrorType.valueOf(this) }.getOrDefault(ErrorType.OTHER)
 
 /**
  * 练习记录
@@ -71,6 +88,20 @@ data class MistakeDetail(
     val blankIndex: Int,
     val correctAnswer: String,
     val userAnswer: String,
-    // 保持 String 以兼容旧 JSON 数据；推荐通过 toErrorType() 转换为枚举使用
-    val errorType: String    // TYPO | MISSING | EXTRA | WRONG_ORDER，见 ErrorType
+    // 保持 String 以兼容旧 JSON 数据；推荐通过 toErrorType() 转换为枚举
+    val errorType: String,    // TYPO | GLYPH_CONFUSED | MISSING | EXTRA | WRONG_ORDER | INCORRECT，见 ErrorType
+    // 这个错空【所属句子】在【文章全文切句】里的索引，-1 = 旧记录没有落这个字段。
+    //
+    // 为什么句索引挂在空上、而不是只留 PracticeRecord.mistakeSentenceIndices 那个去重集合：
+    // 集合只说「这几句错过」，说不出「这一处错在第几句」，于是记忆热力图只能整篇平摊，
+    // 一句错 3 处与 3 句各错 1 处看起来一模一样。索引空间与 mistakeSentenceIndices 同源
+    // （都取锚点在全文切句起点表里的下标），所以热力图可以直接按落点计数，不再猜。
+    // 跨文练习与锚点不可用时同那个字段一起留 -1（见 PracticeViewModel 提交路径）。
+    val sentenceIndex: Int = -1,
+    // 这一处作答与正确答案的相似度（0..1），-1 = 旧记录没落这个字段。
+    //
+    // 为什么逐空也要留：记录里原先只有会话级的 `similarity`（各空均值），
+    // 于是「一笔之差」和「全错」在盘上是同一个数 —— 回顾、热力图、AI 都分不出轻重。
+    // 均值继续留给现有统计页用，两者并存不冲突。
+    val similarity: Float = -1f
 )

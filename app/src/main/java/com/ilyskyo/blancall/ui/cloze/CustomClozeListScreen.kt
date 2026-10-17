@@ -40,6 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import androidx.navigation.NavController
@@ -126,7 +128,7 @@ fun CustomClozeListScreen(
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "自定义挖空",
+                    stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
@@ -142,7 +144,7 @@ fun CustomClozeListScreen(
                     },
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("新建")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.new_short))
                 }
             }
 
@@ -154,8 +156,8 @@ fun CustomClozeListScreen(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                if (pick) "点按即练习 · 长按重命名 / 删除"
-                else "点按编辑 · 长按练习 / 重命名 / 删除",
+                if (pick) stringResource(com.ilyskyo.blancall.R.string.cloze_list_hint_pick)
+                else stringResource(com.ilyskyo.blancall.R.string.cloze_list_hint_edit),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -174,12 +176,13 @@ fun CustomClozeListScreen(
             ) { state ->
                 when (state) {
                     0 -> {
-                        Text("文章不存在或已被删除", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(com.ilyskyo.blancall.R.string.article_missing_deleted),
+                            color = MaterialTheme.colorScheme.error)
                     }
                     1 -> Column {
                         Spacer(Modifier.height(24.dp))
                         Text(
-                            "还没有自定义配置，点此创建",
+                            stringResource(com.ilyskyo.blancall.R.string.no_cloze_configs),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
@@ -234,10 +237,13 @@ fun CustomClozeListScreen(
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                "${cfg.blanks.size} 个空 · " + when (cfg.mode) {
-                                                    "SENTENCE" -> "句子挖空"
-                                                    "REVERSE" -> "反向默写"
-                                                    else -> "字词挖空"
+                                                pluralStringResource(
+                                                    com.ilyskyo.blancall.R.plurals.cloze_blank_count,
+                                                    cfg.blanks.size, cfg.blanks.size
+                                                ) + " · " + when (cfg.mode) {
+                                                    "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
+                                                    "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
+                                                    else -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word)
                                                 },
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -254,7 +260,10 @@ fun CustomClozeListScreen(
                                                 menuForId = null
                                                 navController.navigate("practice/$articleId?configId=${cfg.id}")
                                             },
-                                            label = { Text("开始练习", style = MaterialTheme.typography.bodyMedium) }
+                                            label = {
+                                                Text(stringResource(com.ilyskyo.blancall.R.string.reader_start_practice),
+                                                    style = MaterialTheme.typography.bodyMedium)
+                                            }
                                         )
                                         GlassMenuItem(
                                             onClick = {
@@ -262,14 +271,20 @@ fun CustomClozeListScreen(
                                                 renameTarget = cfg
                                                 renameText = cfg.name
                                             },
-                                            label = { Text("重命名", style = MaterialTheme.typography.bodyMedium) }
+                                            label = {
+                                                Text(stringResource(com.ilyskyo.blancall.R.string.rename_action),
+                                                    style = MaterialTheme.typography.bodyMedium)
+                                            }
                                         )
                                         GlassMenuItem(
                                             onClick = {
                                                 menuForId = null
                                                 deleteTarget = cfg
                                             },
-                                            label = { Text("删除", style = MaterialTheme.typography.bodyMedium) }
+                                            label = {
+                                                Text(stringResource(com.ilyskyo.blancall.R.string.delete),
+                                                    style = MaterialTheme.typography.bodyMedium)
+                                            }
                                         )
                                     }
                                 }
@@ -285,7 +300,7 @@ fun CustomClozeListScreen(
     if (renameTarget != null) {
         BlancallAlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("重命名配置", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.rename_config_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 TextField(
                     value = renameText,
@@ -306,7 +321,8 @@ fun CustomClozeListScreen(
                         // 重名校验：与同文章下其他配置（排除自身）trim 后全等则提示并中止保存
                         val dup = configs.any { it.id != cfg.id && it.name.trim() == newName }
                         if (dup) {
-                            Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context,
+                                context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
                         renameTarget = null
@@ -317,10 +333,12 @@ fun CustomClozeListScreen(
                     } else {
                         renameTarget = null
                     }
-                }) { Text("保存") }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.save)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { renameTarget = null }) { Text("取消") }
+                androidx.compose.material3.TextButton(onClick = { renameTarget = null }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }
@@ -329,10 +347,13 @@ fun CustomClozeListScreen(
     if (deleteTarget != null) {
         BlancallAlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("删除配置", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.delete_config_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
-                    "确定删除「${deleteTarget!!.name}」（${deleteTarget!!.blanks.size} 个空）？删除后不可恢复。",
+                    pluralStringResource(
+                        com.ilyskyo.blancall.R.plurals.delete_config_confirm, deleteTarget!!.blanks.size,
+                        deleteTarget!!.name, deleteTarget!!.blanks.size
+                    ),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -343,12 +364,17 @@ fun CustomClozeListScreen(
                     scope.launch {
                         withContext(Dispatchers.IO) { store.deleteConfig(articleId, target.id) }
                         reload()
-                        Toast.makeText(context, "已删除", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context,
+                            context.getString(com.ilyskyo.blancall.R.string.deleted_toast), Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+                androidx.compose.material3.TextButton(onClick = { deleteTarget = null }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }

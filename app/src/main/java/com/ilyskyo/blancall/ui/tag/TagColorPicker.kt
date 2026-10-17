@@ -37,6 +37,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -96,12 +97,12 @@ fun TagColorPicker(
             FilterChip(
                 selected = mode == 0,
                 onClick = { mode = 0 },
-                label = { Text("色环") },
+                label = { Text(stringResource(com.ilyskyo.blancall.R.string.color_wheel)) },
             )
             FilterChip(
                 selected = mode == 1,
                 onClick = { mode = 1 },
-                label = { Text("色系套装") },
+                label = { Text(stringResource(com.ilyskyo.blancall.R.string.color_presets)) },
             )
         }
 
@@ -187,7 +188,7 @@ fun TagColorPicker(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "明度",
+                            stringResource(com.ilyskyo.blancall.R.string.brightness),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -237,7 +238,7 @@ fun TagColorPicker(
 
         // ── 预览与 HEX 回显 ──
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TagChipView(TagChipUi(name = previewName.ifBlank { "标签" }, color = color))
+            TagChipView(TagChipUi(name = previewName.ifBlank { stringResource(com.ilyskyo.blancall.R.string.tag) }, color = color))
             Spacer(Modifier.width(10.dp))
             Text(
                 ColorOps.toHex(color),

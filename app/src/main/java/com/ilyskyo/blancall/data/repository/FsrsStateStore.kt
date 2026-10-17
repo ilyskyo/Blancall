@@ -32,6 +32,13 @@ class FsrsStateStore private constructor(private val file: File) {
 
     /** 句子级记忆状态：键 = `s:<articleId>:<hash16>`（hash16 = SHA-256(句文) 前 8 字节 hex） */
     private val sentenceStates = ConcurrentHashMap<String, FsrsEngine.CardState>()
+
+    /**
+     * 盘上那份来自更高版本 ⇒ 本版本拒绝对它做整本重写。
+     * 由后台加载线程在 [parseInto] 里置位，之后每一次 [persist] 都先看它。
+     */
+    @Volatile
+    private var fromNewerVersion = false
     // 加载完成门闩：后台加载完成后 countDown；save/remove 前需等加载完成，避免 persist 覆盖丢旧状态
     private val loadLatch = CountDownLatch(1)
     // 落盘互斥：persist() 是「全量序列化 → 写 tmp → rename」。
@@ -42,6 +49,16 @@ class FsrsStateStore private constructor(private val file: File) {
     companion object {
         /** 句子键前缀（命名空间分隔）；单一来源在 [SentenceSelector.SENTENCE_KEY_PREFIX] */
         const val SENTENCE_KEY_PREFIX = SentenceSelector.SENTENCE_KEY_PREFIX
+
+        /**
+         * 磁盘格式版本。以前这个文件**根本没有版本字段**，于是「装回旧包 / 导入更高版本备份」时
+         * 本版本会照写不误 —— 每条卡片状态都按整本重写，新版认识的字段就这样被抹平。
+         * 现在写侧带版本、读侧高于本版本就拒绝写盘（见 [StoreVersion]）。
+         */
+        const val CURRENT_VERSION = 1
+
+        /** 版本键名：与卡片键的命名空间不冲突（卡片键要么是数字、要么以 s: 开头，都不是对象值） */
+        private const val VERSION_KEY = "version"
 
         @Volatile
         private var instance: FsrsStateStore? = null
@@ -96,9 +113,27 @@ class FsrsStateStore private constructor(private val file: File) {
         }
     }
 
+    /**
+     * 备份导入后重载（B1-3）：清掉两张表再重读磁盘。
+     * 为什么不直接调 load()：它是"灌入"语义（服务启动场景），不清旧键会把导入前的
+     * 状态残留下来 —— 导入后磁盘才是唯一真相。
+     */
+    suspend fun reload() {
+        withContext(Dispatchers.IO) { loadLatch.await() }
+        synchronized(persistLock) {
+            states.clear()
+            sentenceStates.clear()
+            fromNewerVersion = false
+        }
+        load()
+    }
+
     /** 解析 JSON 并灌入内存状态（单条损坏不影响其余，逐键容忍；句子键与文章键按前缀分流） */
     private fun parseInto(json: String) {
         val obj = JSONObject(json)
+        if (StoreVersion.isFromNewerApp(obj.optInt(VERSION_KEY, 1), CURRENT_VERSION, "FsrsStateStore")) {
+            fromNewerVersion = true
+        }
         obj.keys().forEach { key ->
             val o = obj.optJSONObject(key) ?: return@forEach
             val state = FsrsEngine.CardState(
@@ -133,8 +168,14 @@ class FsrsStateStore private constructor(private val file: File) {
 
     private fun persist() {
         try {
+            if (fromNewerVersion) {
+                // 盘上那份是更高版本写的：本版本不认识它的字段，整本重写会把那些字段抹平。
+                // 宁可停在「这次没存上」并留下日志，也不要静默改数据 —— 升级回来原文件还是完整的
+                Log.e("FsrsStateStore", "磁盘格式版本高于本应用，拒绝写盘（内存状态仍可用，退出后不保留）")
+                return
+            }
             file.parentFile?.mkdirs()
-            val json = JSONObject()
+            val json = JSONObject().put(VERSION_KEY, CURRENT_VERSION)
             states.forEach { (id, s) -> json.put(id.toString(), stateToJson(s)) }
             // 句子级状态与文章级同文件共存，键即命名空间（旧版本读非数值键时忽略）
             sentenceStates.forEach { (key, s) -> json.put(key, stateToJson(s)) }
@@ -166,8 +207,13 @@ class FsrsStateStore private constructor(private val file: File) {
         }
     }
 
-    /** 全部状态（只读视图，供预测与列表页面使用）；仅文章级，语义与历史一致 */
-    fun allStates(): Map<Long, FsrsEngine.CardState> = states.toMap()
+    /**
+     * 全部状态（只读视图，供预测与列表页面使用）；仅文章级，语义与历史一致。
+     * 必须逐条 copy：CardState 的字段全是 var，`toMap()` 只复制条目引用，
+     * 调用方拿到的是内存表里同一个实例 —— 改了就不落盘，视图与盘立即分叉。
+     */
+    fun allStates(): Map<Long, FsrsEngine.CardState> =
+        states.toMap().mapValues { it.value.copy() }
 
     // ────────────────────────────────────────────────
     // 句子级状态（「句子卡片」专用；与文章级互不影响）
@@ -198,6 +244,24 @@ class FsrsStateStore private constructor(private val file: File) {
         }
     }
 
-    /** 全部句子级状态（只读视图，供到期判定与句子记忆统计使用） */
-    fun allSentenceStates(): Map<String, FsrsEngine.CardState> = sentenceStates.toMap()
+    /** 全部句子级状态（只读视图，供到期判定与句子记忆统计使用）；逐条 copy 的理由同 [allStates] */
+    fun allSentenceStates(): Map<String, FsrsEngine.CardState> =
+        sentenceStates.toMap().mapValues { it.value.copy() }
+
+    /**
+     * 定向删除若干个句子态键，返回实际删掉的条数（供「改文后已清理 N 句」提示显示真实数）。
+     *
+     * 与 [removeSentencesForArticle] 的分工：那个是「整篇没了」时的连带清理，
+     * 这个是「文章还在、句子没了」——键由调用方（[com.ilyskyo.blancall.algorithm.SentenceSelector.orphanSentenceKeys]）
+     * 算好再传进来，删除本身不认识句文，只认键。
+     */
+    fun removeSentenceKeys(keys: List<String>): Int {
+        if (keys.isEmpty()) return 0
+        loadLatch.await()
+        synchronized(persistLock) {
+            val removed = keys.count { sentenceStates.remove(it) != null }
+            if (removed > 0) persist()
+            return removed
+        }
+    }
 }

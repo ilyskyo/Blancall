@@ -173,4 +173,81 @@ class SentenceSelectorTest {
             )
         )
     }
+
+    // ── 句子身份（键）──
+
+    @Test
+    fun `键格式与文档一致`() {
+        val key = SentenceSelector.sentenceKey(12L, "床前明月光。")
+        assertTrue("键格式变了（文档写的是 s:<id>:<16 位 hex>）：$key", Regex("^s:12:[0-9a-f]{16}$").matches(key))
+        assertEquals(12L, SentenceSelector.articleIdOf(key))
+    }
+
+    @Test
+    fun `文本相同即同一身份，前后空白不影响`() {
+        // 「同文章同文本共享同一记忆状态」是设计意图（天然去重），不是巧合
+        assertEquals(
+            SentenceSelector.sentenceKey(3L, "床前明月光。"),
+            SentenceSelector.sentenceKey(3L, "  床前明月光。 ")
+        )
+    }
+
+    @Test
+    fun `同文章不同句在样本规模内不碰撞`() {
+        // 键只截断到 8 字节，碰撞会让两句**静默**共享一份记忆状态（界面看不出来）。
+        // 这条不能证明数学上不碰撞，但能挡住「哈希实现被改坏 / 截断长度被改短」这类事故 ——
+        // 那种改法会让碰撞率骤升，而既有测试全绿。
+        val texts = List(2000) { i -> "第${i}句测试文本${"甲乙丙丁戊己庚辛壬癸".repeat(i % 11)}。" }
+        val keys = texts.map { SentenceSelector.sentenceKey(7L, it) }.toSet()
+        assertEquals("2000 句里出现了重复键，哈希或截断长度可能被改坏", texts.size, keys.size)
+    }
+
+    // ── 编辑期句子孤儿（prune 的判据）──
+
+    @Test
+    fun `改文后消失的句子被判为孤儿`() {
+        val before = "床前明月光。疑是地上霜。"
+        val after = "床前明月光。疑是地上霜。举头望明月。"
+        val id = 7L
+        // 混入一句「改文后已经不存在」的旧键（模拟编辑前的状态）。
+        // `+` 必须写在上一行末尾：换行后再起 `+` 会被解析成一元加号（unaryPlus），编译不过。
+        val existing = SentenceSplitter.split(after).map { SentenceSelector.sentenceKey(id, it) }.toSet() +
+            SentenceSelector.sentenceKey(id, "低头思故乡。")
+
+        val orphans = SentenceSelector.orphanSentenceKeys(existing, id, after)
+        assertEquals(listOf(SentenceSelector.sentenceKey(id, "低头思故乡。")), orphans)
+    }
+
+    @Test
+    fun `内容没变时没有孤儿`() {
+        val content = "床前明月光。疑是地上霜。"
+        val id = 3L
+        val existing = SentenceSplitter.split(content).map { SentenceSelector.sentenceKey(id, it) }.toSet()
+        assertTrue(SentenceSelector.orphanSentenceKeys(existing, id, content).isEmpty())
+    }
+
+    @Test
+    fun `别的文章的键不会被误删`() {
+        // 前缀必须精确到 `s:<id>:` —— 只比 `s:1` 会把 10、11 这两篇的键一起带走
+        val content = "床前明月光。"
+        val existing = setOf(
+            SentenceSelector.sentenceKey(1L, "低头思故乡。"),   // 本文的孤儿
+            SentenceSelector.sentenceKey(10L, "低头思故乡。"),  // 别的文章的键
+            SentenceSelector.sentenceKey(11L, "低头思故乡。")
+        )
+        val orphans = SentenceSelector.orphanSentenceKeys(existing, 1L, content)
+        assertEquals(listOf(SentenceSelector.sentenceKey(1L, "低头思故乡。")), orphans)
+    }
+
+    @Test
+    fun `短句写过的状态也保住`() {
+        // 练习会写「不合抽句门槛」的短句状态（抽句要求 6..80 字）；prune 若不按全文切句
+        // 而按合格句过滤，这些真练过的短句会被当成孤儿删掉 —— 这条钉住那个区别。
+        val content = "对。好。床前明月光。"
+        val id = 5L
+        val shortKey = SentenceSelector.sentenceKey(id, "对。")
+        assertTrue("前提：短句不该是抽句候选", SentenceSelector.candidates(article(id, content)).none { it.key == shortKey })
+        val existing = setOf(shortKey, SentenceSelector.sentenceKey(id, "床前明月光。"))
+        assertTrue(SentenceSelector.orphanSentenceKeys(existing, id, content).isEmpty())
+    }
 }

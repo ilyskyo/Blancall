@@ -31,19 +31,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.ilyskyo.blancall.R
+import com.ilyskyo.blancall.ui.theme.Macaron
 
 /**
  * 错误类型分布条形图（公共组件）。
  *
- * 将五类错误（错别字 / 漏填 / 多填 / 顺序错误 / 完全错）的计数合并展示为横向比例条，
+ * 将六类错误（记成他字 / 字形混淆 / 漏填 / 多填 / 顺序错误 / 没记住）的计数合并展示为横向比例条，
  * 总数内部自动汇总，仅渲染计数大于 0 的项。OverviewScreen 与 StatisticsScreen 共用。
  *
- * @param typo       错别字次数
+ * 「记成他字」对应 AnswerChecker 的 TYPO：长度一致、同一位置换成了不相干的字；
+ * 「字形混淆」对应 GLYPH_CONFUSED：换上的字与正字同属一个形近组（己/已/巳）。
+ * 判题只看字形是否相同，不比对读音，所以这里可能是手上写错也可能是没记清 ——
+ * 两者分开列，用户才知道该练辨析还是该补记忆。
+ *
+ * 文案一律走 string 资源：新加的类别若在代码里写死中文，六语界面上就这一行是简体，
+ * 而所有多语言守卫都是绿的（它们只比 res 目录）。
+ *
+ * @param typo       记成他字次数
+ * @param glyph      字形混淆次数
  * @param missing    漏填次数
  * @param extra      多填次数
  * @param order      顺序错误次数
- * @param incorrect  完全答错次数（编辑距离过大，非前四类）
+ * @param incorrect  没记住次数（编辑距离过大，非前几类）
  * @param modifier   外部约束
  */
 @Composable
@@ -53,26 +65,32 @@ fun MistakeBar(
     extra: Int,
     order: Int,
     incorrect: Int = 0,
+    glyph: Int = 0,
     modifier: Modifier = Modifier
 ) {
-    val total = typo + missing + extra + order + incorrect
+    val total = typo + glyph + missing + extra + order + incorrect
     if (total <= 0) return
 
     Column(modifier = modifier) {
         if (typo > 0) {
-            MistakeRow("错别字", typo, total, MaterialTheme.colorScheme.error)
+            MistakeRow(stringResource(R.string.mistake_bar_typo), typo, total, MaterialTheme.colorScheme.error)
+        }
+        if (glyph > 0) {
+            // 薰衣草：与「记成他字」的红同为换字类、但色相独立 —— 两行挨在一起，
+            // 颜色必须能分开，否则用户读成「同一类错分成两行」。
+            MistakeRow(stringResource(R.string.mistake_bar_glyph), glyph, total, Macaron.lavender().accent)
         }
         if (missing > 0) {
-            MistakeRow("漏填", missing, total, MaterialTheme.colorScheme.tertiary)
+            MistakeRow(stringResource(R.string.mistake_bar_missing), missing, total, MaterialTheme.colorScheme.tertiary)
         }
         if (extra > 0) {
-            MistakeRow("多填", extra, total, MaterialTheme.colorScheme.secondary)
+            MistakeRow(stringResource(R.string.mistake_bar_extra), extra, total, MaterialTheme.colorScheme.secondary)
         }
         if (order > 0) {
-            MistakeRow("顺序错误", order, total, MaterialTheme.colorScheme.primary)
+            MistakeRow(stringResource(R.string.mistake_bar_order), order, total, MaterialTheme.colorScheme.primary)
         }
         if (incorrect > 0) {
-            MistakeRow("完全错", incorrect, total, MaterialTheme.colorScheme.errorContainer)
+            MistakeRow(stringResource(R.string.mistake_bar_incorrect), incorrect, total, MaterialTheme.colorScheme.errorContainer)
         }
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.PI
@@ -43,7 +45,9 @@ fun RadarChart(
 ) {
     if (axes.size < 3 || values.size != axes.size) return
 
-    var played by remember { mutableStateOf(false) }
+    // rememberSaveable 而不是 remember：这张图住在总览页 LazyColumn 的 item 里，滚出视口后子树会被
+    // 回收 —— 用 remember 的话「已播」标记跟着丢，滚回来时整张雷达图会重新长一遍。
+    var played by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { played = true }
     val animated by animateFloatAsState(
         targetValue = if (played) 1f else 0f,
@@ -167,7 +171,11 @@ fun RadarChart(
                         axis,
                         style = MaterialTheme.typography.labelSmall,
                         color = labelColor,
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
+                        // 轴标签要容下两行：六轴之后每格只剩半个屏宽，
+                        // 英文/俄语的轴名（"Not recalled"、"Похожий знак"）单行必被裁掉右半
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
                     )
                     Text(
                         "${pct.toInt()}%",

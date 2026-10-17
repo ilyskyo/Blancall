@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,7 +67,7 @@ fun TagEditorSheet(
                 .padding(top = 6.dp, bottom = 20.dp),
         ) {
             Text(
-                if (initialTag == null) "新建标签" else "编辑标签",
+                if (initialTag == null) stringResource(com.ilyskyo.blancall.R.string.new_tag) else stringResource(com.ilyskyo.blancall.R.string.edit_tag),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -80,7 +81,7 @@ fun TagEditorSheet(
                     touched = true
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("名称（最多 12 字）") },
+                label = { Text(stringResource(com.ilyskyo.blancall.R.string.tag_name_hint)) },
                 singleLine = true,
                 isError = showError,
                 supportingText = if (showError) {
@@ -95,7 +96,7 @@ fun TagEditorSheet(
 
             TagColorPicker(
                 color = color,
-                previewName = name.trim().ifBlank { "标签" },
+                previewName = name.trim().ifBlank { stringResource(com.ilyskyo.blancall.R.string.tag) },
                 onColorChange = { color = it },
             )
 
@@ -109,7 +110,7 @@ fun TagEditorSheet(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("取消")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
                 }
                 Button(
                     onClick = {
@@ -122,7 +123,7 @@ fun TagEditorSheet(
                     enabled = name.isNotBlank(),
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(if (initialTag == null) "创建" else "保存")
+                    Text(if (initialTag == null) stringResource(com.ilyskyo.blancall.R.string.create) else stringResource(com.ilyskyo.blancall.R.string.save))
                 }
             }
         }
@@ -130,8 +131,9 @@ fun TagEditorSheet(
 }
 
 /** 名称错误文案 */
+@Composable
 internal fun errorText(error: TagOps.NameError): String = when (error) {
-    TagOps.NameError.BLANK -> "名称不能为空"
-    TagOps.NameError.TOO_LONG -> "名称最多 12 个字"
-    TagOps.NameError.DUPLICATE -> "已存在同名标签"
+    TagOps.NameError.BLANK -> stringResource(com.ilyskyo.blancall.R.string.tag_name_empty)
+    TagOps.NameError.TOO_LONG -> stringResource(com.ilyskyo.blancall.R.string.tag_name_too_long)
+    TagOps.NameError.DUPLICATE -> stringResource(com.ilyskyo.blancall.R.string.tag_name_duplicate)
 }

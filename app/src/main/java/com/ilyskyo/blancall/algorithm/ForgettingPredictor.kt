@@ -6,55 +6,33 @@ package com.ilyskyo.blancall.algorithm
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import kotlin.math.ceil
-import kotlin.math.exp
 
 /**
- * 遗忘曲线预测器：在艾宾浩斯调度基础上，叠加指数衰减记忆留存率模型。
+ * 遗忘曲线预测器：把「该不该复习」和「还记得多少」两件事算清楚。
  *
- * ## 数学模型
+ * ## 留存率只有一条定义
  *
- * **留存率（Retention Rate）** —— 艾宾浩斯-斯皮尔丁指数衰减公式：
- * ```
- * R(Δt) = e^(-Δt / S)
- * ```
- * - Δt = 当前时间 - 最近一次练习时间（天）
- * - S  = 记忆强度（天），由练习历史估算
- * - 该公式为标准艾宾浩斯曲线的连续形式，与原始离散实验数据
- *   （1天后≈33.7%、2天后≈27.8%、6天后≈25.4%）拟合良好：
- *   取 S=1 时，1天后 R=e^(-1)≈36.8%，接近实测 33.7%。
+ * 留存率一律走 [FsrsEngine.retentionRate]（FSRS-6 幂律 `R = (1 + factor·t/S)^(-w20)`）。
+ * 这里**不再自带一条艾宾浩斯指数曲线** `e^(-Δt/S)`：那套模型（连同 `S×(1+0.5·正确率)` 的强度累加）
+ * 只服务没有 FSRS 状态的存量文章，于是同一张「遗忘曲线预测」卡上并排着两个模型 ——
+ * 同一天、同一份练习历史，句子用幂律、老文章用指数，两个数可以差很远，却共用同一套紧急度阈值。
+ * 用户不需要懂算法也能看出这一屏在自相矛盾。
  *
- * **记忆强度（Memory Strength）估算** —— 借鉴 SM-2 算法的稳定性增长思想：
- * ```
- * S_1 = 1 天                  （首次学习后的初始稳定性）
- * S_{n+1} = S_n × (1 + g × a_n)  （每次成功复习后稳定性增长）
- * ```
- * - g = 0.5（增益系数，间隔效应的经验值）
- * - a_n = 第 n 次练习的正确率（0-1）
- * - 当 a_n < 0.3 时视为未掌握，S 不增长（防止"错得多却以为记得牢"）
+ * 现在没有持久化状态的文章由 [initialStateFromRecords] 从练习记录**反推**一个 [FsrsEngine.CardState]：
+ * 按时间顺序把每条记录当时的评级喂进同一个 [FsrsEngine.review]（记录里存了 rating；旧记录没有时
+ * 按正确率映射，与练习页当时的评级口径一致）。反推出来的状态只用于展示与排序，**不落盘** ——
+ * 用户真练一次，[com.ilyskyo.blancall.ui.viewmodel.PracticeScoring] 会写回真实状态。
  *
  * ## 复习调度
  *
- * 下次复习时间仍调用 [EbbinghausScheduler.nextReviewTime]，
- * 保证与首页提醒、通知调度逻辑全局一致，不另起一套间隔表。
- *
- * ## 调度紧急度 vs 留存率
- *
- * - [Urgency]/[daysLeft]：基于模板间隔的"该不该复习"判断，用于排序。
- * - [retentionRate]：基于数学模型的"还记得多少"估算，用于可视化与展示。
- * 二者互补：调度告诉你何时复习，留存率告诉你为何要复习。
+ * 「什么时候该复习」仍分两条路，但都尊重用户在设置里选的复习计划：
+ * - 已有 FSRS 状态：由 `state.due` 决定（间隔由 [FsrsEngine] 按目标留存率算，目标来自所选计划）。
+ * - 尚无状态的存量文章：用 [EbbinghausScheduler.nextReviewTime] 的模板间隔兜底，
+ *   调用方必须把用户所选模板传进来（`ReviewTemplate.fromId`），否则这里会安静地按 STANDARD 排。
  */
 object ForgettingPredictor {
 
     private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1000
-
-    /** 记忆强度增益系数 g（每次成功复习使稳定性增长的倍率） */
-    private const val STRENGTH_GAIN = 0.5f
-
-    /** 初始记忆强度 S_1（天），拟合艾宾浩斯 1 天后≈33.7% 的实测留存率 */
-    private const val INITIAL_STRENGTH_DAYS = 1f
-
-    /** 未掌握阈值：正确率低于此值时稳定性不增长 */
-    private const val UNMASTERED_THRESHOLD = 0.3f
 
     /** 衰减曲线采样天数（覆盖一个标准复习周期） */
     private const val DECAY_CURVE_DAYS = 30
@@ -122,12 +100,7 @@ object ForgettingPredictor {
             if (fsrsState != null && fsrsState.reviewCount > 0) {
                 val diffMs = fsrsState.due - now
                 val daysLeft = ceil(diffMs.toDouble() / MILLIS_PER_DAY).toInt()
-                val urgency = when {
-                    diffMs < -MILLIS_PER_DAY -> Urgency.OVERDUE
-                    diffMs <= 0 -> Urgency.TODAY
-                    daysLeft <= 3 -> Urgency.SOON
-                    else -> Urgency.LATER
-                }
+                val urgency = urgencyOf(diffMs, daysLeft)
                 val s = fsrsState.stability.toFloat()
                 val r = FsrsEngine.retentionRate(fsrsState, now).toFloat()
                 Prediction(
@@ -142,7 +115,7 @@ object ForgettingPredictor {
                     }
                 )
             } else {
-                // ── 模板兜底（无 FSRS 状态：升级前存量练习 / 从未练习）──
+                // ── 存量兜底（还没有 FSRS 状态：升级前的练习 / 从未练过）──
                 // 按天去重计算复习轮次：同一天多次练习只算一次，避免重做污染 MASTERED 判定
                 val zone = java.time.ZoneId.systemDefault()
                 val count = records.groupBy {
@@ -156,48 +129,32 @@ object ForgettingPredictor {
                         lastAccuracy = 0f, retentionRate = 0f, memoryStrength = 0f,
                         decayCurve = emptyList()
                     )
-                } else if (count >= template.intervals.size) {
-                    // 已完成全部复习轮次：视为已掌握，留存率按模型实时估算（仍会随时间衰减）
-                    val s = memoryStrength(records)
-                    val r = retentionRate(s, daysSince(records.last().timestamp, now))
-                    Prediction(
-                        articleId = article.id, title = article.title, urgency = Urgency.MASTERED,
-                        reviewDate = 0L, daysLeft = Int.MAX_VALUE, practiceCount = count,
-                        lastAccuracy = weightedAccuracy(records),
-                        retentionRate = r, memoryStrength = s,
-                        decayCurve = buildDecayCurve(s, now, records.last().timestamp)
-                    )
                 } else {
+                    // 留存率、稳定性、未来曲线全部出自【反推出来的同一个 FSRS 状态】——
+                    // 与句子侧、与已调度文章同一个模型。这里以前是自造的一条 e^(-Δt/S) 指数曲线。
+                    val view = fsrsView(initialStateFromRecords(records) ?: FsrsEngine.CardState(), now)
                     val lastTime = records.last().timestamp
                     val acc = weightedAccuracy(records)
-                    val reviewDate = EbbinghausScheduler.nextReviewTime(template, count - 1, lastTime, acc) ?: 0L
-
-                    if (reviewDate == 0L) {
-                        val s = memoryStrength(records)
+                    val reviewDate = EbbinghausScheduler.nextReviewTime(template, count - 1, lastTime, acc)
+                    if (count >= template.intervals.size || reviewDate == null) {
+                        // 复习轮次跑完（或模板已排完）：视为已掌握，但留存率仍按模型实时给（会随时间衰减）
                         Prediction(
                             articleId = article.id, title = article.title, urgency = Urgency.MASTERED,
                             reviewDate = 0L, daysLeft = Int.MAX_VALUE, practiceCount = count,
-                            lastAccuracy = acc, retentionRate = retentionRate(s, daysSince(lastTime, now)),
-                            memoryStrength = s,
-                            decayCurve = buildDecayCurve(s, now, lastTime)
+                            lastAccuracy = acc, retentionRate = view.retention,
+                            memoryStrength = view.strength, decayCurve = view.curve
                         )
                     } else {
                         val diffMs = reviewDate - now
                         val daysLeft = ceil(diffMs.toDouble() / MILLIS_PER_DAY).toInt()
-                        val s = memoryStrength(records)
-                        val r = retentionRate(s, daysSince(lastTime, now))
-                        // 修复：diffMs <= 0（含恰好今天到期与已过期不足 1 天）统一为 TODAY
-                        val urgency = when {
-                            diffMs < -MILLIS_PER_DAY -> Urgency.OVERDUE
-                            diffMs <= 0 -> Urgency.TODAY
-                            daysLeft <= 3 -> Urgency.SOON
-                            else -> Urgency.LATER
-                        }
                         Prediction(
-                            articleId = article.id, title = article.title, urgency = urgency,
+                            articleId = article.id, title = article.title,
+                            // 紧急度判定与 FSRS 分支共用一份（原先是两份几乎一样的 when 分支，
+                            // 且其中一份靠一行「修复：diffMs<=0 统一为 TODAY」的手改同步过来）
+                            urgency = urgencyOf(diffMs, daysLeft),
                             reviewDate = reviewDate, daysLeft = daysLeft, practiceCount = count,
-                            lastAccuracy = acc, retentionRate = r, memoryStrength = s,
-                            decayCurve = buildDecayCurve(s, now, lastTime)
+                            lastAccuracy = acc, retentionRate = view.retention,
+                            memoryStrength = view.strength, decayCurve = view.curve
                         )
                     }
                 }
@@ -219,60 +176,56 @@ object ForgettingPredictor {
     // ────────────────────────────────────────────────────────
 
     /**
-     * 记忆强度估算 S（天）。
+     * 从练习记录反推 FSRS 状态：按时间顺序把每次练习的评级喂进 [FsrsEngine.review]，
+     * 得到的稳定性/难度与「用户当时真练过一遍」算出来的是同一条公式。
      *
-     * ```
-     * S_1 = 1
-     * S_{n+1} = S_n × (1 + g × a_n)   当 a_n ≥ 0.3
-     * S_{n+1} = S_n                   当 a_n < 0.3（未掌握，不增长）
-     * ```
+     * 只在内存里算，不落盘：这条状态是给「还没有记忆状态的存量文章」用的展示口径。
+     * 用户真练一次，[com.ilyskyo.blancall.ui.viewmodel.updateFsrsState] 会写回真实状态，
+     * 反推那份随即作废 —— 所以它不该污染 fsrs_state.json。
      */
-    private fun memoryStrength(records: List<PracticeRecord>): Float {
-        if (records.isEmpty()) return 0f
-        val sorted = records.sortedBy { it.timestamp }
-        var s = INITIAL_STRENGTH_DAYS
-        // 从第二次练习开始累加稳定性增长（首次仅设定 S_1）
-        for (r in sorted.drop(1)) {
-            val acc = accuracyOf(r)
-            if (acc >= UNMASTERED_THRESHOLD) {
-                s *= (1f + STRENGTH_GAIN * acc)
-            }
+    fun initialStateFromRecords(records: List<PracticeRecord>): FsrsEngine.CardState? {
+        if (records.isEmpty()) return null
+        var state = FsrsEngine.CardState()
+        for (r in records.sortedBy { it.timestamp }) {
+            state = FsrsEngine.review(state, ratingOf(r), r.timestamp)
         }
-        return s
+        return state
     }
 
     /**
-     * 留存率 R(Δt) = e^(-Δt / S)。
+     * 记录当时的评级优先；旧记录（rating=0，升级前落的库）按正确率映射，
+     * 用的是 [FsrsEngine.ratingFromAccuracy] —— 与练习页当年给评级时的同一把尺子。
+     */
+    private fun ratingOf(record: PracticeRecord): FsrsEngine.Rating =
+        if (record.rating in 1..4) FsrsEngine.Rating.entries.first { it.value == record.rating }
+        else FsrsEngine.ratingFromAccuracy(accuracyOf(record))
+
+    /** 稳定性、当前留存率、未来曲线：出自同一个状态，避免「点」和「线」不是同一个模型 */
+    private fun fsrsView(state: FsrsEngine.CardState, now: Long): FsrsView = FsrsView(
+        strength = state.stability.toFloat(),
+        retention = FsrsEngine.retentionRate(state, now).toFloat(),
+        curve = List(DECAY_CURVE_DAYS + 1) { dayOffset ->
+            FsrsEngine.retentionRate(state, now + dayOffset * MILLIS_PER_DAY).toFloat()
+        }
+    )
+
+    private data class FsrsView(val strength: Float, val retention: Float, val curve: List<Float>)
+
+    /**
+     * 紧急度判定：FSRS 分支与模板兜底分支共用这一份。
      *
-     * @param strength 记忆强度 S（天）
-     * @param deltaDays 距最近练习的天数（可为分数）
-     * @return 0..1 的留存率
+     * 原先是两份逐字重复的 when，其中一份还挂着「修复：diffMs<=0 统一为 TODAY」的手改注释 ——
+     * 两份代码修一份忘一份，正是这个函数存在的全部理由。
      */
-    private fun retentionRate(strength: Float, deltaDays: Float): Float {
-        if (strength <= 0f) return 0f
-        return exp(-deltaDays / strength).coerceIn(0f, 1f)
+    internal fun urgencyOf(diffMs: Long, daysLeft: Int): Urgency = when {
+        diffMs < -MILLIS_PER_DAY -> Urgency.OVERDUE
+        diffMs <= 0 -> Urgency.TODAY
+        daysLeft <= 3 -> Urgency.SOON
+        else -> Urgency.LATER
     }
 
-    /**
-     * 构建未来 [DECAY_CURVE_DAYS] 天的留存率序列，用于绘制衰减曲线。
-     * index 0 = 今天（Δt = 已经过的天数），index i = 第 i 天后。
-     */
-    private fun buildDecayCurve(strength: Float, now: Long, lastStudyTime: Long): List<Float> {
-        if (strength <= 0f) return emptyList()
-        val elapsedDays = daysSince(lastStudyTime, now)
-        return List(DECAY_CURVE_DAYS + 1) { dayOffset ->
-            retentionRate(strength, elapsedDays + dayOffset)
-        }
-    }
-
-    /** 两条时间戳相差的天数（浮点，保留精度用于模型计算） */
-    private fun daysSince(timestamp: Long, now: Long): Float {
-        return (now - timestamp).toFloat() / MILLIS_PER_DAY
-    }
-
-    /**
-     * 加权衰减正确率：最近 5 次练习，越近权重越大。
-     * 避免单次正确率波动误导模型与调度微调。
+    /** 加权衰减正确率：最近 5 次练习，越近权重越大。
+     *  它仍参与模板兜底的间隔微调（autoAdjust），但不再决定留存率。
      */
     private fun weightedAccuracy(records: List<PracticeRecord>): Float {
         if (records.isEmpty()) return 0f

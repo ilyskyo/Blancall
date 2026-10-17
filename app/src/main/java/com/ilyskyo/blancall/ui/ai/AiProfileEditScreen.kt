@@ -62,6 +62,9 @@ fun AiProfileEditScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
+            // 表单最后一栏（API Key）本来就贴着底栏，edge-to-edge 下 adjustResize 实测零位移，
+            // 没有这一条键盘会把它整条盖掉（与 AiScreen / PracticeScreen 同一处理）
+            .imePadding()
             .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.TopCenter
     ) {

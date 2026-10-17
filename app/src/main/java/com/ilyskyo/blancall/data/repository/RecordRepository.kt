@@ -82,7 +82,11 @@ class RecordRepository(private val filePath: String) {
                         blankIndex = m.optInt("blankIndex", 0),
                         correctAnswer = m.optString("correctAnswer", ""),
                         userAnswer = m.optString("userAnswer", ""),
-                        errorType = m.optString("errorType", "")
+                        errorType = m.optString("errorType", ""),
+                        // 旧记录无此字段 → -1（热力图对该处回退比例估算，并标「位置为估算」）
+                        sentenceIndex = m.optInt("sentenceIndex", -1),
+                        // 旧记录无此字段 → -1（逐空轻重分不出来，只能看会话级均值）
+                        similarity = m.optDouble("similarity", -1.0).toFloat()
                     )
                 )
             }
@@ -278,6 +282,10 @@ class RecordRepository(private val filePath: String) {
             mObj.put("correctAnswer", m.correctAnswer)
             mObj.put("userAnswer", m.userAnswer)
             mObj.put("errorType", m.errorType)
+            // 只在拿得到精确落点时写：records.jsonl 是无界追加的学习档案，
+            // 每条错处都挂一个 -1 只会放大文件，读侧的默认值本来就是 -1
+            if (m.sentenceIndex >= 0) mObj.put("sentenceIndex", m.sentenceIndex)
+            if (m.similarity >= 0f) mObj.put("similarity", m.similarity.toDouble())
             mistakesArr.put(mObj)
         }
         obj.put("mistakes", mistakesArr)
@@ -305,6 +313,48 @@ class RecordRepository(private val filePath: String) {
         saveToFile()
     }
 
+    /**
+     * 「导出并归档旧记录」（审计 2.2-15 的出口）：取**最旧的** [count] 条（按时间正序）。
+     *
+     * 与 [removeByIds] 配对使用、刻意拆成两步：先导出成功、再裁剪 ——
+     * 任何一步失败都不会丢用户履历（宁可归档不成，不可静默淘汰）。
+     */
+    suspend fun oldestRecords(count: Int): List<PracticeRecord> {
+        awaitLoaded()
+        if (count <= 0) return emptyList()
+        return synchronized(stateLock) { _records.value.sortedBy { it.timestamp }.take(count) }
+    }
+
+    /** 归档文件内容：与主库同一套字段编码（JSONL）——用户拿到手的文件可读、可与 records.json 对照 */
+    internal fun archiveJson(records: List<PracticeRecord>): String = serializeRecords(records)
+
+    /** 按 id 批量删除（归档裁剪用）；返回实际删除数。落盘路径与 [deleteByArticleId] 相同 */
+    suspend fun removeByIds(ids: Set<Long>): Int {
+        if (ids.isEmpty()) return 0
+        awaitLoaded()
+        val removed: Int
+        synchronized(stateLock) {
+            val before = _records.value
+            val after = before.filter { it.id !in ids }
+            removed = before.size - after.size
+            if (removed > 0) {
+                _records.value = after
+                articleIndex = after.groupBy { it.articleId }
+            }
+        }
+        if (removed > 0) saveToFile()
+        return removed
+    }
+
+    /**
+     * 备份导入后重载（B1-3）：等首载完成后在写锁内重读整库。
+     * loadFromFile 是全量替换语义、重入安全；与 insert/删除同持 fileMutex 防写读交错。
+     */
+    suspend fun reload() {
+        loadLatch.await()
+        fileMutex.withLock { loadFromFile() }
+    }
+
     /** 挂起查询：先等待异步加载完成，避免冷启动时返回空结果；走内存索引 O(k) */
     suspend fun getByArticleId(articleId: Long): List<PracticeRecord> {
         awaitLoaded()
@@ -313,6 +363,9 @@ class RecordRepository(private val filePath: String) {
     }
 
     companion object {
+        /** 归档时保留的最近记录条数：只有更旧的记录才允许被导出归档（产品默认：1000 条） */
+        const val ARCHIVE_KEEP_RECENT = 1000
+
         @Volatile
         private var INSTANCE: RecordRepository? = null
 

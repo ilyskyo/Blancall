@@ -8,15 +8,28 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /**
  * 按压缩放的档位：元素越大，按下去收得越少。
@@ -70,7 +83,12 @@ private fun PressTier.pressedScale(): Float = when (this) {
  *
  * 为什么必须自己补悬停与焦点高亮：M3 的 `ripple()` 同时兼职画 focus/hover 高亮，
  * 把 `indication` 关掉会连无障碍可见性一起抹掉。所以这里保留三态 ——
- * 按下（缩放＋变暗）、悬停、键盘焦点（后两者只变亮度、不位移）。
+ * 按下（缩放＋变暗）、悬停、键盘焦点。
+ * 而**焦点**除变暗之外还要一圈框：`Motion.hoverAlpha` 只有 4% 的亮度差，
+ * 拿它当唯一的焦点线索，方向键 / 开关无障碍用户其实认不出焦点落在哪
+ * （Phase 3 验收项「关涟漪后焦点框仍可见」）。Compose 1.10.4 这套依赖里
+ * 没有 `drawFocusIndicator`（1090 个 jar 全扫过，零命中），所以这圈框只能自绘 ——
+ * 用 `border(…, Color.Transparent, …)` 占位再换色，它不占布局，切换时不抖动。
  * 也因此**不要**改用全局 `LocalIndication provides null`：
  * 那会把没接入本反馈的组件的焦点框一并删掉。
  *
@@ -94,10 +112,25 @@ fun Modifier.pressFeedback(
     interactionSource: MutableInteractionSource,
     tier: PressTier = PressTier.Card,
     enabled: Boolean = true,
+    ringRadius: Dp? = null,
+    ringWidth: Dp = 2.dp,
+    layerShape: Shape = RectangleShape,
+    dimOnPress: Boolean = true,
 ): Modifier {
     val pressed = interactionSource.collectIsPressedAsState()
     val hovered = interactionSource.collectIsHoveredAsState()
     var focused by remember { mutableStateOf(false) }
+    var ringShown by remember { mutableStateOf(false) }
+    var sawPress by remember { mutableStateOf(false) }
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            if (interaction is PressInteraction.Press) {
+                // 焦点先于按下到达时也要收框
+                sawPress = true
+                ringShown = false
+            }
+        }
+    }
 
     val scale by animateFloatAsState(
         targetValue = if (enabled && pressed.value) tier.pressedScale() else 1f,
@@ -108,7 +141,7 @@ fun Modifier.pressFeedback(
     // 否则会读成「先暗一下、再沉下去」两件事，而不是一次按下。
     val dim by animateFloatAsState(
         targetValue = when {
-            !enabled -> 1f
+            !enabled || !dimOnPress -> 1f
             pressed.value -> Motion.pressedAlpha
             hovered.value || focused -> Motion.hoverAlpha
             else -> 1f
@@ -116,9 +149,54 @@ fun Modifier.pressFeedback(
         animationSpec = MotionFade.alpha(MotionFade.pressAlpha),
         label = "pressDim"
     )
+    // 焦点框要压在内容之上：本修饰符在调用方的 background/border **之前**，
+    // 若也用 border 会被后面那层玻璃面盖住（GlassButton 正是那条链），所以走 drawWithContent。
+    val density = LocalDensity.current
+    val ringColor = MaterialTheme.colorScheme.primary
+    val strokePx = with(density) { ringWidth.toPx() }
+    val circle = ringRadius == null && tier == PressTier.Icon
+    val radiusPx = with(density) { (ringRadius ?: 14.dp).toPx() }
     return this
-        .onFocusEvent { focused = it.isFocused }
+        .onFocusEvent {
+            focused = it.isFocused
+            // 手指点过之后节点仍持有焦点；只给「没有按下过的焦点」画框，
+            // 否则一圈会永久停在最后点过的那张卡片上。
+            // 本套 Compose（1.10.4）的 FocusState 没有 focusCause —— 判据只能从
+            // interactionSource 自己拿：触摸/点击必然先送一次 PressInteraction.Press。
+            if (it.isFocused) ringShown = !sawPress else ringShown = false
+        }
+        .drawWithContent {
+            drawContent()
+            if (ringShown) {
+                // 描边是居中画的，让出半个线宽使整条线留在框内
+                val inset = strokePx / 2f
+                val box = Size(size.width - inset * 2f, size.height - inset * 2f)
+                val at = Offset(inset, inset)
+                if (circle) {
+                    drawOval(
+                        color = ringColor,
+                        size = box,
+                        topLeft = at,
+                        style = Stroke(width = strokePx)
+                    )
+                } else {
+                    drawRoundRect(
+                        color = ringColor,
+                        size = box,
+                        topLeft = at,
+                        cornerRadius = CornerRadius(radiusPx),
+                        style = Stroke(width = strokePx)
+                    )
+                }
+            }
+        }
         .graphicsLayer {
+            // 轮廓必须显式给成调用方那块面的形状：graphicsLayer 一激活（缩放或亮度离开 1）
+            // 就接管本节点的 outline，而 Surface 的 elevation 投影是照这个 outline 生成的。
+            // 不写这行时 outline 退化成 40×40 的**方**框 —— 静止时看着是圆的，
+            // 手指一按下去白盘外面立刻浮出一圈方的阴影（用户 2026-10-09 截图指出的就是这个）。
+            // clip 保持 false：只要轮廓，不裁内容。
+            shape = layerShape
             scaleX = scale
             scaleY = scale
             alpha = dim
@@ -140,12 +218,13 @@ fun Modifier.pressFeedback(
 fun Modifier.combinedPress(
     tier: PressTier = PressTier.Card,
     enabled: Boolean = true,
+    ringRadius: Dp? = null,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier {
     val src = remember { MutableInteractionSource() }
     return this
-        .pressFeedback(src, tier, enabled)
+        .pressFeedback(src, tier, enabled, ringRadius)
         .combinedClickable(
             interactionSource = src,
             indication = null,
@@ -166,11 +245,12 @@ fun Modifier.combinedPress(
 fun Modifier.pressClick(
     tier: PressTier = PressTier.Card,
     enabled: Boolean = true,
+    ringRadius: Dp? = null,
     onClick: () -> Unit,
 ): Modifier {
     val src = remember { MutableInteractionSource() }
     return this
-        .pressFeedback(src, tier, enabled)
+        .pressFeedback(src, tier, enabled, ringRadius)
         .clickable(
             interactionSource = src,
             indication = null,

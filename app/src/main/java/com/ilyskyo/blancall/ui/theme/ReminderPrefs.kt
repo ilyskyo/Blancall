@@ -57,6 +57,22 @@ object ReminderPrefs {
     private val _dailyPracticeGoalFlow = MutableStateFlow(3)
     val dailyPracticeGoalFlow: StateFlow<Int> = _dailyPracticeGoalFlow.asStateFlow()
 
+    // ── 免打扰时段（默认 22:00–08:00，可整体关闭）──
+    // 默认**开启**：免打扰的价值在于「默认就对」，要用户先手动打开才生效等于默认不生效。
+    // 默认窗口 22–08 不覆盖默认提醒时间 20:00，因此对未改动默认值的用户零影响。
+    private val _quietHoursEnabledFlow = MutableStateFlow(true)
+    val quietHoursEnabledFlow: StateFlow<Boolean> = _quietHoursEnabledFlow.asStateFlow()
+
+    private val _quietStartHourFlow = MutableStateFlow(22)
+    val quietStartHourFlow: StateFlow<Int> = _quietStartHourFlow.asStateFlow()
+
+    private val _quietEndHourFlow = MutableStateFlow(8)
+    val quietEndHourFlow: StateFlow<Int> = _quietEndHourFlow.asStateFlow()
+
+    // ── 「尽量准时」开关（默认关，见 punctualEnabled 的说明）──
+    private val _punctualEnabledFlow = MutableStateFlow(false)
+    val punctualEnabledFlow: StateFlow<Boolean> = _punctualEnabledFlow.asStateFlow()
+
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("reminder_prefs", Context.MODE_PRIVATE)
@@ -69,6 +85,10 @@ object ReminderPrefs {
         _studyStreakDays.value = prefs.getInt("study_streak_days", 0)
         _longestStreakDays.value = prefs.getInt("longest_streak_days", 0)
         _dailyPracticeGoalFlow.value = prefs.getInt("daily_practice_goal", 3)
+        _quietHoursEnabledFlow.value = prefs.getBoolean("quiet_hours_enabled", true)
+        _quietStartHourFlow.value = prefs.getInt("quiet_start_hour", 22)
+        _quietEndHourFlow.value = prefs.getInt("quiet_end_hour", 8)
+        _punctualEnabledFlow.value = prefs.getBoolean("punctual_enabled", false)
     }
 
     var enabled: Boolean
@@ -146,6 +166,57 @@ object ReminderPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putInt("daily_practice_goal", value) }
                 _dailyPracticeGoalFlow.value = value
+            }
+        }
+
+    /** 免打扰时段是否启用（默认开启，窗口默认 22:00–08:00） */
+    var quietHoursEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("quiet_hours_enabled", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("quiet_hours_enabled", value) }
+                _quietHoursEnabledFlow.value = value
+            }
+        }
+
+    /** 免打扰起始小时（0–23，默认 22） */
+    var quietStartHour: Int
+        get() = if (::prefs.isInitialized) prefs.getInt("quiet_start_hour", 22) else 22
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putInt("quiet_start_hour", value) }
+                _quietStartHourFlow.value = value
+            }
+        }
+
+    /** 免打扰结束小时（0–23，默认 8；起=止 视为不静默，见 ReminderPlan.isQuietHour） */
+    var quietEndHour: Int
+        get() = if (::prefs.isInitialized) prefs.getInt("quiet_end_hour", 8) else 8
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putInt("quiet_end_hour", value) }
+                _quietEndHourFlow.value = value
+            }
+        }
+
+    /**
+     * 「尽量准时」开关（默认关）。
+     *
+     * **当前刻意只保留开关位，不实现精确路径。** 理由：
+     * 学习提醒不属于「闹钟 / 日历 / 通话」这类 Google Play 认可的精确闹钟正当用途，
+     * 为此声明 `SCHEDULE_EXACT_ALARM` 属高风险类别、上架审核会被打回；
+     * 而不声明权限时 `AlarmManager.setExactAndAllowWhileIdle` 在 API 31+ 会抛
+     * `SecurityException`，还得额外接 `canScheduleExactAlarms()` 降级、注册
+     * `ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED` 接收器并改 Manifest ——
+     * 收益（提醒准几分钟）远小于改动面与合规风险。因此维持纯 WorkManager 自调度。
+     * 留这个开关位是为了：将来若定位变化（如用户可选「用作闹钟」），UI 与存储已就位。
+     */
+    var punctualEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("punctual_enabled", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("punctual_enabled", value) }
+                _punctualEnabledFlow.value = value
             }
         }
 

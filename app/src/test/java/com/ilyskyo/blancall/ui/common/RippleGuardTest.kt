@@ -68,6 +68,27 @@ class RippleGuardTest {
         )
     }
 
+    /**
+     * 法则五的另一半：关涟漪**不能把焦点框一起关掉**（计划 Phase 3 验收项）。
+     *
+     * 断言写在抹掉注释与字面量之后的源码上 —— 只在 KDoc 里写一句「我们保留了焦点框」
+     * 不算数，这条守卫要看见画它的那段代码。
+     */
+    @Test
+    fun 关涟漪没有把焦点可见性一起关掉() {
+        val file = File("src/main/java/com/ilyskyo/blancall/ui/common/PressFeedback.kt")
+        assertTrue("找不到 ${file.absolutePath}", file.isFile)
+        val body = blankOutCommentsAndLiterals(file.readText())
+        listOf(
+            "onFocusEvent" to "焦点状态没被读出来，框无从画起",
+            "drawWithContent" to "焦点框必须压在调用方的背景之上（border 会被玻璃面盖住）",
+            "ringShown" to "没有焦点框的开关状态",
+            "PressInteraction.Press" to "触摸后节点仍持有焦点，缺这条判据就会有一圈永久停在最后点过的卡片上"
+        ).forEach { (token, why) ->
+            assertTrue("pressFeedback 里找不到 $token —— $why", body.contains(token))
+        }
+    }
+
     private fun blankOutCommentsAndLiterals(src: String): String {
         val out = StringBuilder(src.length)
         var i = 0

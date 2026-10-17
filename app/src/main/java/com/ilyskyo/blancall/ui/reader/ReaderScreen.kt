@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.reader
 
+import android.widget.Toast
 import com.ilyskyo.blancall.ui.common.FadeDialogWindow
 import com.ilyskyo.blancall.ui.common.StateSwap
 import androidx.activity.compose.BackHandler
@@ -24,6 +25,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.Motion
@@ -160,6 +163,20 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
         }
     }
 
+    // 编辑保存后若清掉了失效的句子记忆状态，明确告诉用户一句 —— 那些句子的学习进度
+    // 是真被删了（不是「迁移」），不说就等于静默扣掉用户的数据。消费后归零，避免重复弹。
+    val orphanPruned by articleViewModel.orphanStatesPruned.collectAsState()
+    LaunchedEffect(orphanPruned) {
+        if (orphanPruned > 0) {
+            Toast.makeText(
+                context,
+                context.getString(com.ilyskyo.blancall.R.string.sentence_states_pruned, orphanPruned),
+                Toast.LENGTH_LONG
+            ).show()
+            articleViewModel.consumeOrphanNotice()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -223,7 +240,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                         enabled = editTitle.isNotBlank(),
                         modifier = Modifier.height(40.dp)
                     ) {
-                        Text("保存", style = MaterialTheme.typography.labelMedium,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.save), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
@@ -289,7 +306,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 kind = AppIconKind.MoreVert,
                                 tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(22.dp),
-                                contentDescription = "更多"
+                                contentDescription = stringResource(com.ilyskyo.blancall.R.string.more)
                             )
                         }
                         GlassDropdownMenu(
@@ -300,7 +317,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             GlassMenuItem(
                                 onClick = { showMoreMenu = false; isEditing = true },
                                 label = {
-                                    Text("编辑", style = MaterialTheme.typography.bodyMedium,
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.edit), style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface)
                                 }
                             )
@@ -311,7 +328,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                     navController.navigate("custom_cloze_list/${art.id}")
                                 },
                                 label = {
-                                    Text("自定义挖空", style = MaterialTheme.typography.bodyMedium,
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.custom_cloze), style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface)
                                 }
                             )
@@ -319,7 +336,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             GlassMenuItem(
                                 onClick = { showMoreMenu = false; showDeleteDialog = true },
                                 label = {
-                                    Text("删除", style = MaterialTheme.typography.bodyMedium,
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.delete), style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.error)
                                 }
                             )
@@ -415,6 +432,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                         modifier = Modifier
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.background)
+                            // edge-to-edge 下 manifest 的 adjustResize 实测不生效（窗口零位移），
+                            // imePadding 是把「内容」这一栏抬到键盘之上的唯一手段；放在 background 之后，
+                            // 键盘弹起的动画过程中不会在底部露出下层阅读内容。
+                            .imePadding()
                             .graphicsLayer {
                                 val p = editBackProgress.value
                                 val s = Motion.backShrinkScale(p)
@@ -428,7 +449,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 value = editTitle,
                                 onValueChange = { editTitle = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("标题") },
+                                label = { Text(stringResource(com.ilyskyo.blancall.R.string.field_title)) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(10.dp)
                             )
@@ -437,7 +458,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 value = editAuthor,
                                 onValueChange = { editAuthor = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("作者（选填）") },
+                                label = { Text(stringResource(com.ilyskyo.blancall.R.string.field_author_optional)) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(10.dp)
                             )
@@ -502,7 +523,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f),
-                                label = { Text("内容") },
+                                label = { Text(stringResource(com.ilyskyo.blancall.R.string.field_content)) },
                                 shape = RoundedCornerShape(10.dp)
                             )
 
@@ -513,7 +534,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "${editContent.length} 字符",
+                                    pluralStringResource(com.ilyskyo.blancall.R.plurals.char_count, editContent.length, editContent.length),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -525,7 +546,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                             tint = MaterialTheme.colorScheme.primary
                                         )
                                         Spacer(Modifier.width(4.dp))
-                                        Text("全屏编辑")
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.fullscreen_edit))
                                     }
                                 }
                             }
@@ -577,15 +598,15 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    GlassActionItem("学习统计", Modifier.weight(1f), enabled = barVisible) {
+                    GlassActionItem(stringResource(com.ilyskyo.blancall.R.string.reader_stats), Modifier.weight(1f), enabled = barVisible) {
                         navController.navigate("statistics/${art.id}")
                     }
-                    GlassActionItem("阅读模式", Modifier.weight(1f), enabled = barVisible) {
+                    GlassActionItem(stringResource(com.ilyskyo.blancall.R.string.reader_mode), Modifier.weight(1f), enabled = barVisible) {
                         readingMode = true
                     }
                     // 句子卡：进入句子卡片大卡片界面（沿用既有 sentence_cards 全局入口路由；
                     // 无触点锚点时浮起转场自动回退默认动画，不会错乱）
-                    GlassActionItem("句子卡", Modifier.weight(1f), enabled = barVisible) {
+                    GlassActionItem(stringResource(com.ilyskyo.blancall.R.string.reader_sentence_cards), Modifier.weight(1f), enabled = barVisible) {
                         navController.navigate("sentence_cards")
                     }
                     // AI 对话入口（设置中启用 AI 功能后才显示）
@@ -597,7 +618,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                         }
                     }
                     GlassActionItem(
-                        "开始练习",
+                        stringResource(com.ilyskyo.blancall.R.string.reader_start_practice),
                         Modifier
                             .weight(1f)
                             .onGloballyPositioned { coords ->
@@ -622,7 +643,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
             ) {
                 // 加载失败（文章不存在）时给出提示，而非永久转圈
                 if (loadFailed) {
-                    Text("文章不存在", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(com.ilyskyo.blancall.R.string.article_missing), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     CircularProgressIndicator()
                 }
@@ -660,8 +681,8 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     if (showDeleteDialog) {
         article?.let { art ->
             DeleteConfirmDialog(
-                title = "确认删除",
-                message = "确定要删除「${art.title}」吗？\n删除后无法恢复。",
+                title = stringResource(com.ilyskyo.blancall.R.string.confirm_delete_title),
+                message = stringResource(com.ilyskyo.blancall.R.string.confirm_delete_message, art.title),
                 onConfirm = {
                     articleViewModel.deleteArticle(art)
                     showDeleteDialog = false
@@ -725,9 +746,9 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("全屏编辑", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(com.ilyskyo.blancall.R.string.fullscreen_edit), style = MaterialTheme.typography.titleMedium)
                 TextButton(onClick = { showFullscreenEdit = false }) {
-                    Text("完成")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.done))
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -742,14 +763,14 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .defaultMinSize(minHeight = 400.dp),
-                    label = { Text("内容") },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.field_content)) },
                     shape = RoundedCornerShape(10.dp),
                     maxLines = Int.MAX_VALUE
                 )
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "${editContent.length} 字符",
+                pluralStringResource(com.ilyskyo.blancall.R.plurals.char_count, editContent.length, editContent.length),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

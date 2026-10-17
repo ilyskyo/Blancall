@@ -80,6 +80,9 @@ class TagStore private constructor(private val file: File) {
                 loadFailed = false
                 return migrate(JSONObject(file.readText()))
             } catch (_: Exception) {
+                // 主文件损坏：先把「损坏过」记成粘性标记，再保留现场落到下方备份分支。
+                // 只靠尾部的 file.exists() 判不出来 —— preserveCorruptFile 用 renameTo 把主文件搬走了。
+                loadFailed = true
                 preserveCorruptFile()
             }
         }
@@ -92,8 +95,10 @@ class TagStore private constructor(private val file: File) {
                 // 备份也不可用，落到下方
             }
         }
-        // 文件确实不存在（首次使用）→ 空库；文件存在却读不出来且无备份 → 危险状态，禁止写盘
-        loadFailed = file.exists()
+        // 直接返回空库：loadFailed 保留「是否损坏过」的粘性结论 ——
+        // 首次使用为 false（正常空库、可写）；主文件损坏且备份也不可用时为 true（writeRoot 拒绝写盘）。
+        // 旧写法 `loadFailed = file.exists()` 恒为 false（主文件已被改名搬走），会把危险路径放行成
+        // 「首次使用」，下一次保存即以空 root 抹掉全部标签与文章关联。
         return JSONObject()
     }
 
@@ -108,6 +113,11 @@ class TagStore private constructor(private val file: File) {
     /** 版本迁移钩子（当前无实际步骤；未来字段以 optXxx 可选解析，向后兼容） */
     private fun migrate(root: JSONObject): JSONObject {
         val v = root.optInt("version", 1)
+        // 高于本版本认识的：拒绝读写（详见 StoreVersion）。标签与文章关联一旦抹掉就没有第二份
+        if (StoreVersion.isFromNewerApp(v, CURRENT_VERSION, "TagStore")) {
+            loadFailed = true
+            return root
+        }
         if (v < CURRENT_VERSION) root.put("version", CURRENT_VERSION)
         return root
     }

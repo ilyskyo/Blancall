@@ -44,6 +44,14 @@ class MaskConfigStore private constructor(private val file: File) {
     fun getRevision(): Long = synchronized(lock) { revision }
 
     /**
+     * 备份导入后重载（B1-3）：配置读取本就是每次读盘（readRoot），
+     * 这里只推进 revision —— 让以它为刷新信号的消费方知道「盘换了」。
+     */
+    fun reload() {
+        synchronized(lock) { revision++ }
+    }
+
+    /**
      * 读盘失败标记（主文件与备份都解析不了时为 true）。
      * 用于阻止随后的写盘：内存里此时是空 root，写下去会把其他文章的全部配置抹掉。
      */
@@ -104,6 +112,12 @@ class MaskConfigStore private constructor(private val file: File) {
     /** 版本迁移钩子：未来 schema 变更在此逐级迁移（当前无可迁移步骤，仅就位结构） */
     private fun migrate(root: JSONObject): JSONObject {
         val v = root.optInt("version", 1)
+        // 盘上版本高于本版本认识的：拒绝读写。降级/导入新版备份时，本版本不认识的那些字段
+        // 会在下一次重建条目时被静默抹掉 —— 报错并原样留住文件，比"尽力读"诚实。
+        if (StoreVersion.isFromNewerApp(v, CURRENT_VERSION, "MaskConfigStore")) {
+            loadFailed = true
+            return root
+        }
         if (v < CURRENT_VERSION) {
             // v1 → v2 …：逐级迁移后写回当前版本（本次仅在内存中标记，随下次写盘持久化）
             root.put("version", CURRENT_VERSION)

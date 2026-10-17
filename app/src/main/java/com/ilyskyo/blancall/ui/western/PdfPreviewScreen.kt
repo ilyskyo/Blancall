@@ -225,9 +225,18 @@ internal fun copyAssetToCache(context: android.content.Context, asset: String): 
         val name = asset.substringAfterLast("/")
         val out = File(context.cacheDir, "pdfview/$name")
         out.parentFile?.mkdirs()
+        val stamp = File(out.parentFile, "$name.stamp")
+        // 素材随 APK 一起发版，同一 versionCode 下缓存副本必然等同源文件；
+        // 此前每次打开预览都重拷一遍（gaokao_full.pdf 实测 10.25 MB，全在首帧前同步 IO 里）。
+        // 用 versionCode 而不是文件长度：PDF 走的是压缩资源，openFd 拿不到长度。
+        val ver = context.packageManager.getPackageInfo(context.packageName, 0)
+            .versionCode.toString()
+        if (out.exists() && runCatching { stamp.readText() == ver }.getOrDefault(false)) return out
         context.assets.open(asset).use { input ->
             out.outputStream().use { output -> input.copyTo(output) }
         }
+        // 章写失败不影响已复制好的文件，下次大不了重拷
+        runCatching { stamp.writeText(ver) }
         out
     } catch (_: Exception) { null }
 }

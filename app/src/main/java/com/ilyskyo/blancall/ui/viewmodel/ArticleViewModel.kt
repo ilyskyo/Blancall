@@ -7,6 +7,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
@@ -15,11 +16,14 @@ import com.ilyskyo.blancall.data.repository.HomeLayoutStore
 import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
 import com.ilyskyo.blancall.data.repository.TagStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -29,6 +33,21 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
     private val repository = ArticleRepository.getInstance(
         application.filesDir.resolve("articles.json").absolutePath
     )
+
+    /**
+     * 编辑保存后「已清理多少句失效记忆状态」的一次性提示数（0 = 无提示）。
+     *
+     * 走 StateFlow 而不是回调：清理发生在 VM 的协程里，而提示要在编辑页上弹 Toast ——
+     * 回调会把这个协程的生命周期绑到某个 Composable 上，退出编辑页时回调就丢了，
+     * 于是「改了文章但没告诉我状态被清了」这类静默丢失又回来了。UI 消费后调 [consumeOrphanNotice]。
+     */
+    private val _orphanStatesPruned = MutableStateFlow(0)
+    val orphanStatesPruned: StateFlow<Int> = _orphanStatesPruned.asStateFlow()
+
+    /** 提示已展示，计数归零（避免旋转屏幕后重复弹） */
+    fun consumeOrphanNotice() {
+        _orphanStatesPruned.value = 0
+    }
 
     val articles: StateFlow<List<Article>> = repository.allArticles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -93,6 +112,10 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
                                 HomeLayoutStore.CardType.CUSTOM_MASK ->
                                     c.articleId == article.id ||
                                         (c.articleId <= 0L && runCatching { maskStore.findArticleIdByConfigId(c.refId) }.getOrNull() == article.id)
+                                // 文章卡漏了这一支时，删掉文章后卡还留在首页，渲染成一张永远点不开的空卡
+                                // （ArticleCard 拿到 article=null 只显示空态，用户只能再长按删一次）
+                                HomeLayoutStore.CardType.ARTICLE ->
+                                    c.refId == article.id || c.id == HomeLayoutStore.articleCardId(article.id)
                                 else -> false
                             }
                         }
@@ -106,6 +129,10 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
                         SentenceCardStore.getInstance(filesDir).clearIfArticle(article.id)
                         // 文章标签：级联解绑该文章的全部标签（标签本体保留）
                         TagStore.getInstance(filesDir).removeArticle(article.id)
+                        // 按文章的阅读设置存档：本类此前没有 removeArticle API，所以这条一直在漏，
+                        // 每删一篇永久留一条孤儿，reader_prefs.json 只增不减
+                        // （getInstance 收 Context 而非 filesDir，与其余 Store 不同，沿用其既有形态）
+                        ReaderPrefsStore.getInstance(getApplication()).removeArticle(article.id)
                         // 错题墨迹存档：按文章联动清理（同一步 IO 内完成，避免主线程扫描目录）
                         InkStore.getInstance(filesDir.resolve("ink").absolutePath)
                             .deleteByArticleId(article.id)
@@ -123,9 +150,36 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 repository.update(article.copy(updatedAt = System.currentTimeMillis()))
+                pruneOrphanSentenceStates(article)
             } catch (e: Exception) {
                 Log.e("ArticleViewModel", "updateArticle failed", e)
             }
+        }
+    }
+
+    /**
+     * 编辑期句子孤儿清理（2026-10-13 用户拍板：**prune + 提示**，不做「迁移」）。
+     *
+     * 为什么选 prune：迁移要按相似度把旧句的记忆状态搬到新句，而相似度会误配 ——
+     * 把 A 句的记忆挂到 B 句上，界面上完全看不出来（两句都「有状态」），
+     * 却让调度器按一句从未被记过的话来安排复习，比没有状态更难发现、更难纠正。
+     * prune 的代价只是「改写过的句子要重新学」——这个代价用户看得见，也补得回来。
+     *
+     * 失败一律静默：清理是存储卫生，不该让「保存文章」这件事失败。
+     */
+    private suspend fun pruneOrphanSentenceStates(article: Article) {
+        try {
+            val store = FsrsStateStore.getInstance(
+                getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
+            )
+            store.awaitLoaded()
+            val orphans = SentenceSelector.orphanSentenceKeys(
+                store.allSentenceStates().keys, article.id, article.content
+            )
+            val removed = store.removeSentenceKeys(orphans)
+            if (removed > 0) _orphanStatesPruned.value = removed
+        } catch (e: Exception) {
+            Log.e("ArticleViewModel", "pruneOrphanSentenceStates failed", e)
         }
     }
 

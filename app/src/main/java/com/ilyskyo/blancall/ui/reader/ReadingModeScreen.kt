@@ -56,11 +56,14 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextAlign
+import com.ilyskyo.blancall.ui.common.GlassButton
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -306,21 +309,24 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     }
     // 预计剩余阅读时间：按当前位置到文末的剩余字数估算（约 350 字/分钟），随滚动/翻页实时联动
     val totalChars = article.content.length.coerceAtLeast(1)
-    // 累计已阅读时长：只显示分钟（向下取整，不做四舍五入）
-    val elapsedMinText by remember { derivedStateOf {
-        val m = liveSeconds / 60
-        if (m >= 1) "已阅读：$m 分钟" else "已阅读：不足 1 分钟"
-    } }
-    val estimatedRemainingText by remember { derivedStateOf {
-        // 剩余比例 = 1 - 当前进度：滑回（进度后退）剩余时间随之变多，不依赖累计已读时长
-        val remainRatio = (1f - progressFraction).coerceIn(0f, 1f)
-        val remainSec = (totalChars * remainRatio / 350f * 60f).toLong()
-        when {
-            remainRatio <= 0.005f -> "已读完"
-            remainSec < 60L -> "预计还需：不足 1 分钟"
-            else -> "预计还需：${(remainSec / 60).coerceAtLeast(1)} 分钟"
-        }
-    } }
+    // 累计已阅读时长：只显示分钟（向下取整，不做四舍五入）；数值照旧，文案按语言在组合层组装
+    val elapsedMinutes by remember { derivedStateOf { liveSeconds / 60 } }
+    val elapsedMinText = if (elapsedMinutes >= 1) {
+        stringResource(com.ilyskyo.blancall.R.string.reader_read_minutes, elapsedMinutes)
+    } else {
+        stringResource(com.ilyskyo.blancall.R.string.reader_read_less_minute)
+    }
+    // 剩余比例 = 1 - 当前进度：滑回（进度后退）剩余时间随之变多，不依赖累计已读时长
+    val remainRatio by remember { derivedStateOf { (1f - progressFraction).coerceIn(0f, 1f) } }
+    val remainSec by remember { derivedStateOf { (totalChars * remainRatio / 350f * 60f).toLong() } }
+    val estimatedRemainingText = when {
+        remainRatio <= 0.005f -> stringResource(com.ilyskyo.blancall.R.string.reader_finished)
+        remainSec < 60L -> stringResource(com.ilyskyo.blancall.R.string.reader_remaining_less_minute)
+        else -> stringResource(
+            com.ilyskyo.blancall.R.string.reader_remaining_minutes,
+            (remainSec / 60).coerceAtLeast(1)
+        )
+    }
     // 每 20 秒自动落盘计时（防异常退出丢时间）
     LaunchedEffect(article.id) {
         while (true) {
@@ -520,8 +526,31 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                     onToggleControls = { controlsVisible = !controlsVisible }
                                 )
                                 if (sections.isEmpty()) {
-                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(color = accentColor)
+                                    // 空内容不是「还在等」而是「这里没有东西」：转圈说的是「等」，
+                                    // 文案说的是「走」，同屏两个指令会互相拆台 —— 所以整块撤掉
+                                    // CircularProgressIndicator，换成一句正文 + 一扇真的能走的门
+                                    // （onExit 是本屏唯一的退出回调，必须留在这条分支里可达）。
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(horizontal = 24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            stringResource(com.ilyskyo.blancall.R.string.reader_empty_placeholder),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(Modifier.height(16.dp))
+                                        GlassButton(onClick = onExit) {
+                                            Text(
+                                                stringResource(com.ilyskyo.blancall.R.string.back),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
                                     }
                                     return@setContent
                                 }
@@ -702,7 +731,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     GlassIconButton(onClick = onExit, buttonSize = 38.dp) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBackIos,
-                            contentDescription = "退出阅读",
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.reader_exit_cd),
                             tint = subColor,
                             modifier = Modifier.size(19.dp)
                         )
@@ -726,7 +755,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     GlassIconButton(onClick = { settingsVisible = true }, buttonSize = 38.dp) {
                         Icon(
                             imageVector = Icons.Outlined.FormatSize,
-                            contentDescription = "阅读设置",
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.reader_settings_cd),
                             tint = accentColor,
                             modifier = Modifier.size(19.dp)
                         )
@@ -771,7 +800,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBackIos,
-                            contentDescription = "上一节",
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.reader_prev_section),
                             tint = subColor,
                             modifier = Modifier.size(17.dp)
                         )
@@ -781,7 +810,11 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = if (layoutMode == 1) "${pagerState.currentPage + 1}/${sections.size}" else "全文",
+                        text = if (layoutMode == 1) {
+                            "${pagerState.currentPage + 1}/${sections.size}"
+                        } else {
+                            stringResource(com.ilyskyo.blancall.R.string.reader_full_text)
+                        },
                         style = MaterialTheme.typography.labelLarge,
                         color = textColor,
                         fontWeight = FontWeight.SemiBold
@@ -820,7 +853,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
-                            contentDescription = "下一节",
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.reader_next_section),
                             tint = subColor,
                             modifier = Modifier.size(17.dp)
                         )

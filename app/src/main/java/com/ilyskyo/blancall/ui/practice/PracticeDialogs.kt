@@ -13,6 +13,8 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 
@@ -31,7 +33,7 @@ internal fun IncompleteSubmitDialog(
         tonalElevation = 4.dp,
         title = {
             Text(
-                "还有 ${unfilledCount} 个空未完成",
+                pluralStringResource(com.ilyskyo.blancall.R.plurals.unfilled_title, unfilledCount, unfilledCount),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -40,13 +42,13 @@ internal fun IncompleteSubmitDialog(
         text = {
             Column {
                 Text(
-                    "你还有部分内容没有完成。",
+                    stringResource(com.ilyskyo.blancall.R.string.unfilled_line1),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "是否保存当前进度并提交？",
+                    stringResource(com.ilyskyo.blancall.R.string.unfilled_line2),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -56,11 +58,11 @@ internal fun IncompleteSubmitDialog(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        HintRow("只批改已完成的部分")
+                        HintRow(stringResource(com.ilyskyo.blancall.R.string.unfilled_hint1))
                         Spacer(Modifier.height(4.dp))
-                        HintRow("未填写内容不会计入错误统计")
+                        HintRow(stringResource(com.ilyskyo.blancall.R.string.unfilled_hint2))
                         Spacer(Modifier.height(4.dp))
-                        HintRow("当前练习进度会被保存，下次可以继续")
+                        HintRow(stringResource(com.ilyskyo.blancall.R.string.unfilled_hint3))
                     }
                 }
             }
@@ -70,7 +72,7 @@ internal fun IncompleteSubmitDialog(
                 onClick = onSubmitPartial,
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("保存并提交")
+                Text(stringResource(com.ilyskyo.blancall.R.string.save_and_submit))
             }
         },
         dismissButton = {
@@ -78,7 +80,7 @@ internal fun IncompleteSubmitDialog(
                 onClick = onContinue,
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("继续填写")
+                Text(stringResource(com.ilyskyo.blancall.R.string.keep_filling))
             }
         }
     )
@@ -112,10 +114,10 @@ internal fun ExportPdfDialog(
 ) {
     BlancallAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("导出PDF试卷") },
+        title = { Text(stringResource(com.ilyskyo.blancall.R.string.export_pdf_paper)) },
         text = {
             Column {
-                Text("选择导出格式：", style = MaterialTheme.typography.bodyMedium,
+                Text(stringResource(com.ilyskyo.blancall.R.string.export_pick_format), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -123,7 +125,7 @@ internal fun ExportPdfDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("📝 无答案版（纯试卷）")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.export_no_answer))
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
@@ -131,13 +133,13 @@ internal fun ExportPdfDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("📋 带答案版（末尾附答案）")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.export_with_answer))
                 }
             }
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
         }
     )
 }

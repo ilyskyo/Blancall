@@ -334,7 +334,9 @@ fun PdfPreviewScreenOptimized(
             )
         } else if ((textLoaded != null || textPages.isNotEmpty()) && (useVectorRendering || !isPdf)) {
             // 文本模式：PDF 按用户选择的模式；其余格式（Word/EPUB/HTML/RTF/MD/TXT）恒为文本预览
-            val content = textLoaded?.third ?: textPages.joinToString("\n\n") { it.text }
+            val content = remember(textPages, textLoaded) {
+                textLoaded?.third ?: textPages.joinToString("\n\n") { it.text }
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 TextContentReader(
                     title = displayTitle,
@@ -358,7 +360,7 @@ fun PdfPreviewScreenOptimized(
                         modifier = Modifier.fillMaxSize(),
                         userScrollEnabled = !isZoomed
                     ) {
-                        items(pageCount) { index ->
+                        items(pageCount, key = { it }) { index ->
                             ZoomablePdfPage(r, index, pageCount, isZoomed, onZoomChanged = { isZoomed = it })
                         }
                     }

@@ -126,6 +126,11 @@ class ArticleStorage(private val filePath: String) {
     }
 
     /** @return 是否发生了旧数据迁移（作者行从正文搬回 author 字段） */
+    /** 备份导入后重载（B1-3）：重读磁盘整体替换内存。loadFromFile 是整库替换语义，重入安全 */
+    fun reload() {
+        loadFromFile()
+    }
+
     private fun loadFromFile(): Boolean {
         try {
             val file = File(filePath)

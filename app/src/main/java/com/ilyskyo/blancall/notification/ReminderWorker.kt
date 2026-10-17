@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.notification
 
+import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
@@ -12,25 +13,35 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.ilyskyo.blancall.algorithm.DayBucket
+import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.data.model.PracticeStatus
+import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.theme.ReminderFrequency
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 
 /**
  * 每日学习提醒 Worker（CoroutineWorker）：
- * 1. 检查提醒设置是否开启
- * 2. 分析用户学习数据（今日是否学习、薄弱内容、未完成练习、连续天数）
- * 3. 发送智能通知
+ * 1. 检查提醒开关、提醒日与免打扰时段
+ * 2. 采集用户状态（今日练习次数、到期文章/句子、未完成练习、薄弱内容、句子卡）
+ * 3. 交给纯函数 [ReminderPlan.decide] 决定该发哪几条，再用 [ReminderStateStore] 做当日去重后发送
  * 4. 调度下一次提醒（按频率跳到下一个提醒日）
+ *
+ * 判定为什么搬去 [ReminderPlan]：以前这里既取数又拍板，`analyzeUserState` 直接 new 出一个
+ * `ReminderReason` —— 想加一条规则就得连 Android 上下文一起搬进测试，于是**根本没有测试**。
+ * 现在「取数」（本类，依赖 Android）与「拍板」（[ReminderPlan]，纯函数）分开，规则全部可单测。
  */
 class ReminderWorker(
     private val context: Context,
@@ -54,20 +65,43 @@ class ReminderWorker(
                 return Result.success()
             }
 
-            // 分析用户状态并发送通知
-            val reason = analyzeUserState()
+            val now = System.currentTimeMillis()
+
+            // 免打扰：命中就**跳过本次**，不顺延到时段结束。
+            // 顺延会把提醒堆到静默窗口结束的那一刻（用户刚睡醒就看到一串），反而更吵；
+            // 而且「到点提醒」一旦不准时，就失去了它作为习惯锚点的意义 —— 宁可今天不发。
+            if (ReminderPrefs.quietHoursEnabled && isInQuietHours(now)) {
+                Log.d(TAG, "命中免打扰时段，跳过本次")
+                scheduleNext(context)
+                return Result.success()
+            }
 
             // 通知总开关被关闭时跳过通知，但仍调度下一次（用户重新开启后可恢复）
-            if (NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-                NotificationHelper.showReminder(context, reason)
-            } else {
+            if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
                 Log.d(TAG, "通知已被用户关闭，跳过本次通知")
+                scheduleNext(context)
+                return Result.success()
             }
+
+            val plans = buildPlans(now)
+            val stateStore = ReminderStateStore.getInstance(context.filesDir)
+            var sent = 0
+            for (item in plans.take(MAX_PER_RUN)) {
+                if (!stateStore.shouldSend(item.reason, now)) {
+                    Log.d(TAG, "今日已发过 ${item.reason}，跳过")
+                    continue
+                }
+                NotificationHelper.showReminder(context, item)
+                stateStore.markSent(item.reason, now)
+                sent++
+            }
+            // 有子通知才发摘要（见 NotificationHelper.showGroupSummary 的说明）
+            if (sent > 0) NotificationHelper.showGroupSummary(context, sent)
 
             // 调度下一次提醒
             scheduleNext(context)
 
-            Log.d(TAG, "提醒已发送：${reason.javaClass.simpleName}")
+            Log.d(TAG, "提醒已处理：候选 ${plans.size} 条，实发 $sent 条")
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "发送提醒失败", e)
@@ -75,37 +109,57 @@ class ReminderWorker(
         }
     }
 
-    /**
-     * 分析用户学习数据，确定通知内容优先级：
-     * 优先级：未完成练习 > 薄弱内容 > 连续学习 > 今天没学
-     */
-    private suspend fun analyzeUserState(): ReminderReason {
-        // 1. 检查是否有未完成练习
-        val incompletePractice = findIncompletePractice()
-        if (incompletePractice != null) return incompletePractice
+    /** 采集全部判定输入并交给纯函数拍板（本方法只做「取数」，不做规则判断）。 */
+    private suspend fun buildPlans(now: Long): List<ReminderPlanItem> {
+        val fsrs = runCatching {
+            FsrsStateStore.getInstance(
+                context.filesDir.resolve("fsrs_state.json").absolutePath
+            )
+        }.getOrNull()
+        // 精确等待加载完成（带 2 秒上限），避免把「还没加载完」当成「没有到期」
+        fsrs?.let { withTimeoutOrNull(2000L) { it.awaitLoaded() } }
 
-        // 2. 今天是否已学习
-        val hasStudied = ReminderPrefs.hasStudiedToday()
-        val streakDays = ReminderPrefs.studyStreakDays
+        val articleStates = fsrs?.allStates().orEmpty()
+        val dueArticles = articleStates.filterValues { FsrsEngine.isDue(it, now) }
+        val firstDueArticleId = dueArticles.entries.minByOrNull { it.value.due }?.key ?: -1L
 
-        if (hasStudied && streakDays > 0) {
-            // 3. 检查薄弱内容数量
-            val weakCount = getWeakContentCount()
-            if (weakCount > 0) {
-                return ReminderReason.WeakContent(weakCount)
-            }
-            // 持续学习中
-            return ReminderReason.StreakContinue(streakDays)
+        val sentenceStates = fsrs?.allSentenceStates().orEmpty()
+        val dueSentenceCount = sentenceStates.count { (key, state) ->
+            key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) && FsrsEngine.isDue(state, now)
+        }
+        val today = DayBucket.localDate(now)
+        val sentenceCardPracticedToday = sentenceStates.values.any { state ->
+            state.reviewCount > 0 && DayBucket.localDate(state.lastReview) == today
         }
 
-        // 4. 今天没学
-        return ReminderReason.NoStudyToday(streakDays)
+        val incomplete = findIncompletePractice()
+        val weakCount = getWeakContentCount()
+
+        return ReminderPlan.decide(
+            now = now,
+            hasStudiedToday = ReminderPrefs.hasStudiedToday(),
+            todayCount = countTodayPractices(now),
+            dailyGoal = ReminderPrefs.dailyPracticeGoal,
+            dueArticleCount = dueArticles.size,
+            dueSentenceCount = dueSentenceCount,
+            firstDueArticleId = firstDueArticleId,
+            sentenceCardPracticedToday = sentenceCardPracticedToday,
+            hasIncompletePractice = incomplete != null,
+            incompleteArticleId = incomplete?.articleId ?: -1L,
+            incompleteRemaining = incomplete?.remaining ?: 0,
+            weakCount = weakCount,
+            streakDays = ReminderPrefs.studyStreakDays,
+            allowReasons = allowedReasons(),
+        )
     }
 
+    /** 未完成练习的定位信息（仅取数，判定在 [ReminderPlan]）。 */
+    private data class IncompletePractice(val articleId: Long, val remaining: Int)
+
     /**
-     * 查找第一个未完成的练习状态文件
+     * 查找第一个未完成的练习状态文件。
      */
-    private fun findIncompletePractice(): ReminderReason.IncompletePractice? {
+    private fun findIncompletePractice(): IncompletePractice? {
         try {
             val filesDir = context.filesDir
             val stateFiles = filesDir.listFiles { file ->
@@ -125,12 +179,26 @@ class ReminderWorker(
                     val answeredCount = json.optInt("answeredCount", 0)
                     val remaining = totalBlanks - answeredCount
                     if (remaining > 0) {
-                        return ReminderReason.IncompletePractice(articleId, remaining)
+                        return IncompletePractice(articleId, remaining)
                     }
                 } catch (_: Exception) { /* 跳过损坏文件 */ }
             }
         } catch (_: Exception) { }
         return null
+    }
+
+    /** 今天已完成的练习次数（按设备时区日历天，与统计页同口径）。 */
+    private suspend fun countTodayPractices(now: Long): Int {
+        return try {
+            val recordRepo = RecordRepository.getInstance(
+                context.filesDir.resolve("records.json").absolutePath
+            )
+            withTimeoutOrNull(2000L) { recordRepo.awaitLoaded() }
+            val today = DayBucket.localDate(now)
+            recordRepo.records.value.count { DayBucket.localDate(it.timestamp) == today }
+        } catch (_: Exception) {
+            0
+        }
     }
 
     /**
@@ -164,6 +232,31 @@ class ReminderWorker(
         }
     }
 
+    /** 当前是否在免打扰窗口内（小时取自同一份 [now]，与判定共用时钟）。 */
+    private fun isInQuietHours(now: Long): Boolean {
+        val hour = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).hour
+        return ReminderPlan.isQuietHour(
+            hour = hour,
+            startHour = ReminderPrefs.quietStartHour,
+            endHour = ReminderPrefs.quietEndHour,
+        )
+    }
+
+    /**
+     * 本次允许发送的原因集合：**用户在系统里关掉的渠道，对应原因直接缺席**。
+     * 交给 [ReminderPlan.decide] 的 allowReasons，让次高优先级的规则顶上，
+     * 而不是「关掉一个渠道 → 整次提醒什么都不发」。
+     */
+    private fun allowedReasons(): Set<ReminderReason> {
+        val manager = context.getSystemService(NotificationManager::class.java)
+            ?: return ReminderReason.entries.toSet()
+        return ReminderReason.entries.filter { reason ->
+            val channel = manager.getNotificationChannel(NotificationChannels.channelIdFor(reason))
+            // 渠道尚未创建（null）视为可用；重要性 NONE 才是用户明确关闭
+            channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
+        }.toSet()
+    }
+
     /**
      * 检查指定日期是否在提醒日范围内（默认今天）。
      */
@@ -186,6 +279,12 @@ class ReminderWorker(
     companion object {
         private const val TAG = "ReminderWorker"
         private const val WORK_NAME = "daily_study_reminder"
+
+        /**
+         * 单次最多发送条数。判定层（[ReminderPlan]）已把「一天该说几件事」收敛到很少，
+         * 这里再设一道上限是兜底：将来规则变动也不至于一次刷屏。
+         */
+        private const val MAX_PER_RUN = 2
 
         /**
          * 调度下一次提醒。计算从当前时间到下一个提醒日目标时间的延迟。

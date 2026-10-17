@@ -43,3 +43,7 @@ hs_err_*.log
 # 其它本地开发工具目录
 .qoder/
 .trae/
+
+# JVM 崩溃转储与回放日志（构建中断产物）
+hs_err_pid*.log
+replay_pid*.log

@@ -54,6 +54,38 @@ object AtomicFiles {
     }
 
     /**
+     * 写入暂存文件并同步数据块（[promoteStaged] 的前半段）。
+     * 供「要一次替换多个文件」的整库导入使用：先把全部内容写到暂存名上，
+     * 磁盘满 / 写中断这些失败就都在碰正式文件之前暴露。
+     */
+    fun writeStaged(staged: File, bytes: ByteArray) {
+        staged.parentFile?.mkdirs()
+        FileOutputStream(staged).use { out ->
+            out.write(bytes)
+            runCatching { out.fd.sync() }
+        }
+    }
+
+    /**
+     * 把已完整落盘的 [staged] 提换为主文件 [file]（.bak 轮换 → rename → 目录 fsync）。
+     * 与 [writeTextAtomic] 同协议，区别只在内容早已写在盘上：这一步只剩 rename，
+     * 不会在「写到一半」时把主文件留成空文件。
+     */
+    fun promoteStaged(staged: File, file: File) {
+        file.parentFile?.mkdirs()
+        if (file.exists()) {
+            val bak = File(file.parentFile, file.name + ".bak")
+            if (bak.exists()) bak.delete()
+            file.renameTo(bak)
+        }
+        if (!staged.renameTo(file)) {
+            staged.copyTo(file, overwrite = true)
+            staged.delete()
+        }
+        fsyncDirectoryBestEffort(file.parentFile)
+    }
+
+    /**
      * 追加一行文本（UTF-8，自动补换行）并 fsync —— 供「只增不改」的大文件
      * （练习记录 JSONL）做 O(1) 落盘，避免每次 insert 全量重写。
      *

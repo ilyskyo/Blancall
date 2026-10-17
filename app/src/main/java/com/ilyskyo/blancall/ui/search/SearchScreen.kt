@@ -37,6 +37,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -153,7 +155,7 @@ fun SearchScreen(navController: NavController) {
             // ── 结果区（空态不在此占位，见下方覆盖层） ──
             if (trimmed.isNotEmpty() && results.isNotEmpty()) {
                 Text(
-                    "共 ${results.size} 篇",
+                    pluralStringResource(com.ilyskyo.blancall.R.plurals.search_result_count, results.size, results.size),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 4.dp)
@@ -190,11 +192,11 @@ fun SearchScreen(navController: NavController) {
             label = "searchHintSwap",
         ) {
             when (it) {
-                0 -> EmptyHint("搜索标题、作者、正文、标签或添加日期")
+                0 -> EmptyHint(stringResource(com.ilyskyo.blancall.R.string.search_hint))
                 1 -> {
                     // 长搜索词截断显示，避免空态文案被撑爆
                     val shown = if (trimmed.length > 10) trimmed.take(10) + "…" else trimmed
-                    EmptyHint("没有找到与「$shown」相关的内容")
+                    EmptyHint(stringResource(com.ilyskyo.blancall.R.string.search_no_results, shown))
                 }
             }
         }
@@ -244,7 +246,7 @@ private fun SearchField(
                         kind = AppIconKind.Close,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        contentDescription = "清除搜索"
+                        contentDescription = stringResource(com.ilyskyo.blancall.R.string.clear_search)
                     )
                 }
             }
@@ -317,16 +319,18 @@ private fun SearchResultCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // stringResource 不能在 buildString 的非组合 lambda 里调，先取好整句
+                val addedOnLine = stringResource(com.ilyskyo.blancall.R.string.added_on, dateFmt.format(Date(article.createdAt)))
                 Text(
                     text = buildString {
                         if (article.author.isNotBlank()) append(article.author.trim()).append("  ·  ")
-                        append("添加于 ").append(dateFmt.format(Date(article.createdAt)))
+                        append(addedOnLine)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                 )
                 Text(
-                    text = "${article.content.length} 字",
+                    text = pluralStringResource(com.ilyskyo.blancall.R.plurals.char_count_short, article.content.length, article.content.length),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                 )

@@ -6,8 +6,10 @@ package com.ilyskyo.blancall.ui.viewmodel
 import android.app.Application
 import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.AiClozeGenerator
+import com.ilyskyo.blancall.algorithm.AiEquivalenceJudge
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.data.ai.AiClient
+import com.ilyskyo.blancall.data.ai.AiChatProfile
 import com.ilyskyo.blancall.data.ai.AiConfigStore
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -39,6 +41,9 @@ import java.io.File
 
 /** AI 挖空生成总超时（毫秒）：超时自动回退本地算法，避免"一直加载" */
 internal const val AI_GENERATE_TIMEOUT_MS = 40_000L
+
+/** 等价复核超时：小请求给 20s 即可；超时按「无意见」处理，不阻塞分析主流程 */
+internal const val AI_EQUIVALENCE_TIMEOUT_MS = 20_000L
 
 class PracticeAiController(
     private val scope: CoroutineScope,
@@ -204,6 +209,12 @@ class PracticeAiController(
                 _analysisError.value = true
                 return@launch
             }
+            // B3-5：可选旁路 —— 先把同义表达复核一遍，结论并入分析输入（不参与判分）
+            val equivalenceNotes = if (AppPrefs.aiEquivalenceReview) {
+                buildEquivalenceNotes(profile)
+            } else {
+                ""
+            }
             val messages = listOf(
                 AiClient.ChatMessage("system", AiClozeGenerator.buildAnalysisSystemPrompt()),
                 AiClient.ChatMessage(
@@ -216,7 +227,8 @@ class PracticeAiController(
                             BlancallMode.REVERSE -> "反向默写"
                         },
                         scoreLine = buildAnalysisScoreLine(),
-                        mistakeSummary = buildAnalysisMistakeSummary(),
+                        mistakeSummary = buildAnalysisMistakeSummary() +
+                            if (equivalenceNotes.isBlank()) "" else "\n" + equivalenceNotes,
                         weakHints = getWeakHintCount(),
                         strongHints = getStrongHintCount()
                     )
@@ -244,6 +256,46 @@ class PracticeAiController(
                 _analysisLoading.value = false
             }
         }
+    }
+
+    /**
+     * B3-5：AI 等价复核。对本地判错且用户写了内容的空，让模型判断是否同义；
+     * 结果作为「AI 语义复核：…」若干行并入训练分析的输入 —— 判分/分数/复习量都不变。
+     * 未配置 / 超时 / 解析为空 → 返回空串，分析完全退化为原行为。
+     */
+    private suspend fun buildEquivalenceNotes(profile: AiChatProfile): String {
+        val candidates = getCheckResults().entries
+            .filter { it.value.result != AnswerChecker.Result.CORRECT && it.value.userAnswer.isNotBlank() }
+            .take(AiEquivalenceJudge.MAX_CANDIDATES)
+            .map { (idx, detail) ->
+                AiEquivalenceJudge.Candidate(
+                    index = idx,
+                    expected = detail.correctAnswer,
+                    written = detail.userAnswer,
+                )
+            }
+        if (candidates.isEmpty()) return ""
+        val messages = listOf(
+            AiClient.ChatMessage("system", AiEquivalenceJudge.buildSystemPrompt()),
+            AiClient.ChatMessage("user", AiEquivalenceJudge.buildRequest(candidates)),
+        )
+        val sb = StringBuilder()
+        val completed = try {
+            val apiKey = withContext(Dispatchers.IO) { profile.decryptApiKey() }
+            withTimeoutOrNull(AI_EQUIVALENCE_TIMEOUT_MS) {
+                AiClient.streamChat(profile.baseUrl, apiKey, profile.model, messages)
+                    .collect { sb.append(it) }
+                true
+            } ?: false
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return ""
+        }
+        if (!completed) return ""
+        val verdicts = AiEquivalenceJudge.decode(sb.toString(), candidates.map { it.index }.toSet())
+        if (verdicts.isEmpty()) return ""
+        return verdicts.joinToString("\n") { AiEquivalenceJudge.toPromptLine(it) }
     }
 
     /** 把训练分析写入 ai_analysis/<timestamp>.json */
@@ -297,7 +349,13 @@ class PracticeAiController(
             getCheckResults().entries.sortedBy { it.key }.forEach { (idx, d) ->
                 if (d.result != AnswerChecker.Result.CORRECT) {
                     val typeName = when (d.result) {
-                        AnswerChecker.Result.TYPO -> "错别字（同音/形近误写）"
+                        // 这一路只按【位置上的字形不同】分型，判题里没有任何读音或字形的比对，
+                        // 原先写给模型的「同音/形近误写」是文案不是判据 —— 模型会顺着它编出
+                        // 「你把『己』写成了『已』，属形近字」这类它并没有依据的因果。
+                        // 现在「形近」这条判据真的存在了（GlyphConfusables），所以两类分开说，
+                        // 且形状取自判题结论，不让模型自己推断字形关系。
+                        AnswerChecker.Result.TYPO -> "记成他字（同一位置写成了别的字）"
+                        AnswerChecker.Result.GLYPH_CONFUSED -> "字形混淆（写成了形近字）"
                         AnswerChecker.Result.MISSING -> "漏字"
                         AnswerChecker.Result.EXTRA -> "多字"
                         AnswerChecker.Result.WRONG_ORDER -> "顺序颠倒"

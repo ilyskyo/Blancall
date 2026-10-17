@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -76,11 +77,14 @@ object Motion {
      * 而且恰好闪在用户返回时正要看的这一侧。
      * 「有重量」的过冲因此给退出页的缩放，不给进场页的平移。
      *
-     * StiffnessLow(200f) + NoBouncy 的收敛时间约 4.6/√200 ≈ 325ms，
-     * 与原来的 300ms tween 同级，但起步更利索、尾段更软。
+     * 用户 2026-10-09 的真机反馈：「进入第二个页面时，下一页面出来的速度太慢」。
+     * 量过才改：StiffnessLow(200f) 的收敛时间约 4.6/√200 ≈ 325ms，比旧版
+     * v7.2.4 的 tween(300) 还慢一档 —— 我当时按「同级」写进注释，但同级不等于同感，
+     * 弹簧的尾段是慢慢贴上去的，读起来就是"糊完"而不是"到位"。
+     * 换成 StiffnessMediumLow（≈230ms 收敛），比旧版更快收住，仍留在弹簧词表里。
      */
     fun pageEnter(): FiniteAnimationSpec<IntOffset> =
-        offsetSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessLow)
+        offsetSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
 
     /** 旧页面滑出：反正要离开屏幕，可以比进场更硬（约 230ms 收敛）。 */
     fun pageExit(): FiniteAnimationSpec<IntOffset> =
@@ -93,6 +97,17 @@ object Motion {
      * 后者更接近系统的 push，也把可见错位的时间压到最短。
      */
     const val slideParallax: Float = 0.25f
+
+    /**
+     * 「让位那一页」在转场端点/起点上的位移量（像素）。
+     *
+     * **符号是这里的全部意义**：让位页要朝「被压住的那一侧」退，也就是负方向。
+     * 写成正的 `width * slideParallax` 会让它朝反方向走，于是转场中段屏幕上出现一条
+     * **两页都没盖住**的竖带，露出窗口底色 —— 用户 2026-10-09 的真机录像里就是这条白带。
+     * 收成一个函数而不是在两处各写一遍，是因为 `PageTransitionCoverageTest` 要拿同一个
+     * 定义去验「任意时刻两页的并集必须盖满容器」。
+     */
+    fun parallaxOffset(width: Int): Int = -(width * slideParallax).toInt()
 
     // ── 弹层与卡片落位 ──
 
@@ -141,6 +156,41 @@ object Motion {
      */
     fun itemSlide(): FiniteAnimationSpec<IntOffset> =
         offsetSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+
+    // ── 完成页入场（句子卡片「本轮的句子都记完了」）──
+    //
+    // 四拍：图标弹入 → 标题 → 统计 → 按钮，逐拍放开（步长见 MotionFade.celebrateStep）。
+    // 元素本身**不改布局**，只做 alpha 与上滑（见 SentenceCardViews 的 doneEnter）——
+    // 那一列是垂直居中的，任何让元素在动画期间改变占位的写法都会把整列推着重排。
+
+    /**
+     * 完成页元素入场的上滑（Dp 版）。
+     *
+     * 刚度取 [Spring.StiffnessMedium]，与 [itemSlide] 同档：完成页与列表入场是
+     * 「同一类东西升起来」，两处节奏必须一致。NoBouncy 是因为终点就是最终位置 ——
+     * 让一行字越过落点再弹回来，读起来是「接住一行字」而不是「浮现一行字」。
+     */
+    fun doneRise(): FiniteAnimationSpec<Dp> =
+        dpSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+
+    /** 完成页元素入场的上滑行程（短到只给方向感，不足以让人等它走完）。 */
+    const val doneRiseDp: Float = 14f
+
+    /**
+     * 完成页「庆祝图标」的弹入缩放。
+     *
+     * LowBouncy + StiffnessMedium：它是缩放而不是位移，但仍属于法则一说的
+     * 「被物理带走」那一类，所以走弹簧；过冲是这条谱子的全部意义 ——
+     * NoBouncy 只会让它「长」出来，弹不出来。
+     */
+    fun celebratePop(): FiniteAnimationSpec<Float> =
+        floatSpring(Spring.DampingRatioLowBouncy, Spring.StiffnessMedium)
+
+    /** 完成页光环一次性扩散时那一圈的最大不透明度（要轻到不盖过图标本身）。 */
+    const val celebrateHaloAlpha: Float = 0.4f
+
+    /** 完成页第二圈光环的最大不透明度：比第一圈淡 —— 它是余韵，不是主体。 */
+    const val celebrateHalo2Alpha: Float = 0.22f
 
     /**
      * flick 提交的速度线，单位 dp/s。
@@ -272,6 +322,32 @@ object Motion {
     fun reveal(): FiniteAnimationSpec<Float> =
         floatSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
 
+    // ── 触点浮起转场（首页卡 → 详情页，见 TouchRevealTransition）──
+    //
+    // 这一族**是补间而不是弹簧**，是词表纪律一（位移用弹簧）的一处刻意例外：
+    // 它推的是整页的缩放倍数，和并行的淡入是同一个动作，弹簧的长尾会让整页
+    // 「糊完」而不是「铺开」——用户 2026-10-09 抱怨的正是页面出来得太慢。
+    // 三个时长都是 v7.2.4 里的原值：这次是**恢复**一个被删掉的特性，
+    // 恢复就不顺手改速率，否则对照旧版录像时对不上。
+
+    /** 浮起页从触点放大时的起点倍数（0.84 = v7.2.4 真值）。 */
+    const val revealScaleFrom: Float = 0.84f
+
+    /** 浮起页入场外壳的圆角（dp）：展开过程中收束到 0，读起来是「一张卡铺成整页」。 */
+    const val revealShellRadiusDp: Float = 24f
+
+    /** 放大铺开。 */
+    fun revealScaleIn(): FiniteAnimationSpec<Float> =
+        if (reduced) snap() else tween(320, easing = FastOutSlowInEasing)
+
+    /** 缩回触点：离场比入场快一档（法则二：旧东西要赶紧离开）。 */
+    fun revealScaleOut(): FiniteAnimationSpec<Float> =
+        if (reduced) snap() else tween(200, easing = FastOutSlowInEasing)
+
+    /** 外壳圆角收束：与 [revealScaleIn] 并行但略短，圆角先收完才不显得整块在抖。 */
+    fun revealShell(): FiniteAnimationSpec<Float> =
+        if (reduced) snap() else tween(300, easing = FastOutSlowInEasing)
+
     /**
      * 浮起/弹出容器**收走**时的进度推进。
      *
@@ -314,6 +390,23 @@ object Motion {
         /** 卡片被拿起时的抬起倍数（大于 1）。 */
         const val lifted = 1.03f
 
+
+        /** 完成页庆祝图标的入场起点倍数（配 Motion.celebratePop）。 */
+        const val celebrateFrom = 0.72f
+
+        /**
+         * 完成页庆祝图标落点后的二次回弹倍数（配 [MotionFade.celebrateEcho]）。
+         *
+         * 只有 4%：主弹簧的过冲是「弹出来」，这一次是「坐实」—— 图标冲到终点后
+         * 先稳稳地压一下再停，庆祝感因此不飘。两个补间在减动效下都是 snap，直接落 1f。
+         */
+        const val celebrateEcho = 1.04f
+
+        /** 完成页光环从图标边缘向外扩散到的倍数（1 + 它）。 */
+        const val celebrateHaloSpread = 0.5f
+
+        /** 完成页第二圈光环的扩散倍数（1 + 它）：比第一圈大，两圈才读得出「一圈推出去」的层次。 */
+        const val celebrateHalo2Spread = 0.85f
 
         /** 对话框入场从多大开始（配 [Motion.press]）。 */
         const val enterFrom = 0.90f
@@ -378,6 +471,18 @@ object MotionFade {
     /** 标准淡入：控件显隐、覆盖层出现。 */
     const val enter = 180
 
+    /**
+     * 浮起页放大时配行的淡入（v7.2.4 原值）。
+     * 缩放才是主叙事，淡入只负责「不要一闪」，所以比缩放短一点。
+     */
+    const val revealEnter = 220
+
+    /** 浮起导航时源页的退场淡出：整页已经在放大，底页只需赶紧让位。 */
+    const val revealSourceExit = 200
+
+    /** 浮起页缩回触点时的淡出：离场比入场利落。 */
+    const val revealExit = 160
+
     /** 列表项与下拉揭示区的淡入，比控件显隐稍长，配合上滑才不像一闪。 */
     const val itemEnter = 220
 
@@ -416,6 +521,39 @@ object MotionFade {
 
     /** 递进的上限：超过它就同步出现，否则长列表末尾要等两秒。 */
     const val staggerCap = 320
+
+    /**
+     * 完成页入场的错峰步长（图标 → 标题 → 统计 → 按钮）。
+     *
+     * 比列表的 [staggerStep]（30）宽：列表是「一排东西依次到位」，间隔稍大就显得拖；
+     * 而完成页是「一件事分四拍讲完」，用 30ms 读起来仍旧是同时冒出来，
+     * 起不到「先看见什么」的作用。四拍合计 270ms，正好压在「当场给回执」的感知内。
+     */
+    const val celebrateStep = 90
+
+    /**
+     * 完成页光环一次性扩散的时长。
+     *
+     * 装饰性、非交互，所以比一个控件的显隐（[enter]）慢一档；但它不是
+     * [chartReveal] 那种「数据长出来」，不该拖到近一秒 —— 记完一轮的回执要当场给。
+     */
+    const val celebrateHalo = 560
+
+    /**
+     * 完成页第二圈光环的出发延迟：晚一拍出发，两圈才不会同时放大。
+     */
+    const val celebrateHalo2Delay = 120
+
+    /**
+     * 完成页三键计数的 count-up 时长。
+     *
+     * 三个数共用一个进度齐步走到位：评级分布是「一次评完的统计」，
+     * 读起来应该是一个总结，而不是三行各自滚动的数字。
+     */
+    const val countUp = 300
+
+    /** 完成页庆祝图标落点后二次回弹的单程时长（去与回各一次）。 */
+    const val celebrateEcho = 120
 
     /**
      * 数值型补间：alpha 与「进度比例」这类没有位移可言的 0..1 量都走它。

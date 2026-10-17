@@ -42,6 +42,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -157,10 +159,12 @@ fun TagManagerScreen(navController: NavController) {
     // 滚动状态提升到条件外：拖动期间仅卸下滚动修饰符，滚动位置不丢
     val listScrollState = rememberScrollState()
 
+    // crossReview 是本地函数（点击时才求值）：stringResource 必须在它外面的组合期取好，再闭包进来
+    val crossReviewTooFew = stringResource(com.ilyskyo.blancall.R.string.cross_review_too_few)
     fun crossReview(tag: Tag) {
         val ids = boundArticleIds(tag.id)
         if (ids.size < 2) {
-            Toast.makeText(context, "该标签下不足 2 篇文章，无法跨文复习", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, crossReviewTooFew, Toast.LENGTH_SHORT).show()
         } else {
             navController.navigate("cross/${ids.joinToString(",")}")
         }
@@ -187,7 +191,7 @@ fun TagManagerScreen(navController: NavController) {
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "文章标签",
+                    stringResource(com.ilyskyo.blancall.R.string.tags_title),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -199,7 +203,7 @@ fun TagManagerScreen(navController: NavController) {
                     modifier = Modifier.height(40.dp),
                 ) {
                     Text(
-                        "新建",
+                        stringResource(com.ilyskyo.blancall.R.string.new_short),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -232,19 +236,19 @@ fun TagManagerScreen(navController: NavController) {
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "还没有标签",
+                            stringResource(com.ilyskyo.blancall.R.string.no_tags),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "标签为文章分类，并以彩色徽标显示在卡片上",
+                            stringResource(com.ilyskyo.blancall.R.string.tags_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         )
                         Spacer(Modifier.height(18.dp))
                         Button(onClick = { creating = true }, shape = RoundedCornerShape(10.dp)) {
-                            Text("新建第一个标签")
+                            Text(stringResource(com.ilyskyo.blancall.R.string.create_first_tag))
                         }
                     }
                     }
@@ -253,7 +257,7 @@ fun TagManagerScreen(navController: NavController) {
                     // （它的父级现在是这个普通 Column，weight 仍然有效）。
                     else -> Column(Modifier.fillMaxSize()) {
                     Text(
-                        "共 ${data.tags.size} 个标签",
+                        pluralStringResource(com.ilyskyo.blancall.R.plurals.tag_total_count, data.tags.size, data.tags.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
@@ -315,13 +319,13 @@ fun TagManagerScreen(navController: NavController) {
                                             modifier = Modifier.weight(1f),
                                         )
                                         Text(
-                                            "${countsByTag[tag.id] ?: 0} 篇",
+                                            pluralStringResource(com.ilyskyo.blancall.R.plurals.tag_usage_count, countsByTag[tag.id] ?: 0, countsByTag[tag.id] ?: 0),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                         )
                                         // 管理该标签下的文章：勾选添加 / 取消勾选移出（同一入口兼顾增删）
                                         Text(
-                                            "管理",
+                                            stringResource(com.ilyskyo.blancall.R.string.manage_short),
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier
@@ -366,14 +370,14 @@ fun TagManagerScreen(navController: NavController) {
                                             menuFor = null
                                             editing = tag
                                         },
-                                        label = { Text("编辑名称与颜色") },
+                                        label = { Text(stringResource(com.ilyskyo.blancall.R.string.edit_name_color)) },
                                     )
                                     GlassMenuItem(
                                         onClick = {
                                             menuFor = null
                                             crossReview(tag)
                                         },
-                                        label = { Text("跨文复习") },
+                                        label = { Text(stringResource(com.ilyskyo.blancall.R.string.reader_cross_cloze)) },
                                     )
                                     GlassMenuDivider()
                                     GlassMenuItem(
@@ -430,13 +434,16 @@ fun TagManagerScreen(navController: NavController) {
         val boundCount = data.links.values.count { target.id in it }
         BlancallAlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("删除标签") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.delete_tag_title)) },
             text = {
                 Text(
                     if (boundCount > 0) {
-                        "删除标签「${target.name}」？已绑定的 $boundCount 篇文章将取消该标签（不会删除文章）。此操作无法撤销。"
+                        pluralStringResource(
+                            com.ilyskyo.blancall.R.plurals.delete_tag_confirm_bound,
+                            boundCount, target.name, boundCount
+                        )
                     } else {
-                        "删除标签「${target.name}」？此操作无法撤销。"
+                        stringResource(com.ilyskyo.blancall.R.string.delete_tag_confirm_plain, target.name)
                     }
                 )
             },
@@ -464,18 +471,18 @@ fun TagManagerScreen(navController: NavController) {
         }
         BlancallAlertDialog(
             onDismissRequest = { managing = null },
-            title = { Text("管理「${tag.name}」的文章", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.manage_articles_of, tag.name), fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
                     Text(
-                        "勾选的文章将绑定该标签，取消勾选则移出（不删除文章）。",
+                        stringResource(com.ilyskyo.blancall.R.string.manage_articles_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
                     if (articles.isEmpty()) {
                         Text(
-                            "还没有文章",
+                            stringResource(com.ilyskyo.blancall.R.string.no_articles),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -509,7 +516,7 @@ fun TagManagerScreen(navController: NavController) {
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                         Text(
-                                            "${article.content.length} 字符",
+                                            pluralStringResource(com.ilyskyo.blancall.R.plurals.char_count, article.content.length, article.content.length),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                         )

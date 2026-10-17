@@ -49,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -98,6 +100,8 @@ fun CustomClozeEditScreen(
     pick: Boolean = false
 ) {
     val context = LocalContext.current
+    val customWord = stringResource(com.ilyskyo.blancall.R.string.custom)
+    val pickBlanksFirstMsg = stringResource(com.ilyskyo.blancall.R.string.cloze_pick_blanks_first)
     val scope = rememberCoroutineScope()
     var article by remember { mutableStateOf<Article?>(null) }
     var notFound by remember { mutableStateOf(false) }
@@ -320,7 +324,7 @@ fun CustomClozeEditScreen(
         if (blanks.isEmpty()) return null
         return CustomClozeStore.CustomConfig(
             id = savedId,
-            name = savedName.ifBlank { "自定义" },
+            name = savedName.ifBlank { customWord },
             createdAt = savedCreatedAt,
             blanks = blanks,
             mode = clozeMode,
@@ -335,7 +339,7 @@ fun CustomClozeEditScreen(
         val art = article
         val cfg = buildConfig()
         if (art == null || cfg == null) {
-            Toast.makeText(context, "请先点选要挖空的句子或字词", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, pickBlanksFirstMsg, Toast.LENGTH_SHORT).show()
             onDone(false)
             return
         }
@@ -350,7 +354,12 @@ fun CustomClozeEditScreen(
             savedCreatedAt = if (cfg.createdAt > 0) cfg.createdAt else System.currentTimeMillis()
             dirty = false
             savedSnapshot = snap
-            Toast.makeText(context, "已保存「${cfg.name}」（$total 个空）", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                // 非组合上下文：走 resources.getQuantityString，quantity 要单独传一次
+                context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.save_cloze_toast, total, cfg.name, total),
+                Toast.LENGTH_SHORT
+            ).show()
             onDone(true)
         }
     }
@@ -359,15 +368,7 @@ fun CustomClozeEditScreen(
      * 生成当前文章内不重复的默认配置名：解析已有「自定义 N」的最大编号取 max+1；
      * 若该编号仍被占用（历史畸形数据）则继续递增跳过。
      */
-    fun nextDefaultName(): String {
-        val used = existingConfigs.map { it.name.trim() }.toMutableSet()
-        val maxN = existingConfigs
-            .mapNotNull { Regex("^自定义\\s*(\\d+)$").find(it.name.trim())?.groupValues?.get(1)?.toIntOrNull() }
-            .maxOrNull() ?: 0
-        var n = maxN + 1
-        while (used.contains("自定义 $n")) n++
-        return "自定义 $n"
-    }
+    fun nextDefaultName(): String = nextDefaultConfigName(existingConfigs.map { it.name }, customWord)
 
     /** 名称是否与当前文章内其他配置重名（排除自身，trim 后全等比较） */
     fun isNameTaken(name: String, excludeId: Long): Boolean =
@@ -425,12 +426,12 @@ fun CustomClozeEditScreen(
                 // 标题 + 计数：计数放进权重列（宽度随空数变化），不会挤动右侧按钮组
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "自定义挖空",
+                        stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
                         style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        "$blankCount 个空",
+                        pluralStringResource(com.ilyskyo.blancall.R.plurals.cloze_blank_count, blankCount, blankCount),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -441,13 +442,13 @@ fun CustomClozeEditScreen(
                     kind = AppIconKind.Undo,
                     enabled = undoStack.isNotEmpty(),
                     onClick = { undo() },
-                    contentDescription = "撤销"
+                    contentDescription = stringResource(com.ilyskyo.blancall.R.string.undo_desc)
                 )
                 TopBarIconAction(
                     kind = AppIconKind.Redo,
                     enabled = redoStack.isNotEmpty(),
                     onClick = { redo() },
-                    contentDescription = "重做"
+                    contentDescription = stringResource(com.ilyskyo.blancall.R.string.redo_desc)
                 )
                 Spacer(Modifier.width(10.dp))
                 androidx.compose.material3.Button(
@@ -470,7 +471,7 @@ fun CustomClozeEditScreen(
                     enabled = article != null && blankCount > 0,
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("保存")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.save))
                 }
             }
 
@@ -483,7 +484,7 @@ fun CustomClozeEditScreen(
             if (hashMismatch) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "文章内容已修改，这套配置的标注位置可能不准确",
+                    stringResource(com.ilyskyo.blancall.R.string.cloze_hash_mismatch),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier
@@ -508,9 +509,9 @@ fun CustomClozeEditScreen(
             Spacer(Modifier.height(4.dp))
             Text(
                 when (clozeMode) {
-                    "SENTENCE" -> "点选要挖掉的复句"
-                    "REVERSE" -> "点选句子加入反向默写"
-                    else -> "点按选中挖空 · 长按切换粒度"
+                    "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_hint_sentence)
+                    "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_hint_reverse)
+                    else -> stringResource(com.ilyskyo.blancall.R.string.cloze_hint_default)
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -520,7 +521,8 @@ fun CustomClozeEditScreen(
             // ── 正文句子列表 ──
             if (notFound) {
                 Spacer(Modifier.height(24.dp))
-                Text("文章不存在或已被删除", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(com.ilyskyo.blancall.R.string.article_missing_deleted),
+                    color = MaterialTheme.colorScheme.error)
             } else if (article != null) {
                 val sentences = remember(article?.id, article?.content) {
                     SentenceSplitter.split(article!!.content)
@@ -572,7 +574,7 @@ fun CustomClozeEditScreen(
                     ScrollProgressBadge(
                         listState = listState,
                         total = sentences.size,
-                        unit = "句",
+                        unit = stringResource(com.ilyskyo.blancall.R.string.unit_sentences),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 4.dp, bottom = 24.dp)
@@ -586,8 +588,9 @@ fun CustomClozeEditScreen(
     if (showModeSwitchConfirm) {
         BlancallAlertDialog(
             onDismissRequest = { showModeSwitchConfirm = false },
-            title = { Text("切换挖空模式？", fontWeight = FontWeight.SemiBold) },
-            text = { Text("切换后将清空当前已选的挖空内容。", style = MaterialTheme.typography.bodyMedium) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.switch_mode_title), fontWeight = FontWeight.SemiBold) },
+            text = { Text(stringResource(com.ilyskyo.blancall.R.string.switch_mode_body),
+                style = MaterialTheme.typography.bodyMedium) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showModeSwitchConfirm = false
@@ -597,10 +600,12 @@ fun CustomClozeEditScreen(
                     clozeMode = pendingMode
                     dirty = true
                     editSeq++
-                }) { Text("清空并切换") }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.clear_and_switch)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showModeSwitchConfirm = false }) { Text("取消") }
+                androidx.compose.material3.TextButton(onClick = { showModeSwitchConfirm = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }
@@ -609,17 +614,18 @@ fun CustomClozeEditScreen(
     if (showSaveDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showSaveDialog = false },
-            title = { Text("保存自定义挖空", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.save_cloze_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
-                    Text("给这套配置起个名字，方便在练习模式里选用。", style = MaterialTheme.typography.bodySmall,
+                    Text(stringResource(com.ilyskyo.blancall.R.string.save_cloze_body),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     TextField(
                         value = savedName,
                         onValueChange = { savedName = it },
                         singleLine = true,
-                        placeholder = { Text("自定义") },
+                        placeholder = { Text(stringResource(com.ilyskyo.blancall.R.string.custom)) },
                         shape = RoundedCornerShape(10.dp),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -633,7 +639,8 @@ fun CustomClozeEditScreen(
                     // 名称去重：trim 后与其他配置全等则提示并中止保存（不关弹窗，便于改名）
                     val name = savedName.trim().ifBlank { nextDefaultName() }
                     if (isNameTaken(name, savedId)) {
-                        Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context,
+                            context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     savedName = name
@@ -650,10 +657,12 @@ fun CustomClozeEditScreen(
                             }
                         }
                     }
-                }) { Text("保存") }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.save)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showSaveDialog = false }) { Text("取消") }
+                androidx.compose.material3.TextButton(onClick = { showSaveDialog = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }
@@ -662,10 +671,10 @@ fun CustomClozeEditScreen(
     if (showExitConfirm) {
         BlancallAlertDialog(
             onDismissRequest = { showExitConfirm = false },
-            title = { Text("放弃未保存的挖空？", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.exit_confirm_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
-                    "当前编辑的 $blankCount 个空还没有保存，离开后将丢失。",
+                    pluralStringResource(com.ilyskyo.blancall.R.plurals.exit_confirm_body, blankCount, blankCount),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -674,10 +683,14 @@ fun CustomClozeEditScreen(
                     showExitConfirm = false
                     dirty = false
                     navController.popBackStack()
-                }) { Text("放弃", color = MaterialTheme.colorScheme.error) }
+                }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.discard_action), color = MaterialTheme.colorScheme.error)
+                }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showExitConfirm = false }) { Text("继续编辑") }
+                androidx.compose.material3.TextButton(onClick = { showExitConfirm = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.keep_editing_action))
+                }
             }
         )
     }
@@ -707,7 +720,11 @@ internal fun shouldPersistEditorSnapshot(editSeq: Int): Boolean = editSeq > 0
 @Composable
 private fun ModeChipRow(current: String, onChange: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("SENTENCE" to "📝 句子", "WORD" to "🔤 字词", "REVERSE" to "✍️ 反向").forEach { (m, label) ->
+        listOf(
+            "SENTENCE" to stringResource(com.ilyskyo.blancall.R.string.chip_sentence),
+            "WORD" to stringResource(com.ilyskyo.blancall.R.string.chip_word),
+            "REVERSE" to stringResource(com.ilyskyo.blancall.R.string.chip_reverse)
+        ).forEach { (m, label) ->
             FilterChip(
                 selected = current == m,
                 onClick = { onChange(m) },
@@ -759,9 +776,9 @@ private fun SentenceEditCard(
     ) {
         Text(
             when (mode) {
-                "SENTENCE" -> "第 $index 句"
-                "REVERSE" -> "第 $index 句 · 默写单元"
-                else -> "第 $index 句 · ${ClozeTokens.levelName(level)}"
+                "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.sentence_index, index)
+                "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.sentence_index_recite, index)
+                else -> stringResource(com.ilyskyo.blancall.R.string.sentence_index_level, index, ClozeTokens.levelName(level))
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -862,3 +879,32 @@ private fun SentenceEditCard(
 
 // token 切分 / 粒度命名 / 区间合并已上移至 algorithm.ClozeTokens 与 algorithm.RangeOps（可单测）
 
+/**
+ * 旧数据里的默认配置名（中文前缀）；换语言后仍要参与编号，见 `nextClozeName()`。
+ *
+ * **只用于识别历史数据，禁止用于生成新名字** —— 新名字必须跟着界面语言走（英文下是 "Custom N"）。
+ * 这里保留中文正则，是因为盘上真的躺着这种名字；一旦有人拿它去拼新名字，
+ * 六语用户又会拿到中文默认名，正是这条注释要拦的。
+ */
+internal val LEGACY_CLOZE_NAME_RE = Regex("^自定义\\s*(\\d+)$")
+
+/**
+ * 默认配置名的编号规则（纯函数，JVM 可测）。
+ *
+ * 存盘的旧名是中文「自定义 N」，而新名跟着界面语言走（英文下是 "Custom N"）⇒
+ * 两种前缀都要参与求 max，否则换语言后编号退化成 1，下一条直接撞重名。
+ */
+internal fun nextDefaultConfigName(existingNames: List<String>, prefix: String): String {
+    val used = existingNames.map { it.trim() }.toSet()
+    val patterns = listOf(LEGACY_CLOZE_NAME_RE, clozeNameRegex(prefix))
+    val maxN = existingNames.map { it.trim() }
+        .flatMap { name -> patterns.mapNotNull { re -> re.find(name)?.groupValues?.get(1)?.toIntOrNull() } }
+        .maxOrNull() ?: 0
+    var n = maxN + 1
+    while (used.contains("$prefix $n")) n++
+    return "$prefix $n"
+}
+
+/** 前缀由资源给出，所以按字面量转义后再拼编号 */
+internal fun clozeNameRegex(prefix: String): Regex =
+    Regex("^" + Regex.escape(prefix.trim()) + "\\s*(\\d+)$")

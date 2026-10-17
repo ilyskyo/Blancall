@@ -45,6 +45,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.data.repository.ArticleRepository
@@ -121,7 +123,7 @@ fun MaskConfigListScreen(
                 ReaderPrefsStore.getInstance(context),
                 articleId
             ) { it.copy(occlusionCustomConfigId = cfg.id, occlusionMode = "custom", occlusionEnabled = true) }
-            Toast.makeText(context, "已使用「${cfg.name}」", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.mask_config_applied, cfg.name), Toast.LENGTH_SHORT).show()
             onBack()
         }
     }
@@ -160,7 +162,7 @@ fun MaskConfigListScreen(
                 BackButton(onClick = onBack)
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "遮挡自定义",
+                    stringResource(com.ilyskyo.blancall.R.string.mask_config_title),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
@@ -169,7 +171,7 @@ fun MaskConfigListScreen(
                     onClick = onNew,
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("新建")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.new_short))
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -184,7 +186,7 @@ fun MaskConfigListScreen(
                 Spacer(Modifier.height(4.dp))
             }
             Text(
-                "点按即使用 · 长按重命名 / 删除",
+                stringResource(com.ilyskyo.blancall.R.string.mask_list_hint_pick),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -208,7 +210,7 @@ fun MaskConfigListScreen(
                     1 -> Column {
                         Spacer(Modifier.height(24.dp))
                         Text(
-                            "还没有遮挡配置，点此新建",
+                            stringResource(com.ilyskyo.blancall.R.string.no_mask_configs),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
@@ -253,7 +255,7 @@ fun MaskConfigListScreen(
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                "${cfg.spans.size} 块遮挡" + if (inUse) " · 使用中" else "",
+                                                pluralStringResource(com.ilyskyo.blancall.R.plurals.mask_detail, cfg.spans.size, cfg.spans.size) + if (inUse) stringResource(com.ilyskyo.blancall.R.string.in_use_suffix) else "",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (inUse) MaterialTheme.colorScheme.primary
                                                 else MaterialTheme.colorScheme.onSurfaceVariant
@@ -262,7 +264,7 @@ fun MaskConfigListScreen(
                                         Spacer(Modifier.width(8.dp))
                                         // 编辑入口：点按已改为「使用」，编辑必须显式可达
                                         Text(
-                                            "编辑",
+                                            stringResource(com.ilyskyo.blancall.R.string.edit),
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier
@@ -281,7 +283,7 @@ fun MaskConfigListScreen(
                                                 menuForId = null
                                                 useConfig(cfg)
                                             },
-                                            label = { Text("使用", style = MaterialTheme.typography.bodyMedium) }
+                                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.use_action), style = MaterialTheme.typography.bodyMedium) }
                                         )
                                         GlassMenuItem(
                                             onClick = {
@@ -289,14 +291,14 @@ fun MaskConfigListScreen(
                                                 renameTarget = cfg
                                                 renameText = cfg.name
                                             },
-                                            label = { Text("重命名", style = MaterialTheme.typography.bodyMedium) }
+                                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.rename_action), style = MaterialTheme.typography.bodyMedium) }
                                         )
                                         GlassMenuItem(
                                             onClick = {
                                                 menuForId = null
                                                 deleteTarget = cfg
                                             },
-                                            label = { Text("删除", style = MaterialTheme.typography.bodyMedium) }
+                                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.delete), style = MaterialTheme.typography.bodyMedium) }
                                         )
                                     }
                                 }
@@ -312,7 +314,7 @@ fun MaskConfigListScreen(
     if (renameTarget != null) {
         BlancallAlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("重命名配置", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.rename_config_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 TextField(
                     value = renameText,
@@ -333,7 +335,7 @@ fun MaskConfigListScreen(
                         // 重名校验：与同文章下其他配置（排除自身）trim 后全等则提示并中止保存
                         val dup = configs.any { it.id != cfg.id && it.name.trim() == newName }
                         if (dup) {
-                            Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
                         renameTarget = null
@@ -344,10 +346,10 @@ fun MaskConfigListScreen(
                     } else {
                         renameTarget = null
                     }
-                }) { Text("保存") }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.save)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { renameTarget = null }) { Text("取消") }
+                androidx.compose.material3.TextButton(onClick = { renameTarget = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }
@@ -356,10 +358,10 @@ fun MaskConfigListScreen(
     if (deleteTarget != null) {
         BlancallAlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("删除配置", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.delete_config_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
-                    "确定删除「${deleteTarget!!.name}」（${deleteTarget!!.spans.size} 块遮挡）？删除后不可恢复。",
+                    stringResource(com.ilyskyo.blancall.R.string.delete_mask_confirm, deleteTarget!!.name, deleteTarget!!.spans.size),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -379,12 +381,12 @@ fun MaskConfigListScreen(
                             }
                         }
                         reload()
-                        Toast.makeText(context, "已删除", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.deleted_toast), Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+                androidx.compose.material3.TextButton(onClick = { deleteTarget = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }

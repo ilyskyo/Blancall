@@ -19,7 +19,7 @@ import java.nio.file.Files
  * 其它测试类不得再调 getInstance（遵循既有单测规范）。类内各用例用唯一名称/文章 id 自隔离。
  *
  * 覆盖：CRUD 往返、重名拦截、排序持久化、覆盖绑定与批量绑定语义、级联解绑、
- * 失效绑定自愈、旧格式向后兼容、主文件损坏回读 .bak 并保留现场、全损安全起步。
+ * 失效绑定自愈、旧格式向后兼容、主文件损坏回读 .bak 并保留现场、全损时拒绝写盘（防清空标签库）。
  */
 class TagStoreTest {
 
@@ -195,7 +195,7 @@ class TagStoreTest {
     }
 
     @Test
-    fun `主文件与备份全损时安全空起步且可重新写入`() {
+    fun `主文件与备份全损时拒绝写盘（不得以空库抹掉标签）`() {
         val healthy = healthyText()
         file.writeText("{ 损坏")
         File(dir, "tags.json.bak").delete()
@@ -204,12 +204,13 @@ class TagStoreTest {
         val empty = store.snapshot()
         assertTrue(empty.tags.none { it.name.startsWith("T12") })
 
-        // 且可重新写入（覆盖损坏文件，.corrupt-* 保留现场）
+        // 拒绝写盘。旧断言「可重新写入」把这个类固化成了坏行为：主文件已被 preserveCorruptFile
+        // 改名搬走，此时以空 root 写盘等于清空全部标签与文章绑定，只剩这一条新标签
         val id = store.createTag("T12恢复", 0xEE9DB4)
-        assertNotNull(id)
-        assertTrue(store.snapshot().tags.any { it.id == id })
+        assertFalse("损坏且无备份时必须拒绝写盘", file.exists())
+        assertTrue(store.snapshot().tags.none { it.id == id })
 
-        // 收尾：还原健康内容
+        // 收尾：还原健康内容（成功解析会清除粘性标记），不影响其它用例
         restoreHealthy(healthy)
     }
 
@@ -244,5 +245,29 @@ class TagStoreTest {
         val before = store.snapshot().links
         store.setTagArticles(99999999L, setOf(921L))
         assertEquals(before, store.snapshot().links)
+    }
+
+    @Test
+    fun `盘上格式版本高于本应用时拒绝读写并原样留住文件`() {
+        // 场景：用户导入了更新版本的备份，或装回了旧包。本版本不认识高版本里的字段，
+        // 而 TagStore 的写盘是「整本重建」—— 一次普通保存就会把那个未知字段抹平，
+        // 用户看不出任何东西丢过。守卫要做的正是把这种静默改数据挡下来。
+        val healthy = healthyText()
+        try {
+            file.writeText("""{"version":99,"tags":[],"links":{},"futureField":{"keep":"me"}}""")
+            store.snapshot()                                  // 触发读盘：认出「这份比我新」
+            store.createTag("降级不该落到盘上", 0xABCDEF)      // 任何一次写都被拒绝
+            val now = file.readText()
+            assertTrue("版本守卫没生效，文件被本版本重写：$now", now.contains("\"version\":99"))
+            assertTrue("高版本才认识的字段被抹掉了：$now", now.contains("futureField"))
+            assertFalse("被拒绝的写还是落了盘：$now", now.contains("降级不该落到盘上"))
+        } finally {
+            restoreHealthy(healthy)
+            // loadFailed 是粘性标记：还原健康文件后必须再读一次把它清掉，
+            // 否则这条用例会毒化同一个单例，后面每个用例都"拒绝写盘"（同类的自伤踩过一次）
+            store.snapshot()
+            store.createTag("守卫还原后可写", 0x111111)
+            assertTrue("还原后仍拒绝写盘，说明标记没清干净", file.readText().contains("守卫还原后可写"))
+        }
     }
 }

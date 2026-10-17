@@ -12,12 +12,16 @@ import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.AiClozeGenerator
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.algorithm.CrossTextReview
+import com.ilyskyo.blancall.algorithm.DictationMistakes
 import com.ilyskyo.blancall.algorithm.DictationScorer
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.PracticeContentOps
 import com.ilyskyo.blancall.algorithm.RangeOps
 import com.ilyskyo.blancall.algorithm.SectionSplitter
+import com.ilyskyo.blancall.algorithm.SentencePracticeRatings
 import com.ilyskyo.blancall.algorithm.SentenceSplitter
+import com.ilyskyo.blancall.algorithm.SentenceSelector
+import com.ilyskyo.blancall.algorithm.WeaknessMath
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.MistakeDetail
 import com.ilyskyo.blancall.data.model.PracticeRecord
@@ -72,7 +76,7 @@ fun sentenceErrorRatesFromRecords(records: List<PracticeRecord>): Map<Int, Float
             counts[idx] = (counts[idx] ?: 0f) + 1f
         }
     }
-    return normalizeErrorCounts(counts)
+    return rankScoresByMax(counts)
 }
 
 /**
@@ -98,11 +102,18 @@ fun crossSentenceErrorRates(
             counts[mixedIdx] = (counts[mixedIdx] ?: 0f) + 1f
         }
     }
-    return normalizeErrorCounts(counts)
+    return rankScoresByMax(counts)
 }
 
-/** 计数 → 0..1 归一化错误率（除以最大值；空表原样返回） */
-private fun normalizeErrorCounts(counts: MutableMap<Int, Float>): Map<Int, Float> {
+/**
+ * 计数 → 相对排名值（除以最大值；空表原样返回）。
+ *
+ * 它以前叫 `normalizeErrorCounts`、结果字段叫 `errorRate`，于是
+ * `ranked.filter { it.errorRate > 0f }` 看上去像在读错误率，实际读的是
+ * 「这一句历史上错过几次、与最差的那句比排第几」—— 错过一次就永远排得进去，永不衰减。
+ * 单篇路径现在改喂 [WeaknessMath.sentenceWeakness]（真实比率），这里只留给跨文的混合坐标用。
+ */
+private fun rankScoresByMax(counts: MutableMap<Int, Float>): Map<Int, Float> {
     val max = counts.values.maxOrNull() ?: 0f
     if (max > 0f) counts.keys.forEach { counts[it] = (counts[it] ?: 0f) / max }
     return counts
@@ -384,7 +395,14 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         if (records === errorProfileCacheKey && errorProfileCache != null) {
             return errorProfileCache!!.copy(memoryFactor = currentMemoryFactor())
         }
-        val p = buildErrorProfile(records).copy(memoryFactor = currentMemoryFactor())
+        val p = buildErrorProfile(records).copy(
+            // 单篇：段落排序改吃「现在有多弱」（真实比率 + 样本门槛），
+            // 不再吃「历史上错过几次」的相对排名 —— 一句被练对之后它会自己退出薄弱池
+            sentenceErrorRates = WeaknessMath.sentenceWeakness(
+                records, _article.value?.content.orEmpty()
+            ),
+            memoryFactor = currentMemoryFactor()
+        )
         errorProfileCache = p
         errorProfileCacheKey = records
         return p
@@ -431,7 +449,12 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             }.coerceIn(1, 50)
         }
 
-    fun loadArticle(articleId: Long, resume: Boolean = false, initialSectionMode: SectionMode? = null) {
+    fun loadArticle(
+        articleId: Long,
+        resume: Boolean = false,
+        initialSectionMode: SectionMode? = null,
+        focusSentence: Int = -1
+    ) {
         // 幂等：旋转横屏等配置变更导致 Activity 重建时 LaunchedEffect 会重跑，
         // 同一篇文章直接跳过，避免清空已输入答案并重新生成题目。
         if (loadedArticleId == articleId) return
@@ -597,21 +620,37 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             } catch (_: Exception) { /* 切分失败保持空列表，UI 显示空态 */ }
             _sections.value = secs
             _rankedSections.value = ranked
+            // 句级薄弱榜「点一句去练」：只练该句所在的一段。
+            // 句子按【字符位置】归段（全文句的 startIndex 落进 [startChar, endChar) 区间）——
+            // 跨口径稳定的锚点是字符位置，不是「段内第几句」（见 answeredSentenceStarts 的注释）。
+            val focusSection = if (focusSentence >= 0) {
+                val startChar = SentenceSplitter.splitWithPositions(art.content)
+                    .getOrNull(focusSentence)?.startIndex
+                startChar?.let { c -> secs.firstOrNull { c >= it.startChar && c < it.endChar } }
+            } else null
             // 应用初始段落模式（薄弱集训等入口）：必须在生成挖空前应用，
             // 否则 regenerateCloze 会基于默认 FULL 模式生成全文
-            if (initialSectionMode != null) {
-                _sectionMode.value = initialSectionMode
-                _selectedSections.value = when (initialSectionMode) {
-                    SectionMode.FULL -> secs.map { it.index }.toSet()
-                    SectionMode.WEAKNESS -> {
-                        val weak = ranked.filter { it.errorRate > 0f }.map { it.section.index }.toSet()
-                        if (weak.isEmpty()) secs.map { it.index }.toSet() else weak
-                    }
-                    SectionMode.SELECTED -> secs.map { it.index }.toSet()
+            when {
+                // 聚焦优先于常规初始模式：点榜单某一行的意图就是「只练这一段」
+                focusSection != null -> {
+                    _sectionMode.value = SectionMode.SELECTED
+                    _selectedSections.value = setOf(focusSection.index)
                 }
-            } else {
-                _sectionMode.value = SectionMode.FULL
-                _selectedSections.value = secs.map { it.index }.toSet()
+                initialSectionMode != null -> {
+                    _sectionMode.value = initialSectionMode
+                    _selectedSections.value = when (initialSectionMode) {
+                        SectionMode.FULL -> secs.map { it.index }.toSet()
+                        SectionMode.WEAKNESS -> {
+                            val weak = weakSectionIndexes(ranked.map { it.section.index to it.errorRate })
+                            if (weak.isEmpty()) secs.map { it.index }.toSet() else weak
+                        }
+                        SectionMode.SELECTED -> secs.map { it.index }.toSet()
+                    }
+                }
+                else -> {
+                    _sectionMode.value = SectionMode.FULL
+                    _selectedSections.value = secs.map { it.index }.toSet()
+                }
             }
             // 按已应用的段落模式统一生成挖空（内部读取 _article/_sections/_sectionMode/_selectedSections）
             // 「继续练习」已恢复上次挖好的空时跳过重新生成，保留恢复的挖空
@@ -996,15 +1035,30 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
 
     // ── 段落分层管理（F3）──
 
+    /**
+     * 薄弱集训的选段判据（全类只这一份）。
+     *
+     * 旧写法是 `ranked.filter { it.errorRate > 0f }`：那个 errorRate 其实是「与最差段落的相对比值」，
+     * 于是「曾经错过一次」= 永久薄弱，同一段被反复推给一个早就练熟的用户，而 FSRS 知道它已经不弱了。
+     * 单篇路径现在吃 [WeaknessMath.sentenceWeakness] 的真实比率，门槛按比率定；
+     * 跨文只有混合坐标下的相对排名值，门槛另立一个（见常量注释）。
+     */
+    private fun weakSectionIndexes(ranked: List<Pair<Int, Float>>): Set<Int> =
+        WeaknessMath.weakSectionIndexes(
+            ranked,
+            if (_isCrossMode.value) WeaknessMath.WEAK_RELATIVE_THRESHOLD
+            else WeaknessMath.WEAK_RATE_THRESHOLD
+        )
+
     fun setSectionMode(mode: SectionMode) {
         _sectionMode.value = mode
         val secs = _sections.value
         when (mode) {
             SectionMode.FULL -> _selectedSections.value = secs.map { it.index }.toSet()
             SectionMode.WEAKNESS -> {
-                // 自动选中错误率 > 0 的薄弱段落
+                // 自动选中「现在仍然弱」的段落（判据见 weakSectionIndexes）
                 val ranked = _rankedSections.value
-                val weak = ranked.filter { it.errorRate > 0f }.map { it.section.index }.toSet()
+                val weak = weakSectionIndexes(ranked.map { it.section.index to it.errorRate })
                 _selectedSections.value = if (weak.isEmpty()) secs.map { it.index }.toSet() else weak
             }
             SectionMode.SELECTED -> { /* 保持当前选择不变 */ }
@@ -1568,7 +1622,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         mode = _mode.value.name,
                         totalBlanks = total,
                         correctCount = correctCount,
-                        mistakes = emptyList(),
+                        mistakes = DictationMistakes.assemble(originalSentences, checkResult),
                         duration = if (practiceStartTime > 0) System.currentTimeMillis() - practiceStartTime else 0L,
                         similarity = similarity,
                         rating = rating.value,
@@ -1576,7 +1630,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         strongHints = _strongHintCount.value
                     )
                 )
-                // 反向默写无逐空错题结构：只清空墨迹缓冲、不落盘
+                // 反向默写现在也有逐空错题结构（见 DictationMistakes）；墨迹缓冲仍按原样清 ——
+                // 默写没有单空位可挂笔迹，错题回顾对这一模式仍只显示文字明细
                 saveWrongInk(saved)
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
             // 更新 FSRS 记忆状态（自适应调度）
@@ -1632,13 +1687,14 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             // 提交完成：AI 开启时自动生成训练分析
             generateTrainingAnalysis()
 
-            // 记录今天已学习（用于连续天数统计 + 智能提醒）
-            ReminderPrefs.recordStudyToday()
+            // 记录今天已学习（用于连续天数统计 + 智能提醒）。
+            // 一个空都没判分时不算「今天学过」，也不入库、不写 FSRS：这种空记录会污染
+            // 总次数 / 今日目标 / 日历热力图，而 ForgettingPredictor 还把 totalBlanks==0 当 100% 正确率。
+            // 空 results 的真实来源：partial 提交时空白全部跳过、cloze 为 null、判分异常被上面吞掉。
+            val graded = results.isNotEmpty()
+            if (graded) ReminderPrefs.recordStudyToday()
 
             // 保存练习记录（仅包含已批改的）
-            val mistakes = results.entries
-                .filter { it.value.result != AnswerChecker.Result.CORRECT }
-                .map { MistakeDetail(it.key, it.value.correctAnswer, it.value.userAnswer, it.value.result.name) }
             val recordRepo = RecordRepository.getInstance(
                 getApplication<Application>().filesDir.resolve("records.json").absolutePath
             )
@@ -1671,23 +1727,35 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             }
             val answeredSentenceStarts = if (!anchorsUsable) emptyList()
             else results.keys.mapNotNull { blankIdx -> blankSentenceIndex(blankIdx)?.let { anchors.getOrNull(it) } }.distinct()
-            // 本次答错的句子（【全文切句】句子索引）：供后续「薄弱优先/薄弱集训」的句级错误画像。
-            // 取锚点（全文坐标）在全文切句起点表中的下标；跨文会话不落字段（坐标仅对当次 mix 有效）
-            val mistakeSentenceIndices = if (!anchorsUsable || articleId <= 0L) emptyList() else {
-                val content = _article.value?.content.orEmpty()
-                val fullStarts = withContext(Dispatchers.Default) {
-                    SentenceSplitter.splitWithPositions(content).map { it.startIndex }
+            // 空位 → 【全文切句】句子索引：取锚点（全文坐标）在全文切句起点表中的下标。
+            // 只算一次，逐错落点与句级去重集合都从这张表出 —— 两处各换算一遍就会漂成两个口径。
+            // 跨文会话不落（坐标仅对当次 mix 有效）。
+            val blankToFullSentenceIndex: Map<Int, Int> =
+                if (!anchorsUsable || articleId <= 0L) emptyMap()
+                else withContext(Dispatchers.Default) {
+                    val content = _article.value?.content.orEmpty()
+                    val fullStarts = SentenceSplitter.splitWithPositions(content).map { it.startIndex }
+                    results.keys.mapNotNull { blankIdx ->
+                        val start = blankSentenceIndex(blankIdx)?.let { anchors.getOrNull(it) } ?: return@mapNotNull null
+                        val idx = fullStarts.indexOf(start)
+                        if (idx < 0) null else blankIdx to idx
+                    }.toMap()
                 }
-                results.filterValues { it.result != AnswerChecker.Result.CORRECT }
-                    .keys
-                    .mapNotNull { blankIdx -> blankSentenceIndex(blankIdx)?.let { anchors.getOrNull(it) } }
-                    .distinct()
-                    .mapNotNull { start -> fullStarts.indexOf(start).takeIf { it >= 0 } }
-                    .distinct()
-            }
+            val mistakes = results.entries
+                .filter { it.value.result != AnswerChecker.Result.CORRECT }
+                .map {
+                    MistakeDetail(
+                        it.key, it.value.correctAnswer, it.value.userAnswer, it.value.result.name,
+                        blankToFullSentenceIndex[it.key] ?: -1,
+                        // 逐空相似度一并留存：会话级均值继续给统计页用，这一份用来分「一笔之差」和「全错」
+                        it.value.similarity
+                    )
+                }
+            // 本次答错的句子（去重集合）：由上面的逐错落点直接汇出，不再另走一遍锚点换算
+            val mistakeSentenceIndices = mistakes.map { it.sentenceIndex }.filter { it >= 0 }.distinct()
             try {
                 // 接住返回值：错题墨迹旁路存档要用记录 id（见 saveWrongInk）
-                val saved = recordRepo.insert(
+                val saved = if (graded) recordRepo.insert(
                     PracticeRecord(
                         articleId = articleId,
                         mode = mode.name,
@@ -1702,11 +1770,34 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         answeredSentenceStarts = answeredSentenceStarts,
                         mistakeSentenceIndices = mistakeSentenceIndices
                     )
-                )
-                saveWrongInk(saved)
+                ) else null
+                saved?.let { saveWrongInk(it) }
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
             // 更新 FSRS 记忆状态（自适应调度）
-            updateFsrsState(articleId, rating)
+            if (graded) updateFsrsState(articleId, rating)
+            // 逐句也进 FSRS 闭环：整场练习塌成一个文章级评级时，调度器永远不知道**哪句**生疏
+            // （文章级 state 照旧写，这一遍是往同一个 store 的句子命名空间里加来源）。
+            // 键 = s:<articleId>:<hash16>，与每日一句同一套口径，存储层与备份格式零改动。
+            // 跨文会话（articleId<=0）不写：那些句子分属多篇文章，与文章级态不写同一个理由。
+            if (graded && articleId > 0L) {
+                val sentenceTexts = when (mode) {
+                    BlancallMode.SENTENCE -> sentenceCloze?.sentences
+                    BlancallMode.WORD -> wordCloze?.sentences?.map { it.text }
+                    else -> null
+                }
+                if (sentenceTexts != null) {
+                    val perSentence = SentencePracticeRatings.bySentence(
+                        results.mapValues { it.value.result }, blankSentenceIndex
+                    )
+                    updateSentenceStates(
+                        perSentence.mapNotNull { (sentenceIdx, rating) ->
+                            sentenceTexts.getOrNull(sentenceIdx)?.let {
+                                SentenceSelector.sentenceKey(articleId, it) to rating
+                            }
+                        }.toMap()
+                    )
+                }
+            }
             // 部分提交时保存练习进度；完整提交后清除进度文件。
             // 跨文练习（articleId=-1）不写进度：不同组合会互相覆盖且无法恢复，明确不支持续练
             if (partial && articleId > 0L) {

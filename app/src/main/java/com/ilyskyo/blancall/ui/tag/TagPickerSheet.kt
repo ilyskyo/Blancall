@@ -30,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -115,15 +117,15 @@ fun TagPickerSheet(
                 .padding(top = 6.dp, bottom = 20.dp),
         ) {
             Text(
-                "选择标签",
+                stringResource(com.ilyskyo.blancall.R.string.choose_tags),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                if (targets.size == 1) "文章《${targets.first().title}》"
-                else "已选 ${targets.size} 篇文章",
+                if (targets.size == 1) stringResource(com.ilyskyo.blancall.R.string.article_of, targets.first().title)
+                else pluralStringResource(com.ilyskyo.blancall.R.plurals.selected_articles, targets.size, targets.size),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -132,7 +134,7 @@ fun TagPickerSheet(
             if (targets.size > 1) {
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "勾选 = 添加到全部所选文章，取消勾选 = 从全部移除",
+                    stringResource(com.ilyskyo.blancall.R.string.picker_toggle_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
@@ -150,7 +152,7 @@ fun TagPickerSheet(
                 when (state) {
                     0 -> {
                     Text(
-                        "还没有标签，先新建一个吧",
+                        stringResource(com.ilyskyo.blancall.R.string.no_tags_yet),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.padding(vertical = 10.dp),
@@ -192,7 +194,7 @@ fun TagPickerSheet(
                                 modifier = Modifier.weight(1f),
                             )
                             Text(
-                                "${counts[tag.id] ?: 0} 篇",
+                                pluralStringResource(com.ilyskyo.blancall.R.plurals.tag_usage_count, counts[tag.id] ?: 0, counts[tag.id] ?: 0),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             )
@@ -223,7 +225,7 @@ fun TagPickerSheet(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "新建标签",
+                        stringResource(com.ilyskyo.blancall.R.string.new_tag),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -236,11 +238,11 @@ fun TagPickerSheet(
                         createError = false
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("新标签名称（最多 12 字）") },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.new_tag_name_hint)) },
                     singleLine = true,
                     isError = createError,
                     supportingText = if (createError) {
-                        { Text("名称为空、超长或已存在同名标签") }
+                        { Text(stringResource(com.ilyskyo.blancall.R.string.tag_create_error)) }
                     } else {
                         null
                     },
@@ -259,7 +261,7 @@ fun TagPickerSheet(
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("取消")
+                        Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
                     }
                     Button(
                         onClick = {
@@ -289,11 +291,11 @@ fun TagPickerSheet(
                         enabled = newName.isNotBlank(),
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("创建")
+                        Text(stringResource(com.ilyskyo.blancall.R.string.create))
                     }
                 }
                 Text(
-                    "颜色已自动分配，可在「设置 → 文章标签」中调整",
+                    stringResource(com.ilyskyo.blancall.R.string.tag_color_auto),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.padding(top = 4.dp),
@@ -309,12 +311,12 @@ fun TagPickerSheet(
             ) {
                 if (anyBound) {
                     TextButton(onClick = { confirmClear = true }) {
-                        Text("清除全部标签", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(com.ilyskyo.blancall.R.string.clear_all_tags), color = MaterialTheme.colorScheme.error)
                     }
                 }
                 Spacer(Modifier.weight(1f))
                 Button(onClick = { commit(addedSet, removedSet) }) {
-                    Text("完成")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.done))
                 }
             }
         }
@@ -324,21 +326,21 @@ fun TagPickerSheet(
     if (confirmClear) {
         BlancallAlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("清除全部标签") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.clear_all_tags)) },
             text = {
                 Text(
-                    if (targets.size == 1) "将移除这篇文章的全部标签（不会删除标签本身）。"
-                    else "将移除这 ${targets.size} 篇文章的全部标签（不会删除标签本身）。"
+                    if (targets.size == 1) stringResource(com.ilyskyo.blancall.R.string.clear_all_confirm_one)
+                    else pluralStringResource(com.ilyskyo.blancall.R.plurals.clear_all_confirm_many, targets.size, targets.size)
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false
                     commit(emptySet(), tags.map { it.id }.toSet())
-                }) { Text("清除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.clear), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("取消") }
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             },
         )
     }

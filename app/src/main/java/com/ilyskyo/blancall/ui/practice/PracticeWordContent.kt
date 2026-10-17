@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -102,7 +103,9 @@ internal fun WordClozeContent(
                             sentence.blanks.forEach { blankIdx ->
                                 val blank = blancall.blanks.getOrNull(blankIdx) ?: return@forEach
                                 BlankCard(
-                                    label = "填空 [${blankIdx + 1}]",
+                                    label = stringResource(
+                                        com.ilyskyo.blancall.R.string.blank_label, blankIdx + 1
+                                    ),
                                     value = userAnswers[blankIdx] ?: "",
                                     checkDetail = checkResults[blankIdx],
                                     isSubmitted = isSubmitted,
@@ -149,16 +152,18 @@ internal fun WordClozeContent(
                 TextButton(
                     onClick = { if (pos > 0) activeBlank = blanksList[pos - 1].index },
                     enabled = pos > 0
-                ) { Text("← 上一空") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.blank_prev)) }
                 Text(
-                    "第 ${pos + 1} / ${blanksList.size} 空",
+                    stringResource(
+                        com.ilyskyo.blancall.R.string.blank_progress, pos + 1, blanksList.size
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 TextButton(
                     onClick = { if (pos in 0 until blanksList.size - 1) activeBlank = blanksList[pos + 1].index },
                     enabled = pos in 0 until blanksList.size - 1
-                ) { Text("下一空 →") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.blank_next)) }
             }
         }
         }
@@ -237,7 +242,7 @@ internal fun BlankCard(
                 onValueChange = onValueChange,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isSubmitted,
-                placeholder = "请输入答案",
+                placeholder = stringResource(com.ilyskyo.blancall.R.string.answer_placeholder),
                 hintChar = if (!isSubmitted) hintChar else null,
                 isError = isSubmitted && checkDetail?.result != AnswerChecker.Result.CORRECT,
                 singleLine = !multiline,
@@ -265,7 +270,7 @@ internal fun BlankCard(
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(
-                        checkDetail.message,
+                        checkDetailText(checkDetail),
                         color = if (checkDetail.result == AnswerChecker.Result.CORRECT)
                             MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.labelSmall,
@@ -278,7 +283,10 @@ internal fun BlankCard(
                             shape = MaterialTheme.shapes.extraSmall
                         ) {
                             Text(
-                                "相似度 ${(checkDetail.similarity * 100).toInt()}%",
+                                stringResource(
+                                    com.ilyskyo.blancall.R.string.answer_similarity,
+                                    (checkDetail.similarity * 100).toInt()
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.tertiary,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
@@ -288,7 +296,9 @@ internal fun BlankCard(
                 }
                 if (checkDetail.result != AnswerChecker.Result.CORRECT && checkDetail.userAnswer.isNotEmpty()) {
                     Text(
-                        "正确答案: ${checkDetail.correctAnswer}",
+                        stringResource(
+                            com.ilyskyo.blancall.R.string.answer_correct_label, checkDetail.correctAnswer
+                        ),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelSmall
                     )
@@ -296,6 +306,78 @@ internal fun BlankCard(
             }
         }
     }
+}
+
+
+/** 判题结果 → 一行提示文案（算法层只给结构化差异 [AnswerChecker.Diff]，文案在这里按 result 取资源） */
+@Composable
+private fun checkDetailText(detail: AnswerChecker.CheckDetail): String = when (detail.result) {
+    AnswerChecker.Result.CORRECT -> when (val d = detail.diff) {
+        is AnswerChecker.Diff.Surface -> when {
+            d.extraPunct.isNotEmpty() -> stringResource(
+                com.ilyskyo.blancall.R.string.check_correct_punct_extra, d.extraPunct
+            )
+            d.missingPunct.isNotEmpty() -> stringResource(
+                com.ilyskyo.blancall.R.string.check_correct_punct_missing, d.missingPunct
+            )
+            else -> stringResource(com.ilyskyo.blancall.R.string.check_correct_punct_diff)
+        }
+        else -> stringResource(com.ilyskyo.blancall.R.string.check_correct)
+    }
+    AnswerChecker.Result.WRONG_ORDER -> stringResource(com.ilyskyo.blancall.R.string.check_wrong_order)
+    AnswerChecker.Result.GLYPH_CONFUSED -> stringResource(
+        com.ilyskyo.blancall.R.string.check_glyph, replacementText(detail.diff)
+    )
+    AnswerChecker.Result.TYPO -> stringResource(
+        com.ilyskyo.blancall.R.string.check_typo, replacementText(detail.diff)
+    )
+    AnswerChecker.Result.MISSING -> when {
+        // 空答案（diff 为空）不叫「少字」叫「未作答」
+        detail.userAnswer.isBlank() -> stringResource(com.ilyskyo.blancall.R.string.check_blank)
+        else -> when (val d = detail.diff) {
+            is AnswerChecker.Diff.Missing -> if (d.fragment.isNotEmpty()) {
+                stringResource(com.ilyskyo.blancall.R.string.check_missing_detail, d.count, d.fragment)
+            } else {
+                stringResource(com.ilyskyo.blancall.R.string.check_missing, d.count)
+            }
+            else -> stringResource(com.ilyskyo.blancall.R.string.check_missing, 0)
+        }
+    }
+    AnswerChecker.Result.EXTRA -> when (val d = detail.diff) {
+        is AnswerChecker.Diff.Extra -> if (d.fragment.isNotEmpty()) {
+            stringResource(com.ilyskyo.blancall.R.string.check_extra_detail, d.count, d.fragment)
+        } else {
+            stringResource(com.ilyskyo.blancall.R.string.check_extra, d.count)
+        }
+        else -> stringResource(com.ilyskyo.blancall.R.string.check_extra, 0)
+    }
+    AnswerChecker.Result.INCORRECT -> when (val d = detail.diff) {
+        is AnswerChecker.Diff.FarOff -> stringResource(
+            com.ilyskyo.blancall.R.string.check_incorrect, d.expectedSnippet, d.writtenSnippet
+        )
+        else -> stringResource(
+            com.ilyskyo.blancall.R.string.check_incorrect, detail.correctAnswer, detail.userAnswer
+        )
+    }
+}
+
+/** 替换明细 → 「第 3 字「己」→「已」 · 第 5 字「未」→「末」」（最多 3 条） */
+@Composable
+private fun replacementText(diff: AnswerChecker.Diff?): String {
+    val items = (diff as? AnswerChecker.Diff.Replacement)?.items.orEmpty()
+    if (items.isEmpty()) return ""
+    // 逐条拼接而不是 joinToString：后者 lambda 不是 composable 上下文，取不了资源
+    val sb = StringBuilder()
+    for ((idx, item) in items.withIndex()) {
+        if (idx > 0) sb.append(" · ")
+        sb.append(
+            stringResource(
+                com.ilyskyo.blancall.R.string.check_replacement,
+                item.position, item.expected.toString(), item.written.toString()
+            )
+        )
+    }
+    return sb.toString()
 }
 
 
@@ -320,7 +402,7 @@ internal fun BlankCountWarningBanner(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "空数调整提示",
+                    stringResource(com.ilyskyo.blancall.R.string.blank_warn_title),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -334,22 +416,29 @@ internal fun BlankCountWarningBanner(
                         kind = AppIconKind.Close,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        contentDescription = "关闭"
+                        contentDescription = stringResource(com.ilyskyo.blancall.R.string.close)
                     )
                 }
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                "本文字数较短，最多可挖 ${warning.maxBlanks} 个空。" +
+                stringResource(
+                    com.ilyskyo.blancall.R.string.blank_warn_too_short, warning.maxBlanks
+                ) +
                 if (warning.actualCount < warning.requestedCount)
-                    "您输入的 ${warning.requestedCount} 个空无法满足（实际生成 ${warning.actualCount} 个）。"
+                    stringResource(
+                        com.ilyskyo.blancall.R.string.blank_warn_exceed,
+                        warning.requestedCount, warning.actualCount
+                    )
                 else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "建议空数：${warning.suggestedBlanks}（不等于最大值，为更适合练习的推荐值）",
+                stringResource(
+                    com.ilyskyo.blancall.R.string.blank_warn_suggestion, warning.suggestedBlanks
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
             )
@@ -359,13 +448,18 @@ internal fun BlankCountWarningBanner(
                     onClick = onDismiss,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Text("关闭", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(com.ilyskyo.blancall.R.string.close), style = MaterialTheme.typography.labelSmall)
                 }
                 Button(
                     onClick = onUseSuggested,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Text("使用建议空数（${warning.suggestedBlanks}）", style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        stringResource(
+                            com.ilyskyo.blancall.R.string.blank_use_suggested, warning.suggestedBlanks
+                        ),
+                        style = MaterialTheme.typography.labelSmall
+                    )
                 }
             }
         }

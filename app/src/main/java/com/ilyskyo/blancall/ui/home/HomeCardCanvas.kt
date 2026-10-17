@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -137,6 +138,20 @@ private val CONTROL_RING = Color(0x33000000)
 
 /** 删除红叉的颜色 */
 private val CLOSE_COLOR = Color(0xFFE53935)
+
+/**
+ * 长按进「卡片编辑态」的判定门槛。
+ *
+ * 不用系统的 400ms：首页这张画布上，一次长按要同时和「点开详情」「拿起卡片拖动」抢同一段
+ * 手指时间，400ms 落在误触区间里（用户 2026-10-09：进编辑态太容易）。
+ * 取 600ms —— 这是 Android 自己在「设置 → 无障碍 → 触摸和按住延迟」里给的「中」档
+ * （短/中/长/超长 = 300/600/1000/1500ms），各家桌面长按进编辑态的量级也在这一档；
+ * 比系统默认慢一档，但仍然短到不需要用户重新学一次「长按」这个动作。
+ *
+ * 用 maxOf 而不是直接写死：用户在系统无障碍里把延迟调得更长时要尊重他的设置，
+ * 那台设备上的 400ms 本来就不是我们的基准。
+ */
+private const val EDIT_MODE_LONG_PRESS_MS = 600L
 
 // ---------------------------------------------------------------------------
 // 渲染辅助
@@ -495,6 +510,9 @@ fun HomeCardCanvas(
     columns: Int = HomeLayoutStore.COLUMNS,
     cardContent: @Composable (HomeLayoutStore.Card) -> Unit
 ) {
+    val add_cardLabel = stringResource(com.ilyskyo.blancall.R.string.add_card)
+    val edit_card_configLabel = stringResource(com.ilyskyo.blancall.R.string.edit_card_config)
+    val delete_cardLabel = stringResource(com.ilyskyo.blancall.R.string.delete_card)
     // 回调也用 rememberUpdatedState 兜住：外层 lambda 每次重组换新实例也不会漏掉最新逻辑
     val cbCardsChange by rememberUpdatedState(onCardsChange)
     val cbDelete by rememberUpdatedState(onDeleteCard)
@@ -593,7 +611,7 @@ fun HomeCardCanvas(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Add,
-                        contentDescription = "添加卡片",
+                        contentDescription = add_cardLabel,
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp)
                     )
@@ -615,7 +633,7 @@ fun HomeCardCanvas(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         imageVector = Icons.Outlined.Add,
-                        contentDescription = "添加卡片",
+                        contentDescription = add_cardLabel,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(28.dp),
                     )
@@ -785,7 +803,10 @@ fun HomeCardCanvas(
                                                 // 不能用 waitForUpOrCancellation：内层手势消费事件时它会同样返回 null，
                                                 // 与「超时」不可区分 —— 那正是之前「一些卡片长按无效 / 乱触发」的根因。
                                                 val timedOut = withTimeoutOrNull(
-                                                    viewConfiguration.longPressTimeoutMillis
+                                                    maxOf(
+                                                        viewConfiguration.longPressTimeoutMillis,
+                                                        EDIT_MODE_LONG_PRESS_MS,
+                                                    )
                                                 ) {
                                                     while (true) {
                                                         val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -954,7 +975,7 @@ fun HomeCardCanvas(
                                         ) {
                                             Icon(
                                                 painter = painterResource(R.drawable.ic_pencil),
-                                                contentDescription = "编辑卡片配置",
+                                                contentDescription = edit_card_configLabel,
                                                 tint = CONTROL_ICON_COLOR,
                                                 modifier = Modifier.size(CONTROL_ICON)
                                             )
@@ -992,7 +1013,7 @@ fun HomeCardCanvas(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Close,
-                                        contentDescription = "删除卡片",
+                                        contentDescription = delete_cardLabel,
                                         tint = CLOSE_COLOR,
                                         modifier = Modifier.size(CONTROL_ICON)
                                     )

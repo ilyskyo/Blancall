@@ -190,6 +190,8 @@ The Liquid Glass visuals are built on:
 
 - **AndroidLiquidGlass** by Kyant0, **Apache License 2.0** — https://github.com/Kyant0/AndroidLiquidGlass
 - **AndroidLiquidGlassView** by QmDeve, **MIT License** — https://github.com/QmDeve/AndroidLiquidGlassView
+  This project vendors its v1.0.5 core sources and fixes one cold-start NPE; every change is
+  listed in docs/VENDOR-AndroidLiquidGlassView.md
 
 Full license texts, copyright notices, and modification notes are in [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES).
 

@@ -521,7 +521,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
             val incorrect = mistakes.count { it.errorType == "INCORRECT" }
             sb.append("错误类型分布：")
             val parts = mutableListOf<String>()
-            if (typo > 0) parts.add("错别字 $typo")
+            if (typo > 0) parts.add("记错 $typo")
             if (missing > 0) parts.add("漏字 $missing")
             if (extra > 0) parts.add("多字 $extra")
             if (order > 0) parts.add("顺序错 $order")

@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.onboarding
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.core.tween
 import com.ilyskyo.blancall.ui.common.Motion
 import androidx.compose.animation.animateContentSize
@@ -35,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -51,60 +53,61 @@ import kotlinx.coroutines.launch
 /** 引导页内容（纯离线，不含任何 AI / 联网功能，双版本共用） */
 private data class OnboardingPage(
     val icon: AppIconKind,
-    val title: String,
-    val subtitle: String,
-    val features: List<String>
+    // 顶层表存不了 stringResource（不在组合上下文）⇒ 存资源号，渲染点再解析
+    @StringRes val title: Int,
+    @StringRes val subtitle: Int,
+    @StringRes val features: List<Int>
 )
 
 private val ONBOARDING_PAGES = listOf(
     OnboardingPage(
         icon = AppIconKind.Home,
-        title = "全新首页",
-        subtitle = "一屏掌握你的背诵进度",
+        title = com.ilyskyo.blancall.R.string.ob_home_title,
+        subtitle = com.ilyskyo.blancall.R.string.ob_home_subtitle,
         features = listOf(
-            "顶部搜索：秒查标题、正文与添加日期",
-            "「添加」按钮就在搜索栏旁，可随时导入文章",
-            "下拉露出品牌栏：logo 与「设置」，设置需下拉可见"
+            com.ilyskyo.blancall.R.string.ob_home_f1,
+            com.ilyskyo.blancall.R.string.ob_home_f2,
+            com.ilyskyo.blancall.R.string.ob_home_f3
         )
     ),
     OnboardingPage(
         icon = AppIconKind.Inbox,
-        title = "导入文章",
-        subtitle = "把要背的文本一键变成可练习的文章",
+        title = com.ilyskyo.blancall.R.string.ob_import_title,
+        subtitle = com.ilyskyo.blancall.R.string.ob_import_subtitle,
         features = listOf(
-            "支持粘贴文本 / 导入文件",
-            "自动识别标题与正文",
-            "从内部素材库也能直接导入"
+            com.ilyskyo.blancall.R.string.ob_import_f1,
+            com.ilyskyo.blancall.R.string.ob_import_f2,
+            com.ilyskyo.blancall.R.string.ob_import_f3
         )
     ),
     OnboardingPage(
         icon = AppIconKind.Edit,
-        title = "三种背诵模式",
-        subtitle = "由浅入深，真正记住",
+        title = com.ilyskyo.blancall.R.string.ob_modes_title,
+        subtitle = com.ilyskyo.blancall.R.string.ob_modes_subtitle,
         features = listOf(
-            "句子挖空：看上下文填空",
-            "字词挖空：逐词过关",
-            "反向默写：看着答案背全文"
+            com.ilyskyo.blancall.R.string.ob_modes_f1,
+            com.ilyskyo.blancall.R.string.ob_modes_f2,
+            com.ilyskyo.blancall.R.string.ob_modes_f3
         )
     ),
     OnboardingPage(
         icon = AppIconKind.TrackChanges,
-        title = "智能复习",
-        subtitle = "在遗忘之前，恰到好处地提醒你",
+        title = com.ilyskyo.blancall.R.string.ob_review_title,
+        subtitle = com.ilyskyo.blancall.R.string.ob_review_subtitle,
         features = listOf(
-            "FSRS 自适应算法编排复习",
-            "首页「待复习」任务一目了然",
-            "按节奏巩固，记忆更牢"
+            com.ilyskyo.blancall.R.string.ob_review_f1,
+            com.ilyskyo.blancall.R.string.ob_review_f2,
+            com.ilyskyo.blancall.R.string.ob_review_f3
         )
     ),
     OnboardingPage(
         icon = AppIconKind.Insights,
-        title = "数据 & 素材库",
-        subtitle = "量化进步，内容常看常新",
+        title = com.ilyskyo.blancall.R.string.ob_data_title,
+        subtitle = com.ilyskyo.blancall.R.string.ob_data_subtitle,
         features = listOf(
-            "学习数据：练习次数与正确率",
-            "错题分析 / 记忆热力图",
-            "内置「西方思想写作素材」等离线素材库"
+            com.ilyskyo.blancall.R.string.ob_data_f1,
+            com.ilyskyo.blancall.R.string.ob_data_f2,
+            com.ilyskyo.blancall.R.string.ob_data_f3
         )
     )
 )
@@ -155,13 +158,13 @@ fun OnboardingScreen(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "欢迎使用 Blancall",
+                        stringResource(com.ilyskyo.blancall.R.string.ob_welcome_title),
                         style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "先花几分钟了解基本用法，即可开始背诵",
+                        stringResource(com.ilyskyo.blancall.R.string.ob_welcome_subtitle),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -173,7 +176,7 @@ fun OnboardingScreen(
                     modifier = Modifier.clip(RoundedCornerShape(16.dp))
                 ) {
                     Text(
-                        "跳过",
+                        stringResource(com.ilyskyo.blancall.R.string.ob_skip),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -235,9 +238,9 @@ fun OnboardingScreen(
                     color = MaterialTheme.colorScheme.primary
                 ) {
                     Text(
-                        if (pagerState.currentPage < pages.size - 1) "下一步"
-                        else if (onFinish != null) "下一步"  // 欢迎流程内：后面还有「帮助-欢迎使用」页
-                        else "开始使用",
+                        if (pagerState.currentPage < pages.size - 1 || onFinish != null)
+                            stringResource(com.ilyskyo.blancall.R.string.ob_next)   // 欢迎流程内：后面还有「帮助-欢迎使用」页
+                        else stringResource(com.ilyskyo.blancall.R.string.ob_start_using),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp)
@@ -291,7 +294,7 @@ private fun OnboardingPageCard(
                 Spacer(Modifier.height(28.dp))
 
                 Text(
-                    text = page.title,
+                    text = stringResource(page.title),
                     style = MaterialTheme.typography.headlineSmall,
                     // 字重红线：headline* 只能 SemiBold（设备楷体无 Bold 面会回退黑体）
                     fontWeight = FontWeight.SemiBold,
@@ -300,7 +303,7 @@ private fun OnboardingPageCard(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = page.subtitle,
+                    text = stringResource(page.subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -319,7 +322,7 @@ private fun OnboardingPageCard(
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            text = f,
+                            text = stringResource(f),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f),

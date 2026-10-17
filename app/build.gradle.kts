@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 47
-        versionName = "7.3.2"
+        versionCode = 49
+        versionName = "7.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -108,7 +108,12 @@ android {
             excludes += setOf(
                 "com/tom_roush/fontbox/resources/cmap/*.jar",
                 "com/tom_roush/fontbox/resources/unicode/*.jar",
-                "com/tom_roush/pdfbox/resources/afm/*.jar"
+                "com/tom_roush/pdfbox/resources/afm/*.jar",
+                // pdfbox-android 传递引入的 BouncyCastle 后量子参数表（picnic + sike 四张），
+                // 打进 APK 共 4,138,070 B；本工程无任何 BC 引用、dex 里也没有 BC 类，纯死重。
+                // x509/CertPathReviewerMessages* 不在此列：那是 BC 运行时按名查找的资源，
+                // 只有 12.8 KB，去掉它换来的行为风险不值。
+                "org/bouncycastle/pqc/**"
             )
         }
     }
@@ -156,7 +161,9 @@ dependencies {
     implementation(libs.androidx.input.motionprediction)
 
     // 液态玻璃（阅读模式悬浮栏真实折射/色散效果，iOS26 LiquidGlass 风格）
-    implementation("com.qmdeve.liquidglass:core:1.0.5")
+    // 上游 com.qmdeve.liquidglass:core:1.0.5 已改为源码入库（见 docs/VENDOR-AndroidLiquidGlassView.md），
+    // 这里只留它真正需要的那一个运行时依赖。
+    implementation(libs.androidx.dynamicanimation)
 
     testImplementation(libs.junit)
     // JVM 单测解析 BlancallGenerator 的 JSON 序列化（仅测试期，不进 APK）

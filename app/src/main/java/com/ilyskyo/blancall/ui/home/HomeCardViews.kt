@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,8 +66,12 @@ import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TagColorDots
 import com.ilyskyo.blancall.ui.common.listItemEnter
+import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.rememberEnteredOnFirstFrame
 import com.ilyskyo.blancall.ui.common.pressClick
+import com.ilyskyo.blancall.ui.common.TouchAnchor
+import com.ilyskyo.blancall.ui.common.rememberTouchAnchor
+import com.ilyskyo.blancall.ui.common.trackTouchAnchor
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
@@ -188,7 +195,7 @@ fun HomeCardContent(
     /** 点「继续」→ 宿主按 mode 恢复练习 */
     onResumePractice: (item: ResumableItem) -> Unit,
     /** 点最近文章卡 → 打开阅读页（第二参为点击时的触点锚点，供页面浮起转场定位） */
-    onOpenArticle: (article: Article) -> Unit,
+    onOpenArticle: (article: Article, anchor: TouchAnchor?) -> Unit,
     /** 「查看全部」→ 宿主跳文章列表 tab */
     onViewAllArticles: () -> Unit,
     /** 点「添加文章」入口卡 → 宿主跳导入页 */
@@ -196,7 +203,7 @@ fun HomeCardContent(
     /** 点自定义挖空卡 → 宿主跳 `practice/<articleId>?configId=<configId>` */
     onOpenClozeConfig: (articleId: Long, configId: Long) -> Unit,
     /** 点自定义遮挡卡 → 宿主跳阅读页（写状态由本组件完成，见 [CustomMaskCard]；第三参为触点锚点） */
-    onOpenMaskConfig: (articleId: Long, configId: Long) -> Unit,
+    onOpenMaskConfig: (articleId: Long, configId: Long, anchor: TouchAnchor?) -> Unit,
     /** 自定义配置的外部修订号：配置被重命名/删除后宿主自增即可触发重新反查 */
     configRevision: Long = 0L,
     /** 学习数据 / 全局数据卡片的统计快照（由宿主算好传入） */
@@ -206,7 +213,7 @@ fun HomeCardContent(
     /** 「句子卡片」的今日句快照（宿主抽句后传入；null = 空态） */
     sentenceUi: SentenceDailyUi? = null,
     /** 点句子卡片 → 宿主打开大卡片界面（参数为触点锚点，供浮起转场定位） */
-    onOpenSentenceCard: () -> Unit = {},
+    onOpenSentenceCard: (TouchAnchor?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // 卡片尺寸由画布固定。这里统一量一次实际宽高，供各卡做「窄 / 矮 / 高」三档自适应；
@@ -331,8 +338,8 @@ private fun DueCard(
         ) {
             CardHeader(
                 dotColor = hue.accent,
-                title = if (dueArticles.isEmpty()) "要复习的任务"
-                else "要复习的任务（${dueArticles.size}篇）",
+                title = if (dueArticles.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.due_tasks)
+                else stringResource(com.ilyskyo.blancall.R.string.due_tasks_count, dueArticles.size),
             )
             Spacer(Modifier.height(if (m.short) 0.dp else if (m.compact) 2.dp else 4.dp))
             // 空占位与待复习列表原先各自换 subtree，卡内这块切换是硬切
@@ -344,8 +351,8 @@ private fun DueCard(
                 if (it) {
                     CardEmptyState(
                         icon = AppIconKind.Check,
-                        title = "今日已没有要复习的",
-                        subtitle = "明天再来看看",
+                        title = stringResource(com.ilyskyo.blancall.R.string.no_due_today),
+                        subtitle = stringResource(com.ilyskyo.blancall.R.string.come_back_tomorrow),
                         accent = hue.accent,
                         compact = m.compact,
                         short = m.short,
@@ -394,7 +401,7 @@ private fun DueCard(
                                     }
                                 }
                                 Text(
-                                    "复习",
+                                    stringResource(com.ilyskyo.blancall.R.string.review_action),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = hue.accent,
                                     maxLines = 1,
@@ -439,8 +446,8 @@ private fun ContinueCard(
         ) {
             CardHeader(
                 dotColor = hue.accent,
-                title = if (rows.isEmpty()) "待继续完成"
-                else "待继续完成（${rows.size}）",
+                title = if (rows.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.resume_tasks)
+                else stringResource(com.ilyskyo.blancall.R.string.resume_tasks_count, rows.size),
             )
             Spacer(Modifier.height(if (m.short) 0.dp else if (m.compact) 2.dp else 4.dp))
             // 空占位与待继续行列表原先各自换 subtree，卡内这块切换是硬切
@@ -452,8 +459,8 @@ private fun ContinueCard(
                 if (it) {
                     CardEmptyState(
                         icon = AppIconKind.TrackChanges,
-                        title = "没有进行中的练习",
-                        subtitle = "挑一篇文章开始练一把",
+                        title = stringResource(com.ilyskyo.blancall.R.string.no_practice_in_progress),
+                        subtitle = stringResource(com.ilyskyo.blancall.R.string.pick_an_article),
                         accent = hue.accent,
                         compact = m.compact,
                         short = m.short,
@@ -474,11 +481,14 @@ private fun ContinueCard(
                     ) {
                         rows.forEach { (item, art) ->
                             val modeLabel = when (item.mode) {
-                                "SENTENCE" -> "句子挖空"
-                                "WORD" -> "字词挖空"
-                                "REVERSE" -> "反向默写"
-                                else -> "练习"
+                                "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
+                                "WORD" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word)
+                                "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
+                                else -> stringResource(com.ilyskyo.blancall.R.string.practice_short)
                             }
+                            val remaining = stringResource(
+                                com.ilyskyo.blancall.R.string.remaining_of_total, item.total - item.answered, item.total
+                            )
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -499,8 +509,7 @@ private fun ContinueCard(
                                         Text(
                                             buildString {
                                                 if (art.author.isNotBlank()) append(art.author.trim()).append(" · ")
-                                                append(modeLabel).append(" · 剩余 ")
-                                                append(item.total - item.answered).append("/").append(item.total)
+                                                append(modeLabel).append(" · ").append(remaining)
                                             },
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
@@ -510,7 +519,7 @@ private fun ContinueCard(
                                     }
                                 }
                                 Text(
-                                    "继续",
+                                    stringResource(com.ilyskyo.blancall.R.string.continue_action),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = hue.accent,
                                     maxLines = 1,
@@ -537,7 +546,7 @@ private fun RecentCard(
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
     onPracticeArticle: (Long) -> Unit,
-    onOpenArticle: (Article) -> Unit,
+    onOpenArticle: (Article, TouchAnchor?) -> Unit,
     onViewAllArticles: () -> Unit,
     m: CardMetrics,
     modifier: Modifier,
@@ -589,7 +598,7 @@ private fun RecentCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "最近使用",
+                    stringResource(com.ilyskyo.blancall.R.string.recently_used),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -602,7 +611,7 @@ private fun RecentCard(
                     // 文字一缩基线就跳，看上去像错字；涟漪关掉，焦点/悬停由它补。
                     val viewAllSrc = remember { MutableInteractionSource() }
                     Text(
-                        "查看全部 ${recentArticles.size} 篇 ›",
+                        stringResource(com.ilyskyo.blancall.R.string.view_all_count, recentArticles.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
@@ -631,8 +640,8 @@ private fun RecentCard(
                 if (it) {
                     CardEmptyState(
                         icon = AppIconKind.Inbox,
-                        title = "还没有文章",
-                        subtitle = "点「添加文章」导入第一篇",
+                        title = stringResource(com.ilyskyo.blancall.R.string.no_articles_yet),
+                        subtitle = stringResource(com.ilyskyo.blancall.R.string.add_first_article_hint),
                         accent = MaterialTheme.colorScheme.primary,
                         compact = m.compact,
                         short = m.short,
@@ -652,14 +661,20 @@ private fun RecentCard(
                         },
                     ) {
                         shown.forEachIndexed { index, article ->
-                            AnimatedVisibility(visible = entered, enter = listItemEnter(index)) {
+                            AnimatedVisibility(
+                                visible = entered,
+                                enter = listItemEnter(index),
+                                // 入场是逐条交错的揭示；退场也得写明，否则走库默认那对
+                                // fadeOut+shrinkVertically（时序写死、减动效下不坍缩）
+                                exit = fadeOut(MotionFade.alpha(MotionFade.exit)),
+                            ) {
                                 RecentArticleRow(
                                     article = article,
                                     tags = tagsByArticle[article.id].orEmpty(),
                                     dateFormat = dateFormat,
                                     compact = m.compact,
                                     dense = m.short,
-                                    onClick = { onOpenArticle(article) },
+                                    onClick = { anchor -> onOpenArticle(article, anchor) },
                                     onPractice = { onPracticeArticle(article.id) },
                                     practiceModifier = practiceAnchorModifier(
                                         articleId = article.id,
@@ -696,17 +711,19 @@ private fun RecentArticleRow(
     dateFormat: SimpleDateFormat,
     compact: Boolean,
     dense: Boolean,
-    onClick: () -> Unit,
+    onClick: (TouchAnchor?) -> Unit,
     onPractice: () -> Unit,
     practiceModifier: Modifier,
     slim: Boolean = false,
 ) {
+    val anchor = rememberTouchAnchor()
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .trackTouchAnchor(anchor)
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .pressClick { onClick() }
+            .pressClick { onClick(anchor.value) }
             .padding(
                 start = if (compact || slim) 10.dp else 12.dp,
                 end = if (compact || slim) 10.dp else 12.dp,
@@ -745,10 +762,13 @@ private fun RecentArticleRow(
             // 窄卡下隐藏「作者·字符数」次要信息，把宽度让给标题（避免标题被挤没）
             if (!compact && !dense) {
                 Spacer(Modifier.width(8.dp))
+                val charCount = pluralStringResource(
+                    com.ilyskyo.blancall.R.plurals.char_count, article.content.length, article.content.length
+                )
                 Text(
                     text = buildString {
                         if (article.author.isNotBlank()) append(article.author.trim()).append(" · ")
-                        append(article.content.length).append(" 字符")
+                        append(charCount)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -761,7 +781,9 @@ private fun RecentArticleRow(
             if (dense) {
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "${article.content.length} 字符",
+                    text = pluralStringResource(
+                        com.ilyskyo.blancall.R.plurals.char_count, article.content.length, article.content.length
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -850,7 +872,8 @@ private fun PracticeButton(
         ),
     ) {
         Text(
-            if (compact) "练习" else "开始练习",
+            if (compact) stringResource(com.ilyskyo.blancall.R.string.practice_short)
+            else stringResource(com.ilyskyo.blancall.R.string.reader_start_practice),
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
         )
@@ -878,7 +901,7 @@ private fun ArticleCard(
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
     onPracticeArticle: (Long) -> Unit,
-    onOpenArticle: (Article) -> Unit,
+    onOpenArticle: (Article, TouchAnchor?) -> Unit,
     m: CardMetrics,
     modifier: Modifier,
 ) {
@@ -895,11 +918,14 @@ private fun ArticleCard(
                     .fillMaxSize()
                     .padding(m.pad),
             ) {
-                CardHeader(dotColor = hue.accent, title = "文章卡片")
+                CardHeader(
+                    dotColor = hue.accent,
+                    title = stringResource(com.ilyskyo.blancall.R.string.article_cards_title)
+                )
                 CardEmptyState(
                     icon = AppIconKind.Inbox,
-                    title = "文章已不存在",
-                    subtitle = "长按卡片可删除这张卡",
+                    title = stringResource(com.ilyskyo.blancall.R.string.article_gone),
+                    subtitle = stringResource(com.ilyskyo.blancall.R.string.long_press_to_remove),
                     accent = hue.accent,
                     compact = m.compact,
                     short = m.short,
@@ -925,7 +951,7 @@ private fun ArticleCard(
                     compact = m.compact,
                     dense = false,
                     slim = m.short,
-                    onClick = { onOpenArticle(article) },
+                    onClick = { anchor -> onOpenArticle(article, anchor) },
                     onPractice = { onPracticeArticle(article.id) },
                     practiceModifier = practiceAnchorModifier(
                         articleId = article.id,
@@ -966,9 +992,12 @@ private fun CustomClozeCard(
         { onOpenClozeConfig(found.articleId, card.refId) }
     }
 
+    val clozeFallback = stringResource(com.ilyskyo.blancall.R.string.custom_cloze)
     CustomConfigCardFrame(
-        title = found?.name ?: fallbackTitle.ifBlank { "自定义挖空" },
-        detail = found?.detail,
+        title = found?.name?.ifBlank { clozeFallback } ?: fallbackTitle.ifBlank { clozeFallback },
+        detail = found?.let {
+            pluralStringResource(com.ilyskyo.blancall.R.plurals.cloze_detail, it.count, it.count, clozeModeLabel(it.mode))
+        },
         dotColor = hue.accent,
         accent = hue.accent,
         containerColor = hue.fill,
@@ -986,7 +1015,7 @@ private fun CustomClozeCard(
 private fun CustomMaskCard(
     card: HomeLayoutStore.Card,
     configRevision: Long,
-    onOpenMaskConfig: (Long, Long) -> Unit,
+    onOpenMaskConfig: (Long, Long, TouchAnchor?) -> Unit,
     m: CardMetrics,
     modifier: Modifier,
 ) {
@@ -1004,6 +1033,7 @@ private fun CustomMaskCard(
     val hue = Macaron.info()
     val found = resolved as? ConfigLookup.Found
     // 触点锚点：点击时以卡片中心作为阅读页浮起转场的起点
+    val anchor = rememberTouchAnchor()
     // 与 MaskConfigListScreen「使用」一致：标记选中配置 + 遮挡粒度切自定义 + 打开遮挡开关，再进阅读页
     val onClick: (() -> Unit)? = if (found == null) null else {
         {
@@ -1017,20 +1047,23 @@ private fun CustomMaskCard(
                         found.articleId
                     ) { it.copy(occlusionCustomConfigId = card.refId, occlusionMode = "custom", occlusionEnabled = true) }
                 }
-                onOpenMaskConfig(found.articleId, card.refId)
+                onOpenMaskConfig(found.articleId, card.refId, anchor.value)
             }
         }
     }
 
+    val maskFallback = stringResource(com.ilyskyo.blancall.R.string.custom_mask)
     CustomConfigCardFrame(
-        title = found?.name ?: fallbackTitle.ifBlank { "自定义遮挡" },
-        detail = found?.detail,
+        title = found?.name?.ifBlank { maskFallback } ?: fallbackTitle.ifBlank { maskFallback },
+        detail = found?.let {
+            pluralStringResource(com.ilyskyo.blancall.R.plurals.mask_detail, it.count, it.count)
+        },
         dotColor = hue.accent,
         accent = hue.accent,
         containerColor = hue.fill,
         onClick = onClick,
         m = m,
-        modifier = modifier,
+        modifier = modifier.trackTouchAnchor(anchor),
     )
 }
 
@@ -1078,7 +1111,7 @@ private fun CustomConfigCardFrame(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    detail ?: "配置已失效",
+                    detail ?: stringResource(com.ilyskyo.blancall.R.string.config_expired),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (detail == null) {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
@@ -1117,7 +1150,7 @@ private fun CustomConfigCardFrame(
                 Spacer(Modifier.height(6.dp))
                 if (detail == null) {
                     Text(
-                        "配置已失效",
+                        stringResource(com.ilyskyo.blancall.R.string.config_expired),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                         maxLines = 2,
@@ -1133,7 +1166,7 @@ private fun CustomConfigCardFrame(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "点击进入",
+                        stringResource(com.ilyskyo.blancall.R.string.tap_to_enter),
                         style = MaterialTheme.typography.labelSmall,
                         color = accent,
                         maxLines = 1,
@@ -1177,7 +1210,7 @@ private fun AddArticleCard(
                 )
                 Spacer(Modifier.width(if (m.compact) 6.dp else 8.dp))
                 Text(
-                    "添加文章",
+                    stringResource(com.ilyskyo.blancall.R.string.add_article),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1186,7 +1219,7 @@ private fun AddArticleCard(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    "导入",
+                    stringResource(com.ilyskyo.blancall.R.string.import_action),
                     style = MaterialTheme.typography.labelSmall,
                     color = hue.accent,
                     maxLines = 1,
@@ -1210,7 +1243,7 @@ private fun AddArticleCard(
                     Spacer(Modifier.width(if (m.compact) 8.dp else 10.dp))
                     Column {
                         Text(
-                            "添加文章",
+                            stringResource(com.ilyskyo.blancall.R.string.add_article),
                             style = if (m.compact) MaterialTheme.typography.bodySmall
                             else MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
@@ -1220,7 +1253,7 @@ private fun AddArticleCard(
                         )
                         if (!m.compact) {
                             Text(
-                                "导入新文章开始练习",
+                                stringResource(com.ilyskyo.blancall.R.string.import_to_start),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                                 maxLines = 1,
@@ -1269,7 +1302,7 @@ private fun StatsCard(
                 )
                 Spacer(Modifier.width(if (m.compact) 6.dp else 8.dp))
                 Text(
-                    "学习数据",
+                    stringResource(com.ilyskyo.blancall.R.string.study_data),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1302,7 +1335,7 @@ private fun StatsCard(
                     iconSize = if (m.compact) 17.dp else 20.dp,
                 )
                 Text(
-                    "学习数据",
+                    stringResource(com.ilyskyo.blancall.R.string.study_data),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1312,7 +1345,7 @@ private fun StatsCard(
                 // 还没练习过时显示「还没有练习记录」，避免「0 次 · 0%」的视觉空旷与错愕
                 if (stats.practices == 0) {
                     Text(
-                        "还没有练习记录",
+                        stringResource(com.ilyskyo.blancall.R.string.no_practice_records),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         maxLines = 1,
@@ -1330,7 +1363,9 @@ private fun StatsCard(
                                 maxLines = 1,
                             )
                             Text(
-                                " 次练习",
+                                pluralStringResource(
+                                    com.ilyskyo.blancall.R.plurals.practice_times_suffix, stats.practices
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 maxLines = 1,
@@ -1338,7 +1373,10 @@ private fun StatsCard(
                             )
                         }
                         Text(
-                            "正确率 ${(stats.rate * 100).toInt()}% · 累计 ${stats.blanks} 字",
+                            pluralStringResource(
+                                com.ilyskyo.blancall.R.plurals.accuracy_total_chars, stats.blanks,
+                                (stats.rate * 100).toInt(), stats.blanks
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1,
@@ -1347,7 +1385,7 @@ private fun StatsCard(
                     }
                 }
                 Text(
-                    "查看详情",
+                    stringResource(com.ilyskyo.blancall.R.string.view_details),
                     style = MaterialTheme.typography.labelSmall,
                     color = hue.accent,
                     maxLines = 1,
@@ -1358,10 +1396,13 @@ private fun StatsCard(
 }
 
 /** 学习数据矮卡摘要：窄卡只留练习次数，避免与标题挤成省略号 */
+@Composable
 private fun statsSummary(stats: HomeStatsData, compact: Boolean): String = when {
-    stats.practices == 0 -> "暂无记录"
-    compact -> "${stats.practices} 次"
-    else -> "${stats.practices} 次 · ${(stats.rate * 100).toInt()}%"
+    stats.practices == 0 -> stringResource(com.ilyskyo.blancall.R.string.no_records)
+    compact -> pluralStringResource(com.ilyskyo.blancall.R.plurals.times_short, stats.practices, stats.practices)
+    else -> pluralStringResource(
+        com.ilyskyo.blancall.R.plurals.times_with_accuracy, stats.practices, stats.practices, (stats.rate * 100).toInt()
+    )
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1398,7 +1439,7 @@ private fun GlobalStatsCard(
                 )
                 Spacer(Modifier.width(if (m.compact) 6.dp else 8.dp))
                 Text(
-                    "全局数据",
+                    stringResource(com.ilyskyo.blancall.R.string.global_data),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1430,7 +1471,7 @@ private fun GlobalStatsCard(
                     )
                     Spacer(Modifier.width(if (m.compact) 6.dp else 8.dp))
                     Text(
-                        "全局数据",
+                        stringResource(com.ilyskyo.blancall.R.string.global_data),
                         style = if (m.compact) MaterialTheme.typography.bodySmall
                         else MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
@@ -1443,19 +1484,37 @@ private fun GlobalStatsCard(
                 // 空态：避免「0 次 / 0% / 0 字 / 0 篇」堆一排看起来空且困惑
                 if (stats.practices == 0) {
                     Text(
-                        "还没有全局练习数据",
+                        stringResource(com.ilyskyo.blancall.R.string.no_global_practice_data),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 } else {
-                    GlobalStatRow("练习总数", "${stats.practices} 次", dense = m.compact)
-                    GlobalStatRow("平均正确率", "${(stats.rate * 100).toInt()}%", dense = m.compact)
+                    GlobalStatRow(
+                        stringResource(com.ilyskyo.blancall.R.string.total_practices),
+                        pluralStringResource(com.ilyskyo.blancall.R.plurals.times_short, stats.practices, stats.practices),
+                        dense = m.compact
+                    )
+                    GlobalStatRow(
+                        stringResource(com.ilyskyo.blancall.R.string.avg_accuracy),
+                        "${(stats.rate * 100).toInt()}%",
+                        dense = m.compact
+                    )
                     // 窄卡只留两行，避免文字被挤成省略号
-                    if (!m.compact) GlobalStatRow("累计填空", "${stats.blanks} 字", dense = false)
+                    if (!m.compact) GlobalStatRow(
+                        stringResource(com.ilyskyo.blancall.R.string.total_blanks),
+                        pluralStringResource(com.ilyskyo.blancall.R.plurals.char_count_short, stats.blanks, stats.blanks),
+                        dense = false
+                    )
                     if (m.tall && !m.compact) {
-                        GlobalStatRow("覆盖文章", "${stats.articleCount} 篇", dense = false)
+                        GlobalStatRow(
+                            stringResource(com.ilyskyo.blancall.R.string.covered_articles),
+                            pluralStringResource(
+                                com.ilyskyo.blancall.R.plurals.articles_short, stats.articleCount, stats.articleCount
+                            ),
+                            dense = false
+                        )
                     }
                 }
             }
@@ -1464,10 +1523,13 @@ private fun GlobalStatsCard(
 }
 
 /** 全局数据矮卡摘要：窄卡只留累计填空数，避免与标题挤成省略号 */
+@Composable
 private fun globalStatsSummary(stats: HomeStatsData, compact: Boolean): String = when {
-    stats.practices == 0 -> "暂无数据"
-    compact -> "${stats.blanks} 字"
-    else -> "${stats.blanks} 字 · ${stats.articleCount} 篇"
+    stats.practices == 0 -> stringResource(com.ilyskyo.blancall.R.string.no_data)
+    compact -> pluralStringResource(com.ilyskyo.blancall.R.plurals.char_count_short, stats.blanks, stats.blanks)
+    else -> pluralStringResource(
+        com.ilyskyo.blancall.R.plurals.chars_and_articles, stats.articleCount, stats.blanks, stats.articleCount
+    )
 }
 
 @Composable
@@ -1512,16 +1574,17 @@ private fun GlobalStatRow(label: String, value: String, dense: Boolean) {
 @Composable
 private fun SentenceDailyCard(
     ui: SentenceDailyUi?,
-    onOpen: () -> Unit,
+    onOpen: (TouchAnchor?) -> Unit,
     m: CardMetrics,
     modifier: Modifier,
 ) {
     val hue = Macaron.info()
     // 触点锚点：点击时以卡片中心作为大卡片界面浮起转场的起点
+    val anchor = rememberTouchAnchor()
     GlassCard(
-        modifier = modifier,
+        modifier = modifier.trackTouchAnchor(anchor),
         shape = HOME_CARD_SHAPE,
-        onClick = { onOpen() },
+        onClick = { onOpen(anchor.value) },
     ) {
         if (ui == null) {
             Column(
@@ -1529,11 +1592,11 @@ private fun SentenceDailyCard(
                     .fillMaxSize()
                     .padding(m.pad),
             ) {
-                CardHeader(dotColor = hue.accent, title = "每日一句")
+                CardHeader(dotColor = hue.accent, title = stringResource(com.ilyskyo.blancall.R.string.daily_sentence))
                 CardEmptyState(
                     icon = AppIconKind.Library,
-                    title = "今天没有可记的句子",
-                    subtitle = "导入文章后，每天送你一句",
+                    title = stringResource(com.ilyskyo.blancall.R.string.no_sentence_today),
+                    subtitle = stringResource(com.ilyskyo.blancall.R.string.import_for_daily_sentence),
                     accent = hue.accent,
                     compact = m.compact,
                     short = m.short,
@@ -1546,7 +1609,15 @@ private fun SentenceDailyCard(
             val meta = buildString {
                 if (ui.articleTitle.isNotBlank()) append("《").append(ui.articleTitle).append("》 · ")
                 append(ui.statusLine)
-                if (ui.pendingDueCount > 0) append(" · 还有 ").append(ui.pendingDueCount).append(" 句待复习")
+                if (ui.pendingDueCount > 0) {
+                    append(" · ")
+                    append(
+                        pluralStringResource(
+                            com.ilyskyo.blancall.R.plurals.pending_sentences_hint,
+                            ui.pendingDueCount, ui.pendingDueCount
+                        )
+                    )
+                }
             }
             if (m.short) {
                 // 矮卡（1 行高）：句文截 2 行 + 状态尾巴；标题行会被顶出可视区，不展示
@@ -1578,7 +1649,7 @@ private fun SentenceDailyCard(
                         .fillMaxSize()
                         .padding(m.pad),
                 ) {
-                    CardHeader(dotColor = hue.accent, title = "每日一句")
+                    CardHeader(dotColor = hue.accent, title = stringResource(com.ilyskyo.blancall.R.string.daily_sentence))
                     Spacer(Modifier.height(if (m.compact) 2.dp else 4.dp))
                     CardBody(
                         modifier = Modifier
@@ -1795,7 +1866,8 @@ private fun practiceAnchorModifier(
 private sealed class ConfigLookup {
     object Loading : ConfigLookup()
     object NotFound : ConfigLookup()
-    data class Found(val articleId: Long, val name: String, val detail: String) : ConfigLookup()
+    // count/mode 是数据不是文案：显示串必须在组合层拼（IO 线程拿不到资源）
+    data class Found(val articleId: Long, val name: String, val count: Int, val mode: String) : ConfigLookup()
 }
 
 /**
@@ -1815,9 +1887,7 @@ private fun resolveCloze(filesDir: File, articleId: Long, configId: Long): Confi
         store.findArticleIdByConfigId(configId) ?: return ConfigLookup.NotFound
     }
     val cfg = store.getConfig(aid, configId) ?: return ConfigLookup.NotFound
-    val name = cfg.name.ifBlank { "自定义挖空" }
-    val mode = clozeModeLabel(cfg.mode)
-    return ConfigLookup.Found(aid, name, "${cfg.blanks.size} 空 · $mode")
+    return ConfigLookup.Found(aid, cfg.name, cfg.blanks.size, cfg.mode)
 }
 
 /** 按 (articleId, configId) 反查自定义遮挡配置（与 [resolveCloze] 同语义） */
@@ -1831,13 +1901,13 @@ private fun resolveMask(filesDir: File, articleId: Long, configId: Long): Config
         store.findArticleIdByConfigId(configId) ?: return ConfigLookup.NotFound
     }
     val cfg = store.getConfig(aid, configId) ?: return ConfigLookup.NotFound
-    val name = cfg.name.ifBlank { "自定义遮挡" }
-    return ConfigLookup.Found(aid, name, "${cfg.spans.size} 块遮挡")
+    return ConfigLookup.Found(aid, cfg.name, cfg.spans.size, "")
 }
 
+@Composable
 private fun clozeModeLabel(mode: String): String = when (mode) {
-    "SENTENCE" -> "句子挖空"
-    "WORD" -> "字词挖空"
-    "REVERSE" -> "反向默写"
-    else -> "练习"
+    "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
+    "WORD" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word)
+    "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
+    else -> stringResource(com.ilyskyo.blancall.R.string.practice_short)
 }

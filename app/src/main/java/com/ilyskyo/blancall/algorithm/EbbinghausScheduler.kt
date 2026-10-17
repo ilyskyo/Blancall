@@ -23,6 +23,16 @@ data class ReviewTemplate(
         val DEEP     = ReviewTemplate("deep",    "深度长期", listOf(1, 2, 4, 7, 15, 30, 60, 90),autoAdjust = false, isPreset = true)
 
         val PRESETS = listOf(SPRINT, STANDARD, DEEP)
+
+        /**
+         * 设置页存的模板 id → 模板对象。全 app 只留这一处映射。
+         *
+         * 原先三屏各写各的：统计页自己 `PRESETS.find { it.id == templateId }`，首页与列表页干脆不传模板
+         * （落到 STANDARD），于是用户选了「冲刺备考」之后，老文章的提醒密度毫无变化，而统计页显示「今天到期」、
+         * 列表页显示「未开始/已完成」—— 同一篇文章两个界面给出相反结论。映射收成一个函数后，
+         * 调用点少传一个模板就会被下面的守卫当场点出。
+         */
+        fun fromId(id: String): ReviewTemplate = PRESETS.find { it.id == id } ?: STANDARD
     }
 }
 
@@ -137,15 +147,8 @@ object EbbinghausScheduler {
             val remainingDays = ceil(remainingMs.toDouble() / MILLIS_PER_DAY).toInt().coerceAtLeast(0)
             return ReviewStatus.PENDING(remainingDays)
         }
-        return getReviewStatus(records)
+        return getReviewStatus(template, records)
     }
-
-    /** 向后兼容：使用默认标准模板 */
-    fun getReviewStatus(records: List<PracticeRecord>): ReviewStatus =
-        getReviewStatus(ReviewTemplate.STANDARD, records)
-
-    fun isDue(records: List<PracticeRecord>): Boolean =
-        isDue(ReviewTemplate.STANDARD, records)
 
     sealed class ReviewStatus {
         data object NOT_STARTED : ReviewStatus()

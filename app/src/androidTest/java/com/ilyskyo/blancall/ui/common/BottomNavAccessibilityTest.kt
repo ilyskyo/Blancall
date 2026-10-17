@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.common
 
+import com.ilyskyo.blancall.R
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -38,7 +39,10 @@ class BottomNavAccessibilityTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
 
-    private val labels = listOf("首页", "我的文章", "数据", "素材库")
+    // 标签已改成资源：测试要跟着设备语言取词，写死中文会在非中文 locale 上假红。
+    private val labels: List<String>
+        get() = listOf(R.string.nav_home, R.string.nav_articles, R.string.nav_stats, R.string.nav_library)
+            .map { rule.activity.getString(it) }
 
     @Test
     fun 四个导航项都可被无障碍激活() {

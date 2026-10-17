@@ -4,7 +4,10 @@ Blancall 使用了以下第三方开源组件。本项目自身以 MIT 许可证
 1. AndroidLiquidGlassView
    - 项目：https://github.com/QmDeve/AndroidLiquidGlassView
    - 用途：本项目的液态玻璃效果（折射 / 色散）依赖此库
-            （com.qmdeve.liquidglass:core:1.0.5）
+   - 分发方式：自 v7.4.0 起不再使用 Maven 坐标 com.qmdeve.liquidglass:core:1.0.5，
+            改为把该库 v1.0.5 的 core 源码（7 个 .java + 1 个 .agsl）原样收录在
+            app/src/main/java/com/qmdeve/liquidglass/ 与 app/src/main/res/raw/ 下，
+            并就地修好了冷启动空指针；改动清单见 docs/VENDOR-AndroidLiquidGlassView.md
    - 许可证：MIT
    - 版权：Copyright ©️ 2025-2026 Donny Yang
 
@@ -198,8 +201,11 @@ Blancall 使用了以下第三方开源组件。本项目自身以 MIT 许可证
 补充合规说明（许可证保留要求）
 - AndroidLiquidGlass（Apache License 2.0）：上游仓库不包含 NOTICE 文件，无可保留项；
   本项目未复制或修改其任何源码文件（仅设计思路借鉴），故无需在修改文件中另行声明更改。
-- AndroidLiquidGlassView（MIT License）：以 Maven 坐标 com.qmdeve.liquidglass:core:1.0.5
-  作为 Gradle 依赖原样引用，本项目未修改其源码。
+- AndroidLiquidGlassView（MIT License）：v1.0.5 的 core 源码已收录进本仓库，
+  每个文件顶部保留上游的 MIT 头与版权声明；本项目在其中 4 个文件里做了标注为
+  「Blancall：」的修改（修冷启动空指针、R 引用改指向本模块、去掉 IDE 注解、
+  自带 Math.clamp 等价实现），逐条理由与 diff 见 docs/VENDOR-AndroidLiquidGlassView.md。
+  再分发时须同时保留上游 MIT 头与本文件。
 - 本文件所载版权与许可声明随本仓库一并分发；任何再分发本仓库（或其重要部分）时，
   须一并保留本文件内容。
 - CASIA-HWDB（手写模型训练数据）：样本数据版权归中国科学院自动化研究所所有，仅限

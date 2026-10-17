@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -117,9 +118,11 @@ internal fun ReadingSettingsSheet(
     }
     var imported by remember { mutableStateOf(ReaderFonts.listImportedFonts(context)) }
     val allFonts = remember(sysFonts, imported) { ReaderFonts.presets + sysFonts + imported }
-    val currentFontName = remember(allFonts, fontId) {
-        allFonts.firstOrNull { it.id == fontId }?.name ?: "默认"
+    val defaultFontName = stringResource(com.ilyskyo.blancall.R.string.default_font_name)
+    val currentFontName = remember(allFonts, fontId, defaultFontName) {
+        allFonts.firstOrNull { it.id == fontId }?.name ?: defaultFontName
     }
+    val fontResourceLabel = stringResource(com.ilyskyo.blancall.R.string.reading_font)
     var fontsExpanded by remember { mutableStateOf(false) }
 
     // 导入字体：系统文件选择器，导入成功后自动选中并刷新列表
@@ -132,7 +135,7 @@ internal fun ReadingSettingsSheet(
                 val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (idx >= 0) c.getString(idx) else null
             }
-        }.getOrNull() ?: uri.lastPathSegment ?: "字体"
+        }.getOrNull() ?: uri.lastPathSegment ?: fontResourceLabel
         val importedFont = runCatching {
             context.contentResolver.openInputStream(uri)
                 ?.use { ReaderFonts.importFont(context, displayName, it) }
@@ -158,7 +161,7 @@ internal fun ReadingSettingsSheet(
                 .padding(start = 24.dp, end = 24.dp, bottom = 36.dp)
         ) {
             Text(
-                "阅读设置",
+                stringResource(com.ilyskyo.blancall.R.string.reading_settings_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = if (isDark) DarkText else PaperWhiteText,
                 fontWeight = FontWeight.SemiBold
@@ -175,7 +178,7 @@ internal fun ReadingSettingsSheet(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "字号 ${fontPx.roundToInt()}",
+                    stringResource(com.ilyskyo.blancall.R.string.font_size_value, fontPx.roundToInt()),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isDark) DarkText else PaperWhiteText
                 )
@@ -202,7 +205,8 @@ internal fun ReadingSettingsSheet(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "行距 ${(lineHeight * 10).roundToInt() / 10f}",
+                    stringResource(com.ilyskyo.blancall.R.string.line_height_value,
+                        (lineHeight * 10).roundToInt() / 10f),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isDark) DarkText else PaperWhiteText
                 )
@@ -229,7 +233,7 @@ internal fun ReadingSettingsSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "字体",
+                    stringResource(com.ilyskyo.blancall.R.string.reading_font),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isDark) DarkText else PaperWhiteText
                 )
@@ -298,7 +302,7 @@ internal fun ReadingSettingsSheet(
                     // 档位由字体能力决定，因此切换字体时上方会自动收敛到可用档位。
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "字重",
+                        stringResource(com.ilyskyo.blancall.R.string.reading_font_weight),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isDark) DarkSub else PaperWhiteSub
                     )
@@ -331,7 +335,7 @@ internal fun ReadingSettingsSheet(
                     if (imported.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "导入字体（${imported.size}）",
+                            stringResource(com.ilyskyo.blancall.R.string.imported_fonts_count, imported.size),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isDark) DarkSub else PaperWhiteSub
                         )
@@ -356,7 +360,7 @@ internal fun ReadingSettingsSheet(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Outlined.Delete,
-                                                contentDescription = "删除字体",
+                                                contentDescription = stringResource(com.ilyskyo.blancall.R.string.delete_font_desc),
                                                 tint = if (isDark) Color(0x99FF7A7A) else Color(0xFFD9534F),
                                                 modifier = Modifier.size(17.dp)
                                             )
@@ -370,7 +374,7 @@ internal fun ReadingSettingsSheet(
                     if (sysFonts.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "系统字体（${sysFonts.size}）",
+                            stringResource(com.ilyskyo.blancall.R.string.system_fonts_count, sysFonts.size),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isDark) DarkSub else PaperWhiteSub
                         )
@@ -407,7 +411,7 @@ internal fun ReadingSettingsSheet(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "导入字体",
+                            stringResource(com.ilyskyo.blancall.R.string.import_font_action),
                             style = MaterialTheme.typography.bodyMedium,
                             color = accent
                         )
@@ -419,13 +423,16 @@ internal fun ReadingSettingsSheet(
 
             // 布局：整篇滚动 / 章节翻页
             Text(
-                "布局",
+                stringResource(com.ilyskyo.blancall.R.string.layout_section),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (isDark) DarkText else PaperWhiteText
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf(0 to "整篇滚动", 1 to "章节翻页").forEach { (mode, label) ->
+                listOf(
+                    0 to stringResource(com.ilyskyo.blancall.R.string.layout_scroll),
+                    1 to stringResource(com.ilyskyo.blancall.R.string.layout_chapter)
+                ).forEach { (mode, label) ->
                     val selected = layoutMode == mode
                     FilterChip(
                         selected = selected,
@@ -454,13 +461,17 @@ internal fun ReadingSettingsSheet(
 
             // 背景选择（深色模式永远纯黑，浅色项禁用）
             Text(
-                "背景",
+                stringResource(com.ilyskyo.blancall.R.string.background_section),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (isDark) DarkText else PaperWhiteText
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf(0 to "跟随主题", 1 to "米白", 2 to "纯白").forEach { (mode, label) ->
+                listOf(
+                    0 to stringResource(com.ilyskyo.blancall.R.string.bg_follow_theme),
+                    1 to stringResource(com.ilyskyo.blancall.R.string.bg_cream),
+                    2 to stringResource(com.ilyskyo.blancall.R.string.bg_pure_white)
+                ).forEach { (mode, label) ->
                     val selected = bgMode == mode
                     val enabled = !isDark || mode == 0
                     FilterChip(
@@ -489,7 +500,7 @@ internal fun ReadingSettingsSheet(
             if (isDark) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "深色模式阅读背景为纯黑，仅支持跟随主题",
+                    stringResource(com.ilyskyo.blancall.R.string.dark_bg_note),
                     style = MaterialTheme.typography.labelSmall,
                     color = DarkSub
                 )
@@ -507,12 +518,12 @@ internal fun ReadingSettingsSheet(
             ) {
                 Column {
                     Text(
-                        "背诵遮挡",
+                        stringResource(com.ilyskyo.blancall.R.string.recitation_mask),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (isDark) DarkText else PaperWhiteText
                     )
                     Text(
-                        "点按遮块揭开原文，辅助背诵",
+                        stringResource(com.ilyskyo.blancall.R.string.mask_tap_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isDark) DarkSub else PaperWhiteSub
                     )
@@ -539,9 +550,9 @@ internal fun ReadingSettingsSheet(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val options = listOf(
-                            "short" to "短遮挡",
-                            "long" to "长遮挡",
-                            "mixed" to "混合长短遮挡"
+                            "short" to stringResource(com.ilyskyo.blancall.R.string.mask_short),
+                            "long" to stringResource(com.ilyskyo.blancall.R.string.mask_long),
+                            "mixed" to stringResource(com.ilyskyo.blancall.R.string.mask_mixed)
                         )
                         options.forEach { (m, label) ->
                             val selected = occlusionMode == m
@@ -585,7 +596,9 @@ internal fun ReadingSettingsSheet(
                                 // 配置名回显（单一来源）：有使用中的配置就显示其名称，
                                 // 没有则回退默认文案「自定义」——不再分「选中后显示固定文案」
                                 // 与「配置名回显」两套逻辑
-                                Text(maskConfigName.ifBlank { "自定义" })
+                                Text(maskConfigName.ifBlank {
+                                    stringResource(com.ilyskyo.blancall.R.string.mask_custom_fallback)
+                                })
                             },
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = when {
@@ -605,7 +618,8 @@ internal fun ReadingSettingsSheet(
                     }
                     // ── 挡片颜色：马卡龙淡色可选（不透明真正遮住，高度与字形一致）──
                     Spacer(Modifier.height(12.dp))
-                    Text("挡片颜色", style = MaterialTheme.typography.labelMedium,
+                    Text(stringResource(com.ilyskyo.blancall.R.string.mask_color_label),
+                        style = MaterialTheme.typography.labelMedium,
                         color = if (isDark) DarkText else PaperWhiteText)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

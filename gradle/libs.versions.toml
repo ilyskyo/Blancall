@@ -16,6 +16,8 @@ workRuntime = "2.9.0"
 commonmark = "0.24.0"
 # 手写笔运动预测（书写板低延迟补间；API 19+ 内置实现）
 motionPrediction = "1.0.0"
+# 液态玻璃 vendored 源码里 LiquidTracker 的弹性动画用（原 AAR 的两个依赖之一）
+dynamicanimation = "1.1.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -42,6 +44,7 @@ pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workRuntime" }
 commonmark = { group = "org.commonmark", name = "commonmark", version.ref = "commonmark" }
 androidx-input-motionprediction = { group = "androidx.input", name = "input-motionprediction", version.ref = "motionPrediction" }
+androidx-dynamicanimation = { group = "androidx.dynamicanimation", name = "dynamicanimation", version.ref = "dynamicanimation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

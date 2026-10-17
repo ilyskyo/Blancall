@@ -62,7 +62,9 @@ class CustomClozeStore private constructor(private val file: File) {
                 loadFailed = false
                 return migrate(JSONObject(file.readText()))
             } catch (_: Exception) {
-                // 主文件损坏：保留现场后落到下方备份分支
+                // 主文件损坏：先把「损坏过」记成粘性标记，再保留现场落到下方备份分支。
+                // 只靠尾部的 file.exists() 判不出来 —— preserveCorruptFile 用 renameTo 把主文件搬走了。
+                loadFailed = true
                 preserveCorruptFile()
             }
         }
@@ -75,8 +77,10 @@ class CustomClozeStore private constructor(private val file: File) {
                 // 备份也不可用，落到下方
             }
         }
-        // 文件确实不存在（首次使用）→ 正常空库；文件存在却读不出来且无备份 → 危险状态，禁止写盘
-        loadFailed = file.exists()
+        // 直接返回空库：loadFailed 保留「是否损坏过」的粘性结论 ——
+        // 首次使用为 false（正常空库、可写）；主文件损坏且备份也不可用时为 true（writeRoot 拒绝写盘）。
+        // 旧写法 `loadFailed = file.exists()` 恒为 false（主文件已被改名搬走），会把危险路径放行成
+        // 「首次使用」，下一次保存即以空 root 抹掉其他文章的全部自定义挖空。
         return freshRoot()
     }
 
@@ -94,6 +98,12 @@ class CustomClozeStore private constructor(private val file: File) {
     /** 版本迁移钩子：未来 schema 变更在此逐级迁移（当前无可迁移步骤，仅就位结构） */
     private fun migrate(root: JSONObject): JSONObject {
         val v = root.optInt("version", 1)
+        // 高于本版本认识的：拒绝读写（详见 StoreVersion）。自定义挖空是用户手工配出来的，
+        // 被一次降级写盘抹掉就找不回来了
+        if (StoreVersion.isFromNewerApp(v, CURRENT_VERSION, "CustomClozeStore")) {
+            loadFailed = true
+            return root
+        }
         if (v < CURRENT_VERSION) {
             // v1 → v2 …：逐级迁移后写回当前版本（本次仅在内存中标记，随下次写盘持久化）
             root.put("version", CURRENT_VERSION)

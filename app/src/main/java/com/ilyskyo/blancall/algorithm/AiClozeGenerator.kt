@@ -396,7 +396,7 @@ object AiClozeGenerator {
      * @param title 文章标题（仅用于称呼，不外泄原文）
      * @param modeLabel 模式中文名（句子挖空/字词挖空/反向默写）
      * @param scoreLine 一行概要（如"正确 6/10，平均相似度 61%"）
-     * @param mistakeSummary 错误明细摘要（含错别字/漏字/多字/顺序错及涉及原词的例子）
+     * @param mistakeSummary 错误明细摘要（含记错/漏字/多字/顺序错及涉及原词的例子）
      * @param weakHints 弱提示次数（淡显下一字）
      * @param strongHints 强提示次数（自动帮填）
      */

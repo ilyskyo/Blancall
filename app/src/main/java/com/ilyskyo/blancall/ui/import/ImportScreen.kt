@@ -54,6 +54,8 @@ import com.ilyskyo.blancall.util.FileTextExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.widget.Toast
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 
 /** 大文件阈值（字符数），超过则提示拆分以避免挖空时卡顿 */
 private const val LARGE_FILE_THRESHOLD = 5000
@@ -136,7 +138,7 @@ fun ImportScreen(navController: NavController) {
                 navController.popBackStack()
             }
         } catch (e: Exception) {
-            errorMessage = e.message ?: "保存失败"
+            errorMessage = e.message ?: context.getString(com.ilyskyo.blancall.R.string.save_failed)
         } finally {
             isSaving = false
         }
@@ -154,13 +156,16 @@ fun ImportScreen(navController: NavController) {
                     }
                     val text = result.text
                     if (text.length > MAX_CONTENT_LENGTH) {
-                        Toast.makeText(context, "文本过长（${text.length}字符），已截断至 $MAX_CONTENT_LENGTH 字符，建议拆分导入", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, context.resources.getQuantityString(
+                        com.ilyskyo.blancall.R.plurals.import_truncated, text.length, text.length, MAX_CONTENT_LENGTH,
+                    ), Toast.LENGTH_LONG).show()
                         content = text.take(MAX_CONTENT_LENGTH)
                     } else {
                         content = text
                     }
                     fileLoaded = true
-                    imageNotice = if (result.hasImages) "文档中的图片无法导入，已仅保留文字内容" else null
+                    imageNotice = if (result.hasImages)
+                        context.getString(com.ilyskyo.blancall.R.string.doc_images_dropped) else null
                     if (title.isBlank()) {
                         // getFileName 内部走 ContentResolver.query，需在 IO 线程执行
                         val fileName = withContext(Dispatchers.IO) { FileTextExtractor.getFileName(context, it) }
@@ -175,7 +180,7 @@ fun ImportScreen(navController: NavController) {
                     previewFileUri = if (isPreviewableFile(pickedName)) it else null
                     errorMessage = null
                 } catch (e: Exception) {
-                    errorMessage = "文件读取失败: ${e.message}"
+                    errorMessage = context.getString(com.ilyskyo.blancall.R.string.import_read_failed, e.message.orEmpty())
                 } finally {
                     isLoading = false
                 }
@@ -205,7 +210,7 @@ fun ImportScreen(navController: NavController) {
             BackButton(onClick = { navController.popBackStack() })
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "导入文本",
+                text = stringResource(com.ilyskyo.blancall.R.string.import_text_title),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -228,7 +233,7 @@ fun ImportScreen(navController: NavController) {
             FilterChip(
                 selected = !useFileImport,
                 onClick = { useFileImport = false; fileLoaded = false; lastFileAutoIndent = true; imageNotice = null },
-                label = { Text("粘贴文本") },
+                label = { Text(stringResource(com.ilyskyo.blancall.R.string.paste_text)) },
                 shape = RoundedCornerShape(8.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -238,7 +243,7 @@ fun ImportScreen(navController: NavController) {
             FilterChip(
                 selected = useFileImport,
                 onClick = { useFileImport = true; fileLoaded = false },
-                label = { Text("文件导入") },
+                label = { Text(stringResource(com.ilyskyo.blancall.R.string.file_import)) },
                 shape = RoundedCornerShape(8.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -267,7 +272,7 @@ fun ImportScreen(navController: NavController) {
                         }
                     }
                 }) {
-                    Text("预览文件", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(com.ilyskyo.blancall.R.string.preview_file), style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -299,7 +304,7 @@ fun ImportScreen(navController: NavController) {
                 value = title,
                 onValueChange = { title = it },
                 // 自适应单行标签：窄屏也永远不折行（折行会把输入框撞高，导致与右侧作者框不等高）
-                label = { AdaptiveTextFieldLabel("文章标题") },
+                label = { AdaptiveTextFieldLabel(stringResource(com.ilyskyo.blancall.R.string.article_title_field)) },
                 modifier = Modifier
                     .weight(1.6f)
                     .focusRequester(titleFocusRequester),
@@ -318,7 +323,7 @@ fun ImportScreen(navController: NavController) {
                 value = author,
                 onValueChange = { author = it },
                 // 自适应单行标签：「作者（选填）」在部分窄屏上放不下会折行、把输入框撞高，导致两框不等高
-                label = { AdaptiveTextFieldLabel("作者（选填）") },
+                label = { AdaptiveTextFieldLabel(stringResource(com.ilyskyo.blancall.R.string.field_author_optional)) },
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(authorFocusRequester),
@@ -349,7 +354,7 @@ fun ImportScreen(navController: NavController) {
                     )
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(if (isLoading) "正在解析文件..." else "选择文件")
+                Text(if (isLoading) stringResource(com.ilyskyo.blancall.R.string.parsing_file) else stringResource(com.ilyskyo.blancall.R.string.choose_file))
             }
 
             if (fileLoaded && content.isNotEmpty()) {
@@ -362,7 +367,7 @@ fun ImportScreen(navController: NavController) {
                     )
                 ) {
                     Text(
-                        text = "已加载: ${content.length} 字符",
+                        text = pluralStringResource(com.ilyskyo.blancall.R.plurals.loaded_chars, content.length, content.length),
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -383,11 +388,12 @@ fun ImportScreen(navController: NavController) {
             OutlinedTextField(
                 value = content,
                 onValueChange = { content = it.take(MAX_CONTENT_LENGTH) },
-                label = { Text("粘贴文本内容") },
+                label = { Text(stringResource(com.ilyskyo.blancall.R.string.paste_text_hint)) },
                 trailingIcon = {
+                    val fullscreenCd = stringResource(com.ilyskyo.blancall.R.string.fullscreen_input)
                     IconButton(
                         onClick = { showFullscreenInput = true },
-                        modifier = Modifier.semantics { contentDescription = "全屏输入" }
+                        modifier = Modifier.semantics { contentDescription = fullscreenCd }
                     ) {
                         AppIcon(
                             kind = AppIconKind.OpenInFull,
@@ -427,8 +433,8 @@ fun ImportScreen(navController: NavController) {
                     titleSuggestionDismissed = false
                     errorMessage = null
                 }
-                content.isBlank() -> errorMessage = "请输入内容"
-                title.isBlank() -> errorMessage = "请输入文章标题"
+                content.isBlank() -> errorMessage = context.getString(com.ilyskyo.blancall.R.string.need_content)
+                title.isBlank() -> errorMessage = context.getString(com.ilyskyo.blancall.R.string.need_title)
                 content.length > LARGE_FILE_THRESHOLD && !showLargeFileWarning -> {
                     // 记录意图：确认「仍然保存」后按同一意图保存
                     pendingOpenClozeEditor = openClozeEditor
@@ -457,7 +463,7 @@ fun ImportScreen(navController: NavController) {
                 enabled = !isSaving,
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("仅保存")
+                Text(stringResource(com.ilyskyo.blancall.R.string.save_only))
             }
             OutlinedButton(
                 onClick = { handleSaveClick(openClozeEditor = true) },
@@ -465,7 +471,7 @@ fun ImportScreen(navController: NavController) {
                 enabled = !isSaving,
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("保存并挖空")
+                Text(stringResource(com.ilyskyo.blancall.R.string.save_and_cloze))
             }
         }
 
@@ -506,7 +512,7 @@ fun ImportScreen(navController: NavController) {
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        "提取标题",
+                        stringResource(com.ilyskyo.blancall.R.string.extract_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -515,7 +521,7 @@ fun ImportScreen(navController: NavController) {
             text = {
                 Column {
                     Text(
-                        "是否采用粘贴内容的第一行作为标题？",
+                        stringResource(com.ilyskyo.blancall.R.string.use_first_line_question),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -527,7 +533,8 @@ fun ImportScreen(navController: NavController) {
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                     ) {
                         Text(
-                            "「$firstLine${if (firstLine.length >= TITLE_TRUNCATE_LENGTH) "…" else ""}」",
+                            stringResource(com.ilyskyo.blancall.R.string.first_line_preview,
+                                firstLine + if (firstLine.length >= TITLE_TRUNCATE_LENGTH) "…" else ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
@@ -546,7 +553,7 @@ fun ImportScreen(navController: NavController) {
                     },
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("使用第一行")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.use_first_line))
                 }
             },
             dismissButton = {
@@ -555,7 +562,7 @@ fun ImportScreen(navController: NavController) {
                     titleSuggestionDismissed = true
                     titleHighlight = true
                 }) {
-                    Text("在此输入标题")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.enter_title_here))
                 }
             }
         )
@@ -565,9 +572,9 @@ fun ImportScreen(navController: NavController) {
     if (showLargeFileWarning) {
         BlancallAlertDialog(
             onDismissRequest = { showLargeFileWarning = false },
-            title = { Text("文本较长") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.text_too_long_title)) },
             text = {
-                Text("当前文本共 ${content.length} 字符，篇幅较长。\n在生成挖空练习时，较长的文本可能导致卡顿甚至闪退。\n\n建议将文本拆分后分别导入，或选择较短的文段。\n\n是否仍要保存？")
+                Text(pluralStringResource(com.ilyskyo.blancall.R.plurals.text_too_long_body, content.length, content.length))
             },
             confirmButton = {
                 Button(
@@ -577,12 +584,12 @@ fun ImportScreen(navController: NavController) {
                         scope.launch { saveAndExit(title.trim(), content.trim(), author.trim(), pendingOpenClozeEditor) }
                     }
                 ) {
-                    Text("仍然保存")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.save_anyway))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showLargeFileWarning = false }) {
-                    Text("返回修改")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.back_to_edit))
                 }
             }
         )
@@ -608,9 +615,9 @@ fun ImportScreen(navController: NavController) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("全屏输入", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(com.ilyskyo.blancall.R.string.fullscreen_input), style = MaterialTheme.typography.titleMedium)
                 TextButton(onClick = { showFullscreenInput = false }) {
-                    Text("完成")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.done))
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -625,7 +632,7 @@ fun ImportScreen(navController: NavController) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .defaultMinSize(minHeight = 400.dp),
-                    placeholder = { Text("在此粘贴或输入文本...") },
+                    placeholder = { Text(stringResource(com.ilyskyo.blancall.R.string.paste_here_hint)) },
                     maxLines = Int.MAX_VALUE
                 )
             }

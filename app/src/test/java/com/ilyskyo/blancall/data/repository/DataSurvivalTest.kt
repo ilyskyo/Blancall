@@ -225,9 +225,10 @@ class HomeLayoutStoreSurvivalTest {
     }
 
     @Test
-    fun `主文件损坏且无备份时回退默认布局且可重新保存`() {
+    fun `主文件损坏且无备份时回退默认布局但拒绝保存（不得清空首页）`() {
         val file = File(dir, "home_layout.json")
         val bak = File(dir, "home_layout.json.bak")
+        val healthy = if (file.exists()) file.readText() else ""
         file.writeText("{ 损坏")
         bak.delete()
 
@@ -235,8 +236,32 @@ class HomeLayoutStoreSurvivalTest {
         val recovered = store.getCards()
         assertTrue("应回退默认布局而非空列表", recovered.isNotEmpty())
 
-        // 且可重新保存（覆盖损坏文件）
+        // 拒绝写盘。旧断言「可重新保存」固化了坏行为：损坏现场已被 preserveCorruptFile 改名搬走，
+        // 此时写盘会把用户摆好的整个首页换成这一张卡
         store.saveCards(listOf(cardA))
-        assertEquals(listOf("due"), store.getCards().map { it.id })
+        assertFalse("损坏且无备份时必须拒绝写盘", file.exists())
+
+        // 收尾：还原健康内容（成功解析清除粘性标记），并让缓存跟着磁盘走
+        if (healthy.isBlank()) file.delete() else file.writeText(healthy)
+        store.getCards()
+    }
+
+    /**
+     * 解析缓存必须跟着磁盘走：「一键导入备份」是直接往 filesDir 写文件、不经过
+     * [HomeLayoutStore] 的，若只按「本类写过盘」失效，导入完成后首页仍会显示旧布局。
+     */
+    @Test
+    fun `外部直接写盘后读到的是新布局`() {
+        val file = File(dir, "home_layout.json")
+        store.saveCards(listOf(cardA, cardB))
+        val two = file.readText()
+
+        store.saveCards(listOf(cardA))
+        assertEquals(1, store.getCards().size)   // 先建立「只剩一张卡」的缓存
+
+        file.writeText(two)                      // 模拟导入：绕过 store 直接落盘
+        assertEquals(2, store.getCards().size)
+
+        store.saveCards(listOf(cardA))           // 收尾，别影响其它用例
     }
 }

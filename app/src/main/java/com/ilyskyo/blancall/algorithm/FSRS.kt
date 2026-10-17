@@ -161,9 +161,42 @@ object FsrsEngine {
      * @return 更新后的新状态（调用方负责持久化）
      */
     fun review(state: CardState, rating: Rating, now: Long = System.currentTimeMillis()): CardState {
-        val isNew = state.reviewCount == 0 || state.stability <= 0.0
+        val (newDifficulty, newStability) = nextMemory(state, rating, now)
+        val intervalDays = nextInterval(newStability)
+        return CardState(
+            difficulty = newDifficulty,
+            stability = newStability,
+            due = now + intervalDays * MILLIS_PER_DAY,
+            lastReview = now,
+            reviewCount = state.reviewCount + 1,
+            lapses = state.lapses + if (rating == Rating.AGAIN) 1 else 0
+        )
+    }
 
-        val (newDifficulty, newStability) = if (isNew) {
+    /**
+     * 评级 → 下次间隔天数（**不含 fuzz 扰动**），供界面预览用。
+     *
+     * 为什么单独开一个入口：[review] 的间隔带 ±5% 随机扰动（防同日堆积），直接拿它当按钮文案，
+     * 同一张卡每次重组都会跳一个数（"6天"↔"5天"）。预览走**同一套稳定性公式、只跳过扰动**，
+     * 因此稳定、可复现、可单测；代价是与真实落盘间隔可能差几个百分点（用户无感）。
+     */
+    fun previewIntervalDays(
+        state: CardState,
+        rating: Rating,
+        now: Long = System.currentTimeMillis(),
+    ): Int {
+        val (_, newStability) = nextMemory(state, rating, now)
+        return rawInterval(newStability).roundToInt().coerceIn(1, MAX_INTERVAL_DAYS)
+    }
+
+    /**
+     * 只算记忆状态（难度 D, 稳定性 S），不含间隔扰动。
+     * 抽出来是为了让 [review]（真实调度）与 [previewIntervalDays]（预览）共用**同一条公式路径** ——
+     * 两处各写一遍迟早会漂，而漂的是"用户看到的"和"实际排的"不一致，最难被发现。
+     */
+    private fun nextMemory(state: CardState, rating: Rating, now: Long): Pair<Double, Double> {
+        val isNew = state.reviewCount == 0 || state.stability <= 0.0
+        return if (isNew) {
             initDifficulty(rating) to initStability(rating)
         } else {
             val elapsedDays = (now - state.lastReview).toDouble() / MILLIS_PER_DAY
@@ -184,16 +217,6 @@ object FsrsEngine {
                 }
             }
         }
-
-        val intervalDays = nextInterval(newStability)
-        return CardState(
-            difficulty = newDifficulty,
-            stability = newStability,
-            due = now + intervalDays * MILLIS_PER_DAY,
-            lastReview = now,
-            reviewCount = state.reviewCount + 1,
-            lapses = state.lapses + if (rating == Rating.AGAIN) 1 else 0
-        )
     }
 
     // ────────────────────────────────────────────────
@@ -217,9 +240,12 @@ object FsrsEngine {
         return params[rating.value - 1].coerceAtLeast(MIN_STABILITY)
     }
 
+    /** 稳定性 → 间隔天数（未取整、未扰动的原始值；间隔与预览共用的唯一公式） */
+    private fun rawInterval(stability: Double): Double =
+        stability / factor * (requestRetention.pow(1.0 / decay) - 1)
+
     private fun nextInterval(stability: Double): Int {
-        val rawInterval = stability / factor * (requestRetention.pow(1.0 / decay) - 1)
-        val fuzzed = applyFuzz(rawInterval)
+        val fuzzed = applyFuzz(rawInterval(stability))
         return fuzzed.roundToInt().coerceIn(1, MAX_INTERVAL_DAYS)
     }
 

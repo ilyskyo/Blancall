@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
@@ -102,17 +104,19 @@ internal fun ModeCard(
 
 // ========== 菜单工具函数 ==========
 
+@Composable
 internal fun modeLabel(mode: BlancallMode): String = when (mode) {
-    BlancallMode.SENTENCE -> "📝 句子挖空"
-    BlancallMode.WORD -> "🔤 字词挖空"
-    BlancallMode.REVERSE -> "✍️ 反向默写"
+    BlancallMode.SENTENCE -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
+    BlancallMode.WORD -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word)
+    BlancallMode.REVERSE -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
 }
 
 
+@Composable
 internal fun strategyLabel(strategy: BlancallGenerator.Strategy): String = when (strategy) {
-    BlancallGenerator.Strategy.BALANCED -> "均衡"
-    BlancallGenerator.Strategy.WEAKNESS_FOCUS -> "薄弱优先"
-    BlancallGenerator.Strategy.FULL_COVERAGE -> "全覆盖"
+    BlancallGenerator.Strategy.BALANCED -> stringResource(com.ilyskyo.blancall.R.string.strategy_balanced_short)
+    BlancallGenerator.Strategy.WEAKNESS_FOCUS -> stringResource(com.ilyskyo.blancall.R.string.strategy_weakness)
+    BlancallGenerator.Strategy.FULL_COVERAGE -> stringResource(com.ilyskyo.blancall.R.string.strategy_full)
 }
 
 
@@ -184,29 +188,29 @@ internal fun SectionPickerContent(
             .verticalScroll(rememberScrollState())
             .padding(start = 24.dp, end = 24.dp, bottom = 36.dp)
     ) {
-        Text("段落复习模式", style = MaterialTheme.typography.titleMedium,
+        Text(stringResource(com.ilyskyo.blancall.R.string.section_picker_title), style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
-        Text("${sections.size} 个段落", style = MaterialTheme.typography.bodySmall,
+        Text(pluralStringResource(com.ilyskyo.blancall.R.plurals.sections_count, sections.size, sections.size), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
 
         // 模式选项（Radio 风格）
         SectionModeItem(
-            emoji = "📖", label = "全文连贯",
-            desc = "按原文顺序，覆盖所有段落",
+            emoji = "📖", label = stringResource(com.ilyskyo.blancall.R.string.section_mode_full),
+            desc = stringResource(com.ilyskyo.blancall.R.string.section_mode_full_desc),
             selected = sectionMode == SectionMode.FULL,
             onClick = { onModeChange(SectionMode.FULL) }
         )
         SectionModeItem(
-            emoji = "🎯", label = "薄弱集训",
-            desc = "只练错题集中的段落",
+            emoji = "🎯", label = stringResource(com.ilyskyo.blancall.R.string.section_mode_weak),
+            desc = stringResource(com.ilyskyo.blancall.R.string.section_mode_weak_desc),
             selected = sectionMode == SectionMode.WEAKNESS,
             onClick = { onModeChange(SectionMode.WEAKNESS) }
         )
         SectionModeItem(
-            emoji = "✂️", label = "自选段落",
-            desc = "手动勾选要复习的段落",
+            emoji = "✂️", label = stringResource(com.ilyskyo.blancall.R.string.section_mode_pick),
+            desc = stringResource(com.ilyskyo.blancall.R.string.section_mode_pick_desc),
             selected = sectionMode == SectionMode.SELECTED,
             onClick = { onModeChange(SectionMode.SELECTED) }
         )
@@ -222,18 +226,18 @@ internal fun SectionPickerContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "已选 ${selectedSections.size}/${sections.size}",
+                    stringResource(com.ilyskyo.blancall.R.string.selected_of_total, selectedSections.size, sections.size),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onSelectAll) {
-                        Text(if (selectedSections.size == sections.size) "取消全选" else "全选",
+                        Text(if (selectedSections.size == sections.size) stringResource(com.ilyskyo.blancall.R.string.deselect_all) else stringResource(com.ilyskyo.blancall.R.string.select_all),
                             style = MaterialTheme.typography.labelMedium)
                     }
                     // 完成按钮：关闭 sheet，避免返回两次才能退出
                     TextButton(onClick = onDismiss) {
-                        Text("完成", style = MaterialTheme.typography.labelMedium,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.done), style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary)
                     }

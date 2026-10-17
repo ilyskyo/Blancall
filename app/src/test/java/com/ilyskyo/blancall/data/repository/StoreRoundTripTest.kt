@@ -227,6 +227,27 @@ class CustomClozeStoreTest {
     }
 
     @Test
+    fun `主文件损坏且无备份：保存被拦截，不得以空库覆盖（防抹库回归）`() {
+        val keepId = store.saveConfig(207, cfg(0, "保命配置", 11, listOf(CustomClozeStore.BlankSpec(0, 0, 1))))
+        val file = java.io.File(dir, "custom_cloze.json")
+        val healthy = file.readText()
+        val bak = java.io.File(dir, "custom_cloze.json.bak")
+        if (bak.exists()) bak.delete()
+        file.writeText("{ 再损坏一次")
+
+        // 读：损坏且无备份 → 空库（现场另存 .corrupt-* 供人工恢复）
+        assertTrue(store.getConfigs(207).isEmpty())
+        // 写：粘性 loadFailed 必须拦截 —— 旧实现尾部用 file.exists() 判定（损坏文件
+        // 已被 preserveCorruptFile 改名搬走 → 恒为 false）会误放行，以空 root 抹掉其他文章的自定义挖空
+        store.saveConfig(207, cfg(0, "不该写进去", 12, listOf(CustomClozeStore.BlankSpec(0, 0, 1))))
+        assertFalse("损坏且无备份时必须拒绝写盘", file.exists())
+
+        // 收尾：恢复健康数据（成功解析会清除粘性标记），不影响其它用例
+        file.writeText(healthy)
+        assertEquals("保命配置", store.getConfigs(207).single { it.id == keepId }.name)
+    }
+
+    @Test
     fun `保存回写 id 可精确命中且字段完整（编辑器点开回填的数据源）`() {
         // 模拟编辑器链路：新建保存（id 回写）→ 列表刷新 → 点开编辑（configId=回写 id）；
         // 编辑器回填口径：getConfigs(articleId).firstOrNull { it.id == configId }

@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -44,6 +45,7 @@ internal fun BlancallScoreCard(
     val total = checkResults.size
     val correct = checkResults.values.count { it.result == AnswerChecker.Result.CORRECT }
     val typo = checkResults.values.count { it.result == AnswerChecker.Result.TYPO }
+    val glyph = checkResults.values.count { it.result == AnswerChecker.Result.GLYPH_CONFUSED }
     val missing = checkResults.values.count { it.result == AnswerChecker.Result.MISSING }
     val extra = checkResults.values.count { it.result == AnswerChecker.Result.EXTRA }
     val wrongOrder = checkResults.values.count { it.result == AnswerChecker.Result.WRONG_ORDER }
@@ -71,30 +73,37 @@ internal fun BlancallScoreCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("正确率：$score%（$correct / $total）",
+                // 读屏文案先取好：semantics {} 的 lambda 不是 @Composable 上下文，里面取不了资源
+                val accuracyDesc = stringResource(
+                    com.ilyskyo.blancall.R.string.score_accuracy_semantics, score, correct, total
+                )
+                Text(stringResource(com.ilyskyo.blancall.R.string.accuracy_with_detail, score, correct, total),
                     style = MaterialTheme.typography.titleMedium,
                     color = scoreColor,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).semantics {
-                        contentDescription = "正确率 $score 分，正确 $correct 个，共 $total 个"
+                        contentDescription = accuracyDesc
                     })
                 if (onViewArticleData != null) {
                     TextButton(onClick = onViewArticleData) {
-                        Text("查看本篇文章数据", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(com.ilyskyo.blancall.R.string.score_view_article), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
             Spacer(Modifier.height(6.dp))
             // 错误分布
+            // 错误分布：换字类分「记成他字」（写成不相干的字）与「字形混淆」（写成形近字）——
+            // 两者复习动作不同，合成一个「记错」等于把用户该练什么藏起来。
             val parts = mutableListOf<String>()
-            if (typo > 0) parts.add("错别字 $typo")
-            if (missing > 0) parts.add("少字 $missing")
-            if (extra > 0) parts.add("多字 $extra")
-            if (wrongOrder > 0) parts.add("顺序错 $wrongOrder")
-            if (incorrect > 0) parts.add("不正确 $incorrect")
+            if (typo > 0) parts.add(stringResource(com.ilyskyo.blancall.R.string.score_dist_typo, typo))
+            if (glyph > 0) parts.add(stringResource(com.ilyskyo.blancall.R.string.score_dist_glyph, glyph))
+            if (missing > 0) parts.add(stringResource(com.ilyskyo.blancall.R.string.score_dist_missing, missing))
+            if (extra > 0) parts.add(stringResource(com.ilyskyo.blancall.R.string.score_dist_extra, extra))
+            if (wrongOrder > 0) parts.add(stringResource(com.ilyskyo.blancall.R.string.score_dist_order, wrongOrder))
+            if (incorrect > 0) parts.add(stringResource(com.ilyskyo.blancall.R.string.score_dist_incorrect, incorrect))
             if (parts.isEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("全部正确",
+                    Text(stringResource(com.ilyskyo.blancall.R.string.score_all_correct),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(4.dp))
@@ -113,7 +122,7 @@ internal fun BlancallScoreCard(
             val avgSim = checkResults.values.map { it.similarity }.average().toFloat()
             if (avgSim > 0f && avgSim < 1f) {
                 Spacer(Modifier.height(4.dp))
-                Text("平均相似度 ${(avgSim * 100).toInt()}%",
+                Text(stringResource(com.ilyskyo.blancall.R.string.score_avg_similarity, (avgSim * 100).toInt()),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.tertiary)
             }
@@ -121,7 +130,9 @@ internal fun BlancallScoreCard(
             if (weakHints > 0 || strongHints > 0) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "记忆提示：弱提示 $weakHints 次 · 强提示 $strongHints 次",
+                    stringResource(
+                        com.ilyskyo.blancall.R.string.score_hint_stats, weakHints, strongHints
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

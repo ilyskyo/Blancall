@@ -69,6 +69,10 @@ object AppPrefs {
     /** 联网搜索（开启后提问自动联网搜索核验，需配置 Tavily Key） */
     val aiSearchEnabledFlow: StateFlow<Boolean> = _aiSearchEnabledFlow.asStateFlow()
 
+    private val _aiEquivalenceReviewFlow = MutableStateFlow(false)
+    /** AI 等价复核（Pro 旁路，默认关）：训练分析生成前先复核同义表达；只影响分析输入，不改判分 */
+    val aiEquivalenceReviewFlow: StateFlow<Boolean> = _aiEquivalenceReviewFlow.asStateFlow()
+
     private val _useAiClozeFlow = MutableStateFlow(true)
     /** 使用AI挖空：关闭后挖空走本地算法，但进入练习仍弹采集页（只采集挖空策略与段落选择） */
     val useAiClozeFlow: StateFlow<Boolean> = _useAiClozeFlow.asStateFlow()
@@ -146,6 +150,7 @@ object AppPrefs {
         _aiEnabledFlow.value = prefs.getBoolean("ai_enabled", false)
         _aiHistoryEnabledFlow.value = prefs.getBoolean("ai_history_enabled", false)
         _aiSearchEnabledFlow.value = prefs.getBoolean("ai_search_enabled", false)
+        _aiEquivalenceReviewFlow.value = prefs.getBoolean("ai_equivalence_review", false)
         _useAiClozeFlow.value = prefs.getBoolean("use_ai_cloze", true)
         _useSimilarityRatingFlow.value = prefs.getBoolean("use_similarity_rating", true)
         _builtInLibraryKeysFlow.value = prefs.getStringSet("built_in_library_keys", emptySet())?.toSet() ?: emptySet()
@@ -294,6 +299,15 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("ai_enabled", value) }
                 _aiEnabledFlow.value = value
+            }
+        }
+
+    var aiEquivalenceReview: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("ai_equivalence_review", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("ai_equivalence_review", value) }
+                _aiEquivalenceReviewFlow.value = value
             }
         }
 

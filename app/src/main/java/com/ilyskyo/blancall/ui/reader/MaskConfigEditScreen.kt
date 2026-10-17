@@ -58,6 +58,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -65,6 +67,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
+import com.ilyskyo.blancall.ui.cloze.nextDefaultConfigName
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.ContentFingerprint
@@ -163,6 +166,8 @@ fun MaskConfigEditScreen(
 
     // ── 编辑状态 ──
     val store = remember { MaskConfigStore.getInstance(context.filesDir) }
+    val customWord = stringResource(com.ilyskyo.blancall.R.string.custom)
+    val maskPickFirstMsg = stringResource(com.ilyskyo.blancall.R.string.mask_pick_first)
     val scope = rememberCoroutineScope()
     val paragraphs = remember(article.content) { ReaderOcclusion.splitParagraphs(article.content) }
     // 每段拆分级（遮挡编辑：0=句 1=词 2=字），长按循环
@@ -332,13 +337,13 @@ fun MaskConfigEditScreen(
     fun doSave(onDone: (Boolean) -> Unit = {}) {
         val spans = buildSpans()
         if (spans.isEmpty()) {
-            Toast.makeText(context, "请先点选要遮挡的句子或字词", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, maskPickFirstMsg, Toast.LENGTH_SHORT).show()
             onDone(false)
             return
         }
         val cfg = MaskConfigStore.MaskConfig(
             id = savedId,
-            name = editingName.ifBlank { "自定义" },
+            name = editingName.ifBlank { customWord },
             createdAt = savedCreatedAt,
             spans = spans,
             // 保存 = 重新锚定到当前文章内容
@@ -362,7 +367,12 @@ fun MaskConfigEditScreen(
             }
             dirty = false
             savedSnapshot = snap
-            Toast.makeText(context, "已保存「${cfg.name}」（${spans.size} 块遮挡）", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.save_mask_toast,
+                    spans.size, cfg.name, spans.size),
+                Toast.LENGTH_SHORT
+            ).show()
             onDone(true)
         }
     }
@@ -371,15 +381,8 @@ fun MaskConfigEditScreen(
      * 生成当前文章内不重复的默认配置名：解析已有「自定义 N」的最大编号取 max+1；
      * 若该编号仍被占用（历史畸形数据）则继续递增跳过。
      */
-    fun nextDefaultName(): String {
-        val used = existingConfigs.map { it.name.trim() }.toMutableSet()
-        val maxN = existingConfigs
-            .mapNotNull { Regex("^自定义\\s*(\\d+)$").find(it.name.trim())?.groupValues?.get(1)?.toIntOrNull() }
-            .maxOrNull() ?: 0
-        var n = maxN + 1
-        while (used.contains("自定义 $n")) n++
-        return "自定义 $n"
-    }
+    // 与自定义挖空共用同一条编号规则（旧盘名都是中文「自定义 N」，换语言后要两种前缀都认）
+    fun nextDefaultName(): String = nextDefaultConfigName(existingConfigs.map { it.name }, customWord)
 
     /** 名称是否与当前文章内其他配置重名（排除自身，trim 后全等比较；新建时 savedId<0 等价于查全部） */
     fun isNameTaken(name: String, excludeId: Long): Boolean =
@@ -432,12 +435,13 @@ fun MaskConfigEditScreen(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "遮挡自定义",
+                        stringResource(com.ilyskyo.blancall.R.string.mask_config_title),
                         style = MaterialTheme.typography.titleMedium,
                         color = textColor
                     )
                     Text(
-                        if (masks.isEmpty()) "未添加遮挡" else "已标 ${masks.size} 块遮挡",
+                        if (masks.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.mask_none_added)
+                        else pluralStringResource(com.ilyskyo.blancall.R.plurals.mask_marked_count, masks.size, masks.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (masks.isEmpty()) subColor else accent
                     )
@@ -447,17 +451,17 @@ fun MaskConfigEditScreen(
                     kind = AppIconKind.Undo,
                     enabled = undoStack.isNotEmpty(),
                     onClick = { undo() },
-                    contentDescription = "撤销"
+                    contentDescription = stringResource(com.ilyskyo.blancall.R.string.undo_desc)
                 )
                 TopBarIconAction(
                     kind = AppIconKind.Redo,
                     enabled = redoStack.isNotEmpty(),
                     onClick = { redo() },
-                    contentDescription = "重做"
+                    contentDescription = stringResource(com.ilyskyo.blancall.R.string.redo_desc)
                 )
                 // 清空：同样常驻占位（无遮挡时置灰），否则它一出现/消失也会挤动左侧的撤销/重做
                 Text(
-                    "清空",
+                    stringResource(com.ilyskyo.blancall.R.string.clear_masks_action),
                     style = MaterialTheme.typography.labelLarge,
                     color = if (masks.isEmpty()) subColor.copy(alpha = 0.35f) else subColor,
                     modifier = Modifier
@@ -470,7 +474,7 @@ fun MaskConfigEditScreen(
                     onClick = { requestSave() },
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("保存")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.save))
                 }
             }
             Text(
@@ -483,7 +487,7 @@ fun MaskConfigEditScreen(
             if (hashMismatch) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "文章内容已修改，这套配置的标注位置可能不准确",
+                    stringResource(com.ilyskyo.blancall.R.string.cloze_hash_mismatch),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier
@@ -496,7 +500,8 @@ fun MaskConfigEditScreen(
             Spacer(Modifier.height(10.dp))
             // ── 挡片颜色：与阅读设置「挡片颜色」同款马卡龙色板 ──
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("挡片颜色", style = MaterialTheme.typography.labelMedium, color = textColor)
+                Text(stringResource(com.ilyskyo.blancall.R.string.mask_color_label),
+                style = MaterialTheme.typography.labelMedium, color = textColor)
                 Spacer(Modifier.width(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     maskPalette.forEachIndexed { idx, c ->
@@ -526,11 +531,13 @@ fun MaskConfigEditScreen(
         // ── 正文：与阅读模式同版式的可点编辑正文 ──
         if (!loaded) {
             Spacer(Modifier.height(24.dp))
-            Text("加载中…", style = MaterialTheme.typography.bodyMedium, color = subColor,
+            Text(stringResource(com.ilyskyo.blancall.R.string.loading_label),
+                style = MaterialTheme.typography.bodyMedium, color = subColor,
                 modifier = Modifier.padding(horizontal = 26.dp))
         } else if (paragraphs.isEmpty()) {
             Spacer(Modifier.height(24.dp))
-            Text("本文没有可编辑的正文段落", style = MaterialTheme.typography.bodyMedium, color = subColor,
+            Text(stringResource(com.ilyskyo.blancall.R.string.mask_no_paragraphs),
+                style = MaterialTheme.typography.bodyMedium, color = subColor,
                 modifier = Modifier.padding(horizontal = 26.dp))
         } else {
             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -598,7 +605,7 @@ fun MaskConfigEditScreen(
                 ScrollProgressBadge(
                     listState = listState,
                     total = paragraphs.size,
-                    unit = "段",
+                    unit = stringResource(com.ilyskyo.blancall.R.string.unit_paragraphs),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(end = 16.dp, bottom = 24.dp)
@@ -611,14 +618,14 @@ fun MaskConfigEditScreen(
     if (showSaveDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showSaveDialog = false },
-            title = { Text("保存遮挡配置", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.save_mask_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
                     TextField(
                         value = editingName,
                         onValueChange = { editingName = it },
                         singleLine = true,
-                        placeholder = { Text("自定义") },
+                        placeholder = { Text(stringResource(com.ilyskyo.blancall.R.string.custom)) },
                         shape = RoundedCornerShape(10.dp),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -632,16 +639,19 @@ fun MaskConfigEditScreen(
                     // 名称去重：trim 后与其他配置全等则提示并中止保存（不关弹窗，便于改名）
                     val name = editingName.trim().ifBlank { nextDefaultName() }
                     if (isNameTaken(name, savedId)) {
-                        Toast.makeText(context, "名称已存在，请换一个", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context,
+                            context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     editingName = name
                     showSaveDialog = false
                     doSave { ok -> if (ok) onBack() }
-                }) { Text("保存") }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.save)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showSaveDialog = false }) { Text("取消") }
+                androidx.compose.material3.TextButton(onClick = { showSaveDialog = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }
@@ -650,11 +660,12 @@ fun MaskConfigEditScreen(
     if (showExitConfirm) {
         BlancallAlertDialog(
             onDismissRequest = { showExitConfirm = false },
-            title = { Text("放弃未保存的遮挡？", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.exit_mask_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
-                    if (masks.isNotEmpty()) "当前标注的 ${masks.size} 块遮挡还没有保存，离开后将丢失。"
-                    else "你的编辑还未保存（如清空操作），离开后将丢失。",
+                    if (masks.isNotEmpty())
+                        pluralStringResource(com.ilyskyo.blancall.R.plurals.exit_mask_body, masks.size, masks.size)
+                    else stringResource(com.ilyskyo.blancall.R.string.exit_mask_plain_body),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -663,10 +674,14 @@ fun MaskConfigEditScreen(
                     showExitConfirm = false
                     dirty = false
                     onBack()
-                }) { Text("放弃", color = MaterialTheme.colorScheme.error) }
+                }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.discard_action), color = MaterialTheme.colorScheme.error)
+                }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showExitConfirm = false }) { Text("继续编辑") }
+                androidx.compose.material3.TextButton(onClick = { showExitConfirm = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.keep_editing_action))
+                }
             }
         )
     }

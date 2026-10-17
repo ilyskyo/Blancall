@@ -179,4 +179,103 @@ class RecordRepositoryJsonlTest {
         assertFalse("重写后不应是数组格式", path.readText().trimStart().startsWith("["))
         assertEquals("垃圾应被新内容覆盖（仅 1 行有效记录）", 1, readDiskObjects(path).size)
     }
+
+    @Test
+    fun `逐空落点与相似度按原样往返，缺字段的旧行回退哨兵值`() {
+        // MistakeDetail 新增的两个字段都是「能省则省」：拿不到就不写，读回来是哨兵 -1。
+        // 这条同时守两件事：① 写下去的必须读得回来（否则热力图与错题回顾永远拿不到精确落点）；
+        // ② 旧行不许被读成 0 —— 0 是「第 0 句」「相似度 0%」的真实值，占用它当缺省就会伪造数据。
+        val path = tempPath()
+        val withDetail = PracticeRecord(
+            articleId = 3L, mode = "SENTENCE", totalBlanks = 2, correctCount = 1,
+            timestamp = 1000L,
+            mistakes = listOf(
+                MistakeDetail(0, "明月", "名月", "TYPO", sentenceIndex = 2, similarity = 0.8f),
+                MistakeDetail(1, "光", "", "MISSING")            // 老形状：两个字段都没有
+            )
+        )
+        runBlocking {
+            val repo = RecordRepository(path.absolutePath)
+            repo.awaitLoaded()
+            repo.insert(withDetail)
+        }
+
+        val stored = readDiskObjects(path).single()
+        val mistakes = stored.getJSONArray("mistakes")
+        assertTrue("落点写了就该在盘上", mistakes.getJSONObject(0).has("sentenceIndex"))
+        assertFalse("缺字段的错处不该被塞一个 0 进盘", mistakes.getJSONObject(1).has("sentenceIndex"))
+        assertFalse(mistakes.getJSONObject(1).has("similarity"))
+
+        runBlocking {
+            val repo2 = RecordRepository(path.absolutePath)
+            repo2.awaitLoaded()
+            val back = repo2.records.value.single().mistakes
+            assertEquals(2, back[0].sentenceIndex)
+            assertEquals(0.8f, back[0].similarity, 1e-6f)
+            assertEquals(-1, back[1].sentenceIndex)
+            assertEquals(-1f, back[1].similarity, 1e-6f)
+        }
+    }
+
+    @Test
+    fun `归档取最旧一批、按 id 裁剪后内存与磁盘一致`() {
+        val path = tempPath()
+        val t0 = 1_700_000_000_000L
+        runBlocking {
+            val repo = RecordRepository(path.absolutePath)
+            repo.awaitLoaded()
+            val r1 = repo.insert(record(1L, ts = t0))            // 最旧
+            val r2 = repo.insert(record(1L, ts = t0 + 1_000))
+            val r3 = repo.insert(record(1L, ts = t0 + 2_000))    // 最新
+
+            // 取最旧 2 条（按时间正序）
+            val olds = repo.oldestRecords(2)
+            assertEquals(listOf(r1.id, r2.id), olds.map { it.id })
+
+            // 归档导出文本可读（JSONL，一行一条）
+            val json = repo.archiveJson(olds)
+            assertEquals(2, json.trim().lineSequence().count())
+
+            // 裁剪：删掉归档的两条，保留最新
+            assertEquals(2, repo.removeByIds(olds.map { it.id }.toSet()))
+            assertEquals(listOf(r3.id), repo.records.value.map { it.id })
+        }
+        // 磁盘重读一致（新实例）
+        runBlocking {
+            val repo2 = RecordRepository(path.absolutePath)
+            repo2.awaitLoaded()
+            assertEquals(1, repo2.records.value.size)
+        }
+    }
+
+    @Test
+    fun `归档候选为零或负数时返回空表且不动数据`() {
+        val path = tempPath()
+        runBlocking {
+            val repo = RecordRepository(path.absolutePath)
+            repo.awaitLoaded()
+            val r = repo.insert(record(1L))
+            assertTrue(repo.oldestRecords(0).isEmpty())
+            assertTrue(repo.oldestRecords(-3).isEmpty())
+            assertEquals(0, repo.removeByIds(emptySet()))
+            assertEquals(listOf(r.id), repo.records.value.map { it.id })
+        }
+    }
+
+    @Test
+    fun `reload 重读磁盘替换内存（备份导入场景的单 Store 验证）`() {
+        val path = tempPath()
+        runBlocking {
+            val repo = RecordRepository(path.absolutePath)
+            repo.awaitLoaded()
+            repo.insert(record(1L))   // 内存 1 条（id=1）
+            // 模拟「备份导入把磁盘文件整体替换」：外部写入另一条记录（id=99）
+            path.writeText("""{"id":99,"articleId":9,"mode":"SENTENCE","totalBlanks":1,"correctCount":1}""" + "\n")
+            repo.reload()
+            assertEquals(
+                "reload 后内存必须等于磁盘（否则旧内存会在下次写盘时覆盖刚恢复的数据）",
+                listOf(99L), repo.records.value.map { it.id }
+            )
+        }
+    }
 }

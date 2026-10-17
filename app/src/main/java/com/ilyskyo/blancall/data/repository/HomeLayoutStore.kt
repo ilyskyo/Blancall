@@ -107,6 +107,21 @@ class HomeLayoutStore private constructor(private val file: File) {
      */
     private var loadFailed = false
 
+    /**
+     * 解析结果缓存：首页首帧曾在主线程整文件 readText + JSON 解析，卡片越多首帧越慢。
+     * 只在 [lock] 内读写；「读盘失败回退 .bak」的自愈语义不受影响——命中缓存意味着上一次
+     * 读盘是成功的。
+     *
+     * 失效判据用磁盘指纹而不是「本类写过盘」：一键导入备份是直接往 filesDir 写文件、
+     * 不经过本类的，只靠写后失效会给它留下脏缓存（导入完首页还是旧布局）。
+     */
+    private var cachedCards: List<Card>? = null
+    private var cachedStamp = Long.MIN_VALUE
+
+    /** 磁盘指纹 = 修改时间 + 字节数；两次 stat 远比整文件读取 + 解析便宜 */
+    private fun diskStamp(): Long =
+        if (!file.exists()) 0L else file.lastModified() * 31 + file.length()
+
     private fun freshRoot(): JSONObject =
         JSONObject().put("version", CURRENT_VERSION).put("cards", JSONArray())
 
@@ -121,7 +136,9 @@ class HomeLayoutStore private constructor(private val file: File) {
                 loadFailed = false
                 return migrate(JSONObject(file.readText()))
             } catch (_: Exception) {
-                // 主文件损坏：保留现场后落到下方备份分支
+                // 主文件损坏：先把「损坏过」记成粘性标记，再保留现场落到下方备份分支。
+                // 只靠尾部的 file.exists() 判不出来 —— preserveCorruptFile 用 renameTo 把主文件搬走了。
+                loadFailed = true
                 preserveCorruptFile()
             }
         }
@@ -134,8 +151,10 @@ class HomeLayoutStore private constructor(private val file: File) {
                 // 备份也不可用，落到下方
             }
         }
-        // 文件确实不存在（首次使用）→ 空库；文件存在却读不出来且无备份 → 危险状态，禁止写盘
-        loadFailed = file.exists()
+        // 直接返回空库：loadFailed 保留「是否损坏过」的粘性结论 ——
+        // 首次使用为 false（正常空库、可写）；主文件损坏且备份也不可用时为 true（writeRoot 拒绝写盘）。
+        // 旧写法 `loadFailed = file.exists()` 恒为 false（主文件已被改名搬走），会把危险路径放行成
+        // 「首次使用」，下一次保存即以空布局覆盖用户摆好的首页。
         return freshRoot()
     }
 
@@ -153,6 +172,12 @@ class HomeLayoutStore private constructor(private val file: File) {
     /** 版本迁移钩子 */
     private fun migrate(root: JSONObject): JSONObject {
         val v = root.optInt("version", 1)
+        // 高于本版本认识的：拒绝读写（详见 StoreVersion）。首页布局是用户自己摆的画布，
+        // 新版可能新增了本版本不认识的卡型，重建数组会把那些卡片整张丢掉
+        if (StoreVersion.isFromNewerApp(v, CURRENT_VERSION, "HomeLayoutStore")) {
+            loadFailed = true
+            return root
+        }
         if (v < CURRENT_VERSION) root.put("version", CURRENT_VERSION)
         return root
     }
@@ -165,6 +190,7 @@ class HomeLayoutStore private constructor(private val file: File) {
         try {
             // 原子写 + fsync + 备份轮换统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
             AtomicFiles.writeTextAtomic(file, root.toString())
+            cachedCards = null   // 双保险：同毫秒且等字节的重写，磁盘指纹分不出来
         } catch (_: Exception) { /* 写失败不影响主流程，下次保存重试 */ }
     }
 
@@ -177,6 +203,16 @@ class HomeLayoutStore private constructor(private val file: File) {
      * 无记录（首次使用）返回 [defaultCards]；有记录但被解析为空数组时同样回退默认，避免首页空无一物。
      */
     fun getCards(): List<Card> = synchronized(lock) {
+        val stamp = diskStamp()
+        val cached = if (stamp == cachedStamp) cachedCards else null
+        cached ?: readCardsLocked().also {
+            cachedCards = it
+            cachedStamp = diskStamp()
+        }
+    }
+
+    /** 真正的读盘解析路径；调用方必须已持有 [lock] */
+    private fun readCardsLocked(): List<Card> {
         val arr = readRoot().optJSONArray("cards") ?: return defaultCards()
         val out = mutableListOf<Card>()
         val seen = mutableSetOf<String>()
@@ -200,7 +236,7 @@ class HomeLayoutStore private constructor(private val file: File) {
                 )
             )
         }
-        if (out.isEmpty()) defaultCards() else out
+        return if (out.isEmpty()) defaultCards() else out
     }
 
     /** 覆盖保存整套布局（首页的增删改拖动最终都汇聚到这里） */

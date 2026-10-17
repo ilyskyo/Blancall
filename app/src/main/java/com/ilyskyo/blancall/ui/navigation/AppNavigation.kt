@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -59,6 +62,12 @@ import com.ilyskyo.blancall.ui.common.NavRail
 import com.ilyskyo.blancall.ui.common.NavRailWidth
 import com.ilyskyo.blancall.ui.common.HeroEntry
 import com.ilyskyo.blancall.ui.common.HeroTransitionHost
+import com.ilyskyo.blancall.ui.common.RevealNav
+import com.ilyskyo.blancall.ui.common.RevealPageShell
+import com.ilyskyo.blancall.ui.common.revealEnter
+import com.ilyskyo.blancall.ui.common.revealExit
+import com.ilyskyo.blancall.ui.common.revealPopEnter
+import com.ilyskyo.blancall.ui.common.revealPopExit
 import com.ilyskyo.blancall.ui.home.HomeScreen
 import com.ilyskyo.blancall.ui.home.SentenceCardScreen
 import com.ilyskyo.blancall.ui.import.ImportScreen
@@ -197,7 +206,7 @@ fun AppNavigation() {
         slideOutOfContainer(
             AnimatedContentTransitionScope.SlideDirection.Left,
             Motion.pageExit(),
-            targetOffset = { (it * Motion.slideParallax).toInt() }
+            targetOffset = { Motion.parallaxOffset(it) }
         ) + fadeOut(MotionFade.alpha(MotionFade.exit))
     }
 
@@ -209,13 +218,22 @@ fun AppNavigation() {
         )
     }
 
-    // 返回：上一页从左边缘回位（视差量 + 淡入补足）
+    // 返回：上一页回位。
+    //
+    // 两个坑都在这四行里，都是真机录像抓出来的（用户 2026-10-09 的视频）：
+    // ① 偏移量必须带**负号**。`slideIntoContainer(Right)` 的默认起点在左边缘外，
+    //    这里只想让它少走一点（视差），所以是「从左边偏 25% 处」出发 ——
+    //    写成正的 `it * 0.25` 会变成「从右侧 25% 处往左滑」，转场中段屏幕左侧
+    //    有一条**两页都没盖住**的区域，露出窗口底色，读起来像闪了一下白板。
+    // ② 进场页**不加淡入**。半透明的新页压在还没走干净的旧页上 = 两页重影，
+    //    而且它要等 alpha 走完才「读得清」，这就是「下一页面出来太慢」的实底。
+    //    旧版（v7.2.4）回退方向的进场也只有 tween(250) 位移、没有 fade。
     val popEnterSlide: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = {
         slideIntoContainer(
             AnimatedContentTransitionScope.SlideDirection.Right,
             Motion.pageEnter(),
-            initialOffset = { (it * Motion.slideParallax).toInt() }
-        ) + fadeIn(MotionFade.alpha(MotionFade.enter))
+            initialOffset = { Motion.parallaxOffset(it) }
+        )
     }
 
     // 底部导航模式：根页面 tab 切换用极短渐隐（crossfade）。
@@ -248,6 +266,19 @@ fun AppNavigation() {
     // padding 读取它（railWidthState.value），旋转/进出全屏时实时更新。
     val railWidthState = remember { mutableStateOf(0.dp) }
     val railReserved = if (isLargeScreen && currentTab >= 0) NavRailWidth else 0.dp
+
+    // 触点展开转场：把导航表面尺寸（window px）与大屏侧栏让位偏移同步给 RevealNav，
+    // 用于把触点 window 坐标换算成归一化变换原点（旋转 / 侧栏切换自动更新）。
+    // 读的是外层组合的窗口尺寸 —— 触点 boundsInWindow 同样是 window 坐标，两者同基准。
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    SideEffect {
+        RevealNav.updateSurface(
+            windowInfo.containerSize.width,
+            windowInfo.containerSize.height,
+            with(density) { railReserved.toPx() },
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -377,14 +408,18 @@ fun AppNavigation() {
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType }
             ),
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            // 首页卡点进来 = 从触点放大铺开；没有登记锚点的入口（列表页、搜索页、深链）
+            // 一律回退普通滑入，reveal 解析对同一导航可重复求值。
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
-            HeroEntry(this) {
-                ReaderScreen(navController, articleId)
+            RevealPageShell(backStackEntry.id) {
+                HeroEntry(this) {
+                    ReaderScreen(navController, articleId)
+                }
             }
         }
 
@@ -435,7 +470,7 @@ fun AppNavigation() {
         }
 
         composable(
-            route = "practice/{articleId}?mode={mode}&resume={resume}&sectionMode={sectionMode}&configId={configId}",
+            route = "practice/{articleId}?mode={mode}&resume={resume}&sectionMode={sectionMode}&configId={configId}&focusSentence={focusSentence}",
             arguments = listOf(
                 navArgument("articleId") { type = NavType.LongType },
                 navArgument("mode") {
@@ -453,6 +488,11 @@ fun AppNavigation() {
                 navArgument("configId") {
                     type = NavType.LongType
                     defaultValue = -1L
+                },
+                navArgument("focusSentence") {
+                    // 句级薄弱榜直达（B3-1）：只练该句所在段；-1 = 不聚焦
+                    type = NavType.IntType
+                    defaultValue = -1
                 }
             ),
             enterTransition = enterSlide,
@@ -470,7 +510,8 @@ fun AppNavigation() {
                 navController, listOf(articleId), initialMode,
                 resume = resumeStr == "true",
                 initialSectionMode = initialSectionMode,
-                initialConfigId = backStackEntry.arguments?.getLong("configId") ?: -1L
+                initialConfigId = backStackEntry.arguments?.getLong("configId") ?: -1L,
+                initialFocusSentence = backStackEntry.arguments?.getInt("focusSentence") ?: -1
             )
         }
 
@@ -545,13 +586,15 @@ fun AppNavigation() {
         // 句子卡片大卡片界面（首页小卡片点入；华为堆叠形态：划卡 + 三键评级）
         composable(
             "sentence_cards",
-            enterTransition = enterSlide,
-            exitTransition = exitSlide,
-            popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            enterTransition = { revealEnter(enterSlide()) },
+            exitTransition = { revealExit(exitSlide()) },
+            popExitTransition = { revealPopExit(popExitSlide()) },
+            popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
-            HeroEntry(this) {
-                SentenceCardScreen(navController)
+            RevealPageShell(backStackEntry.id) {
+                HeroEntry(this) {
+                    SentenceCardScreen(navController)
+                }
             }
         }
 

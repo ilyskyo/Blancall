@@ -20,6 +20,9 @@ class ArticleRepository(filePath: String) {
 
     suspend fun delete(article: Article) = storage.delete(article)
 
+    /** 备份导入后重载（B1-3）：转发到底层存储；调用方保证在 IO 线程执行 */
+    fun reload() = storage.reload()
+
     companion object {
         @Volatile
         private var instance: ArticleRepository? = null
