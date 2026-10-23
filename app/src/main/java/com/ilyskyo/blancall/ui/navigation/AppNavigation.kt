@@ -87,6 +87,8 @@ import com.ilyskyo.blancall.ui.western.LibraryContentPage
 import com.ilyskyo.blancall.ui.western.PdfPreviewScreen
 import com.ilyskyo.blancall.ui.statistics.OverviewScreen
 import com.ilyskyo.blancall.ui.statistics.StatisticsScreen
+import com.ilyskyo.blancall.ui.statistics.StudyFlowScreen
+import com.ilyskyo.blancall.ui.statistics.StudyTaskDetailScreen
 import com.ilyskyo.blancall.ui.onboarding.OnboardingScreen
 import com.ilyskyo.blancall.ui.search.SearchScreen
 import com.ilyskyo.blancall.ui.tag.TagManagerScreen
@@ -124,7 +126,8 @@ fun AppNavigation() {
     val currentTab = when {
         currentRoute == "home" || currentRoute?.startsWith("home/") == true -> 0
         currentRoute == "list" || currentRoute?.startsWith("list/") == true -> 1
-        currentRoute == "overview" || currentRoute?.startsWith("statistics/") == true -> 2
+        currentRoute == "overview" || currentRoute?.startsWith("statistics/") == true ||
+            currentRoute == "study_flow" || currentRoute?.startsWith("study_task/") == true -> 2
         // 仅素材库卡片页（philo，纯 Compose）显示底部导航栏；
         // WebView 内容页（philo_content）不归 tab——隐藏玻璃条，避免液态玻璃
         // 持续折射 WebView 导致的闪烁（与 settings/reader 子页同策略）
@@ -547,6 +550,37 @@ fun AppNavigation() {
             popEnterTransition = noneTransition
         ) {
             OverviewScreen(navController)
+        }
+
+        // 学习任务流（数据页 → 任务流入口）：FSRS 计划的时间线 + 暂停/恢复 + 调度调节
+        composable(
+            "study_flow",
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            HeroEntry(this) {
+                StudyFlowScreen(navController)
+            }
+        }
+
+        // 任务详情：与任务卡共用 hero 节点，双向都以「卡片长大/缩回」为一镜到底的主叙事；
+        // 整页只做淡入淡出，把位移让给共享元素，否则会读成「卡片在飞 + 页面也在滑」两件事。
+        composable(
+            route = "study_task/{articleId}",
+            arguments = listOf(
+                navArgument("articleId") { type = NavType.LongType }
+            ),
+            enterTransition = { fadeIn(MotionFade.alpha(MotionFade.enter)) },
+            exitTransition = { fadeOut(MotionFade.alpha(MotionFade.exit)) },
+            popExitTransition = { fadeOut(MotionFade.alpha(MotionFade.exit)) },
+            popEnterTransition = { fadeIn(MotionFade.alpha(MotionFade.enter)) }
+        ) { backStackEntry ->
+            val articleId = backStackEntry.arguments?.getLong("articleId") ?: 0L
+            HeroEntry(this) {
+                StudyTaskDetailScreen(navController, articleId)
+            }
         }
 
         composable(

@@ -34,6 +34,88 @@ object PracticeContentOps {
             .joinToString("\n\n") { it.text }
     }
 
+    /** 句级聚焦窗口的半径：目标句前后各再取这么多句（即「这一句 + 附近的句子」） */
+    const val FOCUS_SENTENCE_RADIUS = 2
+
+    /**
+     * 句级聚焦窗口：句级薄弱榜「点一句去练」与练习记录单条错题「复习」的落点。
+     *
+     * **为什么不能只按「该句所在段落」聚焦**：段落是按自然段切的（[SectionSplitter]），
+     * 一篇文章若没有空行（高考必背源文件就是「每句一行」），整篇只会切出一段 ——
+     * 于是「点一句去练」退化成「重做整篇」。这里改为按句取窗口：
+     * 目标句前后各 [radius] 句，把原文那一块切成一个合成 Section 交给挖空生成。
+     *
+     * 切片取 `[startIndex, endIndex)`（见 SentenceSplitter.splitWithPositions）：endIndex 含句末换行，
+     * 保证窗口文本重新切句时句界不变（丢掉换行会让以逗号/顿号结尾的句子与下一句粘连成一句）。
+     */
+    data class FocusWindow(
+        /** 合成段落：text 即窗口原文切片，startChar/endChar 为它在全文中的字符区间 */
+        val section: SectionSplitter.Section,
+        /** 用户点的那个目标句在【全文切句】中的索引（落盘用；窗口被边界裁剪时也能还原） */
+        val focusSentence: Int,
+        /** 窗口首句在【全文切句】中的索引（错误率表按此平移，见 PracticeViewModel.regenerateCloze） */
+        val firstSentenceIndex: Int,
+        /** 窗口内句子数 */
+        val sentenceCount: Int
+    )
+
+    /**
+     * 取目标句及其前后各 [radius] 句组成的聚焦窗口。
+     *
+     * @return null 表示不聚焦：focusSentence < 0、文本为空或索引越界（调用方应回退整篇）
+     */
+    fun focusWindow(
+        fullContent: String,
+        focusSentence: Int,
+        radius: Int = FOCUS_SENTENCE_RADIUS
+    ): FocusWindow? {
+        if (fullContent.isBlank() || focusSentence < 0) return null
+        val positioned = SentenceSplitter.splitWithPositions(fullContent)
+        if (positioned.isEmpty() || focusSentence >= positioned.size) return null
+        val from = (focusSentence - radius).coerceAtLeast(0)
+        val to = (focusSentence + radius).coerceAtMost(positioned.size - 1)
+        val startChar = positioned[from].startIndex
+        val endChar = positioned[to].endIndex
+        val count = to - from + 1
+        val text = fullContent.substring(startChar, endChar)
+        return FocusWindow(
+            section = SectionSplitter.Section(
+                index = 0,
+                heading = null,
+                text = text,
+                contentOnly = text,
+                startChar = startChar,
+                endChar = endChar,
+                sentenceCount = count,
+                startSentenceIndex = from
+            ),
+            firstSentenceIndex = from,
+            focusSentence = focusSentence,
+            sentenceCount = count
+        )
+    }
+
+    /**
+     * 把「全文句序」键的错误率表平移成「聚焦窗口句序」键（`newKey = key + delta`），
+     * 只保留 `0 until limit` 范围内的项（窗口外的句子不参与）。
+     *
+     * 为什么需要：句级错误率表由 [WeaknessMath.sentenceWeakness] 按**全文切句**索引生成，
+     * 而窗口内的句子索引从 0 起。不平移的话「薄弱优先」策略会去打错分句。
+     */
+    fun shiftSentenceErrorRates(
+        rates: Map<Int, Float>,
+        delta: Int,
+        limit: Int
+    ): Map<Int, Float> {
+        if (rates.isEmpty()) return emptyMap()
+        val out = HashMap<Int, Float>(rates.size)
+        for ((k, v) in rates) {
+            val shifted = k + delta
+            if (shifted in 0 until limit) out[shifted] = v
+        }
+        return out
+    }
+
     /**
      * 构建「effectiveContent 句子索引 → 该句在全文中的字符起始位置」锚点表。
      *
@@ -75,7 +157,7 @@ object PracticeContentOps {
                 ?: start.coerceIn(0, fullContent.length)
             val candidates = byText[text]
             if (candidates.isNullOrEmpty()) approx
-            else candidates.minByOrNull { abs(it.startIndex - approx) }!!.startIndex
+            else candidates.minByOrNull { abs(it.startIndex - approx) }?.startIndex ?: approx
         }
     }
 }

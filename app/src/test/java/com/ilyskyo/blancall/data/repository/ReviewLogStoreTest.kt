@@ -48,6 +48,22 @@ class ReviewLogStoreTest {
     }
 
     @Test
+    fun `批量追加一次写入且顺序可读回`() {
+        val f = tempFile()
+        val events = (1..3).map { i ->
+            ReviewLogStore.ReviewEvent(
+                key = "s:1:k$i", ts = 100L + i, rating = 3,
+                elapsedMs = i.toLong(), state = state()
+            )
+        }
+        assertTrue(ReviewLogStore.appendAll(f, events))
+        assertEquals(
+            listOf("s:1:k1", "s:1:k2", "s:1:k3"),
+            ReviewLogStore.read(f).map { it.key }
+        )
+    }
+
+    @Test
     fun `多条按文件顺序读出`() {
         val f = tempFile()
         ReviewLogStore.append(f, "a:1", 1L, 2, 0L, state())

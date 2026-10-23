@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.ui.common
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.util.Locale
 
 /**
  * 多语言的键集守卫：`values-<locale>/strings.xml` 必须与默认目录**键集相等**，
@@ -265,13 +266,17 @@ class LocaleParityGuardTest {
     }
 
     /**
-     * 找出「既不是 `%%`、也不是 `%n$x` 开头、又不在串尾」的裸百分号位置。
+     * 找出「既不是 `%%`、也不是 `%n$x` 开头」的裸百分号位置。
      *
      * aapt2 遇到 `%1$d% 上昇` 会报 *Multiple substitutions specified in non-positional format*，
      * 但那只是 warning：编译照过、运行照跑，界面上却可能把 `%` 后的内容吃掉。
-     * 串尾的裸 `%`（`近7天提升 5%`）aapt 不管，所以也不该管。
+     * 串尾的裸 `%`（`近7天提升 %1$d%`）aapt 不管，但**只要这条资源带占位符，运行时就会
+     * 走 String.format**，串尾 `%` 会被当成格式项起点并抛 UnknownFormatConversionException
+     * （2026-10-22 用 JBR 实测）。所以判据是「带占位符 ⇒ 串尾也判红」；
+     * 没有占位符的普通文案（`留存率 90%`）永远不会被格式化，保持豁免。
      */
     private fun lonePercentOffsets(v: String): List<Int> {
+        val formatted = PH_PLACEHOLDER.containsMatchIn(v)
         val tail = v.trimEnd().length
         val out = mutableListOf<Int>()
         var i = 0
@@ -283,7 +288,10 @@ class LocaleParityGuardTest {
             val next = if (i + 1 < v.length) v[i + 1] else ' '
             when {
                 next == '%' || next.isDigit() || next == '$' -> i += 2
-                i >= tail - 1 -> i++
+                i >= tail - 1 -> {
+                    if (formatted) out += i
+                    i++
+                }
                 else -> {
                     out += i
                     i++
@@ -339,6 +347,102 @@ class LocaleParityGuardTest {
             "这些调用点会让占位符原样显示在界面上：\n" + offenders.joinToString("\n"),
             offenders.isEmpty()
         )
+    }
+
+    /**
+     * 资源里的格式串必须真的能被 `String.format` 执行。
+     *
+     * 为什么单独一条：[lonePercentOffsets] 只按 aapt 的口径找裸 `%`，而 aapt 明确不管
+     * **串尾**的裸百分号；但只要这条资源带位置占位符，运行时就会走 `String.format`，
+     * 串尾 `%` 会被当成一个新格式项的起点 → `UnknownFormatConversionException`。
+     * 2026-10-22 的 `trend_up`（`近7天提升 %1$d%`）就是这一形状：一渲染就崩，
+     * 而键集、占位符、裸百分号三条既有守卫全绿。
+     *
+     * 这里用与运行时相同的 `String.format` 做一次真实解析，而不是再写一套正则判据 ——
+     * 正则只能近似 Java 的格式语法，近似出来的「合法」正是漏掉这类崩溃的原因。
+     */
+    @Test
+    fun 带占位符的资源格式串必须能被String_format解析() {
+        val problems = mutableListOf<String>()
+        var checked = 0
+        val files = listOf(defaultFile) + localeDirs.map { File(it, "strings.xml") }
+        for (file in files) {
+            val dir = file.parentFile?.name ?: continue
+            for ((key, value) in keysOf(file)) {
+                if (dummyArgs(value) == null) continue
+                checked++
+                formatFailure(value)?.let { problems += "$dir/$key 无法格式化（$it）：$value" }
+            }
+            for ((key, items) in pluralsOf(file)) {
+                for ((quantity, value) in items) {
+                    if (dummyArgs(value) == null) continue
+                    checked++
+                    formatFailure(value)?.let {
+                        problems += "$dir/$key[$quantity] 无法格式化（$it）：$value"
+                    }
+                }
+            }
+        }
+        assertTrue("一条带占位符的资源都没扫到 —— 守卫等于没跑", checked >= MIN_POSITIONAL)
+        assertTrue(
+            "这些资源一渲染就会抛格式化异常：\n" + problems.joinToString("\n"),
+            problems.isEmpty()
+        )
+    }
+
+    /** 证明上面那条守卫不是恒真：已知坏例必须报错，转义后的正例必须通过。 */
+    @Test
+    fun 格式守卫对已知坏例必须报红() {
+        assertTrue(
+            "串尾裸 % 且带占位符（trend_up 的原始形状）必须被判红",
+            formatFailure("📈 近7天提升 %1\$d%") != null
+        )
+        assertTrue(
+            "写成 %% 之后必须通过",
+            formatFailure("📈 近7天提升 %1\$d%%") == null
+        )
+        assertTrue(
+            "没有参数的类型不匹配也必须判红",
+            formatFailure("%1\$d 个百分点，%1\$s") != null
+        )
+    }
+
+    /** 按值里的占位符造一组假实参；值里没有占位符（含只有字面 `%` 的文案）时返回 null。 */
+    private fun dummyArgs(value: String): Array<Any?>? {
+        var maxIndex = 0
+        var sequential = 0
+        val conversions = LinkedHashMap<Int, String>()
+        for (m in PH_FORMAT.findAll(value)) {
+            val conversion = m.groupValues[2].ifEmpty { m.groupValues[3] }
+            if (conversion == "%" || conversion == "n") continue
+            val index = m.groupValues[1].toIntOrNull() ?: (++sequential)
+            maxIndex = maxOf(maxIndex, index)
+            conversions[index] = conversion
+        }
+        if (maxIndex == 0) return null
+        val args = Array<Any?>(maxIndex) { "x" }
+        for ((index, conversion) in conversions) {
+            args[index - 1] = when (conversion.lowercase()) {
+                "d", "o", "x" -> 1
+                "f", "e", "g", "a" -> 1.0
+                "c" -> 'x'
+                "b" -> true
+                "h" -> 1
+                else -> "x"
+            }
+        }
+        return args
+    }
+
+    /** 返回 null 表示可被 String.format 解析；否则返回异常类型与消息。 */
+    private fun formatFailure(value: String): String? {
+        val args = dummyArgs(value) ?: return null
+        return try {
+            String.format(Locale.ROOT, value, *args)
+            null
+        } catch (e: Exception) {
+            "${e.javaClass.simpleName}: ${e.message}"
+        }
     }
 
     private fun sampleValue(kind: String, key: String): String =
@@ -462,9 +566,11 @@ class LocaleParityGuardTest {
         val PH_SELF = Regex("""<string name="([^"]+)"[^>]*/>""")
         val PH_CLOSE = Regex("</string>")
         val PH_PLACEHOLDER = Regex("""%\d*\$?[a-zA-Z]|%[a-zA-Z]""")
+        /** 完整的 Java 格式项（位置参数优先）：`%1$d` / `%s` / `%%`；用于造实参与真解析。 */
+        val PH_FORMAT = Regex("""%(\d+)\${'$'}([a-zA-Z%])|%([a-zA-Z%])""")
         val PH_CJK = Regex("[\\u3400-\\u9fff\\uf900-\\ufaff]")
         val PH_PLURALS = Regex("""<plurals name="([^"]+)"""")
-        val PH_ITEM = Regex("""<item quantity="([^"]+)">(.*)</item>""")
+        val PH_ITEM = Regex("""<item quantity="([^"]+)"[^>]*>(.*)</item>""")
 
         /** 「数字 + 以 s 结尾的英文名词」——只有该用 plurals 的句子才会长成这样。 */
         val PH_COUNTED_NOUN = Regex("""%\d+\${'$'}d\s+[A-Za-z]+s\b""")
@@ -478,7 +584,7 @@ class LocaleParityGuardTest {
         /** 源语言里本来就不该有汉字的条目。
          *  `sentence_card_colon` 是读屏播报里的全角冒号（它自己就不是汉字）；
          *  `first_line_preview` 是「把标题原文包起来的引号」，值里只有 `「%1$s」`。 */
-        val CJK_EXEMPT = setOf("app_name", "sentence_card_colon", "first_line_preview")
+        val CJK_EXEMPT = setOf("app_name", "sentence_card_colon", "first_line_preview", "csv_header_id", "ai_api_key")
 
         val PH_KT_REF = Regex("""R\.(?:string|plurals)\.([A-Za-z0-9_]+)""")
         val PH_XML_REF = Regex("""@(?:string|plurals)/([A-Za-z0-9_]+)""")

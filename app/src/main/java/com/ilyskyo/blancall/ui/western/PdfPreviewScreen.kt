@@ -7,6 +7,7 @@ import com.ilyskyo.blancall.ui.common.rememberEnteredOnFirstFrame
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.animateFloatAsState
 import android.graphics.Bitmap
+import androidx.core.graphics.createBitmap
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
@@ -36,8 +37,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -104,27 +108,56 @@ internal fun ZoomablePdfPage(
     isZoomed: Boolean,
     onZoomChanged: (Boolean) -> Unit
 ) {
-    var scale by remember { mutableStateOf(1f) }
+    var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     // 渲染级别：未放大 1x，放大到 >=2 时用 2 倍分辨率重渲染（文字仍清晰，不再发糊）
     val renderLevel = maxOf(1, kotlin.math.ceil(scale).toInt()).coerceAtMost(2)
     // 位图渲染切 IO 线程（2 倍分辨率渲染 + 大位图分配耗几十 ms，同步执行会卡滚动）
     var bitmap by remember(renderer, index, renderLevel) { mutableStateOf<Bitmap?>(null) }
+    // 被更高分辨率替换下来的旧图：等新图至少画过两帧后再回收，避免「仍在绘制却被回收」。
+    // 该状态不随 renderLevel 重建：否则切换分辨率的瞬间取消等待，上一张旧图会失去回收者。
+    var retiredBitmap by remember(renderer, index) { mutableStateOf<Bitmap?>(null) }
+    // DisposableEffect 只随页面/渲染器创建一次；用 rememberUpdatedState 让 onDispose
+    // 总能读到最新的 bitmap/retired（否则只会回收首次组合时那张，后续分辨率位图泄漏）。
+    val latestBitmap by rememberUpdatedState(bitmap)
+    val latestRetired by rememberUpdatedState(retiredBitmap)
     LaunchedEffect(renderer, index, renderLevel) {
-        bitmap = pdfPageMutex.withLock {
+        val rendered = pdfPageMutex.withLock {
             withContext(Dispatchers.IO) {
                 renderPdfPage(renderer, index, pageCount, 2f * renderLevel)
             }
         }
+        val old = bitmap
+        val olderRetired = retiredBitmap
+        bitmap = rendered
+        retiredBitmap = old
+        // 上一轮已等待过的旧图直接回收（它早已不参与绘制）
+        if (olderRetired != null && olderRetired !== old && !olderRetired.isRecycled) {
+            olderRetired.recycle()
+        }
+        // 状态换新后至少让两帧过去，旧图肯定不再参与绘制
+        withFrameNanos { }
+        withFrameNanos { }
+        if (retiredBitmap === old) {
+            retiredBitmap = null
+            if (old != null && !old.isRecycled) old.recycle()
+        }
     }
     // 离开组合（列表滚出屏幕 / 退出预览页）时显式回收位图：
     // 2 倍分辨率下单页位图可达数 MB，仅靠 GC 回收会让 88 页 PDF 滚动时峰值内存偏高。
-    // 只在离屏时回收（不在替换瞬间回收），避免出现「仍在绘制却被回收」的崩溃。
-    DisposableEffect(Unit) {
+    DisposableEffect(renderer, index) {
         onDispose {
-            bitmap?.recycle()
-            bitmap = null
+            latestRetired?.takeIf { !it.isRecycled }?.recycle()
+            latestBitmap?.takeIf { !it.isRecycled }?.recycle()
+        }
+    }
+    // 离开组合（列表滚出屏幕 / 退出预览页）时显式回收位图：
+    // 2 倍分辨率下单页位图可达数 MB，仅靠 GC 回收会让 88 页 PDF 滚动时峰值内存偏高。
+    DisposableEffect(renderer, index) {
+        onDispose {
+            latestRetired?.recycle()
+            latestBitmap?.recycle()
         }
     }
     bitmap?.let { bmp ->
@@ -202,7 +235,7 @@ private fun renderPdfPage(
             val page = renderer.openPage(index)
             val w = page.width.toFloat() * scale
             val h = page.height.toFloat() * scale
-            val bmp = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
+            val bmp = createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
             val m = Matrix().apply { postScale(scale, scale) }
             page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
             page.close()
@@ -229,8 +262,9 @@ internal fun copyAssetToCache(context: android.content.Context, asset: String): 
         // 素材随 APK 一起发版，同一 versionCode 下缓存副本必然等同源文件；
         // 此前每次打开预览都重拷一遍（gaokao_full.pdf 实测 10.25 MB，全在首帧前同步 IO 里）。
         // 用 versionCode 而不是文件长度：PDF 走的是压缩资源，openFd 拿不到长度。
-        val ver = context.packageManager.getPackageInfo(context.packageName, 0)
-            .versionCode.toString()
+        val ver = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(
+            context.packageManager.getPackageInfo(context.packageName, 0)
+        ).toString()
         if (out.exists() && runCatching { stamp.readText() == ver }.getOrDefault(false)) return out
         context.assets.open(asset).use { input ->
             out.outputStream().use { output -> input.copyTo(output) }
@@ -295,13 +329,13 @@ internal suspend fun importTextToBlancall(
         android.util.Log.d("BlancallImport", "导入 title=$title content长度=${content.length}")
         repo.insert(
             Article(
-                title = title.ifBlank { "未命名" },
+                title = title.ifBlank { context.getString(com.ilyskyo.blancall.R.string.untitled_article) },
                 content = content,
                 author = author
             )
         )
     } catch (e: Exception) {
-        android.util.Log.e("BlancallImport", "导入失败", e)
+        android.util.Log.e("BlancallImport", "import failed", e)
         -1L
     }
 }

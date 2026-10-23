@@ -42,20 +42,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.FsrsEngine
@@ -82,6 +89,8 @@ import kotlinx.coroutines.delay
  * [revealed] 控制**回忆面 / 答案面**：只有「已学过但今天还没评」的句子会先给挖空提示
  * （[SentenceCloze]），等用户回忆后再由界面把 [revealed] 置 true 显示整句；
  * 新句（第一次认读）与已评卡（回看）恒为完整显示，不受该参数影响。
+ * 揭晓是**同一段文字换可见度**（横条退、藏住的字进，见 [ClozeCueText] 的 progress），
+ * 不是把这一块换成另一块 —— 换卡时进度按 `item.key` 立即归零，防漏答案。
  */
 @Composable
 internal fun SentenceCardFace(
@@ -92,14 +101,27 @@ internal fun SentenceCardFace(
     tags: List<TagChipUi> = emptyList(),
     /** 回忆面是否已揭晓（仅对「已学未评」的句子有意义） */
     revealed: Boolean = true,
+    /** 是否启用挖空遮挡（用户偏好，见 AppPrefs.sentenceClozeEnabled）：关掉 = 整句直出 */
+    clozeEnabled: Boolean = true,
     modifier: Modifier,
-) {
+){
+    val context = LocalContext.current
     val rated = isRatedToday(state, now)
-    // 回忆面 = 已学过（不是第一次）+ 今天还没评 + 这句确实挖得出空。
-    // 新句给全文：第一次是"输入"，对陌生句子先考后教是反学习规律的。
     // 「挖不挖得出空」只由句子文本决定，remember 之后列表滚动重组时不再逐帧重算
     val hidesAnything = remember(item.text) { SentenceCloze.hidesAnything(item.text) }
-    val recalling = !rated && (state?.reviewCount ?: 0) > 0 && !revealed && hidesAnything
+    // 是不是「回忆面」= 已学过（不是第一次）+ 今天还没评 + 用户开着遮挡 + 这句确实挖得出空。
+    // 新句给全文：第一次是"输入"，对陌生句子先考后教是反学习规律的。
+    // **刻意不含 `!revealed`**：揭晓是这张卡内部的一段过渡（见 revealAnim），不是"换一个面"——
+    // 把它算进来，揭晓那一帧整块会被换成另一段布局，那正是要治的硬切。
+    val recallFace = clozeEnabled && !rated && (state?.reviewCount ?: 0) > 0 && hidesAnything
+    // 揭晓进度（0 = 只给线索，1 = 整句）：驱动"空位横条退场 + 被藏住的字入场"，全程零重排。
+    // 按 [item.key] remember ⇒ 换卡的那一帧就是 0；换卡时再 snap 一次兜底，
+    // 否则上一张的进度会以"答案正在淡出"的形式挂在新卡上（等于替他漏答案）。
+    val revealAnim = remember(item.key) { Animatable(0f) }
+    LaunchedEffect(item.key, revealed) {
+        if (revealed) revealAnim.animateTo(1f, MotionFade.number(MotionFade.answerReveal))
+        else revealAnim.snapTo(0f)
+    }
     GlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(26.dp),
@@ -156,19 +178,13 @@ internal fun SentenceCardFace(
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (recalling) {
-                        Text(
-                            cueText(item.text),
+                    if (recallFace) {
+                        // 揭晓 = 同一句话换可见度：横条退、藏住的字进，排版一步不动
+                        ClozeCueText(
+                            text = item.text,
+                            progress = { revealAnim.value },
                             style = MaterialTheme.typography.headlineSmall,
                             lineHeight = 36.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            stringResource(com.ilyskyo.blancall.R.string.recall_hint),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                             textAlign = TextAlign.Center,
                         )
                     } else {
@@ -183,7 +199,7 @@ internal fun SentenceCardFace(
                 }
             }
             Text(
-                sentenceCardStatus(state, now),
+                sentenceCardStatus(context, state, now),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (rated) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -196,19 +212,112 @@ internal fun SentenceCardFace(
 }
 
 /**
- * 挖空提示的着色版本：占位符压暗到近乎背景，让"该背的字"和"已给的线索"在视觉上分层
- * （同色的一串 □ 会连成一块噪声，读不出哪里是空）。
+ * 挖空提示的渲染（遮挡视觉规范 v1），外加「揭晓」的过程动画。
+ *
+ * **空位不是方块，是"填空线"。** 旧实现把每个被藏的字换成 `□` 再压暗到 35%，
+ * 一句里连排七八个方框，读起来是一块噪声：既不像句子，也不像题，只剩"被涂黑了"的感觉。
+ * 单字方框还会让读者去数框，而数框没有记忆价值。
+ *
+ * 规范：
+ * 1. 形状：圆角横条（高 2dp、圆角 1dp），不用描边、不加底色块；
+ * 2. 宽度：取该字字宽的 62%，最小 3dp —— 汉字接近满宽，西文字母自然收窄；
+ * 3. 颜色：正文色 18% 透明度；恒弱于正文与提示文字，不抢目光；
+ * 4. 位置：贴着该字的字形底部（距字底留 6% 字高的缝），看起来像一道填空下划线；
+ * 5. 每个空位独立一条：条与条之间自然留出 38% 字宽，**一眼能数出还差几个字**；
+ * 6. 首字与标点保持正文样式 —— 它们是线索，不是要被藏起来的内容；
+ * 7. 行高、换行、对齐与整句完全一致，遮挡不改变排版。
+ *
+ * 实现：**原文照排**，被藏住的字只是先把颜色设成透明（**宽度与换行仍由排版引擎正常计算**），
+ * 再在 `drawBehind` 里按这些字的布局框画横条。不用逐字 Composable 或 FlowRow ——
+ * 那会让中英混排的字距、行高、居中全部失控，而这里排版仍是系统文本引擎的原生结果。
+ * 用原文而不是 [SentenceCloze.cue] 生成的 `□` 串，规范第 7 条才真的成立：
+ * `□` 只是"宽度接近汉字"，混排时两者字宽并不相等，拿它排版会把断行位置挪掉。
+ *
+ * 揭晓（2026-10-18）：点「显示答案」不再是把这一块换成另一块，而是**同一句话的两种可见度**——
+ * 横条不透明度 18% → 0、被藏住的字 `Color.Transparent` → 正文色，两件事由 [progress] 同一条进度反向走。
+ * 做法是同一份原文叠两层（[base] = 露出的字、[answer] = 藏住的字），两层字符串与样式完全一致
+ * ⇒ 逐字框对得上，揭晓全程零重排。进度只在绘制域里读（`drawBehind` / `graphicsLayer`），
+ * 所以逐帧只是重画，既不重排版也不重组合。
+ *
+ * @param progress 0 = 只给线索（横条在、藏住的字不可见），1 = 整句揭晓（横条退净、字全亮）。
  */
 @Composable
-private fun cueText(text: String): AnnotatedString {
-    val placeholder = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-    return remember(text, placeholder) {
+internal fun ClozeCueText(
+    text: String,
+    progress: () -> Float,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.headlineSmall,
+    lineHeight: TextUnit = 36.sp,
+    textAlign: TextAlign = TextAlign.Center,
+) {
+    // 哪几个字要遮：cue 与原文逐字符同长同序（见 SentenceCloze.cue），按 index 直接对齐
+    val hidden = remember(text) {
+        val cue = SentenceCloze.cue(text)
+        BooleanArray(text.length) { i -> i < cue.length && cue[i] == SentenceCloze.PLACEHOLDER }
+    }
+    val base = remember(text, hidden) {
         buildAnnotatedString {
-            for (c in SentenceCloze.cue(text)) {
-                if (c == SentenceCloze.PLACEHOLDER) withStyle(SpanStyle(color = placeholder)) { append(c) }
+            text.forEachIndexed { i, c ->
+                // 透明而非删除：字符的推进宽度必须留着，否则换行位置会整体前移
+                if (hidden[i]) withStyle(SpanStyle(color = Color.Transparent)) { append(c) }
                 else append(c)
             }
         }
+    }
+    val answer = remember(text, hidden) {
+        buildAnnotatedString {
+            text.forEachIndexed { i, c ->
+                if (hidden[i]) append(c)
+                else withStyle(SpanStyle(color = Color.Transparent)) { append(c) }
+            }
+        }
+    }
+    val ink = MaterialTheme.colorScheme.onSurface
+    // 用普通可变槽而不是 State：测量（onTextLayout）一定早于绘制（drawBehind），
+    // 写在这里读取时已经有值，首帧就能画出横条，不会先闪一帧"缺字"。
+    val layoutSlot = remember(text) { arrayOfNulls<TextLayoutResult>(1) }
+    Box(
+        modifier = modifier.drawBehind {
+            val res = layoutSlot[0] ?: return@drawBehind
+            val barH = 2.dp.toPx()
+            val barR = barH / 2f
+            val minW = 3.dp.toPx()
+            // 横条跟着答案反向退场：进度 1 = 退净，正好是字全亮的那一刻
+            val color = ink.copy(alpha = 0.18f * (1f - progress()))
+            for (i in hidden.indices) {
+                if (!hidden[i]) continue
+                val box = res.getBoundingBox(i)
+                if (box.width <= 0f) continue
+                val w = (box.width * 0.62f).coerceAtLeast(minW)
+                // 贴字形底部（box.bottom ≈ 基线 + descent），距字底留 6% 字高的缝：
+                // 用行高定位会落在字身中部、压住笔画；用字符框底部才既在字下方、又同一行齐平。
+                val top = box.bottom - barH - box.height * 0.06f
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(box.center.x - w / 2f, top),
+                    size = Size(w, barH),
+                    cornerRadius = CornerRadius(barR, barR),
+                )
+            }
+        },
+    ) {
+        // 两层同串同式 ⇒ 排版逐字一致，永远对得上（见上方注释）
+        Text(
+            text = base,
+            style = style,
+            lineHeight = lineHeight,
+            color = ink,
+            textAlign = textAlign,
+            onTextLayout = { layoutSlot[0] = it },
+        )
+        Text(
+            text = answer,
+            style = style,
+            lineHeight = lineHeight,
+            color = ink,
+            textAlign = textAlign,
+            modifier = Modifier.graphicsLayer { alpha = progress() },
+        )
     }
 }
 
@@ -352,7 +461,7 @@ internal fun SentenceEmptyView(onBack: () -> Unit) {
                 .height(48.dp),
             shape = RoundedCornerShape(14.dp),
         ) {
-            Text("返回", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(com.ilyskyo.blancall.R.string.back), style = MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -618,7 +727,7 @@ internal fun SentenceDoneView(
                     .doneEnter(stage > 3),
                 shape = RoundedCornerShape(14.dp),
             ) {
-                Text("继续记忆", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(com.ilyskyo.blancall.R.string.continue_memory), style = MaterialTheme.typography.labelLarge)
             }
             Spacer(Modifier.height(10.dp))
         }

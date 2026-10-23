@@ -15,10 +15,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -43,14 +45,22 @@ fun ScrollProgressBadge(
         animationSpec = MotionFade.number(MotionFade.enter),
         label = "scrollBadgeAlpha"
     )
-    // 滚动中显示；停止后延时淡出（滚动中每跨一段都会重置计时）
-    LaunchedEffect(listState.isScrollInProgress, listState.firstVisibleItemIndex) {
-        if (listState.isScrollInProgress) {
-            visible = true
-        } else {
-            delay(800)
-            visible = false
-        }
+    // firstVisibleItemIndex 是高频快照值：组合期直接读会让整个徽章随每次索引变化重组，
+    // 而这里只需要它的「当前值」。用 derivedStateOf 收敛成仅在索引真的变化时读取。
+    val index by remember(listState) { derivedStateOf { listState.firstVisibleItemIndex } }
+    // 滚动中显示；停止后延时淡出（滚动中每跨一段都会重置计时）。
+    // 用 snapshotFlow 而不是把两个快照值写成 LaunchedEffect 的 key：key 在组合期读取，
+    // 每次索引变化都会重启一次 effect（并取消上一次 delay），职责应交给流。
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress to listState.firstVisibleItemIndex }
+            .collect { (scrolling, _) ->
+                if (scrolling) {
+                    visible = true
+                } else {
+                    delay(800)
+                    visible = false
+                }
+            }
     }
     if (alpha > 0.01f) {
         Box(
@@ -61,7 +71,7 @@ fun ScrollProgressBadge(
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Text(
-                "${listState.firstVisibleItemIndex + 1} / $total $unit",
+                "${index + 1} / $total $unit",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

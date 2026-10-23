@@ -37,7 +37,10 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +73,7 @@ import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.CoachAnchorState
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.HapticTier
 import com.ilyskyo.blancall.ui.common.rememberHaptic
@@ -77,6 +82,7 @@ import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.PressTier
 import com.ilyskyo.blancall.ui.common.pressFeedback
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.coachAnchor
 import com.ilyskyo.blancall.ui.common.pressClick
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -501,11 +507,15 @@ fun HomeCardCanvas(
     onPinToggle: (HomeLayoutStore.Card, row: Int, col: Int) -> Unit,
     onEditConfig: (HomeLayoutStore.Card) -> Unit,
     onAddCard: () -> Unit,
-    /** 编辑态「管理最近文章」入口（null = 不展示该按钮，如一篇都没有时） */
-    onManageArticles: (() -> Unit)? = null,
     /** 非编辑态长按任意卡片（回传卡片 id），宿主据此进入编辑态 */
     onLongPressCard: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** 编辑态「管理最近文章」入口（null = 不展示该按钮，如一篇都没有时） */
+    onManageArticles: (() -> Unit)? = null,
+    /** 首张卡片的锚点：首页「长按卡片」指引要圈住真实卡片，而不是整块画布（null = 不指） */
+    firstCardAnchor: CoachAnchorState? = null,
+    /** 编辑态「＋」按钮的锚点：供「＋ 能加卡」指引把圈落在按钮上（null = 不指） */
+    addButtonAnchor: CoachAnchorState? = null,
     /** 渲染列数：大屏自适应多列（见 KDoc）；默认与卡片「绝对列数」存储语义一致 */
     columns: Int = HomeLayoutStore.COLUMNS,
     cardContent: @Composable (HomeLayoutStore.Card) -> Unit
@@ -548,9 +558,19 @@ fun HomeCardCanvas(
     // 手指做了两件大事（拿起、放下），只听到一件。落格用 Threshold（双段，「跨过一道界」）。
     val commitHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Threshold))
 
-    // 手势中的预览态（不落地，松手才写回）
+    // 手势中的预览态（不落地，松手才写回）。
+    // dragTarget 只被手势/落点计算读取；视觉位移由 dragAnim 在 graphicsLayer 里读取 ——
+    // 拖动时每个 move 只改 State/绘相位，不再让整块画布（所有卡片）每帧重组。
     var dragCardId by remember { mutableStateOf<String?>(null) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var dragTarget by remember { mutableStateOf(Offset.Zero) }
+    val dragAnim = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    LaunchedEffect(dragCardId) {
+        if (dragCardId != null) {
+            snapshotFlow { dragTarget }.collect { dragAnim.snapTo(it) }
+        } else {
+            dragAnim.animateTo(Offset.Zero, Motion.slotSettleOffset())
+        }
+    }
     var resizeCardId by remember { mutableStateOf<String?>(null) }
     var resizeBaseCol by remember { mutableIntStateOf(1) }
     var resizeBaseRow by remember { mutableIntStateOf(1) }
@@ -593,7 +613,7 @@ fun HomeCardCanvas(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "管理最近文章",
+                            stringResource(com.ilyskyo.blancall.R.string.manage_recent_title),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -606,6 +626,7 @@ fun HomeCardCanvas(
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
+                        .then(if (addButtonAnchor != null) Modifier.coachAnchor(addButtonAnchor) else Modifier)
                         .pressClick { cbAdd() },
                     contentAlignment = Alignment.Center
                 ) {
@@ -639,7 +660,7 @@ fun HomeCardCanvas(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "还没有卡片，点这里添加",
+                        stringResource(com.ilyskyo.blancall.R.string.home_no_cards_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -680,8 +701,6 @@ fun HomeCardCanvas(
 
                         val slotX = cellPitch * slot[1].toFloat()
                         val slotY = ROW_UNIT * slot[0].toFloat()
-                        val dragDx = with(density) { dragOffset.x.toDp() }
-                        val dragDy = with(density) { dragOffset.y.toDp() }
                         // 槽位：换格交给弹簧（改造前是两条互不相干的 220ms 定时补间）
                         val animX by animateDpAsState(
                             targetValue = slotX,
@@ -693,21 +712,10 @@ fun HomeCardCanvas(
                             animationSpec = Motion.slotTravel(),
                             label = "cardSlotY",
                         )
-                        // 拖出量：拖的时候用 snap 逐帧跟住手指，松手那一帧换成弹簧归零。
-                        // 这样 animX + settleX 在松手帧恰好等于手指离开的那一点 ——
-                        // 改造前是把 dragOffset 直接清零，那一帧卡会跳回旧槽位再滑走（松手瞬移）。
-                        val settleX by animateDpAsState(
-                            targetValue = if (isDragging) dragDx else 0.dp,
-                            animationSpec = if (isDragging) snap() else Motion.slotSettle(),
-                            label = "cardSettleX",
-                        )
-                        val settleY by animateDpAsState(
-                            targetValue = if (isDragging) dragDy else 0.dp,
-                            animationSpec = if (isDragging) snap() else Motion.slotSettle(),
-                            label = "cardSettleY",
-                        )
-                        val x = animX + settleX
-                        val y = animY + settleY
+                        // 拖出量不再参与组合期几何：由 graphicsLayer 读取 dragAnim，
+                        // 松手后同一根二维弹簧把 X/Y 一起弹回 0（见 dragAnim 的 LaunchedEffect）。
+                        val x = animX
+                        val y = animY
 
                         val w = cellW * colSpan.toFloat() +
                             COLUMN_GAP * (colSpan - 1).toFloat()
@@ -756,12 +764,17 @@ fun HomeCardCanvas(
                                 .width(geo.width)
                                 .height(geo.height)
                                 .zIndex(if (geo.isDragging || geo.isResizing) 1f else 0f)
+                                // 首卡锚点：首页「长按卡片」指引只圈第一张卡（圈整块画布等于没圈）
+                                .then(
+                                    if (index == 0 && firstCardAnchor != null) Modifier.coachAnchor(firstCardAnchor)
+                                    else Modifier
+                                )
                                 // 位置走 translation 而不是 Modifier.offset：offset 是布局修饰符，
                                 // 槽位弹簧与拖出量每帧都在改它 → 每帧重跑一遍 placement。
                                 // translation 只动绘相位，拖动与落位期间卡片不再逐帧重排。
                                 .graphicsLayer {
-                                    translationX = geo.x.toPx()
-                                    translationY = geo.y.toPx()
+                                    translationX = geo.x.toPx() + dragAnim.value.x
+                                    translationY = geo.y.toPx() + dragAnim.value.y
                                     scaleX = liftScale
                                     scaleY = liftScale
                                     alpha = liftAlpha * entryAlpha
@@ -870,10 +883,10 @@ fun HomeCardCanvas(
                                             dragAfterSlop(
                                                 onStart = {
                                                     dragCardId = card.id
-                                                    dragOffset = Offset.Zero
+                                                    dragTarget = Offset.Zero
                                                     confirmHaptic()
                                                 },
-                                                onDelta = { d -> dragOffset += d },
+                                                onDelta = { d -> dragTarget += d },
                                                 onEnd = {
                                                     val c = currentCards.firstOrNull { it.id == card.id }
                                                     val s = currentSlots[card.id]
@@ -884,9 +897,9 @@ fun HomeCardCanvas(
                                                             (c.colSpan - 1) * gapPx
                                                         val hPx = c.rowSpan * rowUnitPx
                                                         val centerX = cellPitchPx * s[1] +
-                                                            wPx / 2f + dragOffset.x
+                                                            wPx / 2f + dragTarget.x
                                                         val centerY = rowUnitPx * s[0] +
-                                                            hPx / 2f + dragOffset.y
+                                                            hPx / 2f + dragTarget.y
                                                         val tCol = floor(centerX / cellPitchPx)
                                                             .toInt()
                                                             .coerceIn(
@@ -914,7 +927,6 @@ fun HomeCardCanvas(
                                                         }
                                                     }
                                                     dragCardId = null
-                                                    dragOffset = Offset.Zero
                                                 }
                                             )
                                         }
@@ -950,8 +962,8 @@ fun HomeCardCanvas(
                                     .zIndex(if (geo.isDragging || geo.isResizing) 3f else 2f)
                                     // 与内容层同一套 translation（两层必须逐帧一致，否则白钮会脱离卡角）
                                     .graphicsLayer {
-                                        translationX = geo.x.toPx()
-                                        translationY = geo.y.toPx()
+                                        translationX = geo.x.toPx() + dragAnim.value.x
+                                        translationY = geo.y.toPx() + dragAnim.value.y
                                         scaleX = controlLiftScale
                                         scaleY = controlLiftScale
                                         // 只缩放、**不设 alpha**：alpha<1 会让该层走离屏合成，
@@ -991,7 +1003,10 @@ fun HomeCardCanvas(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Outlined.PushPin,
-                                            contentDescription = if (card.pinned) "取消固定" else "固定卡片",
+                                            contentDescription = stringResource(
+                                                if (card.pinned) com.ilyskyo.blancall.R.string.a11y_unpin_card
+                                                else com.ilyskyo.blancall.R.string.a11y_pin_card
+                                            ),
                                             // 已固定用主题色（一眼可辨「这张被钉住了」），未固定用深灰（白底上清晰）
                                             tint = if (card.pinned) {
                                                 MaterialTheme.colorScheme.primary

@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -54,6 +55,10 @@ import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
@@ -82,6 +87,7 @@ fun MaskConfigListScreen(
     onNew: () -> Unit
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val store = remember { MaskConfigStore.getInstance(context.filesDir) }
     var configs by remember { mutableStateOf<List<MaskConfigStore.MaskConfig>>(emptyList()) }
@@ -95,6 +101,8 @@ fun MaskConfigListScreen(
     var menuForId by remember { mutableStateOf<Long?>(null) }
     // 长按列表项弹出菜单时统一带触感反馈
     val confirmHaptic = rememberConfirmHaptic()
+    // 「点按即使用 / 长按改名删除」一次性指引圈的锚点（第一条配置卡）
+    val listAnchor = rememberCoachAnchor()
     var renameTarget by remember { mutableStateOf<MaskConfigStore.MaskConfig?>(null) }
     var deleteTarget by remember { mutableStateOf<MaskConfigStore.MaskConfig?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -123,7 +131,7 @@ fun MaskConfigListScreen(
                 ReaderPrefsStore.getInstance(context),
                 articleId
             ) { it.copy(occlusionCustomConfigId = cfg.id, occlusionMode = "custom", occlusionEnabled = true) }
-            Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.mask_config_applied, cfg.name), Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.mask_config_applied, cfg.name), Toast.LENGTH_SHORT).show()
             onBack()
         }
     }
@@ -154,6 +162,15 @@ fun MaskConfigListScreen(
                 .widthIn(max = 600.dp)
                 .padding(horizontal = 20.dp)
         ) {
+            // 首次进入教列表手势：点按即使用、长按改名 / 删除（看过即不再出现）
+            CoachMark(
+                coachKey = "mask_list_long_press",
+                anchor = listAnchor,
+                title = stringResource(com.ilyskyo.blancall.R.string.coach_mask_list_title),
+                body = stringResource(com.ilyskyo.blancall.R.string.coach_mask_list_body),
+                shape = CoachShape.Card,
+                enabled = !loading && configs.isNotEmpty(),
+            )
             // ── 顶栏：返回 + 标题 + 新建 ──
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
@@ -185,11 +202,6 @@ fun MaskConfigListScreen(
                 )
                 Spacer(Modifier.height(4.dp))
             }
-            Text(
-                stringResource(com.ilyskyo.blancall.R.string.mask_list_hint_pick),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Spacer(Modifier.height(12.dp))
 
             // 三态之间交叉淡入淡出（同 CustomClozeListScreen）：改造前 loading→列表、
@@ -233,6 +245,8 @@ fun MaskConfigListScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            // 首张配置卡的锚点：指引圈只圈第一张（圈整块列表等于没圈）
+                                            .then(if (idx == 0) Modifier.coachAnchor(listAnchor) else Modifier)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(
                                                 if (inUse) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
@@ -335,7 +349,7 @@ fun MaskConfigListScreen(
                         // 重名校验：与同文章下其他配置（排除自身）trim 后全等则提示并中止保存
                         val dup = configs.any { it.id != cfg.id && it.name.trim() == newName }
                         if (dup) {
-                            Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
                         renameTarget = null
@@ -355,13 +369,14 @@ fun MaskConfigListScreen(
     }
 
     // ── 删除确认弹窗 ──
-    if (deleteTarget != null) {
+    val targetToDelete = deleteTarget
+    if (targetToDelete != null) {
         BlancallAlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.delete_config_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
-                    stringResource(com.ilyskyo.blancall.R.string.delete_mask_confirm, deleteTarget!!.name, deleteTarget!!.spans.size),
+                    stringResource(com.ilyskyo.blancall.R.string.delete_mask_confirm, targetToDelete.name, targetToDelete.spans.size),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -381,7 +396,7 @@ fun MaskConfigListScreen(
                             }
                         }
                         reload()
-                        Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.deleted_toast), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.deleted_toast), Toast.LENGTH_SHORT).show()
                     }
                 }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
             },

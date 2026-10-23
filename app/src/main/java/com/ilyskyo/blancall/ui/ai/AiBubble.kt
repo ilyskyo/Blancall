@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.ui.ai
 
+import androidx.compose.ui.res.stringResource
+
 import com.ilyskyo.blancall.ui.common.MarkdownText
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import androidx.compose.foundation.combinedClickable
@@ -114,7 +116,9 @@ fun AiBubble(
                             onClick = onRetry,
                             contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp)
                         ) {
-                            Text("重发", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(com.ilyskyo.blancall.R.string.retry),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }

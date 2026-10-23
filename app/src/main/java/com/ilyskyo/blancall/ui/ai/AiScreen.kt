@@ -14,6 +14,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
@@ -21,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,6 +44,7 @@ import com.ilyskyo.blancall.ui.viewmodel.AiViewModel
  */
 @Composable
 fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(), resumeSessionId: Long? = null) {
+    val listAnchor = rememberCoachAnchor()
     val vm: AiViewModel = viewModel()
     val messages by vm.messages.collectAsState()
     val isSending by vm.isSending.collectAsState()
@@ -45,20 +52,22 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
     val title by vm.title.collectAsState()
     var input by remember { mutableStateOf("") }
     val context = LocalContext.current
+    // 文案一律经 LocalResources 读取：LocalContext 取资源会在配置切换时读到旧值（lint 也会拦）
+    val resources = LocalResources.current
 
     // 复制整段对话（含角色前缀，方便粘贴分享）
     val copyAll = {
         val text = messages.joinToString("\n") { m ->
             when (m.role) {
-                "user" -> "我：${m.content}"
-                "error" -> "[错误] ${m.content}"
+                "user" -> resources.getString(com.ilyskyo.blancall.R.string.ai_you_prefix) + m.content
+                "error" -> resources.getString(com.ilyskyo.blancall.R.string.ai_error_prefix) + " " + m.content
                 else -> "Blancall：${m.content}"
             }
         }
         if (text.isNotBlank()) {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            clipboard?.setPrimaryClip(ClipData.newPlainText("AI 对话", text))
-            Toast.makeText(context, "对话已复制", Toast.LENGTH_SHORT).show()
+            clipboard?.setPrimaryClip(ClipData.newPlainText(resources.getString(com.ilyskyo.blancall.R.string.ai_chat_title), text))
+            Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.ai_chat_copied), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -107,13 +116,13 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                 TextButton(
                     onClick = { navController.navigate("ai_history") }
                 ) {
-                    Text("历史", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(com.ilyskyo.blancall.R.string.ai_history_title), style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(
                     onClick = copyAll,
                     enabled = messages.isNotEmpty()
                 ) {
-                    Text("复制对话", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(com.ilyskyo.blancall.R.string.ai_copy_chat), style = MaterialTheme.typography.labelMedium)
                 }
             }
             HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -129,15 +138,26 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                     listState.animateScrollToItem(last)
                 }
             }
+            // 「长按消息复制」：AI 气泡是长按交互，但气泡本身没有任何提示
+            CoachMark(
+                coachKey = "ai_bubble_long_press",
+                anchor = listAnchor,
+                title = stringResource(com.ilyskyo.blancall.R.string.coach_ai_bubble_title),
+                body = stringResource(com.ilyskyo.blancall.R.string.coach_ai_bubble_body),
+                shape = CoachShape.Card,
+                enabled = messages.isNotEmpty(),
+            )
             LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(messages, key = { it.id }) { msg ->
+                    // 首条气泡锚点：长按复制的指引圈只圈第一条（圈整块列表等于没圈）
+                    Box(if (msg.id == messages.firstOrNull()?.id) Modifier.coachAnchor(listAnchor) else Modifier) {
                     AiBubble(
                         role = msg.role,
                         content = msg.content,
@@ -145,11 +165,12 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                         onLongClick = {
                             // 长按复制单条消息
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            clipboard?.setPrimaryClip(ClipData.newPlainText("AI 消息", msg.content))
-                            Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                            clipboard?.setPrimaryClip(ClipData.newPlainText(resources.getString(com.ilyskyo.blancall.R.string.ai_message), msg.content))
+                            Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.ai_copied), Toast.LENGTH_SHORT).show()
                         },
                         onRetry = if (msg.role == "error" && !isSending) ({ vm.retryLast() }) else null
                     )
+                    }
                 }
             }
 
@@ -174,7 +195,7 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                     onValueChange = { if (it.length <= 2000) input = it },
                     modifier = Modifier.weight(1f),
                     placeholder = {
-                        Text(if (isSending) "AI 正在回答…（可先输入下一条）" else "输入问题…")
+                        Text(if (isSending) stringResource(com.ilyskyo.blancall.R.string.ai_answering_can_type) else stringResource(com.ilyskyo.blancall.R.string.ai_input_hint))
                     },
                     shape = RoundedCornerShape(16.dp),
                     maxLines = 3,
@@ -215,7 +236,7 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
                         kind = AppIconKind.ArrowForward,
                         modifier = Modifier.size(22.dp),
                         tint = MaterialTheme.colorScheme.onPrimary,
-                        contentDescription = "发送"
+                        contentDescription = stringResource(com.ilyskyo.blancall.R.string.ai_send)
                     )
                     }
                 }

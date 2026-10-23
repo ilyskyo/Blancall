@@ -131,6 +131,36 @@ object AppPrefs {
     /** 句子卡片抽句范围标签筛选：选中的标签 id 集合（空 = 标签维度不限） */
     val sentenceTagFilterFlow: StateFlow<Set<Long>> = _sentenceTagFilterFlow.asStateFlow()
 
+    /**
+     * 「句子卡片」回忆面是否挖空遮挡：true（默认）= 先只给每分句首字，揭晓后才看整句。
+     * 关掉即整句直出 —— 那是「快速过一遍」的用法，与默认的「先回忆再自评」是两种节奏，
+     * 所以它必须是用户可切换并可记住的选择，而不是写死的。
+     */
+
+    /**
+     * 「字数提示」：在每个挖空旁标出这一空有几个字（句子挖空才有多字数，字词挖空恒为 1）。
+     * 与 [hintContentEnabled] 是两个独立维度 —— 用户可能只想看长度、不想被喂字。
+     */
+    private val _hintLengthEnabledFlow = MutableStateFlow(true)
+    val hintLengthEnabledFlow: StateFlow<Boolean> = _hintLengthEnabledFlow.asStateFlow()
+
+    /**
+     * 「内容提示」：超时后先淡显下一个字（弱）、再自动填入（强）。
+     * 旧版只有一个总开关 `show_hints`，无法与字数提示分开；这里拆成独立项，两个维度可任意组合。
+     */
+    private val _hintContentEnabledFlow = MutableStateFlow(true)
+    val hintContentEnabledFlow: StateFlow<Boolean> = _hintContentEnabledFlow.asStateFlow()
+
+    /**
+     * 已看过的「使用指引」key 集合（CoachMark 一次性提示）。
+     * 用集合而不是一堆 boolean：每加一处引导不必再动一次 AppPrefs；
+     * 设置页的「重新播放使用指引」就是把它清空。
+     */
+    private val _coachSeenFlow = MutableStateFlow<Set<String>>(emptySet())
+    val coachSeenFlow: StateFlow<Set<String>> = _coachSeenFlow.asStateFlow()
+    private val _sentenceClozeEnabledFlow = MutableStateFlow(true)
+    val sentenceClozeEnabledFlow: StateFlow<Boolean> = _sentenceClozeEnabledFlow.asStateFlow()
+
     private val _sentenceArticleFilterFlow = MutableStateFlow<Set<Long>>(emptySet())
     /** 句子卡片抽句范围文章筛选：选中的文章 id 集合（空 = 文章维度不限；与标签维度组合见 resolveSentencePool） */
     val sentenceArticleFilterFlow: StateFlow<Set<Long>> = _sentenceArticleFilterFlow.asStateFlow()
@@ -167,6 +197,10 @@ object AppPrefs {
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         _sentenceArticleFilterFlow.value = prefs.getStringSet("sentence_article_filter", emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
+        _sentenceClozeEnabledFlow.value = prefs.getBoolean("sentence_cloze_enabled", true)
+        _hintLengthEnabledFlow.value = prefs.getBoolean("hint_length_enabled", true)
+        _hintContentEnabledFlow.value = prefs.getBoolean("hint_content_enabled", true)
+        _coachSeenFlow.value = prefs.getStringSet("coach_seen", emptySet()) ?: emptySet()
         _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 36f)
         _readingLineHeightFlow.value = prefs.getFloat("reading_line_height", 2.0f).coerceIn(1.4f, 2.4f)
         _readingBgModeFlow.value = prefs.getInt("reading_bg_mode", 0)
@@ -216,14 +250,52 @@ object AppPrefs {
         }
 
     /**
-     * 「句子卡片」大卡片的划卡手势提示是否已展示过：仅首次使用时提示一次，之后不再出现。
-     * 进入大卡片即落标记（不等首次划卡）——提示只为新手发现手势，看过一次即可收起，避免长期占位。
+     * 「句子卡片」是否开启挖空遮挡（默认开）。
+     * 这是用户对**记忆方式**的长期偏好，必须被记住且随时可改。
      */
-    var sentenceHintSeen: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("sentence_hint_seen", false) else false
+    var sentenceClozeEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("sentence_cloze_enabled", true) else true
         set(value) {
-            if (::prefs.isInitialized) prefs.edit { putBoolean("sentence_hint_seen", value) }
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("sentence_cloze_enabled", value) }
+                _sentenceClozeEnabledFlow.value = value
+            }
         }
+
+    /** 挖空旁是否标出字数 */
+    var hintLengthEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("hint_length_enabled", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("hint_length_enabled", value) }
+                _hintLengthEnabledFlow.value = value
+            }
+        }
+
+    /** 超时是否给内容提示（淡显 → 自动填字） */
+    var hintContentEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("hint_content_enabled", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("hint_content_enabled", value) }
+                _hintContentEnabledFlow.value = value
+            }
+        }
+
+    /** 标记某条使用指引已看过 */
+    fun markCoachSeen(key: String) {
+        if (!::prefs.isInitialized) return
+        val next = _coachSeenFlow.value + key
+        prefs.edit { putStringSet("coach_seen", next) }
+        _coachSeenFlow.value = next
+    }
+
+    /** 「重新播放使用指引」：清空已看记录，下次进入各页会重新演示 */
+    fun resetCoachMarks() {
+        if (!::prefs.isInitialized) return
+        prefs.edit { putStringSet("coach_seen", emptySet()) }
+        _coachSeenFlow.value = emptySet()
+    }
 
     /** 浅色模式米黄底色开关（深色模式始终纯黑） */
     var lightBeigeBackgroundEnabled: Boolean

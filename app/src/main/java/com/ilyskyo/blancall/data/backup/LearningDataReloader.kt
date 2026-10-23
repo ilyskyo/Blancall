@@ -64,6 +64,10 @@ internal object LearningDataReloader {
         suspend fun attempt(block: suspend () -> Unit) {
             try {
                 block()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 取消不是「这个 Store 重载失败」：继续重载其余 Store 反而会在
+                // 半取消状态下继续改内存。原样上抛，由调用方决定是否 NonCancellable。
+                throw e
             } catch (_: Exception) {
                 failures++
             }

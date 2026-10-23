@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.algorithm
 
 import android.content.Context
+import com.ilyskyo.blancall.R
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -98,7 +99,7 @@ object PdfExporter {
     suspend fun export(context: Context, config: ExportConfig, fileName: String = "blancall_paper.pdf"): File =
         withContext(Dispatchers.IO) {
             val file = File(context.cacheDir, fileName)
-            if (config.displayText.isBlank()) throw IOException("导出内容为空")
+            if (config.displayText.isBlank()) throw IOException(context.getString(R.string.pdf_empty_content))
 
             val document = PdfDocument()
             try {
@@ -124,7 +125,10 @@ object PdfExporter {
                 if (config.includeAnswer && config.blanks.isNotEmpty()) {
                     ctx.newPage()
                     try {
-                        var y = drawAnswerTitle(ctx.canvas, titleP, lineP)
+                        var y = drawAnswerTitle(
+                            ctx.canvas, titleP, lineP,
+                            context.getString(R.string.pdf_answer_key)
+                        )
                         y = drawAnswerBody(ctx, y, config.blanks, bodyP, mw)
                     } finally {
                         ctx.finish()
@@ -208,10 +212,10 @@ object PdfExporter {
         }
     }
 
-    private fun drawAnswerTitle(c: Canvas, titleP: Paint, lineP: Paint): Float {
+    private fun drawAnswerTitle(c: Canvas, titleP: Paint, lineP: Paint, label: String): Float {
         // y 从顶部 margin + 标题字号开始
         var y = MG + FS_TITLE
-        c.drawText("参考答案", MG, y, titleP); y += LG_TITLE
+        c.drawText(label, MG, y, titleP); y += LG_TITLE
         val ly = y + 6f
         c.drawLine(MG, ly, PW - MG, ly, lineP)
         return ly + LG_BODY
@@ -274,7 +278,7 @@ object PdfExporter {
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }, "分享试卷"))
+            }, context.getString(R.string.share_exam_title)))
             true
         } catch (e: Exception) {
             Log.w(TAG, "FileProvider 分享 PDF 失败，尝试回退", e)
@@ -284,7 +288,7 @@ object PdfExporter {
                 context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                     type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, fallbackUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }, "分享试卷"))
+                }, context.getString(R.string.share_exam_title)))
                 true
             } catch (e2: Exception) {
                 Log.w(TAG, "回退分享 PDF 仍失败", e2)

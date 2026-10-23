@@ -62,7 +62,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
     /** 流代次：每次发送新消息 +1，旧订阅者据此忽略新流的状态（防止覆盖上一轮回复） */
     private var streamGeneration = 0L
 
-    private val _title = MutableStateFlow("AI 助手")
+    private val _title = MutableStateFlow(getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_assistant_name))
     val title: StateFlow<String> = _title.asStateFlow()
 
     // 发送给 API 的完整历史（首条为 system）
@@ -143,7 +143,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
             if (articles.isEmpty()) return@launch
 
             _title.value = if (articles.size > 1) {
-                "跨文 AI · ${articles.size} 篇"
+                getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_cross_title, articles.size)
             } else {
                 articles.first().title
             }
@@ -159,9 +159,13 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                     id = idCounter.incrementAndGet(),
                     role = "assistant",
                     content = if (articles.size > 1) {
-                        "你好，我是你的 AI 学习助手 👋\n已载入 ${articles.size} 篇文章，你可以问我任何关于内容的问题，比如解释某句话、出练习题、总结要点等。"
+                        getApplication<Application>().getString(
+                            com.ilyskyo.blancall.R.string.ai_welcome_multi, articles.size
+                        )
                     } else {
-                        "你好，我是你的 AI 学习助手 👋\n已载入《${articles.first().title}》，你可以问我任何关于内容的问题，比如解释某句话、出练习题、总结要点等。"
+                        getApplication<Application>().getString(
+                            com.ilyskyo.blancall.R.string.ai_welcome_single, articles.first().title
+                        )
                     }
                 )
             )
@@ -179,7 +183,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
             val (savedIds, savedMessages) = withContext(Dispatchers.IO) {
                 loadAiSessionData(app, sessionId)
             } ?: run {
-                _messages.value = listOf(UiMessage(idCounter.incrementAndGet(), "error", "历史会话不存在或已损坏"))
+                _messages.value = listOf(UiMessage(idCounter.incrementAndGet(), "error", app.getString(com.ilyskyo.blancall.R.string.ai_error_history_missing)))
                 return@launch
             }
 
@@ -193,14 +197,14 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                 arts to recs
             }
             if (articles.isEmpty()) {
-                _messages.value = listOf(UiMessage(idCounter.incrementAndGet(), "error", "历史会话对应的文章已不存在"))
+                _messages.value = listOf(UiMessage(idCounter.incrementAndGet(), "error", app.getString(com.ilyskyo.blancall.R.string.ai_error_history_articles_missing)))
                 return@launch
             }
 
             this@AiViewModel.sessionId = sessionId
             sessionArticleIds = savedIds
             _title.value = if (articles.size > 1) {
-                "跨文 AI · ${articles.size} 篇"
+                getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_cross_title, articles.size)
             } else {
                 articles.first().title
             }
@@ -220,7 +224,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
             if (streamFlow != null && !streamFlow.value.complete) {
                 val pendingId = idCounter.incrementAndGet()
                 _messages.value = _messages.value + UiMessage(pendingId, "assistant", streamFlow.value.text, isStreaming = true)
-                _title.value = "${_title.value}（生成中…）"
+                _title.value = _title.value + app.getString(com.ilyskyo.blancall.R.string.ai_generating_suffix)
                 _isSending.value = true
                 val gen = ++streamGeneration
                 streamerJob = viewModelScope.launch {
@@ -263,15 +267,15 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                 // Keystore 解密放 IO 线程，避免主线程阻塞（部分设备硬件安全模块较慢）
                 val apiKey = profile?.let { withContext(Dispatchers.IO) { it.decryptApiKey() } }.orEmpty()
                 if (apiKey.isBlank()) {
-                    throw AiClient.AiException("尚未配置有效的 API Key，请到「设置 → AI 配置」中创建并启用对话配置")
+                    throw AiClient.AiException(getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_error_no_key))
                 }
                 val baseUrl = profile?.baseUrl.orEmpty()
                 if (baseUrl.isBlank()) {
-                    throw AiClient.AiException("尚未配置 API 地址，请到「设置 → AI 配置」中创建并启用对话配置")
+                    throw AiClient.AiException(getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_error_no_url))
                 }
                 val model = profile?.model.orEmpty()
                 if (model.isBlank()) {
-                    throw AiClient.AiException("尚未配置模型名，请到「设置 → AI 配置」中创建并启用对话配置")
+                    throw AiClient.AiException(getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_error_no_model))
                 }
 
                 // ── 联网搜索核验（开启且配置了搜索 Key 时）──
@@ -283,9 +287,9 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                         withContext(Dispatchers.IO) { it.decryptApiKey() }
                     }.orEmpty()
                     if (searchKey.isBlank()) {
-                        _statusText.value = "⚠️ 未配置搜索 Key，已跳过联网搜索"
+                        _statusText.value = getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_error_search_key_missing)
                     } else {
-                        _statusText.value = "🔍 正在联网搜索…"
+                        _statusText.value = getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_status_searching)
                         try {
                             val results = withContext(Dispatchers.IO) {
                                 // 把整个 profile 传进去：端点与认证方式按配置生效（Tavily 兼容自定义端点）
@@ -297,15 +301,17 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                                 history.add(AiClient.ChatMessage("system", buildSearchContext(results)))
                             }
                         } catch (e: SearchClient.SearchException) {
-                            searchFailed = e.message
+                            searchFailed = e.messageFor(getApplication())
                         }
                     }
                 }
 
                 _statusText.value = if (searchFailed != null) {
-                    "⚠️ 搜索失败（$searchFailed），已基于现有知识回答"
+                    getApplication<Application>().getString(
+                        com.ilyskyo.blancall.R.string.ai_status_search_failed, searchFailed.orEmpty()
+                    )
                 } else {
-                    "💬 AI 正在回答…"
+                    "💬 " + getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_answering)
                 }
 
                 // 启动本会话的应用级流式回答（页面销毁后依然继续，结束自动落盘历史）
@@ -339,7 +345,16 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
                     lastFailedUserText = history.last().content
                     history.removeAt(history.lastIndex)
                 }
-                replaceMessage(pendingId, UiMessage(pendingId, "error", e.message ?: "请求失败"))
+                val app = getApplication<Application>()
+                replaceMessage(
+                    pendingId,
+                    UiMessage(
+                        pendingId, "error",
+                        (e as? AiClient.AiException)?.messageFor(app)
+                            ?: e.message
+                            ?: app.getString(com.ilyskyo.blancall.R.string.ai_error_request_failed)
+                    )
+                )
                 _isSending.value = false
                 _statusText.value = null
                 saveSession()
@@ -368,7 +383,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 流结束统一收尾：去标题"（生成中…）"后缀、落盘、结束发送态并停止订阅。 */
     private fun finishStream(pendingId: Long, st: AiStreamer.StreamState) {
-        _title.value = _title.value.removeSuffix("（生成中…）")
+        _title.value = _title.value.removeSuffix(getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_generating_suffix))
         if (st.error != null) {
             // 移除未获回复的用户消息并记录其文本，供错误气泡"重发"
             if (history.isNotEmpty() && history.last().role == "user") {
@@ -478,7 +493,7 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
         }
         // 学习数据接入（无记录时跳过）
         buildStudyDataSummary(records)?.let { sb.append(it) }
-        sb.append("请用简洁清晰的中文回答。")
+        sb.append("请用与用户提问相同的语言回答。")
         return sb.toString()
     }
 

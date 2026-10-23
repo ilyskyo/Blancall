@@ -42,7 +42,7 @@ import com.qmdeve.liquidglass.widget.LiquidGlassView
 
 /** dp → px（液态玻璃参数用） */
 @Composable
-internal fun LgCornerPx(dp: Float): Float = with(LocalDensity.current) { dp.dp.toPx() }
+internal fun lgCornerPx(dp: Float): Float = with(LocalDensity.current) { dp.dp.toPx() }
 
 
 /**
@@ -218,10 +218,10 @@ internal fun FallbackGlassPlate(
 }
 
 
-/** 底部细进度胶囊（阅读进度） */
+/** 底部细进度胶囊（阅读进度）。fraction 用 lambda：让进度读取只发生在胶囊内部，不带动整页重组 */
 @Composable
 internal fun ReadingProgressCapsule(
-    fraction: Float,
+    fraction: () -> Float,
     isDark: Boolean,
     accent: Color,
     modifier: Modifier = Modifier
@@ -234,7 +234,7 @@ internal fun ReadingProgressCapsule(
             .background(if (isDark) Color(0x33FFFFFF) else Color(0x26000000))
     ) {
         val animated = animateFloatAsState(
-            targetValue = fraction.coerceIn(0f, 1f),
+            targetValue = fraction().coerceIn(0f, 1f),
             animationSpec = MotionFade.number(MotionFade.itemEnter),
             label = "readProgress"
         )

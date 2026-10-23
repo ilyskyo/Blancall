@@ -111,4 +111,29 @@ class ForgettingPredictorTest {
         assertTrue("1/10 的稳定性不该高于 GOOD 那次：${state!!.stability} vs ${good.stability}",
             state.stability < good.stability)
     }
+
+    @Test
+    fun 暂停的文章被打上暂停标且不进入待复习() {
+        val dueState = FsrsEngine.CardState(
+            difficulty = 4.0,
+            stability = 2.0,
+            due = now - 2 * day,
+            lastReview = now - 3 * day,
+            reviewCount = 2,
+        )
+        val paused = ForgettingPredictor.predict(
+            listOf(article), emptyList(), ReviewTemplate.STANDARD,
+            mapOf(article.id to dueState), setOf(article.id),
+        ).single()
+        assertTrue("暂停状态必须随预测一起返回，界面才不用另算一套", paused.paused)
+        assertEquals(ForgettingPredictor.Urgency.OVERDUE, paused.urgency)
+        assertTrue("暂停项不得进入 dueSoon", ForgettingPredictor.dueSoon(listOf(paused)).isEmpty())
+
+        val active = ForgettingPredictor.predict(
+            listOf(article), emptyList(), ReviewTemplate.STANDARD,
+            mapOf(article.id to dueState), emptySet(),
+        ).single()
+        assertTrue(!active.paused)
+        assertEquals(1, ForgettingPredictor.dueSoon(listOf(active)).size)
+    }
 }

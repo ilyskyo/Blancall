@@ -28,11 +28,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
@@ -122,11 +123,9 @@ fun AdaptiveModePicker(
     if (!isShowing) return
 
     val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
-    val screenHeightDp = configuration.screenHeightDp.dp
-    val screenWidthDp = configuration.screenWidthDp.dp
-    val screenHeightPx = with(density) { screenHeightDp.toPx() }
-    val screenWidthPx = with(density) { screenWidthDp.toPx() }
+    val containerSize = LocalWindowInfo.current.containerSize
+    val screenHeightPx = containerSize.height.toFloat()
+    val screenWidthPx = containerSize.width.toFloat()
     val popupEstimatePx = with(density) { PopupEstimateDp.toPx() }
     val minMarginPx = with(density) { PopupMinMarginDp.toPx() }
     val popupWidthPx = with(density) { PopupWidthDp.toPx() }
@@ -395,14 +394,24 @@ private fun ModeListContent(
         val mode: BlancallMode = BlancallMode.SENTENCE,
         val custom: Boolean = false
     )
-    val entries = remember {
-        listOf(
-            ModeEntry("📝", "句子挖空", "分句/半句/复句 — 理解式记忆", BlancallMode.SENTENCE),
-            ModeEntry("🔤", "字词挖空", "1-3字词精准填空 — 细节记忆", BlancallMode.WORD),
-            ModeEntry("✍️", "反向默写", "段落打散默写 — 整段还原", BlancallMode.REVERSE),
-            ModeEntry("🎯", "自定义挖空", "用自己点选的挖空配置练题", custom = true)
+    val entries = listOf(
+        ModeEntry(
+            "📝", stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence),
+            stringResource(com.ilyskyo.blancall.R.string.mode_sentence_line), BlancallMode.SENTENCE
+        ),
+        ModeEntry(
+            "🔤", stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word),
+            stringResource(com.ilyskyo.blancall.R.string.mode_word_line), BlancallMode.WORD
+        ),
+        ModeEntry(
+            "✍️", stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse),
+            stringResource(com.ilyskyo.blancall.R.string.mode_reverse_line), BlancallMode.REVERSE
+        ),
+        ModeEntry(
+            "🎯", stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
+            stringResource(com.ilyskyo.blancall.R.string.mode_custom_card_desc), custom = true
         )
-    }
+    )
     // ── 错峰窗口：把 containerProgress 切成 4 段不重叠区间，每段 0.25 ──
     // 标题：[0.0, 0.25] → 容器刚冒出时立刻出现
     // 项 0：[0.25, 0.5] → 标题后紧跟第一项（"句子挖空"）
@@ -437,7 +446,7 @@ private fun ModeListContent(
         // 标题：index 0，最先出现
         val titleProgress = itemProgress(0)
         Text(
-            text = "选择练习模式",
+            text = stringResource(com.ilyskyo.blancall.R.string.pick_practice_mode),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,

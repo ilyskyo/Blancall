@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.ui.handwriting
 
+import android.annotation.SuppressLint
+
 import android.animation.Animator
 import android.animation.ValueAnimator
 import android.content.Context
@@ -13,6 +15,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
+import androidx.core.graphics.withTranslation
 import android.os.Build
 import android.os.SystemClock
 import android.util.AttributeSet
@@ -498,6 +501,8 @@ class InkBoardView @JvmOverloads constructor(
 
     // ───────────────────────── 输入 ─────────────────────────
 
+    // 书写板是自由画布：触摸落点即笔迹，不是「点击控件」；无障碍入口走页面上的按钮/语义动作
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!writingEnabled) return false
 
@@ -539,7 +544,7 @@ class InkBoardView @JvmOverloads constructor(
                 // 起笔即告知父容器别再拦截：AndroidView 嵌在可滚动列表里时，父级的滚动
                 // 手势会在划到一半时把事件抢走（真机现象「写着写着页面跟着滚」）。
                 parent?.requestDisallowInterceptTouchEvent(true)
-                requestUnbufferedInput(stylusDown)
+                requestUnbufferedInput()
                 // 全局「笔在写」标记**只对笔置位**：它是掌托守卫（tapGesturesPenAware /
                 // suppressAsPalmMisTouch）的判定依据；手指书写没有掌托语义，置位会误伤
                 // 「另一只手点按其它控件」的合法操作。
@@ -612,7 +617,7 @@ class InkBoardView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
                 if (isPenPointer(event, 0)) {
-                    if (event.actionMasked == MotionEvent.ACTION_HOVER_ENTER) requestUnbufferedInput(stylus = true)
+                    if (event.actionMasked == MotionEvent.ACTION_HOVER_ENTER) requestUnbufferedInput()
                     tipX = event.x
                     tipY = event.y
                     hovering = true
@@ -791,15 +796,22 @@ class InkBoardView @JvmOverloads constructor(
 
     /**
      * 要求输入系统对本 View 的事件不做帧批处理（API 30+）。
-     * 手写笔走 [InputDevice.SOURCE_STYLUS]、触屏仿造走 [InputDevice.SOURCE_TOUCHSCREEN] ——
-     * 两类来源各自开低延迟派发，与书写模式对应。
+     *
+     * 参数要的是 `SOURCE_CLASS_*` 组合类，不是具体 source（SDK 文档与 ViewRootImpl
+     * 的 `source & mUnbufferedInputSource` 位与判据都如此）。原先按笔/手指分别传
+     * `SOURCE_STYLUS` / `SOURCE_TOUCHSCREEN`：两者都含 `SOURCE_CLASS_POINTER` 位，
+     * 实际效果一直是「全部指针事件都不批处理」。这里直接写类，行为不变而常量合法。
      */
-    private fun requestUnbufferedInput(stylus: Boolean) {
+    private fun requestUnbufferedInput() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            requestUnbufferedDispatch(
-                if (stylus) InputDevice.SOURCE_STYLUS else InputDevice.SOURCE_TOUCHSCREEN
-            )
+            requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER)
         }
+    }
+
+    /** 自绘书写板没有独立的点击语义；补上该方法以满足无障碍约定（触摸仍走 onTouchEvent）。 */
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 
     private fun finishStroke(drop: Boolean, endMs: Long) {
@@ -890,11 +902,10 @@ class InkBoardView @JvmOverloads constructor(
         inkPaint.alpha = (inkAlpha * (1f - p)).toInt().coerceIn(0, 255)
         dotPaint.alpha = (dotAlpha * (1f - p)).toInt().coerceIn(0, 255)
         for (g in exitGroups) {
-            canvas.save()
-            canvas.translate(0f, dy)
-            canvas.scale(scale, scale, g.cx, g.cy)
-            for (rec in g.recs) drawStrokeRec(canvas, rec)
-            canvas.restore()
+            canvas.withTranslation(0f, dy) {
+                canvas.scale(scale, scale, g.cx, g.cy)
+                for (rec in g.recs) drawStrokeRec(canvas, rec)
+            }
         }
         inkPaint.alpha = inkAlpha
         dotPaint.alpha = dotAlpha

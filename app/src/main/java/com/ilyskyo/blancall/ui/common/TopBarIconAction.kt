@@ -30,8 +30,8 @@ fun TopBarIconAction(
     kind: AppIconKind,
     enabled: Boolean,
     onClick: () -> Unit,
-    contentDescription: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null
 ) {
     // 图标按钮行程短，用最大那一档收缩（Motion.Scale.icon）才读得出「按下去了」；
     // 焦点与悬停的高亮由 pressFeedback 补回，关涟漪不连带失去无障碍可见性。

@@ -77,7 +77,7 @@ fun loadAiHistorySessions(context: Context): List<AiHistorySession> {
             }.lastOrNull { it.isNotBlank() } ?: ""
             AiHistorySession(
                 id = json.optLong("id", 0L),
-                title = json.optString("title", "AI 对话"),
+                title = json.optString("title", context.getString(com.ilyskyo.blancall.R.string.ai_chat_title)),
                 createdAt = json.optLong("createdAt", 0L),
                 messageCount = msgs.length(),
                 preview = lastContent
@@ -127,7 +127,7 @@ fun loadAiAnalyses(context: Context): List<AiAnalysisItem> {
             AiAnalysisItem(
                 createdAt = json.optLong("createdAt", 0L),
                 articleId = json.optLong("articleId", 0L),
-                articleTitle = json.optString("articleTitle", "未命名文章"),
+                articleTitle = json.optString("articleTitle", context.getString(com.ilyskyo.blancall.R.string.untitled_article)),
                 modeLabel = json.optString("modeLabel", ""),
                 weakHints = json.optInt("weakHints", 0),
                 strongHints = json.optInt("strongHints", 0),
@@ -250,9 +250,9 @@ fun AiHistoryScreen(
                 Spacer(Modifier.width(12.dp))
                 Text(
                     when (section) {
-                        "analysis" -> "训练分析"
-                        "chat" -> "对话历史"
-                        else -> "AI 历史"
+                        "analysis" -> stringResource(com.ilyskyo.blancall.R.string.ai_training_analysis)
+                        "chat" -> stringResource(com.ilyskyo.blancall.R.string.ai_history_title)
+                        else -> stringResource(com.ilyskyo.blancall.R.string.ai_history_title)
                     },
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -268,7 +268,7 @@ fun AiHistoryScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf("all" to "全部", "analysis" to "训练分析", "chat" to "对话").forEach { (key, label) ->
+                listOf("all" to stringResource(com.ilyskyo.blancall.R.string.ai_tab_all), "analysis" to stringResource(com.ilyskyo.blancall.R.string.ai_tab_analysis), "chat" to stringResource(com.ilyskyo.blancall.R.string.ai_tab_chat)).forEach { (key, label) ->
                     FilterChip(
                         selected = section == key,
                         onClick = { section = key },
@@ -287,7 +287,7 @@ fun AiHistoryScreen(
                 // ═══ 训练分析（筛选为「对话」时不显示） ═══
                 if (section != "chat" && analyses.isNotEmpty()) {
                     item(key = "analysisTitle") {
-                        SectionTitle("训练分析")
+                        SectionTitle(stringResource(com.ilyskyo.blancall.R.string.ai_training_analysis))
                     }
                     items(analyses, key = { "an_${it.createdAt}" }) { item ->
                         AnalysisCard(
@@ -302,7 +302,7 @@ fun AiHistoryScreen(
                 // ═══ 对话历史（筛选为「训练分析」时不显示） ═══
                 if (section != "analysis" && sessions.isNotEmpty()) {
                     item(key = "chatTitle") {
-                        SectionTitle("对话")
+                        SectionTitle(stringResource(com.ilyskyo.blancall.R.string.ai_tab_chat))
                     }
                     items(sessions, key = { "s_${it.id}" }) { session ->
                         HistorySessionCard(
@@ -324,18 +324,18 @@ fun AiHistoryScreen(
                         when (section) {
                             "analysis" -> HistoryEmptyState(
                                 emoji = "📊",
-                                title = "暂无训练分析",
-                                subtitle = "完成一次练习并生成分析后，会保存在这里"
+                                title = stringResource(com.ilyskyo.blancall.R.string.ai_empty_analysis),
+                                subtitle = stringResource(com.ilyskyo.blancall.R.string.ai_empty_analysis_hint)
                             )
                             "chat" -> HistoryEmptyState(
                                 emoji = "💬",
-                                title = "暂无对话记录",
-                                subtitle = "开启「保存与 AI 的对话」后，对话会自动保存在这里"
+                                title = stringResource(com.ilyskyo.blancall.R.string.ai_empty_chat),
+                                subtitle = stringResource(com.ilyskyo.blancall.R.string.ai_empty_chat_hint)
                             )
                             else -> HistoryEmptyState(
                                 emoji = "🤖",
-                                title = "暂无记录",
-                                subtitle = "开启「保存与 AI 的对话」后，对话会自动保存在这里；训练分析也会保存在这里"
+                                title = stringResource(com.ilyskyo.blancall.R.string.ai_empty_records),
+                                subtitle = stringResource(com.ilyskyo.blancall.R.string.ai_empty_records_hint)
                             )
                         }
                     }
@@ -349,13 +349,17 @@ fun AiHistoryScreen(
         BlancallAlertDialog(
             onDismissRequest = { showAnalysis = null },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-            title = { Text("训练分析 · ${item.articleTitle}") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.analysis_dialog_title, item.articleTitle)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "${item.modeLabel} · ${dateFormat.format(Date(item.createdAt))}" +
-                            if (item.weakHints > 0 || item.strongHints > 0)
-                                " · 弱提示 ${item.weakHints} / 强提示 ${item.strongHints}" else "",
+                        if (item.weakHints > 0 || item.strongHints > 0)
+                            stringResource(
+                                com.ilyskyo.blancall.R.string.analysis_hints_line,
+                                item.modeLabel + " · " + dateFormat.format(Date(item.createdAt)),
+                                item.weakHints, item.strongHints
+                            )
+                        else item.modeLabel + " · " + dateFormat.format(Date(item.createdAt)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -367,7 +371,7 @@ fun AiHistoryScreen(
                     deleteAiAnalysis(context, item.createdAt)
                     showAnalysis = null
                     scope.launch { refresh() }
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
                 TextButton(onClick = { showAnalysis = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.close)) }
@@ -380,18 +384,18 @@ fun AiHistoryScreen(
         BlancallAlertDialog(
             onDismissRequest = { pendingDeleteSession = null },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-            title = { Text("删除会话") },
-            text = { Text("确定删除这条对话记录吗？删除后无法恢复。") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_delete_session_title)) },
+            text = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_delete_session_confirm)) },
             confirmButton = {
                 TextButton(onClick = {
                     AiStreamer.remove(session.id)
                     deleteAiHistory(context, session.id)
                     pendingDeleteSession = null
                     scope.launch { refresh() }
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDeleteSession = null }) { Text("取消") }
+                TextButton(onClick = { pendingDeleteSession = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }
@@ -401,17 +405,17 @@ fun AiHistoryScreen(
         BlancallAlertDialog(
             onDismissRequest = { pendingDeleteAnalysis = null },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-            title = { Text("删除训练分析") },
-            text = { Text("确定删除这条训练分析吗？删除后无法恢复。") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_delete_analysis_title)) },
+            text = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_delete_analysis_confirm)) },
             confirmButton = {
                 TextButton(onClick = {
                     deleteAiAnalysis(context, item.createdAt)
                     pendingDeleteAnalysis = null
                     scope.launch { refresh() }
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDeleteAnalysis = null }) { Text("取消") }
+                TextButton(onClick = { pendingDeleteAnalysis = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }
@@ -464,6 +468,7 @@ private fun HistorySessionCard(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val deleteDescription = stringResource(com.ilyskyo.blancall.R.string.delete)
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick
@@ -490,10 +495,10 @@ private fun HistorySessionCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (session.ongoing) {
-                        if (session.preview.isNotBlank()) session.preview + " ▍" else "AI 正在回答…"
+                        if (session.preview.isNotBlank()) session.preview + " ▍" else stringResource(com.ilyskyo.blancall.R.string.ai_answering)
                     } else if (session.preview.isNotBlank()) {
                         session.preview
-                    } else "（空对话）",
+                    } else stringResource(com.ilyskyo.blancall.R.string.ai_empty_chat_text),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     maxLines = 2,
@@ -504,14 +509,14 @@ private fun HistorySessionCard(
                     onClick = onDelete,
                     modifier = Modifier
                         .size(32.dp)
-                        .semantics { contentDescription = "删除" }
+                        .semantics { contentDescription = deleteDescription }
                 ) {
                     Text("🗑", fontSize = 14.sp)
                 }
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                if (session.ongoing) "生成中…" else "${session.messageCount} 条消息",
+                if (session.ongoing) stringResource(com.ilyskyo.blancall.R.string.ai_generating) else stringResource(com.ilyskyo.blancall.R.string.ai_messages_count, session.messageCount),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (session.ongoing) MaterialTheme.colorScheme.tertiary
                 else MaterialTheme.colorScheme.primary
@@ -528,6 +533,7 @@ private fun AnalysisCard(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val deleteDescription = stringResource(com.ilyskyo.blancall.R.string.delete)
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick
@@ -535,7 +541,7 @@ private fun AnalysisCard(
         Column(Modifier.padding(start = 14.dp, top = 12.dp, end = 6.dp, bottom = 12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    "训练分析 · ${item.articleTitle}",
+                    stringResource(com.ilyskyo.blancall.R.string.analysis_dialog_title, item.articleTitle),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -553,7 +559,7 @@ private fun AnalysisCard(
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    item.preview.ifBlank { "（空分析）" },
+                    item.preview.ifBlank { stringResource(com.ilyskyo.blancall.R.string.ai_empty_analysis_text) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     maxLines = 2,
@@ -564,7 +570,7 @@ private fun AnalysisCard(
                     onClick = onDelete,
                     modifier = Modifier
                         .size(32.dp)
-                        .semantics { contentDescription = "删除" }
+                        .semantics { contentDescription = deleteDescription }
                 ) {
                     Text("🗑", fontSize = 14.sp)
                 }

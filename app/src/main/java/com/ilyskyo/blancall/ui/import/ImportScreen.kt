@@ -35,6 +35,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -70,6 +71,7 @@ private const val TITLE_TRUNCATE_LENGTH = 60
 fun ImportScreen(navController: NavController) {
     val articleViewModel: ArticleViewModel = viewModel()
     val context = LocalContext.current
+    val resources = LocalResources.current
 
     // 用户数据状态用 rememberSaveable：导航到「预览 PDF」再返回时本页会离开组合，
     // remember 会重置为初始值（用户反馈「预览返回后已选文件没了要重新选」）；
@@ -138,7 +140,7 @@ fun ImportScreen(navController: NavController) {
                 navController.popBackStack()
             }
         } catch (e: Exception) {
-            errorMessage = e.message ?: context.getString(com.ilyskyo.blancall.R.string.save_failed)
+            errorMessage = e.message ?: resources.getString(com.ilyskyo.blancall.R.string.save_failed)
         } finally {
             isSaving = false
         }
@@ -156,7 +158,7 @@ fun ImportScreen(navController: NavController) {
                     }
                     val text = result.text
                     if (text.length > MAX_CONTENT_LENGTH) {
-                        Toast.makeText(context, context.resources.getQuantityString(
+                        Toast.makeText(context, resources.getQuantityString(
                         com.ilyskyo.blancall.R.plurals.import_truncated, text.length, text.length, MAX_CONTENT_LENGTH,
                     ), Toast.LENGTH_LONG).show()
                         content = text.take(MAX_CONTENT_LENGTH)
@@ -165,7 +167,7 @@ fun ImportScreen(navController: NavController) {
                     }
                     fileLoaded = true
                     imageNotice = if (result.hasImages)
-                        context.getString(com.ilyskyo.blancall.R.string.doc_images_dropped) else null
+                        resources.getString(com.ilyskyo.blancall.R.string.doc_images_dropped) else null
                     if (title.isBlank()) {
                         // getFileName 内部走 ContentResolver.query，需在 IO 线程执行
                         val fileName = withContext(Dispatchers.IO) { FileTextExtractor.getFileName(context, it) }
@@ -180,7 +182,11 @@ fun ImportScreen(navController: NavController) {
                     previewFileUri = if (isPreviewableFile(pickedName)) it else null
                     errorMessage = null
                 } catch (e: Exception) {
-                    errorMessage = context.getString(com.ilyskyo.blancall.R.string.import_read_failed, e.message.orEmpty())
+                    val reason = (e as? com.ilyskyo.blancall.util.FileExtractException)
+                        ?.messageFor(context) ?: e.message.orEmpty()
+                    errorMessage = resources.getString(
+                        com.ilyskyo.blancall.R.string.import_read_failed, reason
+                    )
                 } finally {
                     isLoading = false
                 }
@@ -433,8 +439,8 @@ fun ImportScreen(navController: NavController) {
                     titleSuggestionDismissed = false
                     errorMessage = null
                 }
-                content.isBlank() -> errorMessage = context.getString(com.ilyskyo.blancall.R.string.need_content)
-                title.isBlank() -> errorMessage = context.getString(com.ilyskyo.blancall.R.string.need_title)
+                content.isBlank() -> errorMessage = resources.getString(com.ilyskyo.blancall.R.string.need_content)
+                title.isBlank() -> errorMessage = resources.getString(com.ilyskyo.blancall.R.string.need_title)
                 content.length > LARGE_FILE_THRESHOLD && !showLargeFileWarning -> {
                     // 记录意图：确认「仍然保存」后按同一意图保存
                     pendingOpenClozeEditor = openClozeEditor

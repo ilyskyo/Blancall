@@ -12,14 +12,6 @@ import org.junit.Test
 class ClozeTokensTest {
 
     @Test
-    fun `levelName mapping`() {
-        assertEquals("复句", ClozeTokens.levelName(0))
-        assertEquals("分句", ClozeTokens.levelName(1))
-        assertEquals("字词", ClozeTokens.levelName(2))
-        assertEquals("单字", ClozeTokens.levelName(3))
-    }
-
-    @Test
     fun `level0 is whole sentence`() {
         val t = ClozeTokens.tokensFor("你好世界。", 0)
         assertEquals(1, t.size)

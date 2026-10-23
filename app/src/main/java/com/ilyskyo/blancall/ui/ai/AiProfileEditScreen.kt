@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -83,7 +84,7 @@ fun AiProfileEditScreen(
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    if (isEditing) "编辑${if (isChat) "对话" else "搜索"}配置" else "新建${if (isChat) "对话" else "搜索"}配置",
+                    stringResource(if (isEditing) { if (isChat) com.ilyskyo.blancall.R.string.ai_edit_chat_profile else com.ilyskyo.blancall.R.string.ai_edit_search_profile } else { if (isChat) com.ilyskyo.blancall.R.string.ai_new_chat_profile else com.ilyskyo.blancall.R.string.ai_new_search_profile }),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -102,8 +103,8 @@ fun AiProfileEditScreen(
                     value = name,
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("配置昵称") },
-                    supportingText = { Text("给这个配置起个名字，例如「我的 DeepSeek」「工作用 Kimi」") },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_nickname)) },
+                    supportingText = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_nickname_hint)) },
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp)
                 )
@@ -115,8 +116,8 @@ fun AiProfileEditScreen(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("API 地址") },
-                        supportingText = { Text("OpenAI 兼容接口，如 https://api.deepseek.com/v1") },
+                        label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_api_url)) },
+                        supportingText = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_api_url_hint)) },
                         singleLine = true,
                         shape = RoundedCornerShape(10.dp)
                     )
@@ -125,7 +126,7 @@ fun AiProfileEditScreen(
                         value = apiKey,
                         onValueChange = { apiKey = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text(if (isEditing) "API Key（留空则不修改）" else "API Key") },
+                        label = { Text(if (isEditing) stringResource(com.ilyskyo.blancall.R.string.ai_api_key_keep) else stringResource(com.ilyskyo.blancall.R.string.ai_api_key)) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
@@ -136,14 +137,14 @@ fun AiProfileEditScreen(
                         value = model,
                         onValueChange = { model = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("模型名") },
-                        supportingText = { Text("如 deepseek-chat / glm-4-flash / kimi-latest") },
+                        label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_model_name)) },
+                        supportingText = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_model_hint)) },
                         singleLine = true,
                         shape = RoundedCornerShape(10.dp)
                     )
                 } else {
                     // ── 联网搜索配置 ──
-                    Text("服务商", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(com.ilyskyo.blancall.R.string.ai_provider), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
@@ -154,7 +155,7 @@ fun AiProfileEditScreen(
                         FilterChip(
                             selected = provider == "custom",
                             onClick = { provider = "custom" },
-                            label = { Text("自定义服务", style = MaterialTheme.typography.labelSmall) }
+                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_custom_provider), style = MaterialTheme.typography.labelSmall) }
                         )
                     }
                     Spacer(Modifier.height(12.dp))
@@ -163,24 +164,24 @@ fun AiProfileEditScreen(
                             value = baseUrl,
                             onValueChange = { baseUrl = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("搜索服务地址") },
-                            supportingText = { Text("POST 请求地址，如 https://your-search-service.com/search") },
+                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_search_url)) },
+                            supportingText = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_search_url_hint)) },
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp)
                         )
                         Spacer(Modifier.height(12.dp))
-                        Text("认证方式", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_auth_style), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
                                 selected = authStyle == "body",
                                 onClick = { authStyle = "body" },
-                                label = { Text("请求体携带 Key", style = MaterialTheme.typography.labelSmall) }
+                                label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_auth_body), style = MaterialTheme.typography.labelSmall) }
                             )
                             FilterChip(
                                 selected = authStyle == "bearer",
                                 onClick = { authStyle = "bearer" },
-                                label = { Text("Bearer 认证头", style = MaterialTheme.typography.labelSmall) }
+                                label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_auth_bearer), style = MaterialTheme.typography.labelSmall) }
                             )
                         }
                         Spacer(Modifier.height(12.dp))
@@ -189,7 +190,7 @@ fun AiProfileEditScreen(
                         value = apiKey,
                         onValueChange = { apiKey = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text(if (isEditing) "API Key（留空则不修改）" else "API Key") },
+                        label = { Text(if (isEditing) stringResource(com.ilyskyo.blancall.R.string.ai_api_key_keep) else stringResource(com.ilyskyo.blancall.R.string.ai_api_key)) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
@@ -199,7 +200,7 @@ fun AiProfileEditScreen(
 
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Key 经系统加密存储，仅存本机，不会上传。",
+                    stringResource(com.ilyskyo.blancall.R.string.ai_key_security),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -214,18 +215,14 @@ fun AiProfileEditScreen(
                     // Keystore 加解密放 IO 线程
                     scope.launch {
                         val ok = withContext(Dispatchers.IO) {
-                            if (isChat) {
-                                if (isEditing) {
-                                    AiConfigStore.updateChatProfile(profileId!!, name, baseUrl, apiKey, model)
-                                } else {
-                                    AiConfigStore.addChatProfile(name, baseUrl, apiKey, model) != null
-                                }
-                            } else {
-                                if (isEditing) {
-                                    AiConfigStore.updateSearchProfile(profileId!!, name, provider, baseUrl, authStyle, apiKey)
-                                } else {
-                                    AiConfigStore.addSearchProfile(name, provider, baseUrl, authStyle, apiKey) != null
-                                }
+                            val editingId = profileId
+                            when {
+                                isChat && isEditing -> editingId != null &&
+                                    AiConfigStore.updateChatProfile(editingId, name, baseUrl, apiKey, model)
+                                isChat -> AiConfigStore.addChatProfile(name, baseUrl, apiKey, model) != null
+                                isEditing -> editingId != null &&
+                                    AiConfigStore.updateSearchProfile(editingId, name, provider, baseUrl, authStyle, apiKey)
+                                else -> AiConfigStore.addSearchProfile(name, provider, baseUrl, authStyle, apiKey) != null
                             }
                         }
                         if (ok) {
@@ -246,13 +243,13 @@ fun AiProfileEditScreen(
                     .height(48.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(if (isEditing) "保存修改" else "创建配置")
+                Text(if (isEditing) stringResource(com.ilyskyo.blancall.R.string.ai_save_changes) else stringResource(com.ilyskyo.blancall.R.string.ai_create_profile))
             }
 
             if (saveError) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "⚠️ 密钥加密保存失败（可能是系统密钥库不可用）。配置未保存，请重试或重启应用后再试。",
+                    stringResource(com.ilyskyo.blancall.R.string.ai_key_encrypt_failed),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(horizontal = 20.dp)

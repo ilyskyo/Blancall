@@ -1,88 +1,45 @@
 # 硬编码中文棘轮基线（HardcodedChineseRatchetTest 的唯一数据来源）
 # 格式：<相对 app/src/main/java/com/ilyskyo/blancall 的路径>	<允许的处数>
 # 维护：抽取一批就把数字改成实测值；清到 0 就删行（删行即变严）。
+# total 839（全部行之和的上限：只许下调，新增文件只登记实测值）
 # 数字由同一套状态机实测得出，不要手写估计值 —— 估计值会让守卫一开始就不准。
 # 放在项目根而不是 app/src 下：Pro 与 Std 源码树不同（Pro 多 AI 文件、Std 多欢迎页），
 # 基线天然不同；放这里就不会被双版一致性守卫当成代码漂移，测试文件也能两版一致。
 # 实测：Pro 84 文件 / 1072 处；Std 71 文件 / 776 处（2026-10-14）
-ui/settings/HelpScreen.kt	170
 algorithm/BlancallGenerator.kt	107
 algorithm/GaokaoTextCleaner.kt	69
 algorithm/AiClozeGenerator.kt	48
 ui/viewmodel/AiViewModel.kt	41
-ui/ai/AiHistoryScreen.kt	35
-ui/statistics/OverviewScreen.kt	35
-ui/practice/PracticeAiPages.kt	31
 algorithm/CsvExporter.kt	26
 ui/western/WesternThoughtScreen.kt	25
-ui/ai/AiProfileEditScreen.kt	23
-ui/practice/LocalClozeCollectPage.kt	21
 ui/viewmodel/PracticeAiController.kt	21
-ui/ai/AiConfigScreen.kt	20
-data/ai/AiClient.kt	19
-ui/handwriting/HandwritingPanel.kt	14
 ui/practice/PracticeDictationContent.kt	14
-ui/settings/SettingsScreen.kt	6
-util/FileTextExtractor.kt	14
-ui/list/ListScreen.kt	12
-ui/ai/AiScreen.kt	11
-ui/western/PdfPreviewScreenOptimized.kt	11
 data/repository/RecordRepository.kt	10
 algorithm/PdfExporter.kt	9
 notification/ReminderWorker.kt	9
-ui/practice/ModePickerPopup.kt	9
-ui/viewmodel/PracticeViewModel.kt	9
-data/ai/SearchClient.kt	8
-ui/practice/PracticeSentenceContent.kt	8
-data/ai/AiConfigStore.kt	7
 data/database/ArticleStorage.kt	7
-ui/handwriting/HandwritingAnswerSheet.kt	7
-ui/practice/CrossCustomClozeSheet.kt	7
 data/repository/FsrsStateStore.kt	6
 data/repository/InkStore.kt	6
-ui/common/MemoryDecayChart.kt	6
-ui/home/SentenceCardTexts.kt	6
-ui/reader/ReaderFonts.kt	6
+ui/reader/ReaderFonts.kt	5
 ui/theme/Color.kt	6
 algorithm/ShareImageGenerator.kt	5
-ui/handwriting/AnswerInputField.kt	5
-ui/practice/PracticeShare.kt	5
-ui/tag/TagManagerScreen.kt	5
-algorithm/ClozeTokens.kt	4
-algorithm/ColorOps.kt	4
 ui/common/AppLocale.kt	4
-ui/home/HomeCardCanvas.kt	4
-ui/reader/ReadingModeUtils.kt	4
-ui/theme/ReminderPrefs.kt	4
-algorithm/EbbinghausScheduler.kt	3
 algorithm/SectionSplitter.kt	3
 data/repository/AchievementTimelineStore.kt	3
 data/repository/StoreVersion.kt	3
-ui/common/StatCharts.kt	3
-ui/reader/ReaderScreen.kt	3
-ui/western/PdfPreviewScreen.kt	3
+ui/western/PdfPreviewScreen.kt	1
 BlancallApp.kt	2
 algorithm/DifficultyCalculator.kt	2
 algorithm/PdfTextExtractor.kt	2
-data/ai/AiStreamer.kt	2
 data/repository/CustomClozeStore.kt	2
 data/repository/MaskConfigStore.kt	2
 data/repository/ReaderPrefsStore.kt	2
 data/repository/TagStore.kt	2
 notification/ReminderStateStore.kt	2
-ui/common/DeleteConfirmDialog.kt	2
-ui/home/SentenceCardViews.kt	2
-MainActivity.kt	1
 algorithm/DateRange.kt	1
 data/handwriting/HandwritingRecognizer.kt	1
 data/repository/HomeLayoutStore.kt	1
 notification/NotificationHelper.kt	1
-ui/ai/AiBubble.kt	1
 ui/cloze/CustomClozeEditScreen.kt	1
-ui/common/MistakeBar.kt	1
-ui/common/RadarChart.kt	1
-ui/common/TagChip.kt	1
-ui/home/SentenceCardScreen.kt	1
-ui/practice/PracticeDialogs.kt	1
 # AI 等价复核的提示词是发给模型的指令（非 UI 文案），与判定逻辑绑定、进不了 strings.xml
 algorithm/AiEquivalenceJudge.kt	16

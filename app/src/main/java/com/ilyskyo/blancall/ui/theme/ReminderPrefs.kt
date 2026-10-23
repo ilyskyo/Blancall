@@ -14,11 +14,11 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * 学习提醒频率
  */
-enum class ReminderFrequency(val label: String, val daysPerWeek: Int) {
-    DAILY("每天", 7),
-    WEEKLY_FIVE("每周5天", 5),
-    WEEKLY_THREE("每周3天", 3),
-    OFF("关闭", 0)
+enum class ReminderFrequency(val labelRes: Int, val daysPerWeek: Int) {
+    DAILY(com.ilyskyo.blancall.R.string.reminder_freq_daily, 7),
+    WEEKLY_FIVE(com.ilyskyo.blancall.R.string.reminder_freq_five, 5),
+    WEEKLY_THREE(com.ilyskyo.blancall.R.string.reminder_freq_three, 3),
+    OFF(com.ilyskyo.blancall.R.string.reminder_off_state, 0)
 }
 
 /**

@@ -82,6 +82,24 @@ class BackupManagerTest {
         assertFalse(dst.walkTopDown().any { it.name.endsWith(".import") })
     }
 
+    @Test
+    fun `恢复成功后清理导入前遗留的旧 bak`() {
+        val src = tempDir("src-bak")
+        seedData(src)
+        val zip = exportToZip(src)
+        val dst = tempDir("dst-bak")
+        // 导入前磁盘上的旧备份（模拟上一次运行留下的 .bak）
+        File(dst, "articles.json.bak").writeText("old-articles")
+        File(dst, "records.json.bak").writeText("old-records")
+
+        BackupManager.restoreZip(zip, dst)
+
+        assertFalse("导入前的旧 .bak 不得留下（否则主文件缺失时会复活旧库）",
+            File(dst, "articles.json.bak").exists())
+        assertFalse(File(dst, "records.json.bak").exists())
+        assertTrue(File(dst, "articles.json").isFile)
+    }
+
     /**
      * manifest 登记了、归档里却没有的条目必须让整包失败。
      * 旧实现是 `?: continue`：被跳过的条目既进不了 data、也就不在 keep 集合里，

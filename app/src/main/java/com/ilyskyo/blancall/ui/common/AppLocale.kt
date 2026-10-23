@@ -8,6 +8,7 @@ import android.app.Activity
 import android.app.LocaleManager
 import android.content.Context
 import android.content.ContextWrapper
+import androidx.core.content.edit
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
@@ -67,7 +68,7 @@ enum class AppLocale(val tag: String, val nativeName: String) {
          * 33 以下写完偏好后由这里 recreate，让 `attachBaseContext` 带着新 locale 再跑一遍。
          */
         fun apply(context: Context, choice: AppLocale) {
-            prefs(context).edit().putString(PREF_KEY, choice.tag).apply()
+            prefs(context).edit { putString(PREF_KEY, choice.tag) }
             if (usesFramework) {
                 applyApi33(context, choice.tag)
             } else {

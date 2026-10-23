@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.data.ai
 
 import android.content.Context
+import com.ilyskyo.blancall.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -74,8 +75,7 @@ object AiStreamer {
     ): StateFlow<StreamState> {
         prune()
         // 同一会话重复发起：取消旧回答（覆盖语义）
-        startInternal(sessionId, appContext, baseUrl, apiKey, model, messages, session)
-        return sessions[sessionId]!!.state.asStateFlow()
+        return startInternal(sessionId, appContext, baseUrl, apiKey, model, messages, session)
     }
 
     private fun startInternal(
@@ -86,7 +86,7 @@ object AiStreamer {
         model: String,
         messages: List<AiClient.ChatMessage>,
         session: SessionMeta
-    ) {
+    ): StateFlow<StreamState> {
         cancelInternal(sessionId)
         val state = MutableStateFlow(StreamState("", complete = false))
         val job = scope.launch {
@@ -98,14 +98,20 @@ object AiStreamer {
                     true
                 } ?: false
                 if (!completed) {
-                    state.value = StreamState(sb.toString(), complete = true, error = "回答超时")
+                    state.value = StreamState(
+                        sb.toString(), complete = true,
+                        error = appContext.getString(R.string.ai_reply_timeout)
+                    )
                 } else {
                     state.value = StreamState(sb.toString(), complete = true)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                state.value = StreamState(sb.toString(), complete = true, error = e.message ?: "请求失败")
+                val message = (e as? AiClient.AiException)?.messageFor(appContext)
+                    ?: e.message
+                    ?: appContext.getString(R.string.ai_error_request_failed)
+                state.value = StreamState(sb.toString(), complete = true, error = message)
             }
             // 记录完成时间，启动延时清理
             sessions[sessionId]?.completedAt = System.currentTimeMillis()
@@ -116,7 +122,9 @@ object AiStreamer {
                 prune()
             }
         }
-        sessions[sessionId] = StreamEntry(job, state, session)
+        val entry = StreamEntry(job, state, session)
+        sessions[sessionId] = entry
+        return entry.state.asStateFlow()
     }
 
     /** 清理超期保留的已完成会话（释放内存）；进行中会话永不清理 */

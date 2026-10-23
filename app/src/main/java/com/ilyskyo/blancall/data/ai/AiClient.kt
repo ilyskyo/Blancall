@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.data.ai
 
+import android.content.Context
+import com.ilyskyo.blancall.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -31,8 +33,20 @@ object AiClient {
     /** 对话消息（OpenAI 格式） */
     data class ChatMessage(val role: String, val content: String)
 
-    /** 可展示给用户的业务错误 */
-    class AiException(message: String) : Exception(message)
+    /**
+     * 可展示给用户的业务错误。
+     *
+     * 网络层拿不到界面语言，所以内部错误只登记资源号与参数，由展示方调用 [messageFor]
+     * 按当前语言渲染；调用方已自行本地化时直接传 [message] 即可。
+     */
+    class AiException(
+        message: String,
+        val messageRes: Int? = null,
+        val formatArgs: List<Any> = emptyList()
+    ) : Exception(message) {
+        fun messageFor(context: Context): String =
+            messageRes?.let { context.getString(it, *formatArgs.toTypedArray()) } ?: message.orEmpty()
+    }
 
     /**
      * 流式对话：逐段返回 AI 增量内容。
@@ -78,10 +92,10 @@ object AiClient {
                     conn.errorStream?.use { it.readBytes().take(2048) }
                 } catch (_: Exception) { }
                 throw when (code) {
-                    401, 403 -> AiException("API Key 无效或无权限，请在设置中检查")
-                    429 -> AiException("请求过于频繁（限流），请稍后再试")
-                    400 -> AiException("请求参数有误，请检查模型名与 API 地址")
-                    else -> AiException("服务请求失败（$code）")
+                    401, 403 -> AiException("HTTP 401/403", R.string.ai_error_auth)
+                    429 -> AiException("HTTP 429", R.string.ai_error_rate_limit)
+                    400 -> AiException("HTTP 400", R.string.ai_error_bad_request)
+                    else -> AiException("HTTP $code", R.string.ai_error_http, listOf(code))
                 }
             }
 
@@ -141,16 +155,20 @@ object AiClient {
         } catch (e: AiException) {
             throw e
         } catch (e: java.net.UnknownHostException) {
-            throw AiException("无法连接服务器，请检查网络或 API 地址")
+            throw AiException("UnknownHost", R.string.ai_error_unknown_host)
         } catch (e: java.net.SocketTimeoutException) {
-            throw AiException("请求超时，请稍后重试")
+            throw AiException("SocketTimeout", R.string.ai_error_timeout)
         } catch (e: java.net.ConnectException) {
-            throw AiException("网络连接失败，请检查网络设置或切换网络")
+            throw AiException("ConnectException", R.string.ai_error_connect)
         } catch (e: javax.net.ssl.SSLException) {
-            throw AiException("安全连接失败，请确认 API 地址使用 https://")
+            throw AiException("SSLException", R.string.ai_error_ssl)
         } catch (e: java.io.IOException) {
             // 连接中途重置等：提示具体原因便于排查（内容不涉密）
-            throw AiException("网络连接失败（${e.message?.take(60) ?: "未知错误"}）")
+            throw AiException(
+                "IOException: ${e.message}",
+                R.string.ai_error_io,
+                listOf(e.message?.take(60) ?: "?")
+            )
         } finally {
             conn.disconnect()
         }
@@ -195,10 +213,10 @@ object AiClient {
             if (code != 200) {
                 try { conn.errorStream?.use { it.readBytes().take(2048) } } catch (_: Exception) { }
                 throw when (code) {
-                    401, 403 -> AiException("API Key 无效或无权限，请在设置中检查")
-                    429 -> AiException("请求过于频繁（限流），请稍后再试")
-                    400 -> AiException("请求参数有误，请检查模型名与 API 地址")
-                    else -> AiException("服务请求失败（$code）")
+                    401, 403 -> AiException("HTTP 401/403", R.string.ai_error_auth)
+                    429 -> AiException("HTTP 429", R.string.ai_error_rate_limit)
+                    400 -> AiException("HTTP 400", R.string.ai_error_bad_request)
+                    else -> AiException("HTTP $code", R.string.ai_error_http, listOf(code))
                 }
             }
 
@@ -214,19 +232,23 @@ object AiClient {
                 .optJSONArray("choices")?.optJSONObject(0)
                 ?.optJSONObject("message")?.optString("content")
                 ?.takeIf { it.isNotEmpty() && it != "null" }
-                ?: throw AiException("AI 未返回有效内容")
+                ?: throw AiException("Empty content", R.string.ai_error_empty)
         } catch (e: AiException) {
             throw e
         } catch (e: java.net.UnknownHostException) {
-            throw AiException("无法连接服务器，请检查网络或 API 地址")
+            throw AiException("UnknownHost", R.string.ai_error_unknown_host)
         } catch (e: java.net.SocketTimeoutException) {
-            throw AiException("请求超时，请稍后重试")
+            throw AiException("SocketTimeout", R.string.ai_error_timeout)
         } catch (e: java.net.ConnectException) {
-            throw AiException("网络连接失败，请检查网络设置或切换网络")
+            throw AiException("ConnectException", R.string.ai_error_connect)
         } catch (e: javax.net.ssl.SSLException) {
-            throw AiException("安全连接失败，请确认 API 地址使用 https://")
+            throw AiException("SSLException", R.string.ai_error_ssl)
         } catch (e: java.io.IOException) {
-            throw AiException("网络连接失败（${e.message?.take(60) ?: "未知错误"}）")
+            throw AiException(
+                "IOException: ${e.message}",
+                R.string.ai_error_io,
+                listOf(e.message?.take(60) ?: "?")
+            )
         } finally {
             conn.disconnect()
         }

@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.data.handwriting
 
+import android.annotation.SuppressLint
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -416,6 +418,8 @@ class HandwritingRecognizer private constructor(
         /** native 库是否可用。加载失败（如设备 ABI 不匹配）时手写功能整体降级。 */
         val isNativeAvailable: Boolean get() = nativeLoaded.get()
 
+        // 单例构造时只收 applicationContext（见 getInstance），不存在泄漏 Activity 的可能
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: HandwritingRecognizer? = null
 

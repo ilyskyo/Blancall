@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.ui.practice
 
+import androidx.compose.ui.res.stringResource
+
 import com.ilyskyo.blancall.ui.common.StateSwap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -83,14 +85,14 @@ fun CrossCustomClozeSheet(
                 .padding(top = 6.dp, bottom = 20.dp),
         ) {
             Text(
-                "自定义挖空",
+                stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "按文章分别勾选要应用的挖空配置；未选择的文章不挖空",
+                stringResource(com.ilyskyo.blancall.R.string.cross_cloze_desc),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -105,7 +107,7 @@ fun CrossCustomClozeSheet(
             ) { isLoading ->
                 if (isLoading) {
                     Text(
-                        "加载中…",
+                        stringResource(com.ilyskyo.blancall.R.string.loading_label),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -129,7 +131,7 @@ fun CrossCustomClozeSheet(
                             val cfgs = configsByArticle[articleId].orEmpty()
                             if (cfgs.isEmpty()) {
                                 Text(
-                                    "该文章暂无挖空配置",
+                                    stringResource(com.ilyskyo.blancall.R.string.cross_cloze_empty),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 )
@@ -178,7 +180,7 @@ fun CrossCustomClozeSheet(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("取消")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
                 }
                 Button(
                     onClick = {
@@ -195,8 +197,10 @@ fun CrossCustomClozeSheet(
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Text(
-                        if (selected.isEmpty()) "开始练习"
-                        else "开始练习（${selected.size} 篇）",
+                        if (selected.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.reader_start_practice)
+                        else stringResource(
+                            com.ilyskyo.blancall.R.string.cross_cloze_start_count, selected.size
+                        ),
                     )
                 }
             }

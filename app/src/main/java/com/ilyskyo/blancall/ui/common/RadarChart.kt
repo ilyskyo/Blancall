@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -61,14 +62,17 @@ fun RadarChart(
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val axisColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
 
-    val desc = axes.indices.joinToString("，") { i ->
+    val desc = axes.indices.joinToString(", ") { i ->
         "${axes[i]} ${(values.getOrNull(i)?.let { it * 100 }?.toInt() ?: 0)}%"
     }
+    val radarDescription = stringResource(
+        com.ilyskyo.blancall.R.string.a11y_weakness_profile, desc
+    )
     // Path 对象提到 Composable 层复用，避免动画每帧在 DrawScope 内创建新对象导致 GC 抖动
     val gridPath = remember { Path() }
     val dataPath = remember { Path() }
     Column(
-        modifier = modifier.semantics { contentDescription = "弱点画像：$desc" }
+        modifier = modifier.semantics { contentDescription = radarDescription }
     ) {
         Box(
             modifier = Modifier

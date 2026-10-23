@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -50,7 +52,9 @@ fun MemoryDecayChart(
     val n = decayCurve.size.coerceAtMost(daysToShow + 1)
     if (n < 2) return
 
-    var played by remember { mutableStateOf(false) }
+    // rememberSaveable：这张图住在统计页/详情页的 Lazy 容器里，滚出视口后子树会被回收；
+    // 用 remember 的话「已播」标记跟着丢，滚回来时整条曲线又从头长一遍（与 StatCharts 同形）。
+    var played by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { played = true }
     // 曲线绘制动画：从左到右展开
     val animated by animateFloatAsState(
@@ -77,10 +81,14 @@ fun MemoryDecayChart(
     val linePath = remember { Path() }
     val fillPath = remember { Path() }
 
+    val decayDescription = stringResource(
+        com.ilyskyo.blancall.R.string.a11y_memory_decay,
+        (retentionRate * 100).toInt(),
+        (threshold * 100).toInt()
+    )
     Column(
         modifier = modifier.semantics {
-            contentDescription = "记忆衰减曲线，当前留存率 ${(retentionRate * 100).toInt()}%，" +
-                "低于 ${(threshold * 100).toInt()}% 建议复习"
+            contentDescription = decayDescription
         }
     ) {
         Box(
@@ -170,11 +178,16 @@ fun MemoryDecayChart(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("今天", style = MaterialTheme.typography.labelSmall,
+            Text(androidx.compose.ui.res.stringResource(com.ilyskyo.blancall.R.string.decay_today),
+                style = MaterialTheme.typography.labelSmall,
                 color = labelColor, fontSize = 9.sp)
-            Text("复习水位 ${(threshold * 100).toInt()}%", style = MaterialTheme.typography.labelSmall,
+            Text(androidx.compose.ui.res.stringResource(
+                    com.ilyskyo.blancall.R.string.decay_watermark, (threshold * 100).toInt()),
+                style = MaterialTheme.typography.labelSmall,
                 color = thresholdColor, fontSize = 9.sp)
-            Text("${n - 1}天后", style = MaterialTheme.typography.labelSmall,
+            Text(androidx.compose.ui.res.stringResource(
+                    com.ilyskyo.blancall.R.string.decay_days_after, n - 1),
+                style = MaterialTheme.typography.labelSmall,
                 color = labelColor, fontSize = 9.sp)
         }
         Spacer(Modifier.height(4.dp))
@@ -184,7 +197,7 @@ fun MemoryDecayChart(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "当前记忆留存",
+                androidx.compose.ui.res.stringResource(com.ilyskyo.blancall.R.string.decay_current_retention),
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
                 fontSize = 10.sp

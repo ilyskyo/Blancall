@@ -120,12 +120,18 @@ class ReminderWorker(
         fsrs?.let { withTimeoutOrNull(2000L) { it.awaitLoaded() } }
 
         val articleStates = fsrs?.allStates().orEmpty()
-        val dueArticles = articleStates.filterValues { FsrsEngine.isDue(it, now) }
+        // 用户主动暂停的文章不再催：到期判定与启停状态同源（fsrs_state.json 的 paused 表）
+        val pausedArticleIds = fsrs?.pausedArticleIds().orEmpty()
+        val dueArticles = articleStates
+            .filterKeys { it !in pausedArticleIds }
+            .filterValues { FsrsEngine.isDue(it, now) }
         val firstDueArticleId = dueArticles.entries.minByOrNull { it.value.due }?.key ?: -1L
 
         val sentenceStates = fsrs?.allSentenceStates().orEmpty()
         val dueSentenceCount = sentenceStates.count { (key, state) ->
-            key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) && FsrsEngine.isDue(state, now)
+            key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) &&
+                FsrsEngine.isDue(state, now) &&
+                SentenceSelector.articleIdOf(key) !in pausedArticleIds
         }
         val today = DayBucket.localDate(now)
         val sentenceCardPracticedToday = sentenceStates.values.any { state ->

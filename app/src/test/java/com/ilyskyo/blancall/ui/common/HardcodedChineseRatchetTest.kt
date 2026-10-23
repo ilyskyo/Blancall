@@ -51,7 +51,12 @@ class HardcodedChineseRatchetTest {
             baselineFile.isFile
         )
         val b = baseline()
-        assertTrue("基线里只有 ${b.size} 条，多半是解析没生效（分隔符应为 TAB）", b.size >= 40)
+        // 用「必须含某条已知债务」当解析自检，而不是数总行数：债务清到只剩个位数行时，
+        // 行数阈值会把「真的清完了」误报成解析失效。
+        assertTrue(
+            "基线里没有 algorithm/BlancallGenerator.kt，多半是解析没生效（分隔符应为 TAB）",
+            b.containsKey("algorithm/BlancallGenerator.kt")
+        )
     }
 
     @Test
@@ -94,6 +99,30 @@ class HardcodedChineseRatchetTest {
                 "\n要么抽进 strings.xml（首选），要么在 cjk-baseline.tsv 里登记一行并写清为什么它进不了资源。",
             problems.isEmpty()
         )
+    }
+
+    /**
+     * 总账只许降：逐文件「只降」管不住**新增文件** —— 新文件登记时只写实测值、没有上限，
+     * 总账可以从 998 一路推到 1014（本期 AI 提示词就是 16 处）。这里钉死
+     * 「全部行之和 ≤ 基线头部登记的 `# total`」，抽取文案后必须同步下调那一行。
+     */
+    @Test
+    fun `全部文件的处数之和不超过总账`() {
+        val limit = totalLimit()
+        val sum = baseline().values.sum()
+        assertTrue(
+            "硬编码中文总账从 $limit 涨到 $sum —— 新增文件只能登记实测值；抽取一批后请下调 `# total`",
+            sum <= limit
+        )
+    }
+
+    /** 基线头部的 `# total <N>`：本版允许的总账上限（两版各一份，只能写在数据文件里） */
+    private fun totalLimit(): Int {
+        val line = baselineFile.readLines().firstOrNull { it.trim().startsWith("# total") }
+            ?: error("cjk-baseline.tsv 缺少 `# total <N>` 行 —— 补一行再跑")
+        // 只取数字：行尾可能带中文说明（「只许下调，新增文件只登记实测值」），toIntOrNull 会拿不到
+        return Regex("""#\s*total\s+(\d+)""").find(line)?.groupValues?.get(1)?.toIntOrNull()
+            ?: error("`# total` 行格式不对：$line")
     }
 
     /**

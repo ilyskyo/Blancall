@@ -12,9 +12,11 @@ import org.junit.Test
 /**
  * 判题等价类与错误分型的回归。
  *
- * 要守住的性质有两条，都是「同一次提交算出两个互不相同的判定」那一族的反面：
+ * 要守住的性质有三条，都是「同一次提交算出两个互不相同的判定」那一族的反面：
  * ① 「怎么算等价」全 app 只有一份 —— 页面判错而评级记成 GOOD 会污染记忆状态、把下次排期推后；
- * ② 分型按差异结构判 —— 门限只管「算不算对」，不管「这一处算漏字还是记错」。
+ * ② 分型按差异结构判 —— 门限只管「算不算对」，不管「这一处算漏字还是记错」；
+ * ③ 口径用例必须从最外层入口进入 —— 形近/等价表都是「归一化后查表」，
+ *    绕过 TextNormalizer 的单测只能证明表自洽，证明不了功能成立（这条锁的是口径，不是算法）。
  */
 class AnswerEquivalenceTest {
 
@@ -104,6 +106,27 @@ class AnswerEquivalenceTest {
         assertEquals(AnswerChecker.Result.TYPO, AnswerChecker.check("己所不欲", "乙所不欲").result)
         // 一处形近、一处不相干 → 整体是「没记住那一类」，不许被形近那处抬成字形混淆
         assertEquals(AnswerChecker.Result.TYPO, AnswerChecker.check("未春", "末秋").result)
+    }
+
+    @Test
+    fun `形近表在归一化之后仍然命中（口径用例）`() {
+        // 口径用例（**不是**算法用例）：判题拿到的是 TextNormalizer 归一化后的串
+        // （末尾 lowercase + 全角折半角），形近表若按归一化前的字形写（大写 S、全角数字），
+        // 表自测全绿、线上一次都不命中。这类缺陷只有从最外层 check() 进入才测得出来 ——
+        // classifyDiff 吃原始串，会绕过归一化。
+        assertEquals(
+            AnswerChecker.Result.GLYPH_CONFUSED,
+            AnswerChecker.check("S5", "55").result
+        )
+        assertEquals(
+            AnswerChecker.Result.GLYPH_CONFUSED,
+            AnswerChecker.check("S5", "５５").result
+        )
+        // 反向对照：中文形近不经归一化改写，仍要命中（证明这条口径没把正常路径挤掉）
+        assertEquals(
+            AnswerChecker.Result.GLYPH_CONFUSED,
+            AnswerChecker.check("己所不欲", "已所不欲").result
+        )
     }
 
     @Test

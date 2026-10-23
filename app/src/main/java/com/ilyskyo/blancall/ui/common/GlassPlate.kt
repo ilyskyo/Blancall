@@ -205,11 +205,11 @@ fun LiquidGlassPopupBackdrop(
  */
 @Composable
 fun LiquidGlassPageBar(
+    modifier: Modifier = Modifier,
     cornerDp: Int = 24,
     dispersion: Float = 0.5f,
     tintAlphaLight: Float = 0.12f,
-    tintAlphaDark: Float = 0.25f,
-    modifier: Modifier = Modifier
+    tintAlphaDark: Float = 0.25f
 ) {
     val density = LocalDensity.current
     val cornerPx = with(density) { cornerDp.dp.toPx() }

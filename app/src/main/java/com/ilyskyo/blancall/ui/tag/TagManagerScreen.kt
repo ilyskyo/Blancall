@@ -385,7 +385,7 @@ fun TagManagerScreen(navController: NavController) {
                                             menuFor = null
                                             deleteTarget = tag
                                         },
-                                        label = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                        label = { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) },
                                     )
                                 }
                             }
@@ -451,10 +451,10 @@ fun TagManagerScreen(navController: NavController) {
                 TextButton(onClick = {
                     scope.launch { withContext(Dispatchers.IO) { store.deleteTag(target.id) } }
                     deleteTarget = null
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             },
         )
     }
@@ -535,10 +535,10 @@ fun TagManagerScreen(navController: NavController) {
                     scope.launch {
                         withContext(Dispatchers.IO) { store.setTagArticles(target.id, selection) }
                     }
-                }) { Text("保存") }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.save)) }
             },
             dismissButton = {
-                TextButton(onClick = { managing = null }) { Text("取消") }
+                TextButton(onClick = { managing = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             },
         )
     }

@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.util
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.ilyskyo.blancall.R
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
@@ -21,6 +22,29 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.charset.CodingErrorAction
 import java.util.zip.ZipInputStream
+
+/**
+ * 文件解析失败的分类错误：数据层不持有 Context，也不拼用户文案；
+ * 界面用 [messageFor] 按当前语言渲染，避免错误提示停留在中文。
+ */
+class FileExtractException(
+    val reason: Reason,
+    val format: String = "",
+    val actualMb: Long = 0,
+    val limitMb: Long = 0
+) : Exception(reason.name) {
+    enum class Reason { TOO_LARGE, CANNOT_OPEN, INVALID_DOCX, INVALID_DOC, DOC_ENCRYPTED }
+
+    fun messageFor(context: Context): String = when (reason) {
+        Reason.TOO_LARGE -> context.getString(R.string.file_error_too_large, actualMb, limitMb)
+        Reason.CANNOT_OPEN ->
+            if (format.isBlank()) context.getString(R.string.file_error_cannot_open_generic)
+            else context.getString(R.string.file_error_cannot_open, format)
+        Reason.INVALID_DOCX -> context.getString(R.string.file_error_invalid_docx)
+        Reason.INVALID_DOC -> context.getString(R.string.file_error_invalid_doc)
+        Reason.DOC_ENCRYPTED -> context.getString(R.string.file_error_doc_encrypted)
+    }
+}
 
 /**
  * 通用文件文本提取器，自动识别文件格式并解析为纯文本。
@@ -146,7 +170,11 @@ object FileTextExtractor {
     private fun checkFileSize(context: Context, uri: Uri) {
         val size = getFileSize(context, uri)
         if (size > MAX_FILE_SIZE) {
-            throw Exception("文件过大（${size / 1024 / 1024}MB），最大支持 ${MAX_FILE_SIZE / 1024 / 1024}MB")
+            throw FileExtractException(
+                FileExtractException.Reason.TOO_LARGE,
+                actualMb = size / 1024 / 1024,
+                limitMb = MAX_FILE_SIZE / 1024 / 1024
+            )
         }
     }
 
@@ -166,7 +194,11 @@ object FileTextExtractor {
         while (input.read(tmp).also { read = it } != -1) {
             // 累计计数，超过上限即刻抛异常；正常大小文件会完整读完不受影响
             if (total + read > limit) {
-                throw Exception("文件过大（超过 ${limit / 1024 / 1024}MB），最大支持 ${MAX_FILE_SIZE / 1024 / 1024}MB")
+                throw FileExtractException(
+                    FileExtractException.Reason.TOO_LARGE,
+                    actualMb = limit / 1024 / 1024,
+                    limitMb = MAX_FILE_SIZE / 1024 / 1024
+                )
             }
             buf.write(tmp, 0, read)
             total += read
@@ -188,7 +220,7 @@ object FileTextExtractor {
             } finally {
                 document.close()
             }
-        } ?: throw Exception("无法打开 PDF 文件")
+        } ?: throw FileExtractException(FileExtractException.Reason.CANNOT_OPEN, format = "PDF")
     }
 
     /** 线程安全的 PDFBox 初始化，双重检查锁防止并发重复 init */
@@ -207,7 +239,7 @@ object FileTextExtractor {
 
     private fun extractDocxText(context: Context, uri: Uri): String {
         val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
-            ?: throw Exception("无法打开 DOCX 文件")
+            ?: throw FileExtractException(FileExtractException.Reason.CANNOT_OPEN, format = "DOCX")
 
         val xmlString = extractDocxXml(bytes)
         return parseDocxXml(xmlString)
@@ -223,7 +255,7 @@ object FileTextExtractor {
                 entry = zip.nextEntry
             }
         }
-        throw Exception("无效的 DOCX 文件：未找到 document.xml")
+        throw FileExtractException(FileExtractException.Reason.INVALID_DOCX)
     }
 
     private fun parseDocxXml(xmlString: String): String {
@@ -275,7 +307,7 @@ object FileTextExtractor {
      */
     private fun extractEpubText(context: Context, uri: Uri): String {
         val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
-            ?: throw Exception("无法打开 EPUB 文件")
+            ?: throw FileExtractException(FileExtractException.Reason.CANNOT_OPEN, format = "EPUB")
 
         val sb = StringBuilder()
         var foundAny = false
@@ -322,7 +354,7 @@ object FileTextExtractor {
 
     private fun extractHtmlText(context: Context, uri: Uri): String {
         val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
-            ?: throw Exception("无法打开 HTML 文件")
+            ?: throw FileExtractException(FileExtractException.Reason.CANNOT_OPEN, format = "HTML")
         val html = String(bytes, detectCharset(bytes))
         return stripHtml(html).trim()
     }
@@ -369,7 +401,7 @@ object FileTextExtractor {
 
     private fun extractRtfText(context: Context, uri: Uri): String {
         val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
-            ?: throw Exception("无法打开 RTF 文件")
+            ?: throw FileExtractException(FileExtractException.Reason.CANNOT_OPEN, format = "RTF")
         val rtf = String(bytes, detectCharset(bytes))
         return stripRtf(rtf).trim()
     }
@@ -499,7 +531,7 @@ object FileTextExtractor {
     /** 提取 .doc 文本 + 图片检测结果。伪装成 .doc 的纯文本/HTML/RTF 会按对应格式兜底解析 */
     private fun extractDocResult(context: Context, uri: Uri): ExtractResult {
         val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
-            ?: throw Exception("无法打开 DOC 文件")
+            ?: throw FileExtractException(FileExtractException.Reason.CANNOT_OPEN, format = "DOC")
 
         val streams = try {
             parseOleStreams(bytes)
@@ -523,9 +555,9 @@ object FileTextExtractor {
     }
 
     private fun extractDocText(streams: Map<String, ByteArray>): String {
-        val wd = streams["WordDocument"] ?: throw Exception("无效的 DOC 文件：未找到 WordDocument 流")
+        val wd = streams["WordDocument"] ?: throw FileExtractException(FileExtractException.Reason.INVALID_DOC)
         val flags = leU16(wd, 0x000A)
-        if (flags and 0x0100 != 0) throw Exception("文档已加密，无法读取")
+        if (flags and 0x0100 != 0) throw FileExtractException(FileExtractException.Reason.DOC_ENCRYPTED)
         val nFib = leU16(wd, 0x0002)
         val tableName = if (flags and 0x0200 != 0) "1Table" else "0Table"
 
@@ -652,12 +684,12 @@ object FileTextExtractor {
     /** 解析 OLE2/CFB 复合文档，返回 流名 → 内容。结构非法时抛异常 */
     private fun parseOleStreams(data: ByteArray): Map<String, ByteArray> {
         if (data.size < 512 || !data.copyOfRange(0, 8).contentEquals(OLE_MAGIC)) {
-            throw Exception("无效的 DOC 文件")
+            throw FileExtractException(FileExtractException.Reason.INVALID_DOC)
         }
         val sectorShift = leU16(data, 0x1E)
         val miniShift = leU16(data, 0x20)
         if (sectorShift < 7 || sectorShift > 12 || miniShift < 6 || miniShift > 9) {
-            throw Exception("无效的 DOC 文件")
+            throw FileExtractException(FileExtractException.Reason.INVALID_DOC)
         }
         val ssz = 1 shl sectorShift
         val msz = 1 shl miniShift
@@ -769,7 +801,7 @@ object FileTextExtractor {
 
     private fun extractPlainText(context: Context, uri: Uri): String {
         val bytes = context.contentResolver.openInputStream(uri)?.use { readAllBytesLimited(it, MAX_FILE_SIZE) }
-            ?: throw Exception("无法打开文件")
+            ?: throw FileExtractException(FileExtractException.Reason.CANNOT_OPEN)
         // 移除 BOM 并 trim，与其他格式保持一致，避免 BOM 占用字符配额导致截断后少一个可见字符
         return String(bytes, detectCharset(bytes)).trimStart('\uFEFF').trim()
     }

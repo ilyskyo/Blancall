@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +83,7 @@ import kotlinx.coroutines.withContext
 fun ReaderScreen(navController: NavController, articleId: Long) {
     val articleViewModel: ArticleViewModel = viewModel()
     val context = LocalContext.current
+    val resources = LocalResources.current
     // AI 功能开关（关闭时隐藏 AI 入口）
     val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
     var article by remember { mutableStateOf<Article?>(null) }
@@ -170,7 +172,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
         if (orphanPruned > 0) {
             Toast.makeText(
                 context,
-                context.getString(com.ilyskyo.blancall.R.string.sentence_states_pruned, orphanPruned),
+                resources.getString(com.ilyskyo.blancall.R.string.sentence_states_pruned, orphanPruned),
                 Toast.LENGTH_LONG
             ).show()
             articleViewModel.consumeOrphanNotice()
@@ -287,7 +289,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 )
                             }
                             Text(
-                                text = "${art.content.length} 字符",
+                                text = pluralStringResource(
+                                    com.ilyskyo.blancall.R.plurals.char_count,
+                                    art.content.length, art.content.length
+                                ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -470,7 +475,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "标签",
+                                    stringResource(com.ilyskyo.blancall.R.string.tag),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -498,7 +503,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                                     ) { empty ->
                                         if (empty) {
                                             Text(
-                                                "点击选择标签",
+                                                stringResource(com.ilyskyo.blancall.R.string.tap_to_choose_tags),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                             )

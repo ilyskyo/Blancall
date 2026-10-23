@@ -22,19 +22,24 @@ import org.json.JSONObject
  */
 object AiClozeGenerator {
 
+    // ── 难度档位的稳定值：只在状态与提示词内部流转，绝不参与界面显示 ──
+    const val DIFFICULTY_HARD = "难"
+    const val DIFFICULTY_MEDIUM = "中等"
+    const val DIFFICULTY_EASY = "合适"
+
     // ── 难度档位：目标挖空密度（占候选单元的百分比） ──
     private data class Difficulty(val label: String, val density: Float)
 
     private val DIFFICULTIES = listOf(
-        Difficulty("难", 0.50f),
-        Difficulty("中等", 0.35f),
-        Difficulty("合适", 0.22f)
+        Difficulty(DIFFICULTY_HARD, 0.50f),
+        Difficulty(DIFFICULTY_MEDIUM, 0.35f),
+        Difficulty(DIFFICULTY_EASY, 0.22f)
     )
 
     /** 归一化用户难度选择；未知输入回退"合适" */
     fun normalizeDifficulty(raw: String?): String {
         val t = raw?.trim().orEmpty()
-        return DIFFICULTIES.firstOrNull { it.label == t }?.label ?: "合适"
+        return DIFFICULTIES.firstOrNull { it.label == t }?.label ?: DIFFICULTY_EASY
     }
 
     private fun densityOf(label: String): Float =

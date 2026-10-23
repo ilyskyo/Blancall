@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.algorithm.PdfExporter
@@ -33,7 +34,7 @@ internal suspend fun exportPdf(
         BlancallMode.SENTENCE -> sentenceCloze?.displayText ?: art.content
         BlancallMode.WORD -> wordCloze?.displayText ?: art.content
         // 反向默写导出：展示打乱顺序的句子线索（默写练习题）
-        BlancallMode.REVERSE -> dictationResult?.let { buildDictationDisplayText(it) } ?: art.content
+        BlancallMode.REVERSE -> dictationResult?.let { buildDictationDisplayText(it, context.getString(R.string.dictation_clue_header)) } ?: art.content
     }
     val blanks = when (mode) {
         BlancallMode.SENTENCE -> sentenceCloze?.blanks?.mapIndexed { i, b ->
@@ -51,7 +52,7 @@ internal suspend fun exportPdf(
         displayText = displayText,
         blanks = blanks,
         includeAnswer = includeAnswer,
-        subtitle = if (isCrossMode) "跨文复习 · ${crossArticleTitles.joinToString(" · ")}" else ""
+        subtitle = if (isCrossMode) context.getString(R.string.share_cross_subtitle, crossArticleTitles.joinToString(" · ")) else ""
     )
 
     try {
@@ -63,7 +64,7 @@ internal suspend fun exportPdf(
         }
     } catch (e: Exception) {
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, context.getString(R.string.ov_export_failed_reason, e.message.orEmpty()), Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -86,17 +87,19 @@ internal suspend fun shareNoteImage(
         BlancallMode.SENTENCE -> sentenceCloze?.displayText ?: art.content
         BlancallMode.WORD -> wordCloze?.displayText ?: art.content
         // 反向默写分享：展示打乱顺序的句子线索
-        BlancallMode.REVERSE -> dictationResult?.let { buildDictationDisplayText(it) } ?: art.content
+        BlancallMode.REVERSE -> dictationResult?.let { buildDictationDisplayText(it, context.getString(R.string.dictation_clue_header)) } ?: art.content
     }
     val stats = if (totalBlanks > 0 && checkResults.isNotEmpty()) {
         val correct = checkResults.values.count { it.result == AnswerChecker.Result.CORRECT }
-        "正确率 ${correct * 100 / totalBlanks}%  ·  共 ${totalBlanks} 个空"
+        context.resources.getQuantityString(
+            R.plurals.share_stats, totalBlanks, correct * 100 / totalBlanks, totalBlanks
+        )
     } else ""
 
     val config = ShareImageGenerator.ShareConfig(
         title = art.title,
         content = displayText,
-        subtitle = if (isCrossMode) "跨文复习 · ${crossArticleTitles.joinToString(" · ")}" else "",
+        subtitle = if (isCrossMode) context.getString(R.string.share_cross_subtitle, crossArticleTitles.joinToString(" · ")) else "",
         stats = stats
     )
 
@@ -109,7 +112,7 @@ internal suspend fun shareNoteImage(
         }
     } catch (e: Exception) {
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "分享失败：${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, context.getString(R.string.share_failed, e.message.orEmpty()), Toast.LENGTH_LONG).show()
         }
     }
 }

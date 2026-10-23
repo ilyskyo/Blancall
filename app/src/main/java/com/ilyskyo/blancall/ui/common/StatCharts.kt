@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.DateRange
 import com.ilyskyo.blancall.algorithm.dayOfWeekAtRow
+import com.ilyskyo.blancall.algorithm.heatmapCellMetrics
 import com.ilyskyo.blancall.algorithm.heatmapGridForRange
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -191,11 +192,11 @@ fun DailyTrendChart(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            val fmt = DateTimeFormatter.ofPattern("M/d", Locale.getDefault())
+            val fmt = remember { DateTimeFormatter.ofPattern("M/d", Locale.getDefault()) }
             val today = LocalDate.now()
             Text(today.minusDays((total - 1).toLong()).format(fmt),
                 style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 9.sp)
-            Text("今天", style = MaterialTheme.typography.labelSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.flow_group_today), style = MaterialTheme.typography.labelSmall,
                 color = if (dailyCounts.lastOrNull()?.let { it > 0 } == true) barColor else labelColor,
                 fontSize = 9.sp)
         }
@@ -249,14 +250,9 @@ fun CalendarHeatmap(
         (0 until 7).map { dayOfWeekAtRow(it, firstDay).getDisplayName(TextStyle.NARROW, locale) }
     }
     val rangeFmt = remember(locale) { DateTimeFormatter.ofPattern("MMM d", locale) }
-    val cornerRadius = 3.dp
-    // 格子间距随列数收窄：近一年 53 列时固定 3dp 会把格子挤到 2dp（糊成一片），
-    // 收窄间距换取可辨认的格宽，总宽仍落在容器里。
-    val spacing = when {
-        weeks > 30 -> 1.dp
-        weeks > 16 -> 2.dp
-        else -> 3.dp
-    }
+    // 格子尺寸由 heatmapCellMetrics 统一给出（上限封顶 + 分档间距，见该函数注释）：
+    // 旧实现直接「可用宽度 / 列数」，选本月时格子被撑成方块、选一年时缩成米粒，
+    // 同一张图的"刻度"随选择跳动 —— 那正是用户报的 bug。
 
     // 同上：Canvas 里的格子对读屏完全不可见，结构（行=星期几、列=周）也要说清楚，
     // 否则用户只听到一句「少 多」
@@ -272,7 +268,7 @@ fun CalendarHeatmap(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("少", style = MaterialTheme.typography.labelSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.heatmap_less), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
             Spacer(Modifier.width(3.dp))
             levels.forEach { c ->
@@ -284,7 +280,7 @@ fun CalendarHeatmap(
                 )
                 Spacer(Modifier.width(2.dp))
             }
-            Text("多", style = MaterialTheme.typography.labelSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.more), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
         }
         Spacer(Modifier.height(6.dp))
@@ -293,10 +289,23 @@ fun CalendarHeatmap(
         // 于是错位一周这件事在界面上完全看不出来。
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val labelW = 14.dp
-            val cell = ((maxWidth - labelW - spacing * (weeks - 1)) / weeks).coerceAtLeast(2.dp)
-            val gridW = cell * weeks + spacing * (weeks - 1)
-            val gridH = cell * 7 + spacing * 6
-            Row(verticalAlignment = Alignment.Top) {
+            // 上下限与分档在纯函数里（JVM 单测钉住）；这里只负责把 dp 数值换成 Dp
+            val metrics = remember(weeks, maxWidth) {
+                heatmapCellMetrics(weeks, (maxWidth - labelW - 2.dp).value)
+            }
+            val cell = metrics.cell.dp
+            val spacing = metrics.gap.dp
+            val gridW = metrics.gridWidth(weeks).dp
+            val gridH = metrics.gridHeight().dp
+            // 圆角不得超过格子边长本身的三成：一年档的小格配 3dp 圆角会变成一串圆点
+            val cornerRadius = minOf(3.dp, cell * 0.3f)
+            // 网格封顶后可能窄于容器 —— 居中，而不是把格子拉大去填满（那正是旧 bug）：
+            // 短区间现在是"一小片居中的日历"，形状与一年档完全一致，只是四周留白更多
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.Top
+            ) {
                 Box(modifier = Modifier.width(labelW).height(gridH)) {
                     rowLabels.forEachIndexed { row, label ->
                         Box(

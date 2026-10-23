@@ -32,5 +32,9 @@ data class PracticeState(
     // 本次练习来自哪套自定义挖空配置（仅自定义练习有值；0 = 非自定义/旧数据），
     // 供「继续练习」恢复后重新挂上配置身份（锁定模式/策略/段落）
     val configId: Long = 0L,
+    // 句级聚焦会话（句级薄弱榜「点一句去练」/ 单条错题「复习」）点的目标句在【全文切句】中的索引；
+    // -1 = 整篇/段落模式。供「继续练习」恢复后按同一窗口重建句子锚点表 ——
+    // 聚焦窗口的句子索引从 0 起，若按整篇口径重建锚点，判分记录的句级归属会全指到文章开头。
+    val focusSentence: Int = -1,
     val lastPracticeTime: Long = System.currentTimeMillis()
 )

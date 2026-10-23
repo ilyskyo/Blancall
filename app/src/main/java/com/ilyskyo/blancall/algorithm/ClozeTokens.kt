@@ -18,13 +18,6 @@ object ClozeTokens {
     /** token：文本 + 句内字符区间 */
     data class EditToken(val text: String, val range: IntRange)
 
-    fun levelName(level: Int): String = when (level) {
-        0 -> "复句"
-        1 -> "分句"
-        2 -> "字词"
-        else -> "单字"
-    }
-
     fun tokensFor(sentence: String, level: Int): List<EditToken> {
         if (sentence.isEmpty()) return emptyList()
         if (level <= 0) return listOf(EditToken(sentence, 0 until sentence.length))

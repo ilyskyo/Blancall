@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.statistics
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
@@ -20,12 +21,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -117,6 +121,29 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
         } else {
             emptyList()
         }
+    }
+
+    // ── 「刚练完回来」的变化标注（B3-1 的反馈闭环）──
+    // 练完一句回到本页时，那一行的数字其实已经变了（records 是仓库 StateFlow，回来即刷新），
+    // 但静止的数字看不出「刚刚发生了什么」。这里与上次打开本页时的榜单快照比对，
+    // 把「数值变了的行」和「新上榜的行」挑出来闪一下，让变化自己说话。
+    //
+    // 快照必须用 rememberSaveable：去练习页时本页会离开组合，remember 会被丢掉，
+    // 只有存进导航目的地的保存状态才能在返回时拿出来对比（同一惯例见 ImportScreen 的注释）。
+    // 首次打开本页没有基线 → 一行都不闪，否则每次进页都像刚练完。
+    var weakSnapshot by rememberSaveable(articleId) { mutableStateOf("") }
+    var changedWeakSentences by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    LaunchedEffect(weakSentences) {
+        // 榜单还没算出来（本页刚进组合时先是空表）→ 不动：不能把「还没数据」当成变化
+        if (weakSentences.isEmpty()) return@LaunchedEffect
+        val current = weakSentences.associate { it.sentenceIndex to "${it.practiceCount}|${it.errorRate}" }
+        val previous = parseWeakSnapshot(weakSnapshot)
+        changedWeakSentences = if (previous.isEmpty()) {
+            emptySet()
+        } else {
+            current.filter { (idx, v) -> previous[idx] != v }.keys
+        }
+        weakSnapshot = current.entries.joinToString(";") { "${it.key}=${it.value}" }
     }
 
     // ── 历史筛选状态 ──
@@ -335,6 +362,7 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
                 AnimatedStatCard {
                     WeakSentencesCard(
                         rows = weakSentences,
+                        changedIndexes = changedWeakSentences,
                         onDrill = { row ->
                             navController.navigate(
                                 "practice/$articleId?mode=SENTENCE&focusSentence=${row.sentenceIndex}"
@@ -429,10 +457,18 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
                         // 筛选条件一变，记录集就整体换血：item 的入场/换位/退场统一由 animateListItem 管
                         val record = row.record
                         Box(modifier = animateListItem()) {
-                            RecordCard(record, dateFormat) {
-                                // 按该记录的实际练习模式进入薄弱集训：
-                                // 反向默写 → REVERSE、句子挖空 → SENTENCE、字词挖空 → WORD
-                                navController.navigate("practice/$articleId?mode=${record.mode}&sectionMode=WEAKNESS")
+                            RecordCard(record, dateFormat) { sentenceIndex ->
+                                // 单条错题「复习」：只复习那一句及其前后几句（focusSentence）；
+                                // 拿不到具体错句（旧记录 sentenceIndex = -1）时才退回薄弱集训
+                                if (sentenceIndex >= 0) {
+                                    navController.navigate(
+                                        "practice/$articleId?mode=${record.mode}&focusSentence=$sentenceIndex"
+                                    )
+                                } else {
+                                    // 按该记录的实际练习模式进入薄弱集训：
+                                    // 反向默写 → REVERSE、句子挖空 → SENTENCE、字词挖空 → WORD
+                                    navController.navigate("practice/$articleId?mode=${record.mode}&sectionMode=WEAKNESS")
+                                }
                             }
                         }
                     }
@@ -529,7 +565,7 @@ private fun HistoryMonthHeader(monthStartMs: Long, monthFormat: java.text.DateFo
 private fun RecordCard(
     record: PracticeRecord,
     dateFormat: SimpleDateFormat,
-    onErrorClick: () -> Unit
+    onReview: (Int) -> Unit
 ) {
     val context = LocalContext.current
     // 错题墨迹（错题回顾）：惰性加载 —— 仅可见行读一次文件；无存档=空表，静默隐藏
@@ -599,7 +635,7 @@ private fun RecordCard(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .pressClick { onErrorClick() }
+                                .pressClick { onReview(m.sentenceIndex) }
                                 .padding(vertical = 3.dp),
                             verticalAlignment = Alignment.Top
                         ) {
@@ -646,14 +682,15 @@ private fun RecordCard(
                     }
                 }
             } else {
-                // 无逐项错误明细（如反向默写）：仍提供复习入口
+                // 无逐项错误明细（如反向默写）：仍提供复习入口，
+                // 有落过「答错句子」的记录就聚焦到首句，否则退回薄弱集训（-1）
                 Spacer(Modifier.height(6.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                 Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .pressClick { onErrorClick() }
+                        .pressClick { onReview(record.mistakeSentenceIndices.firstOrNull() ?: -1) }
                         .padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -738,14 +775,18 @@ private fun heatBandLabel(band: String): String = stringResource(
 @OptIn(ExperimentalLayoutApi::class)
 /**
  * 句级薄弱榜（B3-1）：把「哪句最常写错」从热力图的色块里捞出来，变成可以点的一行行。
- * 点一行 → 带 focusSentence 进练习页，只练该句所在的那一段（见 PracticeViewModel.loadArticle）。
+ * 点一行 → 带 focusSentence 进练习页，只练该句及其前后各几句（见 PracticeViewModel.loadArticle + PracticeContentOps.focusWindow）。
  *
  * 展示用【观测】错误率（错 X% = 真错过的比例），不用排序用的收缩率 ——
  * 后者是给排序去噪的估计值，不该冒充用户练出来的数。
+ *
+ * [changedIndexes] 是「这次练完回来数值变了的句子」：那一行会闪一下底色、数字短暂换色 ——
+ * 数据本来就会即时刷新，这层只负责让变化被看见（见 StatisticsScreen 里的快照比对）。
  */
 @Composable
 private fun WeakSentencesCard(
     rows: List<WeakSentenceRank.WeakSentence>,
+    changedIndexes: Set<Int>,
     onDrill: (WeakSentenceRank.WeakSentence) -> Unit,
 ) {
     GlassCard {
@@ -767,35 +808,90 @@ private fun WeakSentencesCard(
             Spacer(Modifier.height(10.dp))
             rows.forEachIndexed { idx, row ->
                 if (idx > 0) Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .pressClick { onDrill(row) }
-                        .padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        row.text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(
-                            com.ilyskyo.blancall.R.string.weak_sentence_row,
-                            (row.errorRate * 100).toInt(), row.practiceCount
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
+                // key 绑句子索引而不是位置：高亮/闪动状态必须跟着「这一句」走 ——
+                // 榜单按薄弱度重排时，位置会换人，状态不能跟着串到别的行上
+                key(row.sentenceIndex) {
+                    WeakSentenceRow(
+                        row = row,
+                        changed = row.sentenceIndex in changedIndexes,
+                        onDrill = { onDrill(row) }
                     )
                 }
             }
         }
     }
 }
+
+/** 榜单一行；[changed] 为真时播一次「变化高亮」 */
+@Composable
+private fun WeakSentenceRow(
+    row: WeakSentenceRank.WeakSentence,
+    changed: Boolean,
+    onDrill: () -> Unit
+) {
+    val glow = rememberChangeGlow(changed)
+    val accent = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 高亮底色只铺到这一行，且随 glow 淡回透明 —— 静态列表里只有变过的那行亮
+            .clip(RoundedCornerShape(8.dp))
+            .background(accent.copy(alpha = 0.14f * glow))
+            .pressClick { onDrill() }
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            row.text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            stringResource(
+                com.ilyskyo.blancall.R.string.weak_sentence_row,
+                (row.errorRate * 100).toInt(), row.practiceCount
+            ),
+            style = MaterialTheme.typography.labelSmall,
+            // 数字从错误色短暂偏向主色：错 X% / 练过 N 次 的变化与底色同一条进度，一起淡回
+            color = lerp(MaterialTheme.colorScheme.error, accent, glow)
+        )
+    }
+}
+
+/**
+ * 「刚练完回来」的一次性高亮：值先顶到 1，再按词表淡回 0（跟在一次练习结果之后的节奏）。
+ *
+ * 用 Animatable 而不是 animateColorAsState：需要「同一件事再发生一次还能重播」——
+ * 布尔驱动的颜色动画在「变了→又变回来」时会中途折返，看不出这是一次新的变化。
+ * 减动效下 MotionFade.alpha 给 snap，高亮同帧消失（尊重系统设置，不做无动画的闪一下）。
+ */
+@Composable
+private fun rememberChangeGlow(changed: Boolean): Float {
+    val glow = remember { Animatable(0f) }
+    LaunchedEffect(changed) {
+        if (changed) {
+            glow.snapTo(1f)
+            glow.animateTo(0f, MotionFade.alpha(MotionFade.scoreReveal))
+        }
+    }
+    return glow.value
+}
+
+/** 榜单快照 `sentenceIndex=练过次数|错误率`（`;` 分隔）：rememberSaveable 只存得下简单类型 */
+private fun parseWeakSnapshot(snapshot: String): Map<Int, String> =
+    if (snapshot.isEmpty()) {
+        emptyMap()
+    } else {
+        snapshot.split(';').mapNotNull { part ->
+            val eq = part.indexOf('=')
+            if (eq <= 0) null
+            else part.take(eq).toIntOrNull()?.let { it to part.substring(eq + 1) }
+        }.toMap()
+    }
 
 @Composable
 private fun StatisticsHeatmapCard(heatmap: MemoryHeatmap.HeatmapData) {

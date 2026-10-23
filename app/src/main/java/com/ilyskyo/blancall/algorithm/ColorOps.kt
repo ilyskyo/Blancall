@@ -172,25 +172,25 @@ object ColorOps {
         return DEFAULT_PALETTE.first { counts[it] == minCount }
     }
 
-    /** 预设色系套装 */
-    data class PresetPalette(val name: String, val colors: List<Int>)
+    /** 预设色系套装：key 是稳定标识（UI 层按 key 取资源显示名），不是文案 */
+    data class PresetPalette(val key: String, val colors: List<Int>)
 
     /** 4 套 × 8 色成品配色，直接点选赋色 */
     val PRESET_PALETTES: List<PresetPalette> = listOf(
         PresetPalette(
-            "马卡龙",
+            "macaron",
             listOf(0xEE9DB4, 0xEFB86E, 0x9DC97F, 0x7FC6A3, 0x7FC6CF, 0x8FB2E6, 0xB79BE0, 0xD48FC6),
         ),
         PresetPalette(
-            "莫兰迪",
+            "morandi",
             listOf(0xC08C8C, 0xC7A98B, 0xC4BE93, 0xA3B39A, 0x93A8B0, 0x9C94B8, 0xB593A8, 0xA8A8A8),
         ),
         PresetPalette(
-            "国风",
+            "guofeng",
             listOf(0xA8463C, 0xC77A4B, 0xB99A4A, 0x6F9271, 0x4A7C88, 0x5B6BA8, 0x8A6B9E, 0x7A6652),
         ),
         PresetPalette(
-            "霓虹糖",
+            "neon",
             listOf(0xFF6B9D, 0xFF8A5C, 0xFFC94A, 0x7BE495, 0x4FD1C5, 0x5AA9FF, 0x9B7BFF, 0xE36BFF),
         ),
     )

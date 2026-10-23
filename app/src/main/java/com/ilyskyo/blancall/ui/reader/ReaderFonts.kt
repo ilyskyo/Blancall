@@ -31,7 +31,9 @@ import java.util.UUID
 data class ReaderFont(
     val id: String,
     val name: String,
-    val source: FontSource
+    val source: FontSource,
+    /** 内置预设的本地化名称资源；系统/导入字体为 0，直接用 [name] */
+    val nameRes: Int = 0,
 )
 
 enum class FontSource { PRESET, SYSTEM, IMPORTED }
@@ -52,12 +54,12 @@ object ReaderFonts {
 
     /** 内置预设字体 */
     val presets: List<ReaderFont> = listOf(
-        ReaderFont("0", "默认", FontSource.PRESET),
-        ReaderFont("1", "宋体", FontSource.PRESET),
-        ReaderFont("2", "黑体", FontSource.PRESET),
-        ReaderFont("3", "等宽", FontSource.PRESET),
+        ReaderFont("0", "默认", FontSource.PRESET, com.ilyskyo.blancall.R.string.font_default),
+        ReaderFont("1", "宋体", FontSource.PRESET, com.ilyskyo.blancall.R.string.font_song),
+        ReaderFont("2", "黑体", FontSource.PRESET, com.ilyskyo.blancall.R.string.font_hei),
+        ReaderFont("3", "等宽", FontSource.PRESET, com.ilyskyo.blancall.R.string.font_mono),
         // 内置打包字体（霞鹜文楷，OFL 授权）：静态 Regular，覆盖 CJK 基本区全部 20992 字
-        ReaderFont("4", "霞鹜文楷", FontSource.PRESET)
+        ReaderFont("4", "霞鹜文楷", FontSource.PRESET, com.ilyskyo.blancall.R.string.font_xwwk)
     )
 
     /** 字重可选范围（用于收敛用户存储值；非连续调节） */
@@ -156,7 +158,7 @@ object ReaderFonts {
         val bytes = runCatching { input.readBytes() }.getOrNull() ?: return null
         if (!isValidFont(bytes)) return null
         val ext = if (fileName.lowercase().endsWith(".otf")) ".otf" else ".ttf"
-        val name = readFontFamilyName(bytes).ifBlank { fileName.substringBeforeLast('.').trim().ifBlank { "导入字体" } }
+        val name = readFontFamilyName(bytes).ifBlank { fileName.substringBeforeLast('.').trim().ifBlank { context.getString(R.string.font_imported_default) } }
         val target = File(fontsDir(context), UUID.randomUUID().toString() + ext)
         runCatching { target.writeBytes(bytes) }.getOrNull() ?: return null
         return ReaderFont("imp:${target.name}", name, FontSource.IMPORTED)

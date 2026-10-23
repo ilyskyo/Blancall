@@ -150,9 +150,12 @@ internal fun ExportPdfDialog(
 // ═══════════════════════════════════════════
 
 /** 构建反向默写的展示文本：把打乱顺序的挖空分句编号列出，作为默写线索 */
-internal fun buildDictationDisplayText(dictation: BlancallGenerator.DictationResult): String {
+internal fun buildDictationDisplayText(
+    dictation: BlancallGenerator.DictationResult,
+    header: String,
+): String {
     return buildString {
-        appendLine("【默写线索 · 分句已打乱顺序并挖空】")
+        appendLine(header)
         dictation.shuffledClauses.forEach { sh ->
             appendLine("${sh.displayOrder + 1}. ${sh.displayText}")
         }

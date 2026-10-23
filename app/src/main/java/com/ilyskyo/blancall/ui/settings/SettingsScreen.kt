@@ -3,8 +3,19 @@
 
 package com.ilyskyo.blancall.ui.settings
 
+import android.Manifest
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +27,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.*
@@ -23,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -44,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,6 +66,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
@@ -60,7 +75,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.compose.ui.draw.clip
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.ilyskyo.blancall.MainActivity
@@ -74,6 +92,7 @@ import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.data.backup.LearningDataReloader
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.PressTier
 import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.theme.AccentPresets
 import com.ilyskyo.blancall.ui.theme.AppPrefs
@@ -82,6 +101,7 @@ import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.theme.ThemeManager
 import com.ilyskyo.blancall.ui.theme.ThemeMode
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -95,6 +115,7 @@ fun SettingsScreen(navController: NavController) {
 
     // ── 学习数据一键备份/恢复 ──
     val backupContext = LocalContext.current
+    val backupResources = LocalResources.current
     val backupScope = rememberCoroutineScope()
     // 待确认的导入文件（选定后先弹覆盖确认，确认才落盘）
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
@@ -116,6 +137,43 @@ fun SettingsScreen(navController: NavController) {
             if (recordsFile.exists()) recordsFile.length() else null
         }
     }
+
+    // ── 赞赏区（会话级隐藏 + 保存赞赏码）──
+    val donationContext = LocalContext.current
+    var showDonationMenu by remember { mutableStateOf(false) }
+    // 保存完成后的结果目录；非空即弹「保存成功」弹窗
+    var donationSavedDir by remember { mutableStateOf<String?>(null) }
+    // 保存动作的触发计数：权限回调与直接保存都汇到这一条路径，避免两处逻辑分叉
+    var donationSaveTrigger by remember { mutableIntStateOf(0) }
+    val donationSavePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) donationSaveTrigger++
+        else Toast.makeText(
+            donationContext, R.string.donation_save_failed, Toast.LENGTH_SHORT
+        ).show()
+    }
+    LaunchedEffect(donationSaveTrigger) {
+        if (donationSaveTrigger == 0) return@LaunchedEffect
+        val dir = withContext(Dispatchers.IO) { saveDonationQrToGallery(donationContext) }
+        if (dir != null) donationSavedDir = dir
+        else Toast.makeText(
+            donationContext, R.string.donation_save_failed, Toast.LENGTH_SHORT
+        ).show()
+    }
+    // 发起保存。Android 9 及以下写公共相册需要存储权限，先申请；Android 10+ 走 MediaStore 无需权限。
+    val startSaveDonationQr: () -> Unit = {
+        val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(
+                donationContext, Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            donationSavePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            donationSaveTrigger++
+        }
+    }
+
     val backupExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
@@ -130,8 +188,8 @@ fun SettingsScreen(navController: NavController) {
                 }
                 Toast.makeText(
                     backupContext,
-                    if (failure == null) backupContext.getString(R.string.backup_export_done)
-                    else backupContext.getString(
+                    if (failure == null) backupResources.getString(R.string.backup_export_done)
+                    else backupResources.getString(
                         R.string.backup_export_failed, backupErrorMessage(backupContext, failure)
                     ),
                     Toast.LENGTH_LONG
@@ -143,7 +201,7 @@ fun SettingsScreen(navController: NavController) {
     // 两步之间任何一步失败都不删数据：宁可归档不成，不可静默淘汰用户履历。
     val archiveRecordRepo = remember { RecordRepository.getInstance(recordsFile.absolutePath) }
     var archiveDialogVisible by remember { mutableStateOf(false) }
-    var archiveCandidateCount by remember { mutableStateOf(0) }
+    var archiveCandidateCount by remember { mutableIntStateOf(0) }
     var pendingArchive by remember { mutableStateOf<List<PracticeRecord>?>(null) }
     val recordsArchiveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -165,13 +223,13 @@ fun SettingsScreen(navController: NavController) {
                 recordsVersion++
                 Toast.makeText(
                     backupContext,
-                    backupContext.getString(com.ilyskyo.blancall.R.string.data_archive_done, toArchive.size),
+                    backupResources.getString(com.ilyskyo.blancall.R.string.data_archive_done, toArchive.size),
                     Toast.LENGTH_LONG
                 ).show()
             } else {
                 Toast.makeText(
                     backupContext,
-                    backupContext.getString(com.ilyskyo.blancall.R.string.data_archive_failed),
+                    backupResources.getString(com.ilyskyo.blancall.R.string.data_archive_failed),
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -584,6 +642,7 @@ fun SettingsScreen(navController: NavController) {
 
                 // 清空已存墨迹（开关只拦新增，已存数据需手动清）
                 val inkContext = LocalContext.current
+                val inkResources = LocalResources.current
                 val inkScope = rememberCoroutineScope()
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(),
@@ -600,7 +659,11 @@ fun SettingsScreen(navController: NavController) {
                                     inkContext.filesDir.resolve("ink").absolutePath
                                 ).clearAll()
                             }
-                            Toast.makeText(inkContext, "已清空错题墨迹", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                inkContext,
+                                inkResources.getString(com.ilyskyo.blancall.R.string.ink_cleared_toast),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }) {
                         Text(stringResource(com.ilyskyo.blancall.R.string.clear))
@@ -849,7 +912,12 @@ fun SettingsScreen(navController: NavController) {
                     templates.forEachIndexed { idx, template ->
                         val isSelected = template.id == templateId
                         OptionRow(
-                            label = template.name,
+                            // B2-1/S3：计划名按 id 取资源（name 字段已从算法层移除）
+                            label = when (template.id) {
+                                "sprint" -> stringResource(com.ilyskyo.blancall.R.string.plan_name_sprint)
+                                "deep" -> stringResource(com.ilyskyo.blancall.R.string.plan_name_deep)
+                                else -> stringResource(com.ilyskyo.blancall.R.string.plan_name_standard)
+                            },
                             description = when (template.id) {
                                 "sprint" -> stringResource(com.ilyskyo.blancall.R.string.plan_aggressive)
                                 "deep" -> stringResource(com.ilyskyo.blancall.R.string.plan_relaxed)
@@ -904,6 +972,44 @@ fun SettingsScreen(navController: NavController) {
                         }
                         Text("→", style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                HorizontalDivider(
+                    Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
+                Surface(
+                    // 一次性引导看过后就再也不会弹了，必须有出口能重来 ——
+                    // 否则用户误关一次，等于永久失去「长按可以做什么」这条信息
+                    onClick = { AppPrefs.resetCoachMarks() },
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AppIcon(
+                                kind = AppIconKind.Refresh,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.coach_reset),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.coach_reset_desc),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
                 HorizontalDivider(
@@ -1025,7 +1131,7 @@ fun SettingsScreen(navController: NavController) {
                                     if (archiveCandidateCount <= 0) {
                                         Toast.makeText(
                                             backupContext,
-                                            backupContext.getString(com.ilyskyo.blancall.R.string.data_archive_none),
+                                            backupResources.getString(com.ilyskyo.blancall.R.string.data_archive_none),
                                             Toast.LENGTH_LONG
                                         ).show()
                                     } else {
@@ -1167,37 +1273,131 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // ── 赞赏区 ──
-            Text(stringResource(com.ilyskyo.blancall.R.string.donation_title), style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary)
-
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            // 整块可被「隐藏该区域」收起。隐藏态是**会话级**的（SettingsSessionState，
+            // 只在内存里，不落盘）：本次使用不再出现，软件重新启动后自动恢复。
+            if (!SettingsSessionState.donationHidden) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_ask),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(4.dp))
-                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_motive),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(12.dp))
-                    Image(
-                        painter = painterResource(id = R.drawable.appreciation_qr),
-                        contentDescription = stringResource(com.ilyskyo.blancall.R.string.donation_qr),
-                        modifier = Modifier
-                            .fillMaxWidth(0.6f)
-                            .aspectRatio(1f),
-                        contentScale = ContentScale.Fit
-                    )
+                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_title), style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary)
+                    // 圆圈按钮：右边缘与下方卡片的右边框对齐，提示这一行可以点
+                    Box {
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                    CircleShape
+                                )
+                                .pressClick(tier = PressTier.Icon) { showDonationMenu = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AppIcon(
+                                kind = AppIconKind.MoreVert,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                                contentDescription = stringResource(com.ilyskyo.blancall.R.string.more)
+                            )
+                        }
+                        GlassDropdownMenu(
+                            expanded = showDonationMenu,
+                            onDismissRequest = { showDonationMenu = false }
+                        ) {
+                            GlassMenuItem(
+                                onClick = {
+                                    showDonationMenu = false
+                                    SettingsSessionState.donationHidden = true
+                                },
+                                label = {
+                                    Column {
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_hide),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_hide_hint),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            )
+                            GlassMenuItem(
+                                onClick = {
+                                    showDonationMenu = false
+                                    startSaveDonationQr()
+                                },
+                                label = {
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_save_qr),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            )
+                        }
+                    }
                 }
+
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_ask),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(4.dp))
+                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_motive),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(12.dp))
+                        Image(
+                            painter = painterResource(id = R.drawable.appreciation_qr),
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.donation_qr),
+                            modifier = Modifier
+                                .fillMaxWidth(0.6f)
+                                .aspectRatio(1f),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+            }
+
+            // ── 赞赏码保存完成弹窗 ──
+            donationSavedDir?.let { dir ->
+                BlancallAlertDialog(
+                    onDismissRequest = { donationSavedDir = null },
+                    title = {
+                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_saved_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    },
+                    text = {
+                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_saved_body, dir),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            donationSavedDir = null
+                            launchWeChat(donationContext)
+                        }) { Text(stringResource(com.ilyskyo.blancall.R.string.donation_open_wechat)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { donationSavedDir = null }) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.done))
+                        }
+                    }
+                )
             }
 
             // ── 版本号 ──
@@ -1246,10 +1446,12 @@ fun SettingsScreen(navController: NavController) {
                         showSubtitleDialog = false
                     },
                     shape = RoundedCornerShape(14.dp)
-                ) { Text("保存") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.save)) }
             },
             dismissButton = {
-                TextButton(onClick = { showSubtitleDialog = false }) { Text("取消") }
+                TextButton(onClick = { showSubtitleDialog = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }
@@ -1304,7 +1506,10 @@ fun SettingsScreen(navController: NavController) {
                 Button(
                     onClick = {
                         pendingImportUri = null
-                        backupScope.launch {
+                        // 导入是破坏性整库替换 + 全量重载：不能被「离开设置页/旋转屏幕」取消，
+                        // 否则文件已换、内存未重载，下一次任意保存会把恢复的数据覆盖回旧库。
+                        // NonCancellable 让这次 job 不受 rememberCoroutineScope 生命周期影响。
+                        backupScope.launch(NonCancellable) {
                             val result = withContext(Dispatchers.IO) {
                                 runCatching {
                                     // 先落到缓存临时包：ZipFile 需随机读取，且避免边读 SAF 边写盘
@@ -1323,24 +1528,24 @@ fun SettingsScreen(navController: NavController) {
                                     LearningDataReloader.reloadAll(backupContext)
                                 }
                                 val doneText = if (it.removed > 0) {
-                                    backupContext.getString(
+                                    backupResources.getString(
                                         R.string.backup_restore_done_cleaned, it.restored, it.removed
                                     )
                                 } else {
-                                    backupContext.getString(R.string.backup_restore_done, it.restored)
+                                    backupResources.getString(R.string.backup_restore_done, it.restored)
                                 }
                                 backupRestartMessage = doneText +
-                                    backupContext.getString(R.string.backup_restore_applied_hint) +
+                                    backupResources.getString(R.string.backup_restore_applied_hint) +
                                     if (reloadFailures > 0) {
                                         // 个别 Store 重载失败：数据已在盘上、重启后必然生效 —— 如实说明
-                                        backupContext.getString(
+                                        backupResources.getString(
                                             R.string.backup_restore_reload_failed, reloadFailures
                                         )
                                     } else ""
                             }.onFailure {
                                 Toast.makeText(
                                     backupContext,
-                                    backupContext.getString(
+                                    backupResources.getString(
                                         R.string.backup_import_failed,
                                         backupErrorMessage(backupContext, it)
                                     ),
@@ -1353,7 +1558,7 @@ fun SettingsScreen(navController: NavController) {
                 ) { Text(stringResource(com.ilyskyo.blancall.R.string.import_action)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingImportUri = null }) { Text("取消") }
+                TextButton(onClick = { pendingImportUri = null }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }
@@ -1500,7 +1705,7 @@ private fun ReminderSettingsCard() {
                     Text(stringResource(com.ilyskyo.blancall.R.string.reminder_enable), style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        if (enabled) stringResource(com.ilyskyo.blancall.R.string.reminder_on_at, String.format("%02d:%02d", hour, minute))
+                        if (enabled) stringResource(com.ilyskyo.blancall.R.string.reminder_on_at, String.format(Locale.getDefault(), "%02d:%02d", hour, minute))
                         else stringResource(com.ilyskyo.blancall.R.string.reminder_off_state),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1548,7 +1753,7 @@ private fun ReminderSettingsCard() {
                                 color = MaterialTheme.colorScheme.onSurface)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    String.format("%02d:%02d", hour, minute),
+                                    String.format(Locale.getDefault(), "%02d:%02d", hour, minute),
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.primary
@@ -1611,7 +1816,7 @@ private fun ReminderSettingsCard() {
                                 FilterChip(
                                     selected = frequency == freq,
                                     onClick = { ReminderPrefs.frequency = freq },
-                                    label = { Text(freq.label, style = MaterialTheme.typography.labelSmall) },
+                                    label = { Text(stringResource(freq.labelRes), style = MaterialTheme.typography.labelSmall) },
                                     shape = RoundedCornerShape(8.dp)
                                 )
                             }
@@ -1664,7 +1869,7 @@ private fun ReminderSettingsCard() {
                 ) { Text(stringResource(com.ilyskyo.blancall.R.string.ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showCustomMinutesDialog = false }) { Text("取消") }
+                TextButton(onClick = { showCustomMinutesDialog = false }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }
@@ -1783,7 +1988,7 @@ private fun TimePickerDialog(
             ) { Text(stringResource(com.ilyskyo.blancall.R.string.ok)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
         }
     )
 }
@@ -1809,3 +2014,95 @@ private fun AdaptiveChipLabel(text: String) {
         }
     )
 }
+
+// ========== 赞赏区：会话级隐藏状态 / 赞赏码保存 ==========
+
+/**
+ * 设置页的**会话级**界面状态（只存在于内存，不随任何偏好落盘）。
+ *
+ * 赞赏区「隐藏该区域」按用户要求只对本次运行生效：藏起来之后本次使用不再出现，
+ * 软件重新启动就自动恢复。所以它不能写进 AppPrefs（那会变成永久隐藏），也不能用
+ * `remember`（离开设置页再回来就会被重新组合出来，与「本次使用」的承诺不符）。
+ * 复位时机见 `MainActivity.onCreate`：只有真正重新启动（savedInstanceState == null）
+ * 才清；系统因配置变化（主题、深色模式等）重建 Activity 时不清，免得刚藏好又冒出来。
+ */
+internal object SettingsSessionState {
+    /** 赞赏区是否在本次运行中被隐藏 */
+    var donationHidden by mutableStateOf(false)
+}
+
+/** 微信包名 */
+private const val WECHAT_PACKAGE = "com.tencent.mm"
+
+/**
+ * 跳转微信。相册里的赞赏码要靠微信「扫一扫 → 从相册选取」才用得上，这里只负责把微信拉起来
+ * —— 不硬编码「扫一扫」页的组件名（各版本组件名并不稳定，匹配不上会直接抛 ActivityNotFound，
+ * 比停在微信首页更糟）。未安装微信时给一句提示，而不是静默失败。
+ */
+private fun launchWeChat(context: Context) {
+    val intent = context.packageManager.getLaunchIntentForPackage(WECHAT_PACKAGE)
+    if (intent == null) {
+        Toast.makeText(context, R.string.donation_wechat_missing, Toast.LENGTH_SHORT).show()
+        return
+    }
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }.onFailure {
+        Toast.makeText(context, R.string.donation_wechat_missing, Toast.LENGTH_SHORT).show()
+    }
+}
+
+/**
+ * 把赞赏码写进系统相册的 `Pictures/Blancall/`，成功返回给用户看的目录名，失败返回 null。
+ *
+ * Android 10+ 走 MediaStore：`IS_PENDING` 两段写（写完才对外可见，半张图不会进相册），无需任何权限；
+ * Android 9 及以下没有 RELATIVE_PATH，只能直接写公共目录，因此需要 WRITE_EXTERNAL_STORAGE
+ * （清单里已按 maxSdkVersion=28 声明，界面在调用前申请）。
+ */
+private fun saveDonationQrToGallery(context: Context): String? {
+    val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.appreciation_qr) ?: return null
+    val fileName = "blancall_donation_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.png"
+    val shownDir = "${Environment.DIRECTORY_PICTURES}/Blancall"
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, shownDir)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
+            val out = resolver.openOutputStream(uri) ?: return null
+            out.use {
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) return null
+            }
+            // 写入完成才解除 pending，此时这张图才会出现在相册里
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "Blancall"
+            )
+            if (!dir.exists() && !dir.mkdirs()) return null
+            val file = File(dir, fileName)
+            FileOutputStream(file).use { out ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) return null
+            }
+            // 10 以下写公共目录不会被媒体库自动收录，得主动通知扫描
+            @Suppress("DEPRECATION")
+            MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("image/png"), null)
+        }
+        shownDir
+    } catch (e: Exception) {
+        // 日志串保持 ASCII：中文串字面量在 cjk-baseline.tsv 里是只减不增的棘轮，这条不是界面文案
+        Log.w(TAG_DONATION, "donation image save to gallery failed", e)
+        null
+    } finally {
+        bitmap.recycle()
+    }
+}
+
+private const val TAG_DONATION = "DonationQr"

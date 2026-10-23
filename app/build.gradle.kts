@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 49
-        versionName = "7.4.1"
+        versionCode = 50
+        versionName = "7.5.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -68,6 +68,14 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+        }
+    }
+    bundle {
+        language {
+            // 界面语言由 AppLocale 在应用内切换。Play 按语言拆包会把非基础语种的资源
+            // 从基础 APK 剥离，用户在应用内切到英/日/韩/俄/繁中时只会回落成简体中文。
+            // APK 分发不受影响；这里关掉语言拆分，保证六语资源始终随包完整下发。
+            enableSplit = false
         }
     }
     compileOptions {

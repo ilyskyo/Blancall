@@ -85,7 +85,7 @@ fun TagEditorSheet(
                 singleLine = true,
                 isError = showError,
                 supportingText = if (showError) {
-                    { Text(errorText(error!!)) }
+                    { error?.let { Text(errorText(it)) } }
                 } else {
                     null
                 },

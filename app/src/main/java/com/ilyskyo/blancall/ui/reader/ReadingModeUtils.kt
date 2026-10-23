@@ -3,6 +3,9 @@
 
 package com.ilyskyo.blancall.ui.reader
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,12 +52,13 @@ internal fun buildReadingSections(content: String): List<String> {
 }
 
 
-/** 字重档位的中文名（霞鹜文楷：300 细 / 400 常规 / 500 中等；其余字体：400 常规 / 700 加粗） */
+/** 字重档位的本地化名称（霞鹜文楷：300 细 / 400 常规 / 500 中等；其余字体：400 常规 / 700 加粗） */
+@Composable
 internal fun weightLabel(weight: Int): String = when (weight) {
-    300 -> "细"
-    500 -> "中等"
-    700 -> "加粗"
-    else -> "常规"
+    300 -> stringResource(com.ilyskyo.blancall.R.string.weight_thin)
+    500 -> stringResource(com.ilyskyo.blancall.R.string.weight_medium)
+    700 -> stringResource(com.ilyskyo.blancall.R.string.weight_bold)
+    else -> stringResource(com.ilyskyo.blancall.R.string.weight_regular)
 }
 
 

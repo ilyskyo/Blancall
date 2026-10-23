@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,12 +84,16 @@ fun HandwritingAnswerSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    blankLabel?.let { "手写作答 · $it" } ?: "手写作答",
+                    blankLabel?.let {
+                        stringResource(com.ilyskyo.blancall.R.string.handwriting_sheet_title, it)
+                    } ?: stringResource(com.ilyskyo.blancall.R.string.handwriting_sheet_title_plain),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDismissRequest) { Text("完成") }
+                TextButton(onClick = onDismissRequest) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.done))
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -109,7 +114,9 @@ fun HandwritingAnswerSheet(
                     // `fill = false` 让文字按内容宽度占位、提示字紧随其后，
                     // 再用弹性 Spacer 把退格/清空推到行尾（长答案仍能换行占满宽度）。
                     Text(
-                        answer.ifEmpty { "（还没写）" },
+                        answer.ifEmpty {
+                            stringResource(com.ilyskyo.blancall.R.string.handwriting_nothing_written)
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         color = if (answer.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.onSurface,
@@ -127,7 +134,7 @@ fun HandwritingAnswerSheet(
                             Text("⌫")
                         }
                         TextButton(onClick = { onAnswerChange("") }) {
-                            Text("清空")
+                            Text(stringResource(com.ilyskyo.blancall.R.string.clear))
                         }
                     }
                 }
@@ -154,10 +161,9 @@ fun HandwritingAnswerSheet(
             Spacer(Modifier.height(8.dp))
             Text(
                 if (stylusPresent) {
-                    "用笔在板上写一个字，认出的字会自动填进这个空；连续写就是连续填。手指划动不会误写。"
+                    stringResource(com.ilyskyo.blancall.R.string.handwriting_board_hint_pen)
                 } else {
-                    // 无笔设备：手指就是书写工具（触屏模式）——不能再写「手指划动不会误写」
-                    "在板上写一个字，认出的字会自动填进这个空；连续写就是连续填。"
+                    stringResource(com.ilyskyo.blancall.R.string.handwriting_board_hint_finger)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -180,6 +180,16 @@ object BackupManager {
             ?.forEach { if (it.name !in keep && it.delete()) removed++ }
         File(filesDir, "ink").listFiles { f -> f.isFile && f.name.endsWith(".json") }
             ?.forEach { if ("ink/${it.name}" !in keep && it.delete()) removed++ }
+        // 导入是整库替换：promoteStaged 已把导入前的旧主文件轮换成 .bak，这些 .bak
+        // 属于旧库。留着会在主文件缺失/损坏时被各 Store 回读，把刚恢复的数据“复活”成旧版本。
+        // 只有全部提换成功走到这里才删；中途失败时 .bak 仍保留，用于回滚。
+        for (name in ROOT_DATA_FILES) {
+            val bak = File(filesDir, "$name.bak")
+            if (bak.isFile) bak.delete()
+        }
+        filesDir.listFiles { f ->
+            f.isFile && f.name.startsWith("practice_state_") && f.name.endsWith(".json.bak")
+        }?.forEach { it.delete() }
         return RestoreReport(data.size, removed)
     }
 

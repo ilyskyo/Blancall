@@ -94,9 +94,15 @@ class BlancallApp : Application() {
 
         // 后台预热 FSRS 状态单例：getInstance 内部 load() 会同步读盘，
         // 提前在后台线程触发，避免首页首帧在主线程阻塞读 fsrs_state.json。
+        //
+        // 目录必须在**启动后台线程之前**先解析一次：ContextImpl 第一次 getFilesDir()
+        // 会同步创建并校验私有目录，若留给首帧组合期（HomeScreen 的 remember）执行，
+        // 会与这条预热线程争同一把 Context 锁 —— 实测模拟器首帧 DiskReadViolation 2.2s。
+        // 这里在启动屏仍可见时完成一次，之后所有页面拿到的都是已缓存路径。
+        val appFilesDir = filesDir
         kotlin.concurrent.thread {
             try {
-                FsrsStateStore.getInstance(filesDir.resolve("fsrs_state.json").absolutePath)
+                FsrsStateStore.getInstance(appFilesDir.resolve("fsrs_state.json").absolutePath)
             } catch (_: Exception) { }
         }
     }

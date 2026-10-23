@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.ui.common
 
+import android.annotation.SuppressLint
+
 import android.animation.ValueAnimator
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
@@ -15,6 +17,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -278,6 +281,13 @@ object Motion {
         dpSpring(Spring.DampingRatioLowBouncy, Spring.StiffnessMedium)
 
     /**
+     * [slotSettle] 的 Offset 版：首页卡片拖出量写成 `graphicsLayer.translationX/Y`，
+     * 用一条二维弹簧同时回弹 X/Y。参数必须与 [slotSettle] 完全一致。
+     */
+    fun slotSettleOffset(): FiniteAnimationSpec<Offset> =
+        if (reduced) snap() else spring(Spring.DampingRatioLowBouncy, Spring.StiffnessMedium)
+
+    /**
      * [slotSettle] 的像素版：标签行那种直接写进 `graphicsLayer.translationY` 的位移是 Float，
      * 不是 Dp，所以只能另开一个同名参数的谱子。**两条弹簧的参数必须与 [slotSettle] 一致**，
      * 改了这边要改那边 —— 连续性的推导（t=0 落在手指离开点）依赖它们同一条曲线。
@@ -513,6 +523,15 @@ object MotionFade {
     /** 练习计分那一类的揭示：比整页图表快一档，因为它跟在手指后面。 */
     const val scoreReveal = 400
 
+    /**
+     * 句子卡「显示答案」的揭示：空位横条退场、被藏住的字入场，两件事共用这一条进度。
+     *
+     * 取 300 —— 比控件显隐（[enter] 180）长：整句的字是一个一个浮现出来的，快了只像闪一下；
+     * 又比 [scoreReveal] 短：那一条跟在练习计分后面，而这里只跟在一次点按后面，
+     * 用户点完立刻就要能读，不能让他等动画走完。
+     */
+    const val answerReveal = 300
+
     /** 切 tab 时给取色层的第一段：先压一档（配合 [switchSettle] 回满）。 */
     const val switchDip = 70
 
@@ -580,7 +599,10 @@ fun staggerDelay(index: Int): Int =
  * 库默认三件套全是弹簧（连淡入淡出也是），而词表要求 alpha 走 tween；
  * 更要紧的是减动效（`animator_duration_scale = 0`）下要能由我们自己坍缩成 snap。
  * 三处列表（搜索 / 文章 / 统计）用同一份，删除与重排的节奏才彼此一致。
+ *
+ * 注：`animateItem` 只存在于 LazyItemScope，不能改成 Modifier 扩展（lint 的通用建议在此不适用）。
  */
+@SuppressLint("ModifierFactoryExtensionFunction")
 fun LazyItemScope.animateListItem(): Modifier = Modifier.animateItem(
     fadeInSpec = MotionFade.alpha(MotionFade.itemEnter),
     placementSpec = Motion.listPlacement(),
@@ -594,7 +616,10 @@ fun LazyItemScope.animateListItem(): Modifier = Modifier.animateItem(
  * 它的 `animateItem` 与 LazyList 的那个没有继承关系 ——
  * 双列文章列表（交错网格）和单列（LazyColumn）必须共用同一组 spec，
  * 否则切到平板横屏时删除/筛选的节奏会和手机上不一样。
+ *
+ * 同上报：receiver 由库的 scope 决定，不能写成 Modifier 扩展。
  */
+@SuppressLint("ModifierFactoryExtensionFunction")
 fun LazyStaggeredGridItemScope.animateListItem(): Modifier = Modifier.animateItem(
     fadeInSpec = MotionFade.alpha(MotionFade.itemEnter),
     placementSpec = Motion.listPlacement(),

@@ -35,12 +35,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -58,14 +60,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -85,8 +86,16 @@ import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
+import com.ilyskyo.blancall.ui.common.GlassMenuDivider
+import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TagDot
 import com.ilyskyo.blancall.ui.common.Motion
@@ -126,6 +135,7 @@ import androidx.compose.ui.res.stringResource
 @Composable
 fun SentenceCardScreen(navController: NavController) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val articleViewModel: ArticleViewModel = viewModel()
     val articles by articleViewModel.articles.collectAsState()
     val fsrsStore = remember {
@@ -141,6 +151,12 @@ fun SentenceCardScreen(navController: NavController) {
     val rawSentenceFilter by AppPrefs.sentenceTagFilterFlow.collectAsState()
     val rawArticleFilter by AppPrefs.sentenceArticleFilterFlow.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
+    // 右上角 ⋮ 菜单：遮挡开关 + 复习入口（与阅读页/练习页同款玻璃菜单）
+    var showMoreMenu by remember { mutableStateOf(false) }
+    // 「点卡片揭晓 / 上下滑切卡」一次性指引圈的锚点（整张顶层卡）
+    val cardAnchor = rememberCoachAnchor()
+    // 挖空遮挡偏好（用户可关：关掉即整句直出，只做快速浏览）
+    val clozeEnabled by AppPrefs.sentenceClozeEnabledFlow.collectAsState()
     // 与现有数据对账：已删标签 / 已删文章的筛选 id 仅本次忽略
     val validSentenceFilter = remember(rawSentenceFilter, tagData) {
         rawSentenceFilter.filterTo(mutableSetOf()) { id -> tagData.tags.any { it.id == id } }
@@ -152,6 +168,18 @@ fun SentenceCardScreen(navController: NavController) {
     // 上一级，保证「选了文章却抽不出句子」的空池不会出现）
     val sentencePool = remember(articles, tagData, validSentenceFilter, validArticleFilter) {
         resolveSentencePool(articles, tagData, validSentenceFilter, validArticleFilter)
+    }
+    // 任务流里暂停的文章：不抽今日句、不进队列、不参与主动复习（先过暂停再分队，
+    // 否则暂停文章的句子会从「已暂停」这一层里漏回来）
+    var pausedArticleIds by remember { mutableStateOf(fsrsStore.pausedArticleIds()) }
+    val fsrsRevision by fsrsStore.revision.collectAsState()
+    LaunchedEffect(fsrsRevision) {
+        fsrsStore.awaitLoaded()
+        pausedArticleIds = fsrsStore.pausedArticleIds()
+    }
+    val activeSentencePool = remember(sentencePool, pausedArticleIds) {
+        if (pausedArticleIds.isEmpty()) sentencePool
+        else sentencePool.filterNot { it.id in pausedArticleIds }
     }
     // 来源文章 id → 标签 chips（句卡展示）
     val chipByArticle = remember(tagData) {
@@ -178,23 +206,27 @@ fun SentenceCardScreen(navController: NavController) {
     val sessionRatings = rememberSaveable(saver = SessionRatingsSaver) {
         mutableStateMapOf<String, FsrsEngine.Rating>()
     }
-    // 划卡手势提示：仅首次使用展示一次（无论是否真的划过，之后不再出现；本次会话保持展示，旋转不闪失）
-    val showSwipeHint by rememberSaveable { mutableStateOf(!AppPrefs.sentenceHintSeen) }
-    LaunchedEffect(Unit) {
-        if (!AppPrefs.sentenceHintSeen) AppPrefs.sentenceHintSeen = true
-    }
 
-    LaunchedEffect(sentencePool, reviewRound) {
-        if (sentencePool.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(activeSentencePool, reviewRound, pausedArticleIds) {
+        if (activeSentencePool.isEmpty()) {
+            // 全部文章都被暂停（或筛选后为空）：给空态，而不是一直停在加载圈
+            states = emptyMap()
+            queue = emptyList()
+            return@LaunchedEffect
+        }
         fsrsStore.awaitLoaded()
         val allLearned = reviewAll
         val (loadedStates, loadedQueue) = withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
             val s = fsrsStore.allSentenceStates()
             // 直接开屏兜底：确保今日句已抽（通常从首页进入时已抽过，此处幂等）
-            DailySentenceCoordinator.ensureToday(sentenceStore, sentencePool, s, now)
+            DailySentenceCoordinator.ensureToday(
+                sentenceStore, activeSentencePool, s, now,
+                excludedArticleIds = pausedArticleIds,
+            )
             s to DailySentenceCoordinator.buildQueue(
-                sentenceStore, sentencePool, s, now, includeAllLearned = allLearned,
+                sentenceStore, activeSentencePool, s, now, includeAllLearned = allLearned,
+                excludedArticleIds = pausedArticleIds,
             )
         }
         states = loadedStates
@@ -359,6 +391,14 @@ fun SentenceCardScreen(navController: NavController) {
                 .fillMaxSize()
                 .statusBarsPadding(),
         ) {
+            // 首次进入教手势：点卡片 = 揭晓答案，上下滑 = 切上一张 / 下一张（看过即不再出现）
+            CoachMark(
+                coachKey = "sentence_card_gesture",
+                anchor = cardAnchor,
+                title = stringResource(com.ilyskyo.blancall.R.string.coach_sentence_card_title),
+                body = stringResource(com.ilyskyo.blancall.R.string.coach_sentence_card_body),
+                shape = CoachShape.Card,
+            )
             // ── 顶栏：返回 + 标题 + 进度 ──
             val items = queue
             Row(
@@ -402,58 +442,136 @@ fun SentenceCardScreen(navController: NavController) {
                         )
                     }
                     Spacer(Modifier.width(8.dp))
-                    // 主动复习入口：用户随时可自行点击「复习」再学一轮（全量、可重复评级）；
-                    // 复习中再点「结束复习」回到日常间隔复习并重新定位到第一个未评
-                    GlassButton(
-                        onClick = {
-                            sessionRatings.clear()
-                            if (reviewAll) {
-                                reviewAll = false
-                                positioned = false
-                            } else {
-                                reviewAll = true
-                                // 主动复习轻提示：系统 Toast 弹出（不再占用页面高度，卡片尺寸与常态一致）
-                                Toast.makeText(
-                                    context,
-                                    context.getString(com.ilyskyo.blancall.R.string.review_started_all),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                            reviewRound++
-                        },
-                        modifier = Modifier.height(34.dp),
-                    ) {
-                        AppIcon(
-                            kind = AppIconKind.Refresh,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            if (reviewAll) stringResource(com.ilyskyo.blancall.R.string.end_review)
-                            else stringResource(com.ilyskyo.blancall.R.string.review_action),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                    // ⋮ 三点菜单：顶栏只留「筛选」这一个高频动作，其余（记忆方式 / 全量复习）
+                    // 收进菜单 —— 与阅读页、练习页同一套 ⋮ 组件与层级，不再为每个功能各占一格。
+                    Box {
+                        IconButton(
+                            onClick = { showMoreMenu = true },
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            AppIcon(
+                                kind = AppIconKind.MoreVert,
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                contentDescription = stringResource(com.ilyskyo.blancall.R.string.more),
+                            )
+                        }
+                        GlassDropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false },
+                        ) {
+                            // 分组标题：这一组管的是「怎么复习」，不是某个孤立开关 ——
+                            // 单看「遮挡回忆」四个字，用户不知道它属于哪套流程。
+                            GlassMenuItem(
+                                enabled = false,
+                                onClick = {},
+                                label = {
+                                    Text(
+                                        stringResource(com.ilyskyo.blancall.R.string.sentence_menu_title),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                },
+                            )
+                            // 遮挡开关：叫「功能名」而不是「取消遮挡 / 开启遮挡」——
+                            // 用户选的是记忆方式，不是要不要执行一个开/关动作。
+                            GlassMenuItem(
+                                // 切方式即回到「未揭晓」：从"整句直出"切回"遮挡"时若沿用上一张的揭晓态，
+                                // 用户会看到一道已经被答案填满的空格，等于遮挡没生效
+                                onClick = {
+                                    AppPrefs.sentenceClozeEnabled = !clozeEnabled
+                                    revealed = false
+                                },
+                                label = {
+                                    Column {
+                                        Text(
+                                            stringResource(com.ilyskyo.blancall.R.string.sentence_cloze_toggle),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            stringResource(
+                                                if (clozeEnabled) com.ilyskyo.blancall.R.string.sentence_cloze_on_desc
+                                                else com.ilyskyo.blancall.R.string.sentence_cloze_off_desc
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                },
+                                trailing = {
+                                    GlassSwitch(
+                                        checked = clozeEnabled,
+                                        onCheckedChange = {
+                                            AppPrefs.sentenceClozeEnabled = it
+                                            revealed = false
+                                        },
+                                    )
+                                },
+                            )
+                            GlassMenuDivider()
+                            // 主动复习：从顶栏按钮移进菜单。它是一次「整轮重来」的重动作，
+                            // 挂在顶栏上既挤标题，又容易被当成「刷新」误触。
+                            GlassMenuItem(
+                                onClick = {
+                                    showMoreMenu = false
+                                    sessionRatings.clear()
+                                    if (reviewAll) {
+                                        reviewAll = false
+                                        positioned = false
+                                    } else {
+                                        reviewAll = true
+                                        // 主动复习轻提示：系统 Toast 弹出（不占用页面高度，卡片尺寸与常态一致）
+                                        Toast.makeText(
+                                            context,
+                                            resources.getString(com.ilyskyo.blancall.R.string.review_started_all),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                    reviewRound++
+                                },
+                                leadingIcon = {
+                                    AppIcon(
+                                        kind = AppIconKind.Refresh,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        if (reviewAll) stringResource(com.ilyskyo.blancall.R.string.end_review)
+                                        else stringResource(com.ilyskyo.blancall.R.string.review_action),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }
 
             // 筛选生效指示（透明可见的一行小字，避免"句子突然变少"无从解释）
             if (validSentenceFilter.isNotEmpty() || validArticleFilter.isNotEmpty()) {
+                // 资源读取留在组合期：getQuantityString 在组合期读的是 Activity 快照，
+                // 语言/字号配置变化时不会随 Compose 的资源订阅刷新；拆成三个 stringResource。
+                val tagFilterText = if (validSentenceFilter.isNotEmpty()) {
+                    pluralStringResource(
+                        com.ilyskyo.blancall.R.plurals.tag_filter_count,
+                        validSentenceFilter.size, validSentenceFilter.size
+                    )
+                } else ""
+                val articleFilterText = if (validArticleFilter.isNotEmpty()) {
+                    pluralStringResource(
+                        com.ilyskyo.blancall.R.plurals.article_filter_count,
+                        validArticleFilter.size, validArticleFilter.size
+                    )
+                } else ""
+                val scopeSeparator = if (tagFilterText.isNotEmpty() && articleFilterText.isNotEmpty()) " · " else ""
                 Text(
-                    buildString {
-                        append(context.getString(com.ilyskyo.blancall.R.string.filter_scope_prefix))
-                        if (validSentenceFilter.isNotEmpty()) append(
-                            context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.tag_filter_count,
-                                validSentenceFilter.size, validSentenceFilter.size)
-                        )
-                        if (validSentenceFilter.isNotEmpty() && validArticleFilter.isNotEmpty()) append(" · ")
-                        if (validArticleFilter.isNotEmpty()) append(
-                            context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.article_filter_count,
-                                validArticleFilter.size, validArticleFilter.size)
-                        )
-                    },
+                    stringResource(com.ilyskyo.blancall.R.string.filter_scope_prefix) +
+                        tagFilterText + scopeSeparator + articleFilterText,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
@@ -522,7 +640,8 @@ fun SentenceCardScreen(navController: NavController) {
                         val currentHidesAnything = remember(current.text) {
                             SentenceCloze.hidesAnything(current.text)
                         }
-                        val needsReveal = !ratedToday(current.key) &&
+                        val needsReveal = clozeEnabled &&
+                            !ratedToday(current.key) &&
                             (currentState?.reviewCount ?: 0) > 0 &&
                             currentHidesAnything
                         val showAnswer = !needsReveal || revealed
@@ -540,14 +659,14 @@ fun SentenceCardScreen(navController: NavController) {
                                 // 缩放进度统一取 |dragY|：即将接棒的卡从 0.94 平滑放大到 1.0，动画结束
                                 // 正好以全尺寸成为顶层 —— 修复「回看时底层显示成下一张」与「卡片从
                                 // 被挡住的卡尺寸（0.94）突然跳大」的尺寸跳变（真机反馈）。
-                                val towardBack = dragY.value > 0f
+                                // 方向只在越过 0 时变化：收成 derivedStateOf，滑卡过程中不每帧重组
+                                val towardBack by remember { derivedStateOf { dragY.value > 0f } }
                                 val secondItem = items.getOrNull(
                                     if (towardBack) currentIndex - 1 else currentIndex + 1
                                 )
                                 val thirdItem = items.getOrNull(
                                     if (towardBack) currentIndex - 2 else currentIndex + 2
                                 )
-                                val stackP = (kotlin.math.abs(dragY.value) / flyDistance).coerceIn(0f, 1f)
                                 // 后层卡（depth=2 最后画底层；上移偏移让顶部露边）
                                 thirdItem?.let { behind ->
                                     SentenceCardFace(
@@ -558,6 +677,7 @@ fun SentenceCardScreen(navController: NavController) {
                                         // 背景卡（下一张/上一张）用各自的未揭晓态：拖动中它逐渐露出来，
                                         // 若跟着顶层卡的 revealed 走，拖动过半就会把下一句的答案先漏出去。
                                         revealed = false,
+                                        clozeEnabled = clozeEnabled,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer {
@@ -579,10 +699,13 @@ fun SentenceCardScreen(navController: NavController) {
                                         // 背景卡（下一张/上一张）用各自的未揭晓态：拖动中它逐渐露出来，
                                         // 若跟着顶层卡的 revealed 走，拖动过半就会把下一句的答案先漏出去。
                                         revealed = false,
+                                        clozeEnabled = clozeEnabled,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer {
-                                                val p = stackP
+                                                // 拖动进度在绘相位读取，避免每帧重组三层卡面
+                                                val p = (kotlin.math.abs(dragY.value) / flyDistance)
+                                                    .coerceIn(0f, 1f)
                                                 val base = 0.94f + (1f - 0.94f) * p
                                                 scaleX = base
                                                 scaleY = base
@@ -598,10 +721,13 @@ fun SentenceCardScreen(navController: NavController) {
                                     now = now,
                                     tags = chipByArticle[current.articleId].orEmpty(),
                                     revealed = revealed,
+                                    clozeEnabled = clozeEnabled,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .offset { IntOffset(0, dragY.value.roundToInt()) }
+                                        .coachAnchor(cardAnchor)
                                         .graphicsLayer {
+                                            // 位移走绘相位：不触发布局，也不在组合期读 dragY
+                                            translationY = dragY.value
                                             rotationZ = dragY.value / 56f
                                             alpha = 1f - (-dragY.value / flyDistance).coerceIn(0f, 1f) * 0.25f
                                         }
@@ -667,58 +793,45 @@ fun SentenceCardScreen(navController: NavController) {
                                         }
                                         .semantics {
                                             contentDescription = buildString {
-                                                append(context.getString(
+                                                append(resources.getString(
                                                     com.ilyskyo.blancall.R.string.sentence_card_announce,
                                                     currentIndex + 1, items.size
                                                 ))
                                                 if (current.title.isNotBlank()) append(
-                                                    context.getString(
+                                                    resources.getString(
                                                         com.ilyskyo.blancall.R.string.sentence_card_from, current.title
                                                     )
                                                 )
-                                                append(context.getString(com.ilyskyo.blancall.R.string.sentence_card_colon))
+                                                append(resources.getString(com.ilyskyo.blancall.R.string.sentence_card_colon))
                                                     // 未揭晓时播报挖空提示而不是整句 —— 读屏用户也走同一套
                                                     // 「先回忆再揭晓」，直接把答案念出来等于替他把题做了
                                                     .append(if (showAnswer) current.text else SentenceCloze.cue(current.text))
                                                 if (ratedToday(current.key)) append(
-                                                    context.getString(com.ilyskyo.blancall.R.string.sentence_card_rated)
+                                                    resources.getString(com.ilyskyo.blancall.R.string.sentence_card_rated)
                                                 )
                                             }
                                             customActions = buildList {
                                                 if (!showAnswer) add(
                                                     CustomAccessibilityAction(
-                                                        context.getString(com.ilyskyo.blancall.R.string.show_answer)
+                                                        resources.getString(com.ilyskyo.blancall.R.string.show_answer)
                                                     ) { revealed = true; true }
                                                 )
                                                 add(CustomAccessibilityAction(
-                                                    context.getString(com.ilyskyo.blancall.R.string.rate_remember)
+                                                    resources.getString(com.ilyskyo.blancall.R.string.rate_remember)
                                                 ) { rate(current, FsrsEngine.Rating.GOOD); true })
                                                 add(CustomAccessibilityAction(
-                                                    context.getString(com.ilyskyo.blancall.R.string.rate_hard)
+                                                    resources.getString(com.ilyskyo.blancall.R.string.rate_hard)
                                                 ) { rate(current, FsrsEngine.Rating.HARD); true })
                                                 add(CustomAccessibilityAction(
-                                                    context.getString(com.ilyskyo.blancall.R.string.rate_again)
+                                                    resources.getString(com.ilyskyo.blancall.R.string.rate_again)
                                                 ) { rate(current, FsrsEngine.Rating.AGAIN); true })
                                                 add(CustomAccessibilityAction(
-                                                    context.getString(com.ilyskyo.blancall.R.string.rate_next)
+                                                    resources.getString(com.ilyskyo.blancall.R.string.rate_next)
                                                 ) { advance(forward = true); true })
                                             }
                                         },
                                 )
                             }
-                        }
-
-                        // 手势提示（仅首次使用展示一次；操作细节在帮助文档）
-                        if (showSwipeHint) {
-                            Text(
-                                stringResource(com.ilyskyo.blancall.R.string.swipe_hint),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                                modifier = Modifier
-                                    .align(Alignment.CenterHorizontally)
-                                    .padding(top = 8.dp)
-                                    .semantics { liveRegion = LiveRegionMode.Polite },
-                            )
                         }
 
                         // ── 底部区 ──
@@ -800,7 +913,9 @@ fun SentenceCardScreen(navController: NavController) {
 
     // ── 抽句范围筛选面板（标签 + 文章两个维度，多选；即时写入 AppPrefs，背后句子池实时刷新）──
     if (showFilterSheet) {
-        val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.5f).dp
+        val maxPanelHeight = with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.height.toDp()
+        } * 0.5f
         GlassModalBottomSheet(onDismissRequest = { showFilterSheet = false }) {
             Column(
                 modifier = Modifier
@@ -870,7 +985,10 @@ fun SentenceCardScreen(navController: NavController) {
                                     modifier = Modifier.weight(1f),
                                 )
                                 Text(
-                                    "${articles.count { a -> tagData.links[a.id]?.contains(tag.id) == true }} 篇",
+                                    stringResource(
+                                        com.ilyskyo.blancall.R.string.article_count_chip,
+                                        articles.count { a -> tagData.links[a.id]?.contains(tag.id) == true }
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 )

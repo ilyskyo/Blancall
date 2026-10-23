@@ -71,7 +71,9 @@ object ForgettingPredictor {
         /** 当前记忆强度 S（天） */
         val memoryStrength: Float,
         /** 未来 [DECAY_CURVE_DAYS] 天的留存率序列（用于绘制衰减曲线），index 0 = 今天 */
-        val decayCurve: List<Float>
+        val decayCurve: List<Float>,
+        /** 该文章是否被用户暂停了 FSRS 调度（暂停项不进入「待复习」结论） */
+        val paused: Boolean = false,
     )
 
     /**
@@ -86,7 +88,8 @@ object ForgettingPredictor {
         articles: List<Article>,
         allRecords: List<PracticeRecord>,
         template: ReviewTemplate = ReviewTemplate.STANDARD,
-        fsrsStates: Map<Long, FsrsEngine.CardState> = emptyMap()
+        fsrsStates: Map<Long, FsrsEngine.CardState> = emptyMap(),
+        pausedIds: Set<Long> = emptySet(),
     ): List<Prediction> {
         val now = System.currentTimeMillis()
         // O(records) 一次分组，避免 O(articles × records) 重复全量过滤
@@ -98,6 +101,7 @@ object ForgettingPredictor {
             // FSRS 状态优先：已由 FSRS 调度的文章不再走模板间隔
             val fsrsState = fsrsStates[article.id]
             if (fsrsState != null && fsrsState.reviewCount > 0) {
+                val paused = article.id in pausedIds
                 val diffMs = fsrsState.due - now
                 val daysLeft = ceil(diffMs.toDouble() / MILLIS_PER_DAY).toInt()
                 val urgency = urgencyOf(diffMs, daysLeft)
@@ -112,7 +116,8 @@ object ForgettingPredictor {
                     // FSRS-6 幂律曲线逐日采样（与当前留存率同口径，避免点线不一致）
                     decayCurve = List(DECAY_CURVE_DAYS + 1) { dayOffset ->
                         FsrsEngine.retentionRate(fsrsState, now + dayOffset * MILLIS_PER_DAY).toFloat()
-                    }
+                    },
+                    paused = paused,
                 )
             } else {
                 // ── 存量兜底（还没有 FSRS 状态：升级前的练习 / 从未练过）──
@@ -165,10 +170,12 @@ object ForgettingPredictor {
         )
     }
 
-    /** 仅返回需要尽快复习的文章（逾期 + 今天 + 3 天内） */
+    /** 仅返回需要尽快复习的文章（逾期 + 今天 + 3 天内；暂停项不算「该复习」） */
     fun dueSoon(predictions: List<Prediction>): List<Prediction> =
         predictions.filter {
-            it.urgency == Urgency.OVERDUE || it.urgency == Urgency.TODAY || it.urgency == Urgency.SOON
+            !it.paused && (
+                it.urgency == Urgency.OVERDUE || it.urgency == Urgency.TODAY || it.urgency == Urgency.SOON
+                )
         }
 
     // ────────────────────────────────────────────────────────

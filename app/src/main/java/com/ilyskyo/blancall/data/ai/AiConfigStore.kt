@@ -123,7 +123,7 @@ object AiConfigStore {
         val apiKeyEnc = SecurePrefs.encrypt(apiKey) ?: return null
         val profile = AiChatProfile(
             id = UUID.randomUUID().toString(),
-            name = name.trim().ifBlank { "未命名配置" },
+            name = name.trim(),
             baseUrl = baseUrl.trim(),
             apiKeyEnc = apiKeyEnc,
             model = model.trim()
@@ -148,7 +148,7 @@ object AiConfigStore {
         _chatProfilesFlow.value = _chatProfilesFlow.value.map { p ->
             if (p.id == id) {
                 p.copy(
-                    name = name.trim().ifBlank { "未命名配置" },
+                    name = name.trim(),
                     baseUrl = baseUrl.trim(),
                     // Key 留空表示不修改（沿用原密文）
                     apiKeyEnc = newApiKeyEnc ?: p.apiKeyEnc,
@@ -196,7 +196,7 @@ object AiConfigStore {
         val apiKeyEnc = SecurePrefs.encrypt(apiKey) ?: return null
         val profile = AiSearchProfile(
             id = UUID.randomUUID().toString(),
-            name = name.trim().ifBlank { "未命名配置" },
+            name = name.trim(),
             provider = provider,
             baseUrl = baseUrl.trim(),
             authStyle = authStyle,
@@ -219,7 +219,7 @@ object AiConfigStore {
         _searchProfilesFlow.value = _searchProfilesFlow.value.map { p ->
             if (p.id == id) {
                 p.copy(
-                    name = name.trim().ifBlank { "未命名配置" },
+                    name = name.trim(),
                     provider = provider,
                     baseUrl = baseUrl.trim(),
                     authStyle = authStyle,
@@ -302,7 +302,7 @@ object AiConfigStore {
 
     private fun parseChatProfile(obj: JSONObject): AiChatProfile = AiChatProfile(
         id = obj.optString("id"),
-        name = obj.optString("name", "未命名配置"),
+        name = obj.optString("name", ""),
         baseUrl = obj.optString("baseUrl", ""),
         apiKeyEnc = obj.optString("apiKeyEnc", ""),
         model = obj.optString("model", "")
@@ -310,7 +310,7 @@ object AiConfigStore {
 
     private fun parseSearchProfile(obj: JSONObject): AiSearchProfile = AiSearchProfile(
         id = obj.optString("id"),
-        name = obj.optString("name", "未命名配置"),
+        name = obj.optString("name", ""),
         provider = obj.optString("provider", "tavily"),
         baseUrl = obj.optString("baseUrl", ""),
         authStyle = obj.optString("authStyle", "body"),
@@ -326,7 +326,7 @@ object AiConfigStore {
         if (_chatProfilesFlow.value.isEmpty() && !(prefs.getString(LEGACY_BASE_URL, "") ?: "").isBlank()) {
             val legacy = AiChatProfile(
                 id = "legacy",
-                name = "默认配置",
+                name = "",
                 baseUrl = prefs.getString(LEGACY_BASE_URL, "") ?: "",
                 apiKeyEnc = prefs.getString(LEGACY_API_KEY, "") ?: "",
                 model = prefs.getString(LEGACY_MODEL, "") ?: ""

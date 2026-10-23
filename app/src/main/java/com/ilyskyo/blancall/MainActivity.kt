@@ -33,6 +33,7 @@ import com.ilyskyo.blancall.ui.navigation.AppNavigation
 import com.ilyskyo.blancall.ui.navigation.NavigationDispatcher
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.theme.BlancallTheme
+import com.ilyskyo.blancall.ui.settings.SettingsSessionState
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.ui.platform.LocalView
@@ -53,7 +54,7 @@ class MainActivity : ComponentActivity() {
             safeScheduleNext()
         } else {
             // 权限被拒：提示用户提醒功能将不可用
-            errorMessage.value = "提醒功能需要通知权限，请在系统设置中开启后返回应用"
+            errorMessage.value = getString(R.string.notification_permission_required)
         }
     }
 
@@ -80,6 +81,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 会话级界面状态复位：设置页赞赏区的「隐藏该区域」只在本次运行有效，
+        // 重新打开软件就该恢复显示。这里以 savedInstanceState == null 判定"真正的重新启动"，
+        // 系统因配置变化（主题、深色模式等）重建 Activity 时不清，免得用户刚藏好又冒出来。
+        if (savedInstanceState == null) SettingsSessionState.donationHidden = false
+
         // 安装启动屏：在 setContent 之前调用，保证第一帧即显示与主页一致的底色，消除白屏
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)

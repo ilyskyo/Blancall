@@ -15,6 +15,7 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,7 +65,7 @@ fun AiConfigScreen(navController: NavController) {
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "AI 配置",
+                    stringResource(com.ilyskyo.blancall.R.string.ai_config_title),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -80,14 +81,14 @@ fun AiConfigScreen(navController: NavController) {
             ) {
                 // ═══════ AI 对话配置 ═══════
                 item {
-                    Text("AI 对话配置", style = MaterialTheme.typography.titleSmall,
+                    Text(stringResource(com.ilyskyo.blancall.R.string.ai_chat_config_title), style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 4.dp))
                 }
                 if (chatProfiles.isEmpty()) {
                     item {
-                        EmptyConfigHint("还没有对话配置，点击下方按钮创建")
+                        EmptyConfigHint(stringResource(com.ilyskyo.blancall.R.string.ai_no_chat_config))
                     }
                 } else {
                     items(chatProfiles, key = { it.id }) { profile ->
@@ -106,7 +107,7 @@ fun AiConfigScreen(navController: NavController) {
                         onClick = { navController.navigate("ai_profile_edit/chat") },
                         modifier = Modifier.fillMaxWidth().height(40.dp)
                     ) {
-                        Text("＋ 创建对话配置", style = MaterialTheme.typography.labelMedium,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_create_chat_config), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -115,14 +116,14 @@ fun AiConfigScreen(navController: NavController) {
 
                 // ═══════ 联网搜索配置 ═══════
                 item {
-                    Text("联网搜索配置", style = MaterialTheme.typography.titleSmall,
+                    Text(stringResource(com.ilyskyo.blancall.R.string.ai_search_config_title), style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 4.dp))
                 }
                 if (searchProfiles.isEmpty()) {
                     item {
-                        EmptyConfigHint("还没有搜索配置，点击下方按钮创建")
+                        EmptyConfigHint(stringResource(com.ilyskyo.blancall.R.string.ai_no_search_config))
                     }
                 } else {
                     items(searchProfiles, key = { it.id }) { profile ->
@@ -141,7 +142,7 @@ fun AiConfigScreen(navController: NavController) {
                         onClick = { navController.navigate("ai_profile_edit/search") },
                         modifier = Modifier.fillMaxWidth().height(40.dp)
                     ) {
-                        Text("＋ 创建搜索配置", style = MaterialTheme.typography.labelMedium,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_create_search_config), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -182,7 +183,7 @@ private fun ChatProfileCard(
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        profile.name,
+                        profile.name.ifBlank { stringResource(com.ilyskyo.blancall.R.string.ai_config_unnamed) },
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -195,7 +196,7 @@ private fun ChatProfileCard(
                             shape = RoundedCornerShape(6.dp),
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                         ) {
-                            Text("使用中", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            Text(stringResource(com.ilyskyo.blancall.R.string.ai_in_use), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary)
                         }
@@ -237,7 +238,7 @@ private fun SearchProfileCard(
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        profile.name,
+                        profile.name.ifBlank { stringResource(com.ilyskyo.blancall.R.string.ai_config_unnamed) },
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -250,7 +251,7 @@ private fun SearchProfileCard(
                             shape = RoundedCornerShape(6.dp),
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                         ) {
-                            Text("使用中", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            Text(stringResource(com.ilyskyo.blancall.R.string.ai_in_use), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary)
                         }
@@ -259,7 +260,7 @@ private fun SearchProfileCard(
                 Spacer(Modifier.height(2.dp))
                 val providerLabel = if (profile.provider == "tavily") "Tavily" else profile.baseUrl
                 Text(
-                    "$providerLabel · ${if (profile.authStyle == "bearer") "Bearer 认证" else "请求体认证"}",
+                    "$providerLabel · ${if (profile.authStyle == "bearer") stringResource(com.ilyskyo.blancall.R.string.ai_auth_bearer_short) else stringResource(com.ilyskyo.blancall.R.string.ai_auth_body_short)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -315,18 +316,18 @@ private fun ProfileActions(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         TextButton(onClick = { onEdit() }) {
-            Text("编辑", style = MaterialTheme.typography.labelSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.edit), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary)
         }
         TextButton(onClick = {
             renameInput = ""
             showRenameDialog = true
         }) {
-            Text("重命名", style = MaterialTheme.typography.labelSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.rename_action), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary)
         }
         TextButton(onClick = { showDeleteDialog = true }) {
-            Text("删除", style = MaterialTheme.typography.labelSmall,
+            Text(stringResource(com.ilyskyo.blancall.R.string.delete), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error)
         }
     }
@@ -335,12 +336,12 @@ private fun ProfileActions(
         BlancallAlertDialog(
             onDismissRequest = { showRenameDialog = false },
             shape = RoundedCornerShape(24.dp),
-            title = { Text("重命名配置") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.rename_config_title)) },
             text = {
                 OutlinedTextField(
                     value = renameInput,
                     onValueChange = { renameInput = it },
-                    label = { Text("新昵称") },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_new_nickname)) },
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp)
                 )
@@ -352,10 +353,10 @@ private fun ProfileActions(
                         onRename(renameInput)
                         showRenameDialog = false
                     }
-                ) { Text("确定") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.ai_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { showRenameDialog = false }) { Text("取消") }
+                TextButton(onClick = { showRenameDialog = false }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }
@@ -364,16 +365,16 @@ private fun ProfileActions(
         BlancallAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             shape = RoundedCornerShape(24.dp),
-            title = { Text("删除配置") },
-            text = { Text("删除后需要重新填写才能使用，确定删除吗？") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.delete_config_title)) },
+            text = { Text(stringResource(com.ilyskyo.blancall.R.string.ai_delete_config_confirm)) },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete()
                     showDeleteDialog = false
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
             }
         )
     }

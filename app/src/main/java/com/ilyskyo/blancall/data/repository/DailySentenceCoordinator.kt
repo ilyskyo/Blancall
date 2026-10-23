@@ -51,20 +51,23 @@ object DailySentenceCoordinator {
         sentenceStates: Map<String, FsrsEngine.CardState>,
         now: Long = System.currentTimeMillis(),
         rng: Random = Random.Default,
+        excludedArticleIds: Set<Long> = emptySet(),
     ): SentenceCardStore.Snapshot? {
-        if (articles.isEmpty()) return null
+        val pool = if (excludedArticleIds.isEmpty()) articles
+        else articles.filterNot { it.id in excludedArticleIds }
+        if (pool.isEmpty()) return null
         val date = dateKey(now)
         val cur = store.today()
         if (cur != null && cur.date == date) {
-            if (validate(cur, articles)) return cur
+            if (cur.articleId !in excludedArticleIds && validate(cur, pool)) return cur
             store.clear()
         }
 
-        val dueKey = SentenceSelector.pickDue(sentenceStates, now)
-        val pick = dueKey?.let { resolvePick(it, articles) }
-            ?: SentenceSelector.pickNew(articles, sentenceStates, rng)
+        val dueKey = SentenceSelector.pickDue(sentenceStates, now, excludedArticleIds)
+        val pick = dueKey?.let { resolvePick(it, pool) }
+            ?: SentenceSelector.pickNew(pool, sentenceStates, rng)
             ?: return null
-        val title = articles.firstOrNull { it.id == pick.articleId }?.title ?: ""
+        val title = pool.firstOrNull { it.id == pick.articleId }?.title ?: ""
         return store.setTodayIfAbsent(
             date,
             SentenceCardStore.Snapshot(
@@ -101,11 +104,16 @@ object DailySentenceCoordinator {
         sentenceStates: Map<String, FsrsEngine.CardState>,
         now: Long = System.currentTimeMillis(),
         includeAllLearned: Boolean = false,
+        excludedArticleIds: Set<Long> = emptySet(),
     ): List<QueueItem> {
+        val pool = if (excludedArticleIds.isEmpty()) articles
+        else articles.filterNot { it.id in excludedArticleIds }
         val out = ArrayList<QueueItem>()
-        val today = store.today()?.takeIf { validate(it, articles) }
+        val today = store.today()?.takeIf {
+            it.articleId !in excludedArticleIds && validate(it, pool)
+        }
         if (today != null) {
-            val title = articles.firstOrNull { it.id == today.articleId }?.title
+            val title = pool.firstOrNull { it.id == today.articleId }?.title
                 ?.takeIf { it.isNotBlank() } ?: today.title
             out += QueueItem(
                 key = today.key,
@@ -123,19 +131,20 @@ object DailySentenceCoordinator {
 
         // 主动复习轮：全量入队（含已学过未到期），提前返回（无「今日句」特殊位置）
         if (includeAllLearned) {
-            return buildReviewAllQueue(articles, sentenceStates) { candsOf(it) }
+            return buildReviewAllQueue(pool, sentenceStates) { candsOf(it) }
         }
 
         val due = sentenceStates.entries
             .filter {
                 it.key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) &&
-                    FsrsEngine.isDue(it.value, now)
+                    FsrsEngine.isDue(it.value, now) &&
+                    SentenceSelector.articleIdOf(it.key) !in excludedArticleIds
             }
             .sortedBy { it.value.due }
         for (e in due) {
             if (e.key == today?.key) continue
             val aid = SentenceSelector.articleIdOf(e.key) ?: continue
-            val article = articles.firstOrNull { it.id == aid } ?: continue
+            val article = pool.firstOrNull { it.id == aid } ?: continue
             val text = candsOf(article).firstOrNull { it.key == e.key }?.text ?: continue
             out += QueueItem(
                 key = e.key,
@@ -150,7 +159,7 @@ object DailySentenceCoordinator {
         // 今日句若本身是新句，已在队首占位；已学过的句子由 FSRS 到期机制召回。
         val seen = HashSet<String>(out.size * 2 + 16)
         out.forEach { seen.add(it.key) }
-        for (article in articles) {
+        for (article in pool) {
             for (cand in candsOf(article)) {
                 if (cand.key in sentenceStates) continue
                 if (!seen.add(cand.key)) continue

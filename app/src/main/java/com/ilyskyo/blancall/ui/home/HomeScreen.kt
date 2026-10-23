@@ -3,7 +3,6 @@
 
 package com.ilyskyo.blancall.ui.home
 
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +42,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
@@ -80,6 +80,7 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
+import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
@@ -101,6 +102,8 @@ import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GridMaxWidth
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
@@ -247,6 +250,10 @@ fun HomeScreen(
     val homeLayoutStore = remember { HomeLayoutStore.getInstance(context.filesDir) }
     var homeCards by remember { mutableStateOf(homeLayoutStore.getCards()) }
     var cardEditMode by remember { mutableStateOf(false) }
+    // 使用指引锚点：分别指「第一张卡片」与编辑态的「＋」——
+    // 旧版两条指引都指整块画布，圈会落在画布中心、圈到空白（真机反馈）
+    val firstCardAnchor = rememberCoachAnchor()
+    val addCardAnchor = rememberCoachAnchor()
 
     // 长按卡片 = 「长按操作」：自动收起悬浮底部导航栏（与「我的文章」多选同一机制），
     // 底部空间让给悬浮「完成」按钮；退出编辑态自动恢复，页面销毁时自动兜底释放。
@@ -335,16 +342,25 @@ fun HomeScreen(
     val reviewTemplate = remember(reviewTemplateId) { ReviewTemplate.fromId(reviewTemplateId) }
     // FSRS 状态后台加载：首帧先渲染，加载完成后刷新，避免同步读文件卡顿
     var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
-    LaunchedEffect(Unit) {
+    // 暂停中的文章：任务流里暂停后首页必须立刻不再显示待复习（revision 驱动刷新）
+    var pausedArticleIds by remember { mutableStateOf(fsrsStore.pausedArticleIds()) }
+    val fsrsRevision by fsrsStore.revision.collectAsState()
+    LaunchedEffect(fsrsRevision) {
         fsrsStore.awaitLoaded()
         fsrsStates = fsrsStore.allStates()
+        pausedArticleIds = fsrsStore.pausedArticleIds()
     }
-    val dueArticles = remember(articles, allRecords, fsrsStates, reviewTemplate) {
+    val dueArticles = remember(articles, allRecords, fsrsStates, reviewTemplate, pausedArticleIds) {
         // 先一次性按文章分组建索引，避免对每篇文章重复 filter 全表（O(文章×记录) → O(文章+记录)）
         val recordsByArticle = allRecords.groupBy { it.articleId }
         articles.filter { article ->
             val records = recordsByArticle[article.id].orEmpty()
-            EbbinghausScheduler.getReviewStatus(fsrsStates[article.id], records, reviewTemplate) is EbbinghausScheduler.ReviewStatus.DUE
+            EbbinghausScheduler.getReviewStatus(
+                fsrsStates[article.id],
+                records,
+                reviewTemplate,
+                paused = article.id in pausedArticleIds,
+            ) is EbbinghausScheduler.ReviewStatus.DUE
         }
     }
 
@@ -352,7 +368,7 @@ fun HomeScreen(
     // 抽句与状态推导全部在 IO 线程；随文章加载与 FSRS 状态加载完成自动刷新
     // （produceState 换 key 会取消上一轮，setTodayIfAbsent 保证同日只抽一次不重复落盘）
     val sentenceStore = remember { SentenceCardStore.getInstance(context.filesDir) }
-    val sentenceUi by produceState<SentenceDailyUi?>(null, articles, fsrsStates) {
+    val sentenceUi by produceState<SentenceDailyUi?>(null, articles, fsrsStates, pausedArticleIds) {
         if (articles.isEmpty()) {
             value = null
             return@produceState
@@ -361,15 +377,21 @@ fun HomeScreen(
         value = withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
             val states = fsrsStore.allSentenceStates()
-            val snapshot = DailySentenceCoordinator.ensureToday(sentenceStore, articles, states, now)
-                ?: return@withContext null
+            val snapshot = DailySentenceCoordinator.ensureToday(
+                sentenceStore, articles, states, now,
+                excludedArticleIds = pausedArticleIds,
+            ) ?: return@withContext null
             val title = articles.firstOrNull { it.id == snapshot.articleId }?.title
                 ?.takeIf { it.isNotBlank() } ?: snapshot.title
-            val pendingDue = states.count { (k, s) -> k != snapshot.key && FsrsEngine.isDue(s, now) }
+            // 暂停文章的到期句不计入「还有 N 句待复习」——那句已经被用户主动移出计划
+            val pendingDue = states.count { (k, s) ->
+                k != snapshot.key && FsrsEngine.isDue(s, now) &&
+                    SentenceSelector.articleIdOf(k) !in pausedArticleIds
+            }
             SentenceDailyUi(
                 text = snapshot.text,
                 articleTitle = title,
-                statusLine = sentenceStatusLine(states[snapshot.key], now),
+                statusLine = sentenceStatusLine(context, states[snapshot.key], now),
                 pendingDueCount = pendingDue,
             )
         }
@@ -619,6 +641,25 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(18.dp))
 
+            // 两条指引各指各的真实目标：非编辑态指第一张卡片、编辑态指「＋」按钮。
+            // 二者按 editMode 互斥，不会同屏叠两个弹层。
+            CoachMark(
+                coachKey = "home_long_press_card",
+                anchor = firstCardAnchor,
+                title = stringResource(com.ilyskyo.blancall.R.string.coach_home_long_title),
+                body = stringResource(com.ilyskyo.blancall.R.string.coach_home_long_body),
+                shape = com.ilyskyo.blancall.ui.common.CoachShape.Card,
+                enabled = !cardEditMode && homeCards.isNotEmpty(),
+            )
+            CoachMark(
+                coachKey = "home_add_card_plus",
+                anchor = addCardAnchor,
+                title = stringResource(com.ilyskyo.blancall.R.string.coach_home_add_title),
+                body = stringResource(com.ilyskyo.blancall.R.string.coach_home_add_body),
+                shape = com.ilyskyo.blancall.ui.common.CoachShape.Card,
+                enabled = cardEditMode,
+            )
+
             // ── 首页卡片画布：网格布局，支持拖动换位 / 拉伸缩放 / 大头针固定 / 长按进入编辑态 ──
             // （布局状态与统计都已提到函数作用域，原因：悬浮层也要读）
             // 列数随可用宽度自适应（大屏多列；手机 2 列不变）——按画布实际内容宽折算，
@@ -627,6 +668,8 @@ fun HomeScreen(
             val hcGridWidth = if (maxWidth.value.isFinite()) maxWidth.value else 0f
             HomeCardCanvas(
                 columns = homeGridColumns(hcGridWidth),
+                firstCardAnchor = firstCardAnchor,
+                addButtonAnchor = addCardAnchor,
                 cards = homeCards,
                 editMode = cardEditMode,
                 onCardsChange = { persistHomeCards(it) },
@@ -944,7 +987,9 @@ fun HomeScreen(
     // ── 「管理最近文章」底部面板：编辑态入口，逐条从首页移除（仅首页隐藏，不删文章）──
     // 原「长按文章行 → 从首页删除」已下线：它与「长按卡片进编辑态」互相打架（用户反馈「一些卡片长按无效」）
     if (showManageArticlesSheet) {
-        val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+        val maxPanelHeight = with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.height.toDp()
+        } * 0.55f
         GlassModalBottomSheet(
             onDismissRequest = { showManageArticlesSheet = false },
             sheetState = manageArticlesSheetState,
@@ -1170,7 +1215,9 @@ private fun HomeAddCardSheet(
     onAddCustom: (HomeLayoutStore.Card) -> Unit,
 ) {
     // 面板内容区最大高度：不超过屏幕大半，超出部分内部滚动
-    val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+    val maxPanelHeight = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.height.toDp()
+    } * 0.55f
     GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1252,7 +1299,9 @@ private fun HomeArticlePickerSheet(
     onDismiss: () -> Unit,
     onPick: (Article) -> Unit,
 ) {
-    val maxPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+    val maxPanelHeight = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.height.toDp()
+    } * 0.55f
     GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,

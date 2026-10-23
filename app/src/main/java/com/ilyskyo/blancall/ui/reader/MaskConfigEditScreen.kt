@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -58,6 +59,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
@@ -75,6 +77,10 @@ import com.ilyskyo.blancall.algorithm.MaskSpanOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
@@ -117,8 +123,11 @@ fun MaskConfigEditScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     // 触觉栈收并（见 CustomClozeEditScreen 同名注释）：撤销/重做与点选遮挡都是「换一格」= Toggle。
     val toggleHaptic = rememberHaptic(HapticTier.Toggle)
+    // 「长按句子拆词」指引的锚点（指向正文列表）
+    val bodyAnchor = rememberCoachAnchor()
 
     // ── 主题明暗与阅读排版（与 ReadingModeScreen 同一路由，保证"像阅读界面"）──
     val themeMode by ThemeManager.themeMode.collectAsState()
@@ -176,17 +185,17 @@ fun MaskConfigEditScreen(
     val masks = remember { mutableStateListOf<MaskConfigStore.MaskSpan>() }
     var loaded by remember { mutableStateOf(false) }
     // 当前挡片颜色（顶部选色），与阅读设置挡片颜色互通
-    var colorIdx by rememberSaveable { mutableStateOf(AppPrefs.readingOcclusionColor) }
+    var colorIdx by rememberSaveable { mutableIntStateOf(AppPrefs.readingOcclusionColor) }
     var editingName by rememberSaveable { mutableStateOf("") }
     var showSaveDialog by remember { mutableStateOf(false) }
-    var savedId by rememberSaveable { mutableStateOf(if (configId > 0) configId else -1L) }
+    var savedId by rememberSaveable { mutableLongStateOf(if (configId > 0) configId else -1L) }
     // 未保存改动标记：有改动时返回（含系统返回）先弹确认，防止误触丢失
     var dirty by rememberSaveable { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     // 当前文章已有配置（用于默认命名去重与保存重名校验），进页时读一次
     var existingConfigs by remember { mutableStateOf<List<MaskConfigStore.MaskConfig>>(emptyList()) }
     // 编辑已有配置时记住原 createdAt（保存时原样传回，防列表排序跳变）
-    var savedCreatedAt by rememberSaveable { mutableStateOf(0L) }
+    var savedCreatedAt by rememberSaveable { mutableLongStateOf(0L) }
     // 文章内容失配检测：配置锚定的内容指纹与当前文章不一致时警示
     var hashMismatch by remember { mutableStateOf(false) }
     // 撤销/重做：操作前完整快照栈（容量 20）
@@ -199,7 +208,7 @@ fun MaskConfigEditScreen(
     // 旋转/进程重建恢复编辑现场：levels+masks 序列化快照（rememberSaveable 自动回放）
     var editorSnapshot by rememberSaveable { mutableStateOf<String?>(null) }
     // 快照归属的配置 id：回放前校验，防把另一套配置的编辑现场误当作本配置的（用户反馈的“旧配置内容不对”）
-    var editorSnapshotFor by rememberSaveable { mutableStateOf(-1L) }
+    var editorSnapshotFor by rememberSaveable { mutableLongStateOf(-1L) }
     var snapshotApplied by remember { mutableStateOf(false) }
 
     if (levels.size != paragraphs.size) {
@@ -214,10 +223,11 @@ fun MaskConfigEditScreen(
     //    可从根上杜绝「点新建却带出旧现场」；
     // ② 已有配置仍按「快照归属 == 本配置」严格校验，跨配置（列表里点了另一套）必须
     //    丢弃、改从磁盘加载（否则会拿着上一套的现场把新配置的内容顶掉）。
-    if (!snapshotApplied && configId > 0 && editorSnapshot != null && editorSnapshotFor == configId) {
+    val snapshotForRestore = editorSnapshot
+    if (!snapshotApplied && configId > 0 && snapshotForRestore != null && editorSnapshotFor == configId) {
         snapshotApplied = true
         runCatching {
-            val o = JSONObject(editorSnapshot!!)
+            val o = JSONObject(snapshotForRestore)
             o.optJSONArray("levels")?.let { lv ->
                 if (lv.length() == paragraphs.size) {
                     levels.clear()
@@ -369,7 +379,7 @@ fun MaskConfigEditScreen(
             savedSnapshot = snap
             Toast.makeText(
                 context,
-                context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.save_mask_toast,
+                resources.getQuantityString(com.ilyskyo.blancall.R.plurals.save_mask_toast,
                     spans.size, cfg.name, spans.size),
                 Toast.LENGTH_SHORT
             ).show()
@@ -551,6 +561,14 @@ fun MaskConfigEditScreen(
                         AppPrefs.readingFont = (AppPrefs.readingFont * zoom).coerceIn(14f, 36f)
                     }
             ) {
+                // 「长按句子拆词」：这是遮挡标注里唯一一个手势，且完全没有可见提示
+                CoachMark(
+                    coachKey = "mask_long_press_split",
+                    anchor = bodyAnchor,
+                    title = stringResource(com.ilyskyo.blancall.R.string.coach_mask_long_title),
+                    body = stringResource(com.ilyskyo.blancall.R.string.coach_mask_long_body),
+                    shape = CoachShape.Card,
+                )
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -564,6 +582,8 @@ fun MaskConfigEditScreen(
                         // 直接从 SnapshotStateList 过滤：任何增删/变色都会触发本项重组
                         val paraMasks = masks.filter { it.p == p }
                         val level = levels.getOrElse(p) { 0 }
+                        // 首段锚点：长按拆词的指引圈只圈第一段（圈整块列表等于没圈）
+                        Box(if (p == 0) Modifier.coachAnchor(bodyAnchor) else Modifier) {
                         if (level == 0) {
                             EditableOccludedSentenceParagraph(
                                 paraText = paraText,
@@ -598,6 +618,7 @@ fun MaskConfigEditScreen(
                                     editSeq++
                                 }
                             )
+                        }
                         }
                     }
                 }
@@ -640,7 +661,7 @@ fun MaskConfigEditScreen(
                     val name = editingName.trim().ifBlank { nextDefaultName() }
                     if (isNameTaken(name, savedId)) {
                         Toast.makeText(context,
-                            context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
+                            resources.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     editingName = name

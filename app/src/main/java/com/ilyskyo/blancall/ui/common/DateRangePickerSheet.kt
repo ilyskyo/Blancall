@@ -90,12 +90,14 @@ fun DateRangePickerSheet(
 
     val onDayClick: (LocalDate) -> Unit = { day ->
         haptic()
-        if (start == null || end != null) {
+        // 局部非空变量收敛，而不是靠外层的 start == null 判断兜住 start!!
+        val s = start
+        if (s == null || end != null) {
             start = day
             end = null
         } else {
             // 两端反着点也要得到合法区间：DateRange.of 负责交换，与「先点晚、再点早」等价
-            val r = DateRange.of(start!!, day)
+            val r = DateRange.of(s, day)
             start = r.start
             end = r.end
         }
@@ -120,7 +122,7 @@ fun DateRangePickerSheet(
             // 已选两端：面板里必须有一个「我选了哪两天」的确定回显，否则只能靠格子上的圆点认
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RangeEndpoint(
-                    label = stringResource(R.string.range_start),
+                    label = stringResource(R.string.date_range_start),
                     value = start?.format(dayFmt),
                     modifier = Modifier.weight(1f)
                 )
@@ -130,7 +132,7 @@ fun DateRangePickerSheet(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 RangeEndpoint(
-                    label = stringResource(R.string.range_end),
+                    label = stringResource(R.string.date_range_end),
                     value = end?.format(dayFmt),
                     modifier = Modifier.weight(1f)
                 )

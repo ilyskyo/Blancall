@@ -125,10 +125,18 @@ object SentenceSelector {
         return out
     }
 
-    /** 到期集合中取最逾期者（due 最小）；无到期返回 null */
-    fun pickDue(states: Map<String, FsrsEngine.CardState>, now: Long): String? =
+    /** 到期集合中取最逾期者（due 最小）；无到期返回 null。可排除被暂停文章（含句子归属判断） */
+    fun pickDue(
+        states: Map<String, FsrsEngine.CardState>,
+        now: Long,
+        excludedArticleIds: Set<Long> = emptySet(),
+    ): String? =
         states.entries
-            .filter { it.key.startsWith(SENTENCE_KEY_PREFIX) && FsrsEngine.isDue(it.value, now) }
+            .filter {
+                it.key.startsWith(SENTENCE_KEY_PREFIX) &&
+                    FsrsEngine.isDue(it.value, now) &&
+                    (excludedArticleIds.isEmpty() || articleIdOf(it.key) !in excludedArticleIds)
+            }
             .minByOrNull { it.value.due }
             ?.key
 

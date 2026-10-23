@@ -211,7 +211,15 @@ fun TagColorPicker(
                     ColorOps.PRESET_PALETTES.forEachIndexed { presetIndex, preset ->
                         if (presetIndex > 0) Spacer(Modifier.height(10.dp))
                         Text(
-                            preset.name,
+                            // B2-1/S2：色系名按 key 取资源
+                            stringResource(
+                                when (preset.key) {
+                                    "macaron" -> com.ilyskyo.blancall.R.string.palette_preset_macaron
+                                    "morandi" -> com.ilyskyo.blancall.R.string.palette_preset_morandi
+                                    "guofeng" -> com.ilyskyo.blancall.R.string.palette_preset_guofeng
+                                    else -> com.ilyskyo.blancall.R.string.palette_preset_neon
+                                }
+                            ),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

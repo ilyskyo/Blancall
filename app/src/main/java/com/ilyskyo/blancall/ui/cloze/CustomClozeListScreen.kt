@@ -3,6 +3,10 @@
 
 package com.ilyskyo.blancall.ui.cloze
 
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.StateSwap
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -38,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.pluralStringResource
@@ -72,6 +77,7 @@ fun CustomClozeListScreen(
     pick: Boolean = false
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val store = remember { CustomClozeStore.getInstance(context.filesDir) }
     var configs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
@@ -82,6 +88,8 @@ fun CustomClozeListScreen(
     var menuForId by remember { mutableStateOf<Long?>(null) }
     // 长按列表项弹出菜单时统一带触感反馈
     val confirmHaptic = rememberConfirmHaptic()
+    // 「长按配置卡」的锚点
+    val listAnchor = rememberCoachAnchor()
     var renameTarget by remember { mutableStateOf<CustomClozeStore.CustomConfig?>(null) }
     var deleteTarget by remember { mutableStateOf<CustomClozeStore.CustomConfig?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -120,6 +128,14 @@ fun CustomClozeListScreen(
                 .widthIn(max = 600.dp)
                 .padding(horizontal = 20.dp)
         ) {
+            CoachMark(
+                coachKey = "cloze_long_press_menu",
+                anchor = listAnchor,
+                title = stringResource(com.ilyskyo.blancall.R.string.coach_cloze_long_title),
+                body = stringResource(com.ilyskyo.blancall.R.string.coach_cloze_long_body),
+                shape = CoachShape.Card,
+                enabled = configs.isNotEmpty(),
+            )
             // ── 顶栏：返回 + 标题 + 新建 ──
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
@@ -153,13 +169,6 @@ fun CustomClozeListScreen(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (pick) stringResource(com.ilyskyo.blancall.R.string.cloze_list_hint_pick)
-                else stringResource(com.ilyskyo.blancall.R.string.cloze_list_hint_edit),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(12.dp))
 
@@ -211,6 +220,8 @@ fun CustomClozeListScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            // 首张配置卡的锚点：长按菜单指引圈只圈第一张（圈整块列表等于没圈）
+                                            .then(if (idx == 0) Modifier.coachAnchor(listAnchor) else Modifier)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                                             .combinedPress(
@@ -322,7 +333,7 @@ fun CustomClozeListScreen(
                         val dup = configs.any { it.id != cfg.id && it.name.trim() == newName }
                         if (dup) {
                             Toast.makeText(context,
-                                context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
+                                resources.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
                         renameTarget = null
@@ -344,15 +355,16 @@ fun CustomClozeListScreen(
     }
 
     // ── 删除确认弹窗 ──
-    if (deleteTarget != null) {
+    val targetToDelete = deleteTarget
+    if (targetToDelete != null) {
         BlancallAlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.delete_config_title), fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
                     pluralStringResource(
-                        com.ilyskyo.blancall.R.plurals.delete_config_confirm, deleteTarget!!.blanks.size,
-                        deleteTarget!!.name, deleteTarget!!.blanks.size
+                        com.ilyskyo.blancall.R.plurals.delete_config_confirm, targetToDelete.blanks.size,
+                        targetToDelete.name, targetToDelete.blanks.size
                     ),
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -365,7 +377,7 @@ fun CustomClozeListScreen(
                         withContext(Dispatchers.IO) { store.deleteConfig(articleId, target.id) }
                         reload()
                         Toast.makeText(context,
-                            context.getString(com.ilyskyo.blancall.R.string.deleted_toast), Toast.LENGTH_SHORT).show()
+                            resources.getString(com.ilyskyo.blancall.R.string.deleted_toast), Toast.LENGTH_SHORT).show()
                     }
                 }) {
                     Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error)

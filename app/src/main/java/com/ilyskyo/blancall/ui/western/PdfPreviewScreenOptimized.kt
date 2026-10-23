@@ -35,12 +35,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,6 +95,7 @@ fun PdfPreviewScreenOptimized(
     title: String?
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
 
     // 解析为可读文件：已存在的绝对路径直接用，否则视为 assets 内资源并复制到缓存。
@@ -110,7 +114,7 @@ fun PdfPreviewScreenOptimized(
     // 总页数：打开成功后一次性读入。组合/绘制期不再直接访问 renderer ——
     // 此前在 items(renderer.pageCount) 里组合期读取，渲染器被关闭后重组即抛
     // IllegalStateException: Document already closed（用户反馈「预览 PDF 闪退」）
-    var pageCount by remember(asset) { mutableStateOf(0) }
+    var pageCount by remember(asset) { mutableIntStateOf(0) }
     // PDF 文件描述符：PdfRenderer.close() 不负责关闭它，随渲染器一并回收，避免句柄泄漏
     var pdfPfd by remember(asset) { mutableStateOf<ParcelFileDescriptor?>(null) }
     var loadFailed by remember(asset) { mutableStateOf(false) }
@@ -260,7 +264,7 @@ fun PdfPreviewScreenOptimized(
                     IconButton(onClick = { showMenu = true }) {
                         M3Icon(
                             imageVector = Icons.Filled.MoreVert,
-                            contentDescription = "更多",
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.more),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -275,7 +279,7 @@ fun PdfPreviewScreenOptimized(
                                         modifier = Modifier.size(20.dp)
                                     )
                                 },
-                                label = { Text(if (useVectorRendering) "查看图片模式" else "查看文本模式", fontWeight = FontWeight.Medium) },
+                                label = { Text(if (useVectorRendering) stringResource(com.ilyskyo.blancall.R.string.pdf_view_image_mode) else stringResource(com.ilyskyo.blancall.R.string.pdf_view_text_mode), fontWeight = FontWeight.Medium) },
                                 onClick = {
                                     showMenu = false
                                     useVectorRendering = !useVectorRendering
@@ -292,7 +296,7 @@ fun PdfPreviewScreenOptimized(
                                     modifier = Modifier.size(20.dp)
                                 )
                             },
-                            label = { Text("导入到背诵挖空", fontWeight = FontWeight.Medium) },
+                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.pdf_import_to_cloze), fontWeight = FontWeight.Medium) },
                             onClick = {
                                 showMenu = false
                                 // 点完即导入：不弹模式选择、不强制进入练习（之后可在背诵列表中自行开始）
@@ -306,11 +310,11 @@ fun PdfPreviewScreenOptimized(
                                         val articleId = importTextToBlancall(context, finalTitle, finalText, finalAuthor)
                                         Toast.makeText(
                                             context,
-                                            if (articleId > 0) "已导入背诵列表" else "导入失败，请重试",
+                                            if (articleId > 0) resources.getString(com.ilyskyo.blancall.R.string.pdf_imported) else resources.getString(com.ilyskyo.blancall.R.string.pdf_import_failed),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     } else {
-                                        Toast.makeText(context, "内容为空，无法导入", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.pdf_empty_content), Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             }
@@ -327,7 +331,7 @@ fun PdfPreviewScreenOptimized(
 
         if (loadFailed) {
             Text(
-                text = if (isPdf) "无法打开该 PDF" else "无法预览该文件",
+                text = if (isPdf) stringResource(com.ilyskyo.blancall.R.string.pdf_cannot_open) else stringResource(com.ilyskyo.blancall.R.string.pdf_cannot_preview),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(40.dp)
@@ -385,14 +389,14 @@ fun PdfPreviewScreenOptimized(
                     enabled = prevAsset != null,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
                 ) {
-                    Text("‹ 上一篇")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.pdf_prev))
                 }
                 OutlinedButton(
                     onClick = { nextAsset?.let { openSiblingPdf(it) } },
                     enabled = nextAsset != null,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
                 ) {
-                    Text("下一篇 ›")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.pdf_next))
                 }
             }
         }

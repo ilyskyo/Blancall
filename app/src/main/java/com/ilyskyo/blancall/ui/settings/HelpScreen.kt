@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -48,7 +49,7 @@ fun HelpScreen(navController: NavController) {
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "使用帮助",
+                    stringResource(com.ilyskyo.blancall.R.string.help_001),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -65,29 +66,29 @@ fun HelpScreen(navController: NavController) {
                 // ── 1. 开始练习 ──
                 HelpSection(
                     emoji = "🚀",
-                    title = "开始练习",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_002),
                     expandedContent = {
                         Text(
-                            "选择文章后，点「开始练习」，选好模式即可开始背诵。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_003),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        SubTitle("三种入口（任选其一）")
-                        Bullet("阅读页底部「开始练习」：先打开文章（阅读页），再开始")
-                        Bullet("首页卡片里的「练习」按钮：「最近使用 / 文章卡片 / 待继续」等卡上一步直达")
-                        Bullet("首页「继续做」卡片：一键续练未完成的进度（保留原进度）")
-                        SubTitle("练习流程")
-                        BulletItem(1, "选择文章（可多选 2 篇以上做「跨文混合」）")
-                        BulletItem(2, "在模式弹窗中选择练习模式（句子 / 字词 / 反向 / 自定义）")
-                        BulletItem(3, "练习中可用顶部「⋮」随时切换模式、挖空策略、开关提示")
-                        BulletItem(4, "完成后查看成绩卡，可分享笔记或导出 PDF 试卷")
-                        SubTitle("推荐流程")
-                        FlowTag("第一次学习") {
-                            Text("句子挖空 → 字词挖空 → 反向默写")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_004))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_005))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_006))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_007))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_008))
+                        BulletItem(1, stringResource(com.ilyskyo.blancall.R.string.help_009))
+                        BulletItem(2, stringResource(com.ilyskyo.blancall.R.string.help_010))
+                        BulletItem(3, stringResource(com.ilyskyo.blancall.R.string.help_011))
+                        BulletItem(4, stringResource(com.ilyskyo.blancall.R.string.help_012))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_013))
+                        FlowTag(stringResource(com.ilyskyo.blancall.R.string.help_014)) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.help_015))
                         }
                         Spacer(Modifier.height(6.dp))
-                        FlowTag("复习阶段") {
-                            Text("薄弱优先 → 反向默写 → 全覆盖检测")
+                        FlowTag(stringResource(com.ilyskyo.blancall.R.string.help_016)) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.help_017))
                         }
                     }
                 )
@@ -95,73 +96,73 @@ fun HelpScreen(navController: NavController) {
                 // ── 句子卡片（每日一句） ──
                 HelpSection(
                     emoji = "💬",
-                    title = "句子卡片",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_018),
                     expandedContent = {
                         Text(
-                            "首页「句子卡片」每天自动挑一个完整句子，用划卡 + 三键评级完成句子级记忆。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_019),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        SubTitle("抽句规则")
-                        Bullet("每天一句：优先安排到期句子复习；没有到期时随机抽新句（已抽过的句子不重复，新句在各篇文章间轮换）")
-                        SubTitle("大卡片操作")
-                        Bullet("上滑看下一张、下滑回看上一张（回看不评级，划过去也不算评级）")
-                        Bullet("底部三键：忘记 / 不熟 / 记住了，点按后自动进入下一张；全部评完出完成页")
-                        Bullet("评级进入 FSRS 间隔重复：忘记的句子很快再复习，记住了的间隔逐步拉长；统计页「句子记忆」可查看句子累计复习与留存")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_020))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_021))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_022))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_023))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_024))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_025))
                     }
                 )
 
                 // ── 2. 练习模式介绍 ──
                 HelpSection(
                     emoji = "📋",
-                    title = "练习模式介绍",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_026),
                     expandedContent = {
                         Text(
-                            "四种模式难度递进：先熟悉结构，再强细节，最后整段还原。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_027),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "📝",
-                            title = "句子挖空",
-                            desc = "隐藏部分句子内容，通过上下文回忆完整原文。",
-                            footer = "适合：初次学习文章"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_028),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_029),
+                            footer = stringResource(com.ilyskyo.blancall.R.string.help_030)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "🔤",
-                            title = "字词挖空",
-                            desc = "隐藏关键字词，加强易错字和重点内容记忆。",
-                            footer = "适合：已熟悉文章，需强化准确率"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_031),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_032),
+                            footer = stringResource(com.ilyskyo.blancall.R.string.help_033)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "✍️",
-                            title = "反向默写",
-                            desc = "段落打散默写 — 整段还原",
-                            footer = "适合：考前检测和模拟考试"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_034),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_035),
+                            footer = stringResource(com.ilyskyo.blancall.R.string.help_036)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "🧩",
-                            title = "自定义挖空",
-                            desc = "按你预先圈定的位置挖空 —— 在阅读页将遮挡粒度切为「自定义」并逐句/逐词/逐字标注，练习时选「自定义配置」即可选套用（也可在练习前直接新建编辑）。",
-                            footer = "适合：针对性极强的个性化背通"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_037),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_038),
+                            footer = stringResource(com.ilyskyo.blancall.R.string.help_039)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "🔀",
-                            title = "跨文混合练习",
-                            desc = "在「我的文章」长按进入多选，勾选 2 篇以上后点「开始练习」，多篇文章错开抽空混合背诵。混合练习使用智能挖空，不套用单篇自定义挖空配置。",
-                            footer = "适合：阶段总复习、防止单篇依赖上下文"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_040),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_041),
+                            footer = stringResource(com.ilyskyo.blancall.R.string.help_042)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "🎯",
-                            title = "薄弱集训",
-                            desc = "在统计页的练习记录中点「复习 ›」，或从「待复习」卡片进入，集中练你曾经错过的位置。",
-                            footer = "适合：针对性消灭易错点"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_043),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_044),
+                            footer = stringResource(com.ilyskyo.blancall.R.string.help_045)
                         )
                     }
                 )
@@ -169,38 +170,38 @@ fun HelpScreen(navController: NavController) {
                 // ── 3. 挖空策略介绍 ──
                 HelpSection(
                     emoji = "🎯",
-                    title = "挖空策略介绍",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_046),
                     expandedContent = {
                         Text(
-                            "策略决定「挖哪些位置」，可在练习中随时通过顶部「⋮」切换。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_047),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "⚖️",
-                            title = "均衡",
-                            desc = "系统平均分配挖空位置，保持稳定练习难度。适合日常练习。"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_048),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_049)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "🎯",
-                            title = "薄弱优先",
-                            desc = "优先抽取用户曾经错误的位置进行训练。适合针对性复习。"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_050),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_051)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "🔍",
-                            title = "全覆盖",
-                            desc = "覆盖文章更多内容，全面检测掌握情况。适合阶段测试。"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_052),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_053)
                         )
-                        SubTitle("挖空粒度（挖多大）")
-                        KeyValue("复句", "整句/整个段落区域隐藏，难度最低")
-                        KeyValue("分句", "按句子断句隐藏，适合熟悉结构")
-                        KeyValue("字词", "只藏关键字词，难度更高")
-                        KeyValue("单字", "逐字隐藏，最接近听写式检验")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_054))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_055), stringResource(com.ilyskyo.blancall.R.string.help_056))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_057), stringResource(com.ilyskyo.blancall.R.string.help_058))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_059), stringResource(com.ilyskyo.blancall.R.string.help_060))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_061), stringResource(com.ilyskyo.blancall.R.string.help_062))
                         Text(
-                            "练习中的「句子 / 字词 / 反向」即对应不同粒度；自定义配置下粒度由你自己的标注决定。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_063),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                             modifier = Modifier.padding(top = 6.dp)
@@ -211,135 +212,135 @@ fun HelpScreen(navController: NavController) {
                 // ── 4. 提示功能 ──
                 HelpSection(
                     emoji = "💡",
-                    title = "提示功能",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_064),
                     expandedContent = {
                         Text(
-                            "同一个开关，两种练习强度，可在练习页随时切换。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_065),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        SubTitle("开启提示")
-                        Bullet("可以查看部分答案辅助回忆（降难度，适合初学与卡壳时）")
-                        Bullet("卡在某一空时用提示过渡，避免长时间卡顿影响节奏")
-                        SubTitle("关闭提示")
-                        Bullet("完全靠自己回忆，更接近考试环境（提高记忆强度）")
-                        Bullet("建议：熟悉后逐步关提示，以真实检验掌握度")
-                        SubTitle("如何切换")
-                        Bullet("练习页顶部「⋮」菜单 → 提示开关（一键切）")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_066))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_067))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_068))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_069))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_070))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_071))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_072))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_073))
                     }
                 )
 
                 // ── 5. 查看学习数据 ──
                 HelpSection(
                     emoji = "📊",
-                    title = "查看学习数据",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_074),
                     expandedContent = {
-                        SubTitle("首页「学习数据」卡片")
-                        Bullet("点卡片 → 弹出本机当前累计的学习统计概览")
-                        Bullet("弹窗空白处/弹窗外点击 → 进入全局统计页（更详细的数据）")
-                        Bullet("点弹窗右上角「✕」→ 仅关闭弹窗，留在首页")
-                        SubTitle("首页「全局数据」卡片")
-                        Bullet("恒定展示累计概览（文章数 / 练习量 / 正确率等）")
-                        SubTitle("「数据」页面里能看到")
-                        KeyValue("学习日历", "按天回顾练习量（颜色越深练得越多）")
-                        KeyValue("热力图", "长期坚持情况一眼可见")
-                        KeyValue("每篇统计", "每篇文章的练习次数、正确率、累计用时")
-                        KeyValue("练习记录", "逐次记录可查，点「复习 ›」直接进入薄弱集训")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_075))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_076))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_077))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_078))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_079))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_080))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_081))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_082), stringResource(com.ilyskyo.blancall.R.string.help_083))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_084), stringResource(com.ilyskyo.blancall.R.string.help_085))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_086), stringResource(com.ilyskyo.blancall.R.string.help_087))
+                        KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_088), stringResource(com.ilyskyo.blancall.R.string.help_089))
                     }
                 )
 
                 // ── 6. 学习建议 ──
                 HelpSection(
                     emoji = "📖",
-                    title = "学习建议",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_090),
                     expandedContent = {
                         Text(
-                            "核心原则：先熟悉结构 → 再强细节 → 最后整段还原；间段复习优于一次性突击。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_091),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        SubTitle("推荐学习流程")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_092))
                         SuggestionStep(
-                            step = "第一次背诵",
+                            step = stringResource(com.ilyskyo.blancall.R.string.help_093),
                             items = listOf(
-                                "使用句子挖空熟悉文章结构",
-                                "使用字词挖空强化细节",
-                                "使用反向默写检测完整掌握"
+                                stringResource(com.ilyskyo.blancall.R.string.help_094),
+                                stringResource(com.ilyskyo.blancall.R.string.help_095),
+                                stringResource(com.ilyskyo.blancall.R.string.help_096)
                             )
                         )
                         Spacer(Modifier.height(12.dp))
                         SuggestionStep(
-                            step = "复习",
+                            step = stringResource(com.ilyskyo.blancall.R.string.help_097),
                             items = listOf(
-                                "开启薄弱优先，重点练习错误内容",
-                                "用「待复习」卡片跟进今日到期任务",
-                                "考前用「跨文混合 + 反向默写」做总检"
+                                stringResource(com.ilyskyo.blancall.R.string.help_098),
+                                stringResource(com.ilyskyo.blancall.R.string.help_099),
+                                stringResource(com.ilyskyo.blancall.R.string.help_100)
                             )
                         )
-                        SubTitle("节奏建议")
-                        Bullet("一次练一篇，当天多轮短时胜过一次性长练")
-                        Bullet("当天全部正确后，第二天再回头练一次巩固")
-                        Bullet("错得多的位置交给「薄弱集训」专项消灭")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_101))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_102))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_103))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_104))
                     }
                 )
 
                 // ── 7. 操作小贴士（完整操作手册） ──
                 HelpSection(
                     emoji = "🛠️",
-                    title = "操作小贴士",
+                    title = stringResource(com.ilyskyo.blancall.R.string.help_105),
                     expandedContent = {
                         Text(
-                            "为保持界面简洁，很多操取消了按钮，收进了长按、下拉与编辑态 —— 下面把所有隐藏操作逐条列清。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_106),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        SubTitle("首页 · 卡片管理")
-                        Bullet("长按任意卡片 → 进入编辑态；底部悬浮「完成」退出编辑")
-                        Bullet("编辑态拖动卡片 → 换位置；右下角黑弧手柄 → 自由调整卡片大小（拉大拉小均可）")
-                        Bullet("编辑态四角按钮：⏳ = 固定位置 / 取消固定；❌ = 删除该卡片")
-                        Bullet("编辑态顶部「+」→ 添加卡片面板（待复习 / 继续做 / 最近文章 / 文章卡片 / 句子卡片 / 学习数据 / 全局数据 / 添加文章 / 自定义配置）")
-                        Bullet("「文章卡片」可添加多张（每篇文章一张），默认一行高、内容与「最近使用」同款；最多可拉大到 2 行高（内容少，再大只剩空白）")
-                        Bullet("「句子卡片」每天自动挑一句：优先到期复习、没有到期就随机抽新句；点卡片进入大卡片，上滑看下一张、底部三键评级后自动进入下一张")
-                        Bullet("「管理最近文章」入口 → 管理阅读历史（不影响文章本体）")
-                        SubTitle("首页 · 下拉顶栏")
-                        Bullet("在顶部不断下拉，出现提示条；拉到「松开手指」（有震动）后松手 → 展开品牌顶栏")
-                        Bullet("顶栏已展开时再下拉过阈值 → 松手收起顶栏")
-                        Bullet("轻轻一扫不会触发收放（只认阈值，防误触）")
-                        SubTitle("首页 · 个性化")
-                        Bullet("点左上角图标 → 换 Logo（含自定义表情）")
-                        Bullet("点副标题文字 → 自定义副标题")
-                        SubTitle("我的文章")
-                        Bullet("点文章 → 进入阅读页")
-                        Bullet("长按 → 多选模式：批量删除 / 勾选 2 篇以上开始跨文混合练习 / 发给 AI")
-                        SubTitle("阅读页")
-                        Bullet("底部按钮：学习统计 / 阅读模式 / 自定义 / 开始练习（Pro 版另有 AI）")
-                        Bullet("「阅读模式」：调字号、行距、字体、字重、配色、遮挡粒度（均衡 / 字词 / 自定义）")
-                        Bullet("正文双指捏合 → 直接缩放字号")
-                        Bullet("顶部右侧：删除 / 编辑文章")
-                        SubTitle("遮挡自定义（阅读页）")
-                        Bullet("将遮挡粒度切到「自定义」→ 进入配置列表；点按配置项直接使用，行尾「编辑」进入标注页，长按可重命名 / 删除")
-                        Bullet("选中自定义粒度时，按钮上显示当前使用的配置名")
-                        Bullet("标注页：点句子 → 遮住整句；长按句子 → 拆成词，点词遮词；长按词 → 再拆成字；再次长按逐级还原")
-                        Bullet("标注页双指捏合 → 缩放正文字号（方便精细标词）")
-                        SubTitle("练习页")
-                        Bullet("顶部「⋮」菜单：切换练习模式 / 挖空策略 / 提示开关 / 沉浸模式 / 段落分层，以及导出 PDF 试卷与分享笔记")
-                        Bullet("练习中长按句子或字词 → 切换挖空粒度（复句 → 分句 → 字词 → 单字，循环还原）")
-                        Bullet("完成后成绩卡可查看正确率与用时，并可直接分享")
-                        SubTitle("自定义挖空（练习时）")
-                        Bullet("配置列表：点按进入编辑；长按可开始练习 / 重命名 / 删除；选择器模式下点按直接开练")
-                        Bullet("编辑页：点按选中挖空、长按切换粒度（与阅读页标注一致）")
-                        Bullet("从导入页「保存并挖空」直达新建 —— 导完文章马上圈定考点")
-                        SubTitle("导入文章")
-                        Bullet("两种方式：粘贴文本 / 文件导入（txt、PDF、Word 等；PDF 可预览）")
-                        Bullet("标题留空时，可一键采用「建议标题」（从正文自动提取）")
-                        Bullet("超大文本会提示并截断，建议拆分导入")
-                        Bullet("底部两个按钮：「仅保存」= 存好返回；「保存并挖空」= 存好后直接进入该文章的自定义挖空编辑")
-                        SubTitle("全局通用")
-                        Bullet("所有页面左上角白色圆形按钮 = 返回；也可用系统返回手势 / 返回键")
-                        Bullet("阅读页处于标注/编辑状态时，先退编辑再退页面")
-                        Bullet("关键操作有震动反馈：下拉过阈值、长按进卡片编辑、拖动 / 缩放卡片、长按菜单等")
-                        Bullet("删除文章不可恢复：阅读页右上「删除」或「我的文章」多选批量删除")
-                        Bullet("设置页「数据」：一键导出备份把文章库与练习进度打包成一个备份文件；一键导入恢复到新装应用（覆盖当前数据，完成后退出重启生效）")
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_107))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_108))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_109))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_110))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_111))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_112))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_113))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_114))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_115))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_116))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_117))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_118))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_119))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_120))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_121))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_122))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_123))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_124))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_125))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_126))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_127))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_128))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_129))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_130))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_131))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_132))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_133))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_134))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_135))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_136))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_137))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_138))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_139))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_140))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_141))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_142))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_143))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_144))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_145))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_146))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_147))
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_148))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_149))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_150))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_151))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_152))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_153))
                     }
                 )
 
@@ -349,32 +350,32 @@ fun HelpScreen(navController: NavController) {
                     title = "AI",
                     expandedContent = {
                         Text(
-                            "启用 AI 后，可以把你的文章交给 AI，帮助你解释难点、出练习题、分析易错内容。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_154),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "开启与配置",
+                            stringResource(com.ilyskyo.blancall.R.string.help_155),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "在「设置 → AI → 启用 AI 功能」中开启，并填写 API 地址、API Key 与模型名。支持 OpenAI 兼容接口（DeepSeek / 通义 / GLM / Kimi 等）。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_156),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "联网搜索：在设置中开启「联网搜索」后，到 tavily.com 免费注册（邮箱即可），控制台获取 API Key（格式 tvly-xxx，免费 1000 次/月），粘贴到「Tavily API Key」输入框即可使用。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_157),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "入口在哪里",
+                            stringResource(com.ilyskyo.blancall.R.string.help_158),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -382,56 +383,56 @@ fun HelpScreen(navController: NavController) {
                         Spacer(Modifier.height(6.dp))
                         InfoCard(
                             emoji = "📖",
-                            title = "阅读页「AI」按钮",
-                            desc = "查看文章时，底部按钮行中点击「AI」，携带当前文章进入对话"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_159),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_160)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "📋",
-                            title = "文章列表「发给 AI」",
-                            desc = "长按文章进入多选后，点击「发给 AI」，可携带多篇文章跨文对话"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_161),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_162)
                         )
                         Spacer(Modifier.height(10.dp))
                         InfoCard(
                             emoji = "📋",
-                            title = "我的文章页「AI对话记录」",
-                            desc = "开启「保存与 AI 的对话」后出现，查看历史对话并继续聊"
+                            title = stringResource(com.ilyskyo.blancall.R.string.help_163),
+                            desc = stringResource(com.ilyskyo.blancall.R.string.help_164)
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "对话与历史",
+                            stringResource(com.ilyskyo.blancall.R.string.help_165),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "AI 会结合文章内容与你的学习数据（练习次数、正确率、高频易错内容）针对性辅导。长按任意消息可复制单条；对话页顶部「复制对话」可整段复制。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_166),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "在设置中开启「保存与 AI 的对话」后，每次对话自动保存在本机，可从「我的文章」页的「AI对话记录」入口随时查看历史，点击任意历史会话即可继续对话。关闭后不再保存。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_167),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "在设置中开启「联网搜索」并填写 Tavily Key 后，提问时会自动联网搜索核验知识，AI 将优先参考搜索到的权威信息作答（可帮助核验背诵内容与考试知识点）。未配置时 AI 仅基于文章与自身知识回答。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_168),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "隐私与安全",
+                            stringResource(com.ilyskyo.blancall.R.string.help_169),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "API Key 经系统加密后仅存本机，不会上传。注意：对话时文章内容与学习数据会发送至你所配置的 API 服务。关闭「启用 AI 功能」后，所有 AI 入口将不再显示。",
+                            stringResource(com.ilyskyo.blancall.R.string.help_170),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

@@ -64,9 +64,9 @@ fun MistakeBar(
     missing: Int,
     extra: Int,
     order: Int,
+    modifier: Modifier = Modifier,
     incorrect: Int = 0,
-    glyph: Int = 0,
-    modifier: Modifier = Modifier
+    glyph: Int = 0
 ) {
     val total = typo + glyph + missing + extra + order + incorrect
     if (total <= 0) return
@@ -145,7 +145,7 @@ private fun MistakeRow(label: String, count: Int, total: Int, color: Color) {
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            "${count}次",
+            stringResource(com.ilyskyo.blancall.R.string.mistake_times, count),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(28.dp)

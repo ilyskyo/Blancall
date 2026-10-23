@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.ui.home
 
+import android.annotation.SuppressLint
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -176,6 +178,7 @@ fun HomeCardContent(
     card: HomeLayoutStore.Card,
     /** 全量文章，供「继续练习」按 articleId 反查标题 */
     articles: List<Article>,
+    modifier: Modifier = Modifier,
     /** 文章 id → 有序标签（「最近使用」/「文章卡片」徽标展示；缺省 = 无标签） */
     tagsByArticle: Map<Long, List<TagChipUi>> = emptyMap(),
     /** 今日待复习（宿主用 FSRS + 记录算好后传入） */
@@ -214,7 +217,6 @@ fun HomeCardContent(
     sentenceUi: SentenceDailyUi? = null,
     /** 点句子卡片 → 宿主打开大卡片界面（参数为触点锚点，供浮起转场定位） */
     onOpenSentenceCard: (TouchAnchor?) -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     // 卡片尺寸由画布固定。这里统一量一次实际宽高，供各卡做「窄 / 矮 / 高」三档自适应；
     // 各卡再以 fillMaxSize() 吃满这个固定尺寸，绝不按内容 wrap（那正是内容溢出卡外的根因）。
@@ -376,7 +378,7 @@ private fun DueCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .pressClick { onPracticeArticle(article.id) }
-                                    .then(practiceAnchorModifier(article.id, anchorArticleId, onAnchorMeasured))
+                                    .practiceAnchorModifier(article.id, anchorArticleId, onAnchorMeasured)
                                     .padding(vertical = if (m.short) 2.dp else if (m.compact) 3.dp else 5.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
@@ -676,7 +678,7 @@ private fun RecentCard(
                                     dense = m.short,
                                     onClick = { anchor -> onOpenArticle(article, anchor) },
                                     onPractice = { onPracticeArticle(article.id) },
-                                    practiceModifier = practiceAnchorModifier(
+                                    practiceModifier = Modifier.practiceAnchorModifier(
                                         articleId = article.id,
                                         anchorArticleId = anchorArticleId,
                                         onAnchorMeasured = onAnchorMeasured,
@@ -704,6 +706,7 @@ private fun RecentCard(
  * 不关心锚点的调用方可直接忽略参数。
  */
 @Composable
+@SuppressLint("ModifierParameter")
 private fun RecentArticleRow(
     article: Article,
     /** 已绑定标签（标准行出 chips；矮卡降级为 ≤3 色点内联标题行） */
@@ -925,7 +928,6 @@ private fun ArticleCard(
                 CardEmptyState(
                     icon = AppIconKind.Inbox,
                     title = stringResource(com.ilyskyo.blancall.R.string.article_gone),
-                    subtitle = stringResource(com.ilyskyo.blancall.R.string.long_press_to_remove),
                     accent = hue.accent,
                     compact = m.compact,
                     short = m.short,
@@ -953,7 +955,7 @@ private fun ArticleCard(
                     slim = m.short,
                     onClick = { anchor -> onOpenArticle(article, anchor) },
                     onPractice = { onPracticeArticle(article.id) },
-                    practiceModifier = practiceAnchorModifier(
+                    practiceModifier = Modifier.practiceAnchorModifier(
                         articleId = article.id,
                         anchorArticleId = anchorArticleId,
                         onAnchorMeasured = onAnchorMeasured,
@@ -999,7 +1001,6 @@ private fun CustomClozeCard(
             pluralStringResource(com.ilyskyo.blancall.R.plurals.cloze_detail, it.count, it.count, clozeModeLabel(it.mode))
         },
         dotColor = hue.accent,
-        accent = hue.accent,
         containerColor = hue.fill,
         onClick = onClick,
         m = m,
@@ -1059,7 +1060,6 @@ private fun CustomMaskCard(
             pluralStringResource(com.ilyskyo.blancall.R.plurals.mask_detail, it.count, it.count)
         },
         dotColor = hue.accent,
-        accent = hue.accent,
         containerColor = hue.fill,
         onClick = onClick,
         m = m,
@@ -1068,7 +1068,7 @@ private fun CustomMaskCard(
 }
 
 /**
- * 自定义配置卡（挖空 / 遮挡共用外观）：配置名 + 明细 + 「点击进入」提示；
+ * 自定义配置卡（挖空 / 遮挡共用外观）：配置名 + 明细；
  * 反查不到（配置已被删除）时展示淡色「配置已失效」且不可点击。
  *
  * 内容整体在卡片内 **垂直居中**（高卡不空、矮卡内滚），文字均带上限与省略号。
@@ -1078,7 +1078,6 @@ private fun CustomConfigCardFrame(
     title: String,
     detail: String?,
     dotColor: Color,
-    accent: Color,
     containerColor: Color,
     onClick: (() -> Unit)?,
     m: CardMetrics,
@@ -1163,13 +1162,6 @@ private fun CustomConfigCardFrame(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        stringResource(com.ilyskyo.blancall.R.string.tap_to_enter),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = accent,
-                        maxLines = 1,
                     )
                 }
             }
@@ -1757,11 +1749,12 @@ private fun CardHeader(dotColor: Color, title: String) {
 private fun CardEmptyState(
     icon: AppIconKind,
     title: String,
-    subtitle: String,
+    modifier: Modifier = Modifier,
+    /** 副文案：只在真有话要说时才给，空串 = 不占位 */
+    subtitle: String = "",
     accent: Color,
     compact: Boolean,
     short: Boolean,
-    modifier: Modifier = Modifier,
 ) {
     if (short) {
         // 矮卡（1 行高）：横排单行 —— 小图标 + 主文案；纵向堆叠会把两者顶出可视区
@@ -1822,8 +1815,8 @@ private fun CardEmptyState(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        // 窄卡空间紧张：只留主文案，避免副文案把空态挤到滚动
-        if (!compact) {
+        // 窄卡空间紧张：只留主文案；空副文案不占位，避免空态被挤到滚动
+        if (!compact && subtitle.isNotBlank()) {
             Spacer(Modifier.height(4.dp))
             Text(
                 subtitle,
@@ -1841,13 +1834,13 @@ private fun CardEmptyState(
  * 练习按钮位置上报修饰符：仅当该行/卡正是宿主当前 pending 的文章时挂上，
  * 与 HomeScreen 原有 `practiceModifier` 行为一致——弹窗据此锚定。
  */
-private fun practiceAnchorModifier(
+private fun Modifier.practiceAnchorModifier(
     articleId: Long,
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
 ): Modifier =
     if (articleId == anchorArticleId) {
-        Modifier.onGloballyPositioned { coords ->
+        onGloballyPositioned { coords ->
             val pos = coords.positionInWindow()
             onAnchorMeasured(
                 articleId,
@@ -1855,7 +1848,7 @@ private fun practiceAnchorModifier(
             )
         }
     } else {
-        Modifier
+        this
     }
 
 // ══════════════════════════════════════════════════════════════════

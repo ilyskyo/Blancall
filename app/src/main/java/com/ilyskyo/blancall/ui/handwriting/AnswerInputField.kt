@@ -47,6 +47,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.composed
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -286,7 +287,10 @@ fun AnswerInputField(
                                             if (value.isEmpty()) {
                                                 Text(
                                                     placeholder.ifBlank {
-                                                        if (stylusPresent) "用笔在下方书写" else "用手指在下方书写"
+                                                        stringResource(
+                                                            if (stylusPresent) com.ilyskyo.blancall.R.string.handwriting_write_below_pen
+                                                            else com.ilyskyo.blancall.R.string.handwriting_write_below_finger
+                                                        )
                                                     },
                                                     style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                                                     maxLines = 1,
@@ -357,7 +361,11 @@ fun AnswerInputField(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = value.ifEmpty { placeholder.ifBlank { "点这里作答" } },
+                    text = value.ifEmpty {
+                        placeholder.ifBlank {
+                            stringResource(com.ilyskyo.blancall.R.string.handwriting_tap_to_answer)
+                        }
+                    },
                     style = textStyle.copy(
                         color = if (value.isEmpty())
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
@@ -528,7 +536,10 @@ private fun ModeSwitchChip(
             )
             Spacer(Modifier.width(5.dp))
             Text(
-                if (handwriting) "手写" else "键盘",
+                stringResource(
+                    if (handwriting) com.ilyskyo.blancall.R.string.handwriting_mode_handwriting
+                    else com.ilyskyo.blancall.R.string.handwriting_mode_keyboard
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 color = if (handwriting) MaterialTheme.colorScheme.onPrimaryContainer
                 else MaterialTheme.colorScheme.onSurfaceVariant

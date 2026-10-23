@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -141,9 +142,9 @@ private fun navTabsFor(showLibraryTab: Boolean): List<Pair<Int, AppIconKind>> =
 fun NavRail(
     currentTab: Int,
     onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
     showLibraryTab: Boolean = false,
-    host: FrameLayout? = null,
-    modifier: Modifier = Modifier
+    host: FrameLayout? = null
 ) {
     val tabs = navTabsFor(showLibraryTab)
     val isDark = isBlancallDark()
@@ -187,7 +188,7 @@ fun NavRail(
     // 内容入场较缓本就没有白闪）。用一次 70ms 淡出 + 200ms 淡回把硬跳变成柔和过渡，
     // 对数据页是无损叠加（不会改坏它现在的表现）。
     val switchFade = remember { Animatable(1f) }
-    var lastTabForFade by remember { mutableStateOf(currentTab) }
+    var lastTabForFade by remember { mutableIntStateOf(currentTab) }
     LaunchedEffect(currentTab) {
         if (currentTab != lastTabForFade) {
             lastTabForFade = currentTab

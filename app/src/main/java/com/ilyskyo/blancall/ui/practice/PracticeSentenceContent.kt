@@ -27,9 +27,12 @@ import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.TwoPaneMinHeightDp
 import com.ilyskyo.blancall.ui.common.TwoPaneMinWidthDp
 import com.ilyskyo.blancall.ui.common.suppressAsPalmMisTouch
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.input.ImeAction
@@ -68,7 +71,13 @@ internal fun SentenceClozeContent(
     onBlankFocus: (Int) -> Unit = {},
     onAnswerChange: (Int, String) -> Unit,
     /** 墨迹上报（错题回顾）：手写被消费时回调（blankIdx 已在内部绑定）；透传给书写板与底部弹层 */
-    onInkCommitted: ((Int, List<List<Offset>>, Int, Int) -> Unit)? = null
+    onInkCommitted: ((Int, List<List<Offset>>, Int, Int) -> Unit)? = null,
+    /**
+     * 是否在每个空位旁标出「这一空几个字」。
+     * 它与「内容提示」是两件事：长度是**结构线索**（该背多长），内容提示才是答案线索。
+     * 有人在背长句时只想要前者 —— 知道自己漏了两个字，但不想被喂字。
+     */
+    showBlankLength: Boolean = false
 ) {
     blancall?.let { result ->
         var currentBlankIndex by remember { mutableIntStateOf(0) }
@@ -109,10 +118,13 @@ internal fun SentenceClozeContent(
         // ② 必须同时看高度：手机横屏宽度常达标（900dp），但高度只有 400dp 左右，
         //    右栏「输入区 + 手写板(≥140dp) + 切换 + 上一空/下一空」约 280dp 会被挤出可视区，
         //    表现为「书写板看不见/点不到」。只看宽度是错的。
-        val config = LocalConfiguration.current
+        val density = LocalDensity.current
+        val containerSize = LocalWindowInfo.current.containerSize
+        val screenWidthDp = with(density) { containerSize.width.toDp().value }
+        val screenHeightDp = with(density) { containerSize.height.toDp().value }
         val contentWidthDp =
-            config.screenWidthDp - (if (LocalIsLargeScreen) NavRailWidth.value.toInt() else 0)
-        val isWide = contentWidthDp >= TwoPaneMinWidthDp && config.screenHeightDp >= TwoPaneMinHeightDp
+            screenWidthDp - (if (LocalIsLargeScreen) NavRailWidth.value else 0f)
+        val isWide = contentWidthDp >= TwoPaneMinWidthDp && screenHeightDp >= TwoPaneMinHeightDp
 
         // 当前作答目标的文种：按**该空的标准答案**自动选模型
         // （含 CJK → 汉字模型；纯拉丁 → EMNIST 英语模型）。
@@ -160,6 +172,8 @@ internal fun SentenceClozeContent(
                                         checkResult = checkResults[blank.index],
                                         isSubmitted = isSubmitted,
                                         hintChar = hintChars[blank.index],
+                                        lengthHint = if (showBlankLength && !isSubmitted)
+                                            blank.originalText.length.takeIf { it > 0 } else null,
                                         onClick = {
                                             // 掌托守卫：手写时扶屏的手掌蹭到挖空，不应把书写板弹出来
                                             if (!suppressAsPalmMisTouch()) {
@@ -203,7 +217,7 @@ internal fun SentenceClozeContent(
                         value = userAnswers[currentBlankIndex] ?: "",
                         onValueChange = { onAnswerChange(currentBlankIndex, it) },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = "请输入被挖掉的内容",
+                        placeholder = stringResource(com.ilyskyo.blancall.R.string.practice_answer_placeholder),
                         hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
                         maxLines = 3,
                         minHeight = 74.dp,
@@ -219,11 +233,11 @@ internal fun SentenceClozeContent(
                         TextButton(
                             onClick = { if (currentBlankIndex > 0) currentBlankIndex-- },
                             enabled = currentBlankIndex > 0
-                        ) { Text("← 上一个") }
+                        ) { Text(stringResource(com.ilyskyo.blancall.R.string.practice_previous)) }
                         TextButton(
                             onClick = { if (currentBlankIndex < totalBlanks - 1) currentBlankIndex++ },
                             enabled = currentBlankIndex < totalBlanks - 1
-                        ) { Text("下一个 →") }
+                        ) { Text(stringResource(com.ilyskyo.blancall.R.string.practice_next)) }
                     }
                 }
             }
@@ -263,6 +277,8 @@ internal fun SentenceClozeContent(
                                         checkResult = checkResults[blank.index],
                                         isSubmitted = isSubmitted,
                                         hintChar = hintChars[blank.index],
+                                        lengthHint = if (showBlankLength && !isSubmitted)
+                                            blank.originalText.length.takeIf { it > 0 } else null,
                                         // 笔点即书写：笔尖落在挖空上直接弹书写板，不用先手动切模式
                                         onPenTap = {
                                             currentBlankIndex = blank.index
@@ -305,7 +321,7 @@ internal fun SentenceClozeContent(
                         value = userAnswers[currentBlankIndex] ?: "",
                         onValueChange = { onAnswerChange(currentBlankIndex, it) },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = "请输入被挖掉的内容",
+                        placeholder = stringResource(com.ilyskyo.blancall.R.string.practice_answer_placeholder),
                         hintChar = if (!isSubmitted) hintChars[currentBlankIndex] else null,
                         maxLines = 3,
                         minHeight = 74.dp,
@@ -327,11 +343,11 @@ internal fun SentenceClozeContent(
                         TextButton(
                             onClick = { if (currentBlankIndex > 0) currentBlankIndex-- },
                             enabled = currentBlankIndex > 0
-                        ) { Text("← 上一个") }
+                        ) { Text(stringResource(com.ilyskyo.blancall.R.string.practice_previous)) }
                         TextButton(
                             onClick = { if (currentBlankIndex < totalBlanks - 1) currentBlankIndex++ },
                             enabled = currentBlankIndex < totalBlanks - 1
-                        ) { Text("下一个 →") }
+                        ) { Text(stringResource(com.ilyskyo.blancall.R.string.practice_next)) }
                     }
                 }
             }
@@ -343,7 +359,7 @@ internal fun SentenceClozeContent(
             HandwritingAnswerSheet(
                 answer = userAnswers[sheetIdx] ?: "",
                 hintChar = hintChars[sheetIdx],
-                blankLabel = "第 ${sheetIdx + 1} 空",
+                blankLabel = stringResource(com.ilyskyo.blancall.R.string.blank_label, sheetIdx + 1),
                 onAnswerChange = { onAnswerChange(sheetIdx, it) },
                 onDismissRequest = { sheetBlankIndex = null },
                 // 弹层是为**这个空**服务的，文种按这个空的答案选（可能当前焦点已不是它）
@@ -374,6 +390,8 @@ internal fun SentenceBlankInline(
     checkResult: AnswerChecker.CheckDetail?,
     isSubmitted: Boolean,
     hintChar: Char? = null,
+    /** 这一空有几个字（null = 不显示）。只作为长度线索，不泄露任何字。 */
+    lengthHint: Int? = null,
     /**
      * 笔点该挖空时的动作（手机布局下弹底部书写板）。
      * 平板双栏不传：右栏本就是常驻作答区，弹层会盖住左侧原文，而默写要一边看句子一边写。
@@ -421,10 +439,23 @@ internal fun SentenceBlankInline(
             )
         }
         Spacer(Modifier.width(4.dp))
+        // 字数提示：紧贴序号，用最弱的一级文字 —— 它回答"要背多少"，不该比句子本身显眼
+        if (!isSubmitted && lengthHint != null) {
+            Text(
+                pluralStringResource(
+                    com.ilyskyo.blancall.R.plurals.hint_length_badge,
+                    lengthHint, lengthHint
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
 
         if (isSubmitted && checkResult != null) {
             // 提交后：紧凑显示答案与批改 + 相似度
-            val userText = answer?.takeIf { it.isNotBlank() } ?: "（未填）"
+            val userText = answer?.takeIf { it.isNotBlank() }
+                ?: stringResource(com.ilyskyo.blancall.R.string.not_filled)
             val isCorrect = checkResult.result == AnswerChecker.Result.CORRECT
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
@@ -479,8 +510,8 @@ internal fun SentenceBlankInline(
 @Composable
 internal fun HintGhost(
     hintChar: Char?,
-    show: Boolean = true,
     modifier: Modifier = Modifier,
+    show: Boolean = true,
     /** 字号随宿主走：输入框内用 bodyMedium，弹层答案回显用 titleMedium（否则提示字会比答案小一号）。 */
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium
 ) {

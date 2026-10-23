@@ -3,6 +3,8 @@
 
 package com.ilyskyo.blancall.data.ai
 
+import android.content.Context
+import com.ilyskyo.blancall.R
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -23,8 +25,18 @@ object SearchClient {
         val url: String
     )
 
-    /** 可展示给用户的业务错误 */
-    class SearchException(message: String) : Exception(message)
+    /**
+     * 可展示给用户的业务错误。网络层不持有 Context，错误只登记资源号与参数，
+     * 由展示方调用 [messageFor] 按当前界面语言渲染。
+     */
+    class SearchException(
+        message: String,
+        val messageRes: Int? = null,
+        val formatArgs: List<Any> = emptyList()
+    ) : Exception(message) {
+        fun messageFor(context: Context): String =
+            messageRes?.let { context.getString(it, *formatArgs.toTypedArray()) } ?: message.orEmpty()
+    }
 
     private const val ENDPOINT = "https://api.tavily.com/search"
 
@@ -45,9 +57,9 @@ object SearchClient {
         // ——回退到 Tavily 会把用户的自定义 Key 发给第三方，这正是本次修复要消除的问题。
         val endpoint = if (profile.provider == "custom") {
             val raw = profile.baseUrl.trim()
-            if (raw.isEmpty()) throw SearchException("自定义搜索地址未填写，请在设置中补全")
+            if (raw.isEmpty()) throw SearchException("Empty URL", R.string.search_error_url_empty)
             if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-                throw SearchException("自定义搜索地址无效，需以 http:// 或 https:// 开头")
+                throw SearchException("Invalid URL", R.string.search_error_url_invalid)
             }
             raw
         } else {
@@ -85,9 +97,9 @@ object SearchClient {
                     conn.errorStream?.use { it.readBytes().take(1024) }
                 } catch (_: Exception) { }
                 throw when (code) {
-                    401, 403 -> SearchException("搜索 Key 无效，请在设置中检查")
-                    429 -> SearchException("搜索额度已用尽或请求过于频繁")
-                    else -> SearchException("搜索服务请求失败（$code）")
+                    401, 403 -> SearchException("HTTP 401/403", R.string.search_error_auth)
+                    429 -> SearchException("HTTP 429", R.string.search_error_quota)
+                    else -> SearchException("HTTP $code", R.string.search_error_http, listOf(code))
                 }
             }
 
@@ -106,11 +118,11 @@ object SearchClient {
         } catch (e: SearchException) {
             throw e
         } catch (e: java.net.UnknownHostException) {
-            throw SearchException("无法连接搜索服务，请检查网络")
+            throw SearchException("UnknownHost", R.string.search_error_unreachable)
         } catch (e: java.net.SocketTimeoutException) {
-            throw SearchException("搜索超时，请稍后重试")
+            throw SearchException("SocketTimeout", R.string.search_error_timeout)
         } catch (e: java.io.IOException) {
-            throw SearchException("搜索网络失败，请检查网络")
+            throw SearchException("IOException", R.string.search_error_network)
         } finally {
             conn.disconnect()
         }

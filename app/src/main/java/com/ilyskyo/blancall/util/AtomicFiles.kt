@@ -86,6 +86,26 @@ object AtomicFiles {
     }
 
     /**
+     * 批量追加多行文本（UTF-8，自动补换行）并只 fsync 一次 —— 供一次练习提交写多条
+     * 复习事件使用。逐条调用 [appendTextLine] 会产生 N 次 fsync，在低速存储上明显拖慢
+     * 提交；这里把 N 行写进同一个流，持久性语义不变。
+     *
+     * 崩溃语义与 [appendTextLine] 相同：被杀只会留下最后半行，读取端逐行容错跳过。
+     */
+    fun appendTextLines(file: File, lines: List<String>) {
+        if (lines.isEmpty()) return
+        file.parentFile?.mkdirs()
+        FileOutputStream(file, true).use { out ->
+            for (line in lines) {
+                out.write(line.toByteArray(Charsets.UTF_8))
+                out.write('\n'.code)
+            }
+            runCatching { out.fd.sync() }
+        }
+        fsyncDirectoryBestEffort(file.parentFile)
+    }
+
+    /**
      * 追加一行文本（UTF-8，自动补换行）并 fsync —— 供「只增不改」的大文件
      * （练习记录 JSONL）做 O(1) 落盘，避免每次 insert 全量重写。
      *
@@ -97,13 +117,7 @@ object AtomicFiles {
      * 会按需创建父目录；追加失败原样抛出，由调用方维持既有处理。
      */
     fun appendTextLine(file: File, line: String) {
-        file.parentFile?.mkdirs()
-        FileOutputStream(file, true).use { out ->
-            out.write(line.toByteArray(Charsets.UTF_8))
-            out.write('\n'.code)
-            runCatching { out.fd.sync() }
-        }
-        fsyncDirectoryBestEffort(file.parentFile)
+        appendTextLines(file, listOf(line))
     }
 
     /**

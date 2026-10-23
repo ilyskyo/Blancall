@@ -158,7 +158,8 @@ class ColorOpsTest {
     fun `预设套装结构与色值合法`() {
         assertEquals(4, ColorOps.PRESET_PALETTES.size)
         ColorOps.PRESET_PALETTES.forEach { preset ->
-            assertTrue(preset.name.isNotBlank())
+            // key 是稳定标识不是文案；空 key 会让 UI 映射落空
+            assertTrue(preset.key.isNotBlank())
             assertEquals(8, preset.colors.size)
             preset.colors.forEach { c ->
                 assertNotNull(ColorOps.parseHex(ColorOps.toHex(c)))

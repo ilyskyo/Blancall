@@ -316,17 +316,8 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
     } else {
         stringResource(com.ilyskyo.blancall.R.string.reader_read_less_minute)
     }
-    // 剩余比例 = 1 - 当前进度：滑回（进度后退）剩余时间随之变多，不依赖累计已读时长
-    val remainRatio by remember { derivedStateOf { (1f - progressFraction).coerceIn(0f, 1f) } }
-    val remainSec by remember { derivedStateOf { (totalChars * remainRatio / 350f * 60f).toLong() } }
-    val estimatedRemainingText = when {
-        remainRatio <= 0.005f -> stringResource(com.ilyskyo.blancall.R.string.reader_finished)
-        remainSec < 60L -> stringResource(com.ilyskyo.blancall.R.string.reader_remaining_less_minute)
-        else -> stringResource(
-            com.ilyskyo.blancall.R.string.reader_remaining_minutes,
-            (remainSec / 60).coerceAtLeast(1)
-        )
-    }
+    // 剩余比例 = 1 - 当前进度：滑回（进度后退）剩余时间随之变多，不依赖累计已读时长。
+    // 该计算与文案已下沉到 ReadingRemainingLabel：组合期读取滚动进度会让整个阅读页每帧重组。
     // 每 20 秒自动落盘计时（防异常退出丢时间）
     LaunchedEffect(article.id) {
         while (true) {
@@ -456,15 +447,8 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                                 }
                                 // 以 store 修订号参与 key：编辑器里重存配置后回阅读页，遮挡立即刷新
                                 val maskStore = remember { MaskConfigStore.getInstance(context.filesDir) }
-                                var maskRevision by remember { mutableStateOf(maskStore.getRevision()) }
-                                LaunchedEffect(Unit) {
-                                    // 轮询修订号（浮层与正文不在同一组合，无法直接共享状态）
-                                    while (true) {
-                                        val r = maskStore.getRevision()
-                                        if (r != maskRevision) maskRevision = r
-                                        kotlinx.coroutines.delay(300)
-                                    }
-                                }
+                                // 修订号用 StateFlow 订阅：旧实现每 300ms 轮询一次，阅读页常亮期间持续唤醒 CPU
+                                val maskRevision by maskStore.revisionFlow.collectAsState()
                                 LaunchedEffect(bodyOcclusionMode, bodyCustomConfigId, article.id, maskRevision) {
                                     if (bodyOcclusionMode != "custom") {
                                         bodyCustomResolver = null
@@ -668,7 +652,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
 
         // ── 底部细进度条（常驻，液态玻璃胶囊）──
         ReadingProgressCapsule(
-            fraction = progressFraction,
+            fraction = { progressFraction },
             isDark = isDark,
             accent = accentColor,
             modifier = Modifier
@@ -712,7 +696,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
         LiquidGlassPill(
             sourceRef = sourceRef,
             isDark = isDark,
-            cornerPx = LgCornerPx(23f),
+            cornerPx = lgCornerPx(23f),
             touchAlpha = controlsAlpha,
             modifier = Modifier
                 .widthIn(max = 540.dp)
@@ -771,7 +755,7 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
         LiquidGlassPill(
             sourceRef = sourceRef,
             isDark = isDark,
-            cornerPx = LgCornerPx(22f),
+            cornerPx = lgCornerPx(22f),
             touchAlpha = controlsAlpha,
             modifier = Modifier
                 .widthIn(max = 540.dp)
@@ -819,9 +803,8 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                         color = textColor,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Text(
-                        text = "${(progressFraction * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelSmall,
+                    ReadingPercentLabel(
+                        progress = { progressFraction },
                         color = subColor
                     )
                 }
@@ -829,9 +812,9 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     horizontalAlignment = Alignment.End,
                     modifier = Modifier.padding(horizontal = 6.dp)
                 ) {
-                    Text(
-                        text = estimatedRemainingText,
-                        style = MaterialTheme.typography.labelSmall,
+                    ReadingRemainingLabel(
+                        progress = { progressFraction },
+                        totalChars = totalChars,
                         color = textColor
                     )
                     Text(
@@ -1022,6 +1005,32 @@ internal fun MaskOverlayWindow(
 }
 
 // ========== 章节分页与进度辅助 ==========
+
+/** 进度百分比：只让这一格随滚动进度重组，不再带动整页 */
+@Composable
+private fun ReadingPercentLabel(progress: () -> Float, color: Color) {
+    Text(
+        text = "${(progress() * 100).toInt()}%",
+        style = MaterialTheme.typography.labelSmall,
+        color = color
+    )
+}
+
+/** 预计剩余阅读时间：由进度实时折算，读取与重组都限制在本组合内 */
+@Composable
+private fun ReadingRemainingLabel(progress: () -> Float, totalChars: Int, color: Color) {
+    val remainRatio = (1f - progress()).coerceIn(0f, 1f)
+    val remainSec = (totalChars * remainRatio / 350f * 60f).toLong()
+    val text = when {
+        remainRatio <= 0.005f -> stringResource(com.ilyskyo.blancall.R.string.reader_finished)
+        remainSec < 60L -> stringResource(com.ilyskyo.blancall.R.string.reader_remaining_less_minute)
+        else -> stringResource(
+            com.ilyskyo.blancall.R.string.reader_remaining_minutes,
+            (remainSec / 60).coerceAtLeast(1)
+        )
+    }
+    Text(text = text, style = MaterialTheme.typography.labelSmall, color = color)
+}
 
 /** 轻量可变引用（供闭包写入共享状态） */
 internal class Ref<T>(var value: T)

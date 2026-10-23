@@ -7,7 +7,8 @@ import com.ilyskyo.blancall.data.model.PracticeRecord
 
 /**
  * 句级薄弱榜（B3-1）：从「哪篇弱」下沉到「哪句弱」，并把每个条目锚回它所在的段落 ——
- * 用户点一句就能只练那一段（[WeakSentence.sectionIndex] 沿导航传进练习页）。
+ * 用户点一句就能只练那一句及其前后几句（[WeakSentence.sentenceIndex] 沿导航传进练习页，
+ * 由 PracticeContentOps.focusWindow 切成聚焦窗口）。
  *
  * ## 数据来源与口径
  * 复刻 [MemoryHeatmap.generate] 的句级结果（收缩后的错误率、样本量、观测错误率），

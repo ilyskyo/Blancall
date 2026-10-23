@@ -95,3 +95,52 @@ fun dayOfWeekAtRow(row: Int, firstDayOfWeek: DayOfWeek): DayOfWeek =
 /** date1 → date2 的天数（date2 在后者时为正） */
 fun daysBetween(date1: LocalDate, date2: LocalDate): Int =
     ChronoUnit.DAYS.between(date1, date2).toInt()
+
+/** 热力图的格子尺寸（单位 dp，纯数值 —— 不引入 Compose 类型，JVM 可测） */
+data class HeatmapMetrics(
+    /** 单格边长（正方形） */
+    val cell: Float,
+    /** 格间距 */
+    val gap: Float,
+) {
+    /** 整张网格的宽度（列 × 格 + 列间隙） */
+    fun gridWidth(weeks: Int): Float = cell * weeks + gap * (weeks - 1)
+
+    /** 网格高度（7 行） */
+    fun gridHeight(): Float = cell * 7 + gap * 6
+}
+
+/** 格子边长上限（dp）：短区间不再被「撑满容器」拉成大方块 */
+private const val HEATMAP_MAX_CELL_DP = 16f
+
+/** 格子边长下限（dp）：一年档的物理底线，再小就只剩一片模糊 */
+private const val HEATMAP_MIN_CELL_DP = 1.5f
+
+/**
+ * 格子尺寸规范 v1。
+ *
+ * 修复的问题：旧实现 `cell = 可用宽度 / 列数`，于是同一张卡在「本月」（3~5 列）里
+ * 被撑成 50dp 以上的巨型方块，切到「近一年」（53 列）又缩到 4dp 以下 —— **同一张图，
+ * 选完范围像换了一个控件**。格子尺寸是这张图的"单位刻度"，它一变，用户就没法跨范围比较了。
+ *
+ * 规范：
+ * 1. **上限封顶 16dp**：短区间的格子与一年档之外的所有档位同尺寸，绝不撑满；
+ * 2. 间距按列数分三档（4 / 2 / 1dp），只在跨档时变化，不做连续插值；
+ * 3. 宽度放不下时才让格子收缩（一年档 53 列在所难免），且下限 1.5dp；
+ * 4. 网格宽度可小于容器 —— 由绘制方居中，而不是把格子拉大来填满。
+ *
+ * @param weeks 列数（每列一周），必须 > 0
+ * @param availableWidth 可用于网格的宽度（dp，已扣掉左侧星期标签列）
+ */
+fun heatmapCellMetrics(weeks: Int, availableWidth: Float): HeatmapMetrics {
+    require(weeks > 0) { "weeks must be > 0" }
+    val gap = when {
+        weeks > 32 -> 1f
+        weeks > 14 -> 2f
+        else -> 4f
+    }
+    val fit = (availableWidth - gap * (weeks - 1)).coerceAtLeast(0f) / weeks
+    val cell = if (fit >= HEATMAP_MAX_CELL_DP) HEATMAP_MAX_CELL_DP
+    else fit.coerceAtLeast(HEATMAP_MIN_CELL_DP)
+    return HeatmapMetrics(cell = cell, gap = gap)
+}

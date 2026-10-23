@@ -51,10 +51,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +71,7 @@ import com.ilyskyo.blancall.algorithm.CsvExporter
 import com.ilyskyo.blancall.algorithm.ForgettingPredictor
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
+import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.AchievementTimelineStore
@@ -129,6 +132,12 @@ private data class WeakArticle(
 )
 
 /**
+ * 学习日历的默认时间维度。所有「默认」「恢复默认」的出口都读它 ——
+ * 两处各写一个枚举字面量，改默认值时必然漏掉一处。
+ */
+private val DEFAULT_CALENDAR_RANGE = RangePreset.LAST_90
+
+/**
  * 全量统计聚合结果。用 remember(allRecords) 包裹，避免每次重组重算。
  */
 private data class OverviewStats(
@@ -187,6 +196,7 @@ private data class WeaknessProfile(
 @Composable
 fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     // 根 tab 页面：返回键 = 退出应用（与「我的文章」「素材库」tab 平级语义一致，绝不 pop 回上一 tab/首页）
     BackHandler {
         (context as? android.app.Activity)?.finish()
@@ -233,7 +243,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // remember{} 内部、key 只有数据集合，于是整屏数字会冻在昨天。ticker 按分钟检查，
     // 只有真的换了日历天才让 stats 重算（不是每分钟全量重扫）。
     var todayKey by remember { mutableStateOf(LocalDate.now()) }
-    var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(60_000L)
@@ -246,9 +256,9 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // ── 学习日历的时间维度 ──
     // 预设存 name 而不是枚举：rememberSaveable 的值要能进 Bundle，字符串最稳；
     // 自定义区间存 epochDay，0 = 还没选过（那时回落到默认窗口，而不是画一个 0 天的空区间）。
-    var rangePresetName by rememberSaveable { mutableStateOf(RangePreset.LAST_90.name) }
-    var customStartDay by rememberSaveable { mutableStateOf(0L) }
-    var customEndDay by rememberSaveable { mutableStateOf(0L) }
+    var rangePresetName by rememberSaveable { mutableStateOf(DEFAULT_CALENDAR_RANGE.name) }
+    var customStartDay by rememberSaveable { mutableLongStateOf(0L) }
+    var customEndDay by rememberSaveable { mutableLongStateOf(0L) }
     var showRangePicker by remember { mutableStateOf(false) }
     val rangePreset = remember(rangePresetName) { RangePreset.valueOf(rangePresetName) }
     val customRange = remember(customStartDay, customEndDay) {
@@ -258,7 +268,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     }
     // 区间随 todayKey 重算：页面开着跨过午夜时，「近 7 天」的右端要跟着挪一天
     val activeRange = remember(rangePreset, customRange, todayKey) {
-        if (rangePreset == RangePreset.CUSTOM) customRange ?: presetRange(RangePreset.LAST_90, todayKey)
+        if (rangePreset == RangePreset.CUSTOM) customRange ?: presetRange(DEFAULT_CALENDAR_RANGE, todayKey)
         else presetRange(rangePreset, todayKey)
     }
     // 学习日历的区间可以是任意天数（近一年 = 365 天），不能再复用 stats 里那 84 天的定长数组，
@@ -425,15 +435,19 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
     // 句子卡片（每日一句）的句子级状态：同源加载，供「句子记忆」统计块使用
     var sentenceStates by remember { mutableStateOf(fsrsStore.allSentenceStates()) }
+    // 暂停中的文章：预测与句子到期数都不再把它们读成「该复习」
+    var pausedArticleIds by remember { mutableStateOf(fsrsStore.pausedArticleIds()) }
     var fsrsReady by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
+    val fsrsRevision by fsrsStore.revision.collectAsState()
+    LaunchedEffect(fsrsRevision) {
         fsrsStore.awaitLoaded()
         fsrsStates = fsrsStore.allStates()
         sentenceStates = fsrsStore.allSentenceStates()
+        pausedArticleIds = fsrsStore.pausedArticleIds()
         fsrsReady = true
     }
-    val predictions = remember(articles, allRecords, template, fsrsStates) {
-        ForgettingPredictor.predict(articles, allRecords, template, fsrsStates)
+    val predictions = remember(articles, allRecords, template, fsrsStates, pausedArticleIds) {
+        ForgettingPredictor.predict(articles, allRecords, template, fsrsStates, pausedArticleIds)
     }
     val dueSoonAll = remember(predictions) { ForgettingPredictor.dueSoon(predictions) }
     val dueSoon = remember(dueSoonAll) { dueSoonAll.take(5) }
@@ -441,8 +455,21 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // （有 FSRS 状态且 reviewCount>0 才是自适应调度），不在这里另立一套口径。
     val adaptiveIds = remember(fsrsStates) { fsrsStates.filterValues { it.reviewCount > 0 }.keys }
 
+    // 学习任务流入口卡：只统计真正由 FSRS 调度（练过）的文章，暂停项单独计数
+    val flowDueCount = remember(fsrsStates, pausedArticleIds, nowTick) {
+        fsrsStates.count { (id, state) ->
+            state.reviewCount > 0 && id !in pausedArticleIds && nowTick >= state.due
+        }
+    }
+    val flowPausedCount = remember(fsrsStates, pausedArticleIds) {
+        pausedArticleIds.count { (fsrsStates[it]?.reviewCount ?: 0) > 0 }
+    }
+    val flowActiveCount = remember(fsrsStates) {
+        fsrsStates.count { it.value.reviewCount > 0 }
+    }
+
     // ── 句子记忆统计：取自句子级 FSRS 状态，留存率口径与文章一致（同函数同参数）──
-    val sentenceStats = remember(sentenceStates, nowTick) {
+    val sentenceStats = remember(sentenceStates, nowTick, pausedArticleIds) {
         val seen = sentenceStates.values.filter { it.reviewCount > 0 }
         val reviews = seen.sumOf { it.reviewCount }
         val lapses = seen.sumOf { it.lapses }
@@ -453,7 +480,10 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             lapseRate = if (reviews > 0) lapses.toFloat() / reviews else 0f,
             avgRetention = if (seen.isEmpty()) 0f
             else (seen.sumOf { FsrsEngine.retentionRate(it, nowTs) } / seen.size).toFloat(),
-            dueCount = seen.count { nowTs >= it.due },
+            dueCount = sentenceStates.count { (key, state) ->
+                state.reviewCount > 0 && nowTs >= state.due &&
+                    SentenceSelector.articleIdOf(key) !in pausedArticleIds
+            },
         )
     }
 
@@ -506,7 +536,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         val ids = stats.weakestArticles.map { it.articleId }
         val titles = withContext(Dispatchers.IO) {
             ids.associateWith { id ->
-                articleRepo.getArticleById(id)?.title ?: context.getString(com.ilyskyo.blancall.R.string.ov_article_fallback, id)
+                articleRepo.getArticleById(id)?.title ?: resources.getString(com.ilyskyo.blancall.R.string.ov_article_fallback, id)
             }
         }
         weakTitles = titles
@@ -592,14 +622,14 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                         if (!ok) {
                                             android.widget.Toast.makeText(
                                                 context,
-                                                context.getString(com.ilyskyo.blancall.R.string.ov_export_failed_retry),
+                                                resources.getString(com.ilyskyo.blancall.R.string.ov_export_failed_retry),
                                                 android.widget.Toast.LENGTH_SHORT
                                             ).show()
                                         }
                                     } catch (e: Exception) {
                                         android.widget.Toast.makeText(
                                             context,
-                                            context.getString(com.ilyskyo.blancall.R.string.ov_export_failed_reason,
+                                            resources.getString(com.ilyskyo.blancall.R.string.ov_export_failed_reason,
                                                 e.message ?: ""),
                                             android.widget.Toast.LENGTH_SHORT
                                         ).show()
@@ -629,7 +659,9 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             }
         Spacer(Modifier.height(4.dp))
 
-        val isWide = LocalConfiguration.current.screenWidthDp >= 600
+        val isWide = with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.width.toDp()
+        } >= 600.dp
 
         // 滚动驱动的底栏自动收起：内容前进时导航栏让位、回滚时恢复（不再需要避让留白）
         val navBarScrollConn = rememberAutoHideNavBarOnScroll()
@@ -714,16 +746,16 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        Spacer(Modifier.height(8.dp))
-                                        Text(
-                                            item.preview.ifBlank {
-                                                stringResource(com.ilyskyo.blancall.R.string.ov_click_to_read)
-                                            },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 3,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                        if (item.preview.isNotBlank()) {
+                                            Spacer(Modifier.height(8.dp))
+                                            Text(
+                                                item.preview,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 3,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                         Spacer(Modifier.height(4.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                             TextButton(
@@ -751,7 +783,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                     dueSentences = sentenceStats.dueCount,
                                     weakest = nextWeakest,
                                     weakestTitle = nextWeakest?.let { w ->
-                                        weakTitles[w.articleId] ?: context.getString(
+                                        weakTitles[w.articleId] ?: stringResource(
                                             com.ilyskyo.blancall.R.string.ov_article_fallback, w.articleId
                                         )
                                     }.orEmpty(),
@@ -762,6 +794,21 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                 )
                             }
                         }
+                        // ── 学习任务流入口（B3：把「下一次复习在哪天」从预测卡升级为可管理的时间线）──
+                        // 放在「下一步」之后：先给用户一个动词，再给一个能自由调节整条计划的入口。
+                        if (flowActiveCount > 0) {
+                            item(key = "overview_card_flow") {
+                                AnimatedOverviewCard {
+                                    StudyFlowEntryCard(
+                                        dueCount = flowDueCount,
+                                        pausedCount = flowPausedCount,
+                                        activeCount = flowActiveCount,
+                                        onOpen = { navController.navigate("study_flow") },
+                                    )
+                                }
+                            }
+                        }
+
                         // ── 总览卡片（仪表盘 + 连续天数 + 时长） ──
                         // 每张卡都要稳定 key：裸 `item {` 的卡没有 key，滚动把卡片回收再滚回来时
                         // Compose 认不出「这是同一张卡」，会当成新卡重新组合。
@@ -985,7 +1032,15 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                                     selected = rangePreset,
                                                     customRange = customRange,
                                                     onSelect = { rangePresetName = it.name },
-                                                    onOpenCustom = { showRangePicker = true }
+                                                    onOpenCustom = { showRangePicker = true },
+                                                    // 默认档与复位动作必须同源：胶囊上的"默认"就是这里给的那一档，
+                                                    // 恢复默认同时清掉自定义区间，否则 CUSTOM 的旧值会留在 Bundle 里
+                                                    defaultPreset = DEFAULT_CALENDAR_RANGE,
+                                                    onResetToDefault = {
+                                                        rangePresetName = DEFAULT_CALENDAR_RANGE.name
+                                                        customStartDay = 0L
+                                                        customEndDay = 0L
+                                                    }
                                                 )
                                             }
                                         }
@@ -1158,7 +1213,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Text(
-                                                        weakTitles[articleId] ?: context.getString(
+                                                        weakTitles[articleId] ?: stringResource(
                                                             com.ilyskyo.blancall.R.string.ov_article_fallback, articleId
                                                         ),
                                                         style = MaterialTheme.typography.bodyMedium,
@@ -1193,7 +1248,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                weakTitles[articleId] ?: context.getString(
+                                                weakTitles[articleId] ?: stringResource(
                                                     com.ilyskyo.blancall.R.string.ov_article_fallback, articleId
                                                 ),
                                                 style = MaterialTheme.typography.bodyMedium,
@@ -1353,7 +1408,10 @@ private fun TagStatRow(stat: TagOps.TagStat, maxArticles: Int) {
             modifier = Modifier.weight(1f)
         )
         Text(
-            "${stat.articleCount} 篇 · 练习 ${stat.practices} 次 · 正确率 ${(stat.rate * 100).toInt()}%",
+            stringResource(
+                com.ilyskyo.blancall.R.string.stats_article_line,
+                stat.articleCount, stat.practices, (stat.rate * 100).toInt()
+            ),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1378,15 +1436,30 @@ private fun TagStatRow(stat: TagOps.TagStat, maxArticles: Int) {
 }
 
 /**
- * 「下一步」行动卡：把整页的「陈列」收成一个动词。
+ * 「建议下一步」卡：把整页的「陈列」收成一个动词。
  *
  * 为什么需要它：其余卡片都在回答「我练了多少 / 错在哪一类 / 哪篇弱」，
- * 而用户合上页面时真正要的是「所以现在练什么」。这张卡只给**一个**动作 ——
- * 有最弱篇就打薄弱训练，只有到期句就去复习，都没有就明说「暂无待复习」。
- * 不给三个入口：选择本身就是负担，而这里三选一必然有两项是当下不该做的。
+ * 而用户合上页面时真正要的是「所以现在练什么」。
+ *
+ * 改造前后的差别（用户反馈"根本没反应过来是哪个模式"）：
+ * - 旧卡只写「今日待复习 17 句 / 去练习」。**17 句属于哪个模块？点了会进什么？** 界面没说，
+ *   用户点进去才发现是句子卡片 —— 这不是文案瑕疵，是让用户先付出一次试错。
+ *   现在标题直接写明来源（句子卡片 / 文章练习），并单列一行「记忆方式」。
+ * - 旧卡没说它支持哪些挖空方式。用户以为"待复习"能覆盖字词挖空与反向默写，
+ *   实际句子卡只有「遮挡整句（首字提示）」这一种。现在把能力边界写进卡面：
+ *   句子卡 = 只做整句回忆；文章练习 = 句子挖空 / 字词挖空 / 反向默写。
+ * - 旧卡同时列出「17 句」和「最弱一篇」，却只给一个按钮，读者无法判断按钮会执行哪一条。
+ *   现在主建议（有按钮）与次建议（一行可点文字）分开 —— 只执行一件，但另一件也看得见。
+ *
+ * 为什么仍只给一个主动作：选择本身就是负担，三选一必然有两项是当下不该做的。
  *
  * 为什么用薄荷绿：`continueP` 是这套马卡龙里语义为「继续 / 前进」的那一支，
  * 与「下一步」的动作含义同向；其余色相在别处已各自绑定了含义（info=信息、warn=警告）。
+ *
+ * 放在哪：留在全局统计页顶部（诊断结论属于诊断页），不作为首页固定卡。
+ * 首页是用户可自由增删排序的卡片画布（HomeCardCanvas / HomeLayoutStore），
+ * 系统硬塞一张不可移除的卡会破坏「我的首页我做主」；若以后要在首页看到，
+ * 应做成**可选卡片类型**由用户自己添加，而不是默认插入。
  */
 @Composable
 private fun NextStepCard(
@@ -1412,84 +1485,147 @@ private fun NextStepCard(
                 )
             }
             Spacer(Modifier.height(10.dp))
-            if (dueSentences > 0) {
-                Text(
-                    pluralStringResource(
-                        com.ilyskyo.blancall.R.plurals.due_sentences_today,
-                        dueSentences, dueSentences
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            if (weakest != null) {
-                if (dueSentences > 0) Spacer(Modifier.height(6.dp))
-                // 读屏把这两行连起来只会念成「《静夜思》 正确率 60% · 3次」—— 缺了「这是什么」。
-                // 合并成一个语义节点并显式给出描述，把「最弱一篇」这层关系说出来；
-                // 文案复用既有的「需加强的文章」标题，不为此新增字符串。
-                val weakLabel = stringResource(com.ilyskyo.blancall.R.string.weak_articles_title)
-                val weakValue = pluralStringResource(
-                    com.ilyskyo.blancall.R.plurals.weak_row_value,
-                    weakest.practiceCount,
-                    (weakest.correctRate * 100).toInt(),
-                    weakest.practiceCount
-                )
-                Column(
-                    modifier = Modifier.semantics(mergeDescendants = true) {
-                        contentDescription = "$weakLabel $weakestTitle $weakValue"
-                    }
-                ) {
-                    Text(
-                        weakestTitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            when (step) {
+                is NextStep.WeaknessDrill -> {
+                    // A2-9：读屏原先把标题和按钮读成两条互不相干的句子，缺「这是什么」。
+                    // 标题区合并成一个语义节点，显式给出「最弱一篇 + 标题 + 正确率」（复用既有键）；
+                    // 按钮留在合并之外，仍可单独聚焦、双击执行。
+                    val weakLabel = stringResource(com.ilyskyo.blancall.R.string.weak_articles_title)
+                    val weakValue = weakest?.let {
+                        pluralStringResource(
+                            com.ilyskyo.blancall.R.plurals.weak_row_value,
+                            it.practiceCount,
+                            (it.correctRate * 100).toInt(),
+                            it.practiceCount
+                        )
+                    } ?: ""
+                    NextStepPrimary(
+                        headline = stringResource(
+                            com.ilyskyo.blancall.R.string.ov_next_step_weak_title, weakestTitle
+                        ),
+                        scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_practice),
+                        limit = null,
+                        actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_action),
+                        onAction = { onWeaknessDrill(step.articleId) },
+                        a11y = "$weakLabel $weakestTitle $weakValue",
                     )
-                    Spacer(Modifier.height(2.dp))
+                    // 次建议：还有到期句子时给一条出口 —— 不做按钮，只做一行可点文字，
+                    // 视觉权重明显低于主建议，读者不会以为要同时做两件
+                    if (dueSentences > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        NextStepSecondary(
+                            text = stringResource(
+                                com.ilyskyo.blancall.R.string.ov_next_step_also,
+                                pluralStringResource(
+                                    com.ilyskyo.blancall.R.plurals.ov_next_step_due_sentences,
+                                    dueSentences, dueSentences
+                                )
+                            ),
+                            onClick = onGoReview,
+                        )
+                    }
+                }
+                NextStep.Review -> {
+                    NextStepPrimary(
+                        headline = pluralStringResource(
+                            com.ilyskyo.blancall.R.plurals.ov_next_step_due_sentences,
+                            dueSentences, dueSentences
+                        ),
+                        scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_sentences),
+                        limit = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_limit_sentences),
+                        actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_go_sentences),
+                        onAction = onGoReview,
+                    )
+                }
+                NextStep.AllClear -> {
                     Text(
-                        weakValue,
+                        stringResource(com.ilyskyo.blancall.R.string.ov_next_step_all_clear),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.ov_next_step_empty_body),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            if (step is NextStep.AllClear) {
-                Text(
-                    stringResource(com.ilyskyo.blancall.R.string.ov_next_step_all_clear),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            // 没有目标就不放一个点了没反应的按钮：空态只留文字
-            when (step) {
-                is NextStep.WeaknessDrill -> {
-                    Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        GlassButton(onClick = { onWeaknessDrill(step.articleId) }) {
-                            Text(
-                                stringResource(com.ilyskyo.blancall.R.string.ov_next_step_action),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-                NextStep.Review -> {
-                    Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        GlassButton(onClick = onGoReview) {
-                            Text(
-                                stringResource(com.ilyskyo.blancall.R.string.go_practice),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-                NextStep.AllClear -> {}
-            }
         }
+    }
+}
+
+/**
+ * 主建议块：一句「做什么」+ 一行「在哪做 / 用什么方式」+ 一行「做不到什么」+ 一个按钮。
+ *
+ * 三段的分工是刻意的：
+ * - headline 说**对象与数量**（复习 17 句到期句子）；
+ * - scope 说**入口归属**（句子卡片 / 文章练习）—— 回答"这是哪个模式"；
+ * - limit 说**能力边界**（不含字词挖空 / 反向默写）—— 回答"支不支持那几种挖空"。
+ * 把这三件压成一句，任何一句都会被读漏；分成三行，每一行都短到不会被跳过。
+ */
+@Composable
+private fun NextStepPrimary(
+    headline: String,
+    scope: String,
+    limit: String?,
+    actionLabel: String,
+    onAction: () -> Unit,
+    /** 读屏描述：非空时把标题区合并成一个语义节点（按钮留在外面，不吞掉「去练习」） */
+    a11y: String? = null,
+) {
+    Column(
+        modifier = if (a11y == null) {
+            Modifier
+        } else {
+            Modifier.semantics(mergeDescendants = true) { contentDescription = a11y }
+        }
+    ) {
+        Text(
+            headline,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            scope,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (limit != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                limit,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+            )
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        GlassButton(onClick = onAction) {
+            Text(
+                actionLabel,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/** 次建议：一行可点文字。刻意不做成按钮 —— 权重一高，就变成"两个都该点"。 */
+@Composable
+private fun NextStepSecondary(text: String, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.tertiary
+        )
     }
 }
 
@@ -1525,13 +1661,19 @@ private fun TodayGoalCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (achieved) "🎯 今日目标已达成" else "🎯 今日目标",
+                    stringResource(
+                        if (achieved) com.ilyskyo.blancall.R.string.daily_goal_achieved
+                        else com.ilyskyo.blancall.R.string.notif_daily_goal_title
+                    ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    "$todayCount / $effectiveGoal 次",
+                    stringResource(
+                        com.ilyskyo.blancall.R.string.daily_goal_progress,
+                        todayCount, effectiveGoal
+                    ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (achieved) MaterialTheme.colorScheme.tertiary
@@ -1555,13 +1697,14 @@ private fun TodayGoalCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("目标", style = MaterialTheme.typography.labelSmall,
+                Text(stringResource(com.ilyskyo.blancall.R.string.goal_label),
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 goalOptions.forEach { g ->
                     FilterChip(
                         selected = goal == g,
                         onClick = { onGoalChange(g) },
-                        label = { AdaptiveChipLabel("$g 次") },
+                        label = { AdaptiveChipLabel(stringResource(com.ilyskyo.blancall.R.string.goal_count_chip, g)) },
                         shape = RoundedCornerShape(8.dp)
                     )
                 }
@@ -1574,7 +1717,8 @@ private fun TodayGoalCard(
                     },
                     label = {
                         AdaptiveChipLabel(
-                            if (goal in goalOptions) "自定义" else "$goal 次"
+                            if (goal in goalOptions) stringResource(com.ilyskyo.blancall.R.string.custom)
+                            else stringResource(com.ilyskyo.blancall.R.string.goal_count_chip, goal)
                         )
                     },
                     shape = RoundedCornerShape(8.dp)
@@ -1587,15 +1731,15 @@ private fun TodayGoalCard(
     if (showCustomGoalDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showCustomGoalDialog = false },
-            title = { Text("自定义每日目标") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_goal_title)) },
             text = {
                 OutlinedTextField(
                     value = customGoalInput,
                     onValueChange = { input ->
                         customGoalInput = input.filter { it.isDigit() }.take(3)
                     },
-                    label = { Text("每日练习次数") },
-                    suffix = { Text("次") },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_goal_label)) },
+                    suffix = { Text(stringResource(com.ilyskyo.blancall.R.string.goal_times_unit)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
@@ -1607,10 +1751,12 @@ private fun TodayGoalCard(
                         customGoalInput.toIntOrNull()?.let { onGoalChange(it.coerceAtLeast(1)) }
                         showCustomGoalDialog = false
                     }
-                ) { Text("确定") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showCustomGoalDialog = false }) { Text("取消") }
+                TextButton(onClick = { showCustomGoalDialog = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }
@@ -1657,7 +1803,8 @@ private fun ForgettingPredictionCard(
         containerColor = Macaron.warn().fill
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("⏰ 即将遗忘", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+            Text(stringResource(com.ilyskyo.blancall.R.string.due_soon_title),
+                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
             // 这句话原本无论如何都写「基于 FSRS 遗忘曲线模型预测」，而无 FSRS 状态的文章其实走的是
@@ -1681,6 +1828,17 @@ private fun ForgettingPredictionCard(
             predictions.forEach { p ->
                 val (badge, badgeColor) = urgencyBadge(p)
                 val expanded = expandedId == p.articleId
+                val retentionPercent = (p.retentionRate * 100).toInt()
+                // 语义描述在组合期就拼好：semantics{} 不是 @Composable，里面不能取资源
+                val itemDescription = stringResource(
+                    com.ilyskyo.blancall.R.string.prediction_item_desc,
+                    p.title,
+                    retentionPercent,
+                    stringResource(
+                        if (expanded) com.ilyskyo.blancall.R.string.decay_expanded
+                        else com.ilyskyo.blancall.R.string.decay_collapsed
+                    )
+                )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1689,9 +1847,7 @@ private fun ForgettingPredictionCard(
                             expandedId = if (expanded) null else p.articleId
                         }
                         .semantics {
-                            contentDescription = "${p.title}，" +
-                                "记忆留存 ${(p.retentionRate * 100).toInt()}%，" +
-                                if (expanded) "已展开衰减曲线" else "点击展开衰减曲线"
+                            contentDescription = itemDescription
                         }
                         .padding(vertical = 6.dp)
                 ) {
@@ -1716,7 +1872,12 @@ private fun ForgettingPredictionCard(
                                     color = MaterialTheme.colorScheme.tertiary)
                             }
                             Text(
-                                "已练 ${p.practiceCount} 次 · 正确率 ${(p.lastAccuracy * 100).toInt()}% · 记忆强度 ${String.format(Locale.ROOT, "%.1f", p.memoryStrength)}天",
+                                stringResource(
+                                    com.ilyskyo.blancall.R.string.prediction_detail_line,
+                                    p.practiceCount,
+                                    (p.lastAccuracy * 100).toInt(),
+                                    String.format(Locale.ROOT, "%.1f", p.memoryStrength)
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1765,7 +1926,8 @@ private fun ForgettingPredictionCard(
                                     } else Modifier,
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                                 ) {
-                                    Text("去练习 ›", style = MaterialTheme.typography.labelMedium,
+                                    Text("${stringResource(com.ilyskyo.blancall.R.string.go_practice)} ›",
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary)
                                 }
                             }
@@ -1777,17 +1939,25 @@ private fun ForgettingPredictionCard(
     }
 }
 
-/** 紧急度徽章文本与颜色（@Composable 以读取 MaterialTheme.colorScheme） */
+/** 紧急度徽章文本与颜色（@Composable 以读取 MaterialTheme.colorScheme 与语言资源） */
 @Composable
 private fun urgencyBadge(p: ForgettingPredictor.Prediction): Pair<String, androidx.compose.ui.graphics.Color> {
     val c = MaterialTheme.colorScheme
     return when (p.urgency) {
-        ForgettingPredictor.Urgency.OVERDUE -> "已逾期 ${-p.daysLeft}天" to c.error
-        ForgettingPredictor.Urgency.TODAY -> "今天" to c.error
-        ForgettingPredictor.Urgency.SOON -> "${p.daysLeft}天后" to c.tertiary
-        ForgettingPredictor.Urgency.LATER -> "${p.daysLeft}天后" to c.onSurfaceVariant
-        ForgettingPredictor.Urgency.NEW -> "未开始" to c.onSurfaceVariant
-        ForgettingPredictor.Urgency.MASTERED -> "已掌握" to c.primary
+        ForgettingPredictor.Urgency.OVERDUE -> {
+            val days = -p.daysLeft
+            pluralStringResource(com.ilyskyo.blancall.R.plurals.overdue_days, days, days) to c.error
+        }
+        ForgettingPredictor.Urgency.TODAY ->
+            stringResource(com.ilyskyo.blancall.R.string.flow_group_today) to c.error
+        ForgettingPredictor.Urgency.SOON ->
+            pluralStringResource(com.ilyskyo.blancall.R.plurals.flow_days_later, p.daysLeft, p.daysLeft) to c.tertiary
+        ForgettingPredictor.Urgency.LATER ->
+            pluralStringResource(com.ilyskyo.blancall.R.plurals.flow_days_later, p.daysLeft, p.daysLeft) to c.onSurfaceVariant
+        ForgettingPredictor.Urgency.NEW ->
+            stringResource(com.ilyskyo.blancall.R.string.urgency_not_started) to c.onSurfaceVariant
+        ForgettingPredictor.Urgency.MASTERED ->
+            stringResource(com.ilyskyo.blancall.R.string.mastered) to c.primary
     }
 }
 
@@ -1812,13 +1982,16 @@ private fun WeaknessProfileCard(weakness: WeaknessProfile) {
 
     GlassCard {
         Column(Modifier.padding(16.dp)) {
-            Text("弱点画像", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+            Text(stringResource(com.ilyskyo.blancall.R.string.weakness_profile_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(8.dp))
             RadarChart(
                 axes = axes,
                 values = values,
-                label = "共 ${weakness.totalMistakes} 处错误"
+                label = stringResource(
+                    com.ilyskyo.blancall.R.string.weakness_total_mistakes,
+                    weakness.totalMistakes
+                )
             )
             Spacer(Modifier.height(10.dp))
             HorizontalDivider(
@@ -1840,16 +2013,31 @@ private fun WeaknessProfileCard(weakness: WeaknessProfile) {
 }
 
 /** 根据弱点占比生成针对性训练建议 */
+@Composable
 private fun trainingAdvice(w: WeaknessProfile): String {
-    if (w.totalMistakes == 0) return "暂无错误数据，继续练习以生成弱点画像"
+    if (w.totalMistakes == 0) {
+        return stringResource(com.ilyskyo.blancall.R.string.weakness_advice_empty)
+    }
     val max = maxOf(w.typo, w.glyph, w.missing, w.extra, w.order, w.incorrect)
     return when {
-        w.incorrect == max -> "没记住占比最高（${(w.incorrect * 100).toInt()}%），建议重读原文，从句子挖空起步"
-        w.typo == max -> "记成他字占比最高（${(w.typo * 100).toInt()}%），建议多练字词挖空，把字写对"
-        w.glyph == max -> "字形混淆居多（${(w.glyph * 100).toInt()}%），建议照形近字表辨析（己/已、未/末、戍/戌）"
-        w.missing == max -> "漏填偏多（${(w.missing * 100).toInt()}%），练习时关注句意完整，加强句子挖空"
-        w.extra == max -> "多填突出（${(w.extra * 100).toInt()}%），默写时克制多余内容，多用反向默写"
-        else -> "顺序错误居多（${(w.order * 100).toInt()}%），用反向默写强化句子顺序记忆"
+        w.incorrect == max -> stringResource(
+            com.ilyskyo.blancall.R.string.weakness_advice_incorrect, (w.incorrect * 100).toInt()
+        )
+        w.typo == max -> stringResource(
+            com.ilyskyo.blancall.R.string.weakness_advice_typo, (w.typo * 100).toInt()
+        )
+        w.glyph == max -> stringResource(
+            com.ilyskyo.blancall.R.string.weakness_advice_glyph, (w.glyph * 100).toInt()
+        )
+        w.missing == max -> stringResource(
+            com.ilyskyo.blancall.R.string.weakness_advice_missing, (w.missing * 100).toInt()
+        )
+        w.extra == max -> stringResource(
+            com.ilyskyo.blancall.R.string.weakness_advice_extra, (w.extra * 100).toInt()
+        )
+        else -> stringResource(
+            com.ilyskyo.blancall.R.string.weakness_advice_order, (w.order * 100).toInt()
+        )
     }
 }
 
@@ -2156,4 +2344,83 @@ private fun achievementDescRes(id: String): Int = when (id) {
     "memory_95" -> com.ilyskyo.blancall.R.string.ach_desc_memory_95
     "due_cleared" -> com.ilyskyo.blancall.R.string.ach_desc_due_cleared
     else -> com.ilyskyo.blancall.R.string.ach_desc_first_practice
+}
+
+/**
+ * 数据页里的学习任务流入口：先把「今天有几项、有没有暂停」讲清，再让整卡可点。
+ * 不放第二个按钮 —— 整张卡就是入口，右侧数字是摘要而不是操作。
+ */
+@Composable
+private fun StudyFlowEntryCard(
+    dueCount: Int,
+    pausedCount: Int,
+    activeCount: Int,
+    onOpen: () -> Unit,
+) {
+    val accent = Macaron.continueP().accent
+    GlassCard(
+        containerColor = Macaron.continueP().fill,
+        onClick = onOpen,
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AppIcon(
+                        AppIconKind.Insights,
+                        modifier = Modifier.size(20.dp),
+                        tint = accent
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.flow_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        stringResource(
+                            com.ilyskyo.blancall.R.string.flow_entry_summary,
+                            dueCount, pausedCount
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "$dueCount",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accent
+                    )
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.flow_summary_due_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                AppIcon(
+                    AppIconKind.ChevronRight,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                stringResource(com.ilyskyo.blancall.R.string.flow_entry_action, activeCount),
+                style = MaterialTheme.typography.labelMedium,
+                color = accent
+            )
+        }
+    }
 }

@@ -216,8 +216,13 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     val wordBlankCount: StateFlow<Int> = _wordBlankCount.asStateFlow()
 
     // 是否启用默写提示（菜单"显示提示"开关，默认开启）：控制弱/强提示功能
-    internal val _showHint = MutableStateFlow(true)
+    // 内容提示（淡显 → 自动填字）：初值取用户偏好，跨会话记住
+    internal val _showHint = MutableStateFlow(AppPrefs.hintContentEnabled)
     val showHint: StateFlow<Boolean> = _showHint.asStateFlow()
+
+    // 字数提示（该空几个字）：与内容提示相互独立，可任意组合
+    internal val _hintLength = MutableStateFlow(AppPrefs.hintLengthEnabled)
+    val hintLength: StateFlow<Boolean> = _hintLength.asStateFlow()
 
     /**
      * 落笔即停、收笔即恢复：手写也走强弱提示，只是别在写着的时候弹出来。
@@ -263,8 +268,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         getSectionMode = { _sectionMode.value },
         getSelectedSections = { _selectedSections.value },
         setStrategy = { _strategy.value = it },
-        setSectionMode = { _sectionMode.value = it },
-        setSelectedSections = { _selectedSections.value = it },
+        // AI 侧改写段落状态即视为放弃句级聚焦（否则会「AI 选了段落、实际仍只练旧窗口」）
+        setSectionMode = { clearFocusWindow(); _sectionMode.value = it },
+        setSelectedSections = { clearFocusWindow(); _selectedSections.value = it },
         regenerateCurrentModeViaAi = { regenerateCurrentModeViaAi() },
         regenerateCloze = { regenerateCloze() },
         generateDictationLocal = { generateDictationLocal() },
@@ -331,6 +337,18 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _selectedSections = MutableStateFlow<Set<Int>>(emptySet())
     val selectedSections: StateFlow<Set<Int>> = _selectedSections.asStateFlow()
 
+    /**
+     * 句级聚焦（句级薄弱榜「点一句去练」/ 练习记录单条错题「复习」）是否生效。
+     *
+     * 生效时挖空只覆盖 [activeFocusWindow] 那一块（目标句及其前后各几句），与段落选择无关；
+     * UI 用它把顶栏的段落标签换成「聚焦」而不是误导性的「段落：自选 (1/1)」。
+     */
+    private val _focusWindowActive = MutableStateFlow(false)
+    val focusWindowActive: StateFlow<Boolean> = _focusWindowActive.asStateFlow()
+
+    /** 当前会话的句级聚焦窗口；null = 不聚焦（按段落模式生成）。internal 以便落盘侧写入 focusSentence */
+    internal var activeFocusWindow: PracticeContentOps.FocusWindow? = null
+
     private val _rankedSections = MutableStateFlow<List<SectionSplitter.RankedSection>>(emptyList())
     val rankedSections: StateFlow<List<SectionSplitter.RankedSection>> = _rankedSections.asStateFlow()
 
@@ -392,8 +410,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             )
         }
         // 缓存只缓存错误率统计；memoryFactor 依赖 FSRS 实时留存率（随时间衰减），须每次现算
-        if (records === errorProfileCacheKey && errorProfileCache != null) {
-            return errorProfileCache!!.copy(memoryFactor = currentMemoryFactor())
+        val cachedProfile = errorProfileCache
+        if (records === errorProfileCacheKey && cachedProfile != null) {
+            return cachedProfile.copy(memoryFactor = currentMemoryFactor())
         }
         val p = buildErrorProfile(records).copy(
             // 单篇：段落排序改吃「现在有多弱」（真实比率 + 样本门槛），
@@ -509,7 +528,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                                 dictationInput = json.optString("dictationInput", ""),
                                 clozeJson = if (json.has("clozeJson")) json.getString("clozeJson") else null,
                                 configId = json.optLong("configId", 0L),
-                                lastPracticeTime = json.optLong("lastPracticeTime", System.currentTimeMillis())
+                                lastPracticeTime = json.optLong("lastPracticeTime", System.currentTimeMillis()),
+                                // 上次是句级聚焦会话（点一句去练）：恢复时要按同一窗口重建锚点
+                                focusSentence = json.optInt("focusSentence", -1)
                             )
                         } else null
                     } catch (_: Exception) { null }
@@ -531,6 +552,24 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             // 重置段落选择
             _sectionMode.value = SectionMode.FULL
             _selectedSections.value = emptySet()
+            // 句级聚焦（句级薄弱榜「点一句去练」/ 单条错题「复习」）：只练该句及其前后各几句。
+            //
+            // 旧实现是「选该句所在的那一段」，但段落按自然段切分：没有空行的文章（高考必背
+            // 源文件就是「每句一行」）整篇只切出一段，于是「点一句」退化成「重做整篇」。
+            // 现在按【句子】取窗口（PracticeContentOps.focusWindow），与段落粒度无关。
+            //
+            // 必须在恢复锚点之前算出来：聚焦窗口的句子索引从 0 起，若按整篇口径重建锚点，
+            // 判分记录的句级归属会全指到文章开头（「继续练习」恢复聚焦会话时踩的就是这个）。
+            val focusSentenceToUse = when {
+                focusSentence >= 0 -> focusSentence
+                savedState != null && savedState.focusSentence >= 0 -> savedState.focusSentence
+                else -> -1
+            }
+            val focus = if (focusSentenceToUse >= 0) {
+                PracticeContentOps.focusWindow(art.content, focusSentenceToUse)
+            } else null
+            activeFocusWindow = focus
+            _focusWindowActive.value = focus != null
             // 应用恢复的练习进度（mode 必须在 _totalBlanks 计算前恢复，因为后者依赖前者）
             if (savedState != null) {
                 val restoredMode = try { BlancallMode.valueOf(savedState.mode) } catch (_: Exception) { null }
@@ -563,8 +602,17 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         // 直接恢复挖空：进度条立即用保存的总空数显示（不延迟）
                         _totalBlanks.value = savedState.totalBlanks.coerceAtLeast(0)
                         // 恢复后重建锚点表：判分记录的句子归属与热力图依赖（缺锚点时提交会丢弃句级统计退回整篇）
+                        // 聚焦会话必须按窗口口径重建 —— 恢复的挖空是窗口内的，锚点却按整篇算就会全错位
                         _sentenceAnchors.value = withContext(Dispatchers.Default) {
-                            buildSentenceAnchors(art.content, art.content, SectionSplitter.split(art.content), emptySet())
+                            val window = activeFocusWindow
+                            if (window != null) {
+                                buildSentenceAnchors(
+                                    art.content, window.section.text,
+                                    listOf(window.section), setOf(window.section.index)
+                                )
+                            } else {
+                                buildSentenceAnchors(art.content, art.content, SectionSplitter.split(art.content), emptySet())
+                            }
                         }
                         // 恢复配置身份：上次是自定义练习时重新挂上锁定（配置已删除则降级为普通练习并提示）
                         if (savedState.configId > 0L) {
@@ -583,7 +631,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                             } else {
                                 Toast.makeText(
                                     getApplication(),
-                                    "原自定义配置已删除，已恢复上次挖空继续练习",
+                                    getApplication<Application>().getString(
+                                        com.ilyskyo.blancall.R.string.custom_config_deleted_resume
+                                    ),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -620,21 +670,15 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             } catch (_: Exception) { /* 切分失败保持空列表，UI 显示空态 */ }
             _sections.value = secs
             _rankedSections.value = ranked
-            // 句级薄弱榜「点一句去练」：只练该句所在的一段。
-            // 句子按【字符位置】归段（全文句的 startIndex 落进 [startChar, endChar) 区间）——
-            // 跨口径稳定的锚点是字符位置，不是「段内第几句」（见 answeredSentenceStarts 的注释）。
-            val focusSection = if (focusSentence >= 0) {
-                val startChar = SentenceSplitter.splitWithPositions(art.content)
-                    .getOrNull(focusSentence)?.startIndex
-                startChar?.let { c -> secs.firstOrNull { c >= it.startChar && c < it.endChar } }
-            } else null
             // 应用初始段落模式（薄弱集训等入口）：必须在生成挖空前应用，
             // 否则 regenerateCloze 会基于默认 FULL 模式生成全文
             when {
-                // 聚焦优先于常规初始模式：点榜单某一行的意图就是「只练这一段」
-                focusSection != null -> {
+                // 聚焦时不按段落生成（内容由 activeFocusWindow 决定，见 generationScope），
+                // 但把段落状态摆成「已选该句所在段」，让用户打开段落面板时看到的选中项与眼前练的内容大致对应
+                focus != null -> {
                     _sectionMode.value = SectionMode.SELECTED
-                    _selectedSections.value = setOf(focusSection.index)
+                    val container = secs.firstOrNull { focus.section.startChar >= it.startChar && focus.section.startChar < it.endChar }
+                    _selectedSections.value = container?.let { setOf(it.index) } ?: emptySet()
                 }
                 initialSectionMode != null -> {
                     _sectionMode.value = initialSectionMode
@@ -672,6 +716,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         activeCustomConfig = null
         _customConfigName.value = null
         _loadFailed.value = false
+        // 跨文本强制全篇：句级聚焦窗口不适用
+        activeFocusWindow = null
+        _focusWindowActive.value = false
         // 取消上一次加载，防止竞态
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -740,9 +787,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 /* 生成失败保持 null，UI 显示空态 */
             }
 
-            if (mixed == null) return@launch
-            _crossSourceInfo.value = mixed!!.sources
-            _crossArticleTitles.value = mixed!!.articleTitles
+            val mixedContent = mixed ?: return@launch
+            _crossSourceInfo.value = mixedContent.sources
+            _crossArticleTitles.value = mixedContent.articleTitles
 
             _article.value = Article(
                 id = -1L,
@@ -751,7 +798,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     .filter { it.isNotEmpty() }
                     .distinct()
                     .joinToString(" · "),
-                content = mixed!!.content
+                content = mixedContent.content
             )
 
             // 清空状态
@@ -768,7 +815,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             _sectionMode.value = SectionMode.FULL
             _selectedSections.value = emptySet()
 
-            val content = mixed!!.content
+            val content = mixedContent.content
             if (content.isBlank()) {
                 _sections.value = emptyList()
                 _rankedSections.value = emptyList()
@@ -856,7 +903,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         ai.aiGenerateJob = viewModelScope.launch {
             val content = _article.value?.content ?: return@launch
             val secs = _sections.value
-            val effectiveContent = getEffectiveContent(content, secs)
+            val scope = generationScope(content, secs)
+            val effectiveContent = scope.content
             if (effectiveContent.isBlank()) return@launch
 
             ai._isAiGenerating.value = true
@@ -876,9 +924,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 }
                 // 锚点与 AI 挖空同源（都基于 effectiveContent 切句），必须同步更新，
                 // 否则判分时 sentenceIndex 无法换算成全文字符位置。
-                val selectedSnap = _selectedSections.value
                 _sentenceAnchors.value = withContext(Dispatchers.Default) {
-                    buildSentenceAnchors(content, effectiveContent, secs, selectedSnap)
+                    buildSentenceAnchors(content, effectiveContent, scope.sections, scope.selected)
                 }
                 // 切换到该模式时先清空旧答案与结果态
                 when (mode) {
@@ -938,12 +985,17 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 } ?: false
                 if (!completed) {
                     throw AiClient.AiException(
-                        if (sb.isEmpty()) "AI 长时间无响应" else "AI 生成超时"
+                        getApplication<Application>().getString(
+                            if (sb.isEmpty()) com.ilyskyo.blancall.R.string.ai_error_long_wait
+                            else com.ilyskyo.blancall.R.string.ai_error_generation_timeout
+                        )
                     )
                 }
                 // 快速返回但没有任何有效内容（部分中转服务返回了无法解析的格式）→ 回退本地
                 if (sb.isEmpty()) {
-                    throw AiClient.AiException("AI 未返回有效挖空结果")
+                    throw AiClient.AiException(
+                        getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_error_invalid_cloze)
+                    )
                 }
 
                 when (mode) {
@@ -954,7 +1006,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         )
                         // 解码为空 → 同样视为失败，回退本地（避免"超快但没挖空"）
                         if (result.blanks.isEmpty()) {
-                            throw AiClient.AiException("AI 未返回有效挖空结果")
+                            throw AiClient.AiException(
+                                getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_error_invalid_cloze)
+                            )
                         }
                         _sentenceCloze.value = result
                         _totalBlanks.value = result.blanks.size
@@ -966,7 +1020,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         )
                         // 解码为空 → 视为失败，回退本地（避免"超快但没挖空"）
                         if (result.blanks.isEmpty()) {
-                            throw AiClient.AiException("AI 未返回有效挖空结果")
+                            throw AiClient.AiException(
+                                getApplication<Application>().getString(com.ilyskyo.blancall.R.string.ai_error_invalid_cloze)
+                            )
                         }
                         _wordCloze.value = result
                         _totalBlanks.value = result.blanks.size
@@ -986,7 +1042,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 throw e
             } catch (e: Exception) {
                 ai._isAiGenerating.value = false
-                ai._aiError.value = "AI 挖空失败：${e.message}"
+                ai._aiError.value = (e as? AiClient.AiException)?.messageFor(getApplication())
+                    ?: e.message.orEmpty()
                 // 失败回退本地算法，保证练习始终可用
                 try {
                     if (mode == BlancallMode.REVERSE) generateDictationLocal() else regenerateCloze()
@@ -1001,7 +1058,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         dictationGenerateJob = viewModelScope.launch {
             val content = _article.value?.content ?: return@launch
             val secs = _sections.value
-            val effectiveContent = getEffectiveContent(content, secs)
+            val effectiveContent = generationScope(content, secs).content
             var res: BlancallGenerator.DictationResult? = null
             try {
                 withContext(Dispatchers.Default) {
@@ -1051,6 +1108,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         )
 
     fun setSectionMode(mode: SectionMode) {
+        // 用户显式改段落模式即视为放弃句级聚焦，否则会「面板里全选、实际仍只练那一小块」
+        clearFocusWindow()
         _sectionMode.value = mode
         val secs = _sections.value
         when (mode) {
@@ -1067,6 +1126,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun toggleSection(sectionIndex: Int) {
+        clearFocusWindow()
         val current = _selectedSections.value.toMutableSet()
         if (current.contains(sectionIndex)) {
             if (current.size > 1) {  // 至少保留一个段落
@@ -1080,6 +1140,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun selectAllSections() {
+        clearFocusWindow()
         val all = _sections.value.map { it.index }.toSet()
         // 已全选 → 取消全选（保留第一个，避免无段落可用）；否则全选
         _selectedSections.value = if (_selectedSections.value == all) {
@@ -1088,6 +1149,14 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             all
         }
         regenerateCloze()
+    }
+
+    /** 结束句级聚焦（用户主动改段落选择时调用） */
+    private fun clearFocusWindow() {
+        if (activeFocusWindow != null) {
+            activeFocusWindow = null
+            _focusWindowActive.value = false
+        }
     }
 
     // ── 沉浸模式管理（F4）──
@@ -1139,6 +1208,41 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         )
 
     /**
+     * 生成用的「有效正文 + 段落/选择口径」。
+     *
+     * 句级聚焦优先于段落选择：聚焦会话只覆盖目标句及其前后各几句（见 [activeFocusWindow]）。
+     * **所有生成入口（本地重生成 / AI 生成 / 反向默写 / 改挖空数量 / 重做）都必须经这里取内容**，
+     * 否则换个入口就漏出整篇 —— 那正是「点一句去练却要做整篇」的复发路径。
+     */
+    private class GenerationScope(
+        val content: String,
+        val sections: List<SectionSplitter.Section>,
+        val selected: Set<Int>
+    )
+
+    private fun generationScope(content: String, secs: List<SectionSplitter.Section>): GenerationScope {
+        val focus = activeFocusWindow
+        return if (focus != null) {
+            GenerationScope(focus.section.text, listOf(focus.section), setOf(focus.section.index))
+        } else {
+            GenerationScope(getEffectiveContent(content, secs), secs, _selectedSections.value)
+        }
+    }
+
+    /**
+     * 聚焦会话下把句级错误率表从【全文句序】平移到【窗口句序】；非聚焦原样返回。
+     * 不平移的话「薄弱优先」策略会去打错分句（窗口里第 0 句其实是全文第 from 句）。
+     */
+    private fun BlancallGenerator.ErrorProfile.rebasedForFocus(): BlancallGenerator.ErrorProfile {
+        val focus = activeFocusWindow ?: return this
+        return copy(
+            sentenceErrorRates = PracticeContentOps.shiftSentenceErrorRates(
+                sentenceErrorRates, -focus.firstSentenceIndex, focus.sentenceCount
+            )
+        )
+    }
+
+    /**
      * 构建「effectiveContent 句子索引 → 该句在全文中的字符起始位置」锚点表，见 [_sentenceAnchors]。
      *
      * 两步定位：
@@ -1166,9 +1270,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // （进入练习时 loadArticle 完成阶段会调用本函数，与 startCustomPractice 存在时序竞态）
         if (activeCustomConfig != null) return
         val secs = _sections.value
-        // 选中段落快照：effectiveContent 与锚点表必须基于同一次选择，否则会错位
-        val selected = _selectedSections.value
-        val effectiveContent = getEffectiveContent(content, secs)
+        // 内容与段落口径一次性快照：effectiveContent 与锚点表必须同源，否则会错位
+        // （句级聚焦优先于段落选择，见 generationScope）
+        val scope = generationScope(content, secs)
+        val effectiveContent = scope.content
         val recordsSnapshot = articleRecords
         val strat = _strategy.value
         val classical = _classicalMode.value
@@ -1185,7 +1290,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             var anchors: List<Int> = emptyList()
             try {
                 withContext(Dispatchers.Default) {
-                    val errorProfile = errorProfileFor(recordsSnapshot)
+                    val errorProfile = errorProfileFor(recordsSnapshot).rebasedForFocus()
                     sentenceResult = BlancallGenerator.generateSentenceCloze(
                         effectiveContent, errorProfile = errorProfile, strategy = strat
                     )
@@ -1193,7 +1298,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         effectiveContent, errorProfile = errorProfile, strategy = strat, classicalMode = classical
                     )
                     dictationResult = BlancallGenerator.generateDictation(effectiveContent)
-                    anchors = buildSentenceAnchors(content, effectiveContent, secs, selected)
+                    anchors = buildSentenceAnchors(content, effectiveContent, scope.sections, scope.selected)
                 }
             } catch (e: Exception) {
                 // 协程被取消（如自定义配置应用后取消本任务）时必须继续上抛，
@@ -1288,18 +1393,22 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // 锁定 + 重做可重建的合成配置（空位已是混合内容坐标）
         activeCustomConfig = CustomClozeStore.CustomConfig(
             id = -1L,
-            name = "自定义挖空",
+            name = getApplication<Application>().getString(com.ilyskyo.blancall.R.string.custom_cloze),
             createdAt = 0L,
             blanks = bySentence.entries.sortedBy { it.key }.flatMap { (s, ranges) ->
                 ranges.map { CustomClozeStore.BlankSpec(s, it.first, it.last + 1) }
             },
             mode = "SENTENCE",
         )
-        _customConfigName.value = "自定义挖空（${configsByArticle.size} 篇）"
+        _customConfigName.value = getApplication<Application>().getString(
+            com.ilyskyo.blancall.R.string.custom_cloze_cross_name,
+            configsByArticle.size
+        )
 
         // 状态清理（与 applyCustomPractice 同口径）
         _sectionMode.value = SectionMode.FULL
         _selectedSections.value = emptySet()
+        clearFocusWindow()
         _sentenceAnswers.value = emptyMap()
         _wordAnswers.value = emptyMap()
         _checkResults.value = emptyMap()
@@ -1352,6 +1461,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         // 强制整篇模式，句子索引与全文切句对齐
         _sectionMode.value = SectionMode.FULL
         _selectedSections.value = emptySet()
+        clearFocusWindow()
         // 答案清理与 _wordAnswers 对称：同 VM 二次应用配置时旧答案会错位到新空序
         _sentenceAnswers.value = emptyMap()
         _wordAnswers.value = emptyMap()
@@ -1430,8 +1540,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         wordGenerateJob = viewModelScope.launch {
             val content = _article.value?.content ?: return@launch
             val secs = _sections.value
-            val selected = _selectedSections.value
-            val effectiveContent = getEffectiveContent(content, secs)
+            val scope = generationScope(content, secs)
+            val effectiveContent = scope.content
             _wordAnswers.value = emptyMap()
             val recordsSnapshot = articleRecords
             val strat = _strategy.value
@@ -1445,7 +1555,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         effectiveContent, count = count, errorProfile = errorProfile,
                         strategy = strat, classicalMode = classical
                     )
-                    anchors = buildSentenceAnchors(content, effectiveContent, secs, selected)
+                    anchors = buildSentenceAnchors(content, effectiveContent, scope.sections, scope.selected)
                 }
             } catch (e: Exception) {
                 // 协程被取消（如快速切换挖空数）时必须继续上抛，否则下方会把 _wordCloze 覆盖为 null/旧值
@@ -1472,8 +1582,15 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleHint() {
         _showHint.value = !_showHint.value
+        AppPrefs.hintContentEnabled = _showHint.value
         // 关闭时立即停止所有提示计时与淡显
         if (!_showHint.value) stopAllBlankHints()
+    }
+
+    /** 切换「字数提示」（空位旁标出这一空几个字） */
+    fun toggleHintLength() {
+        _hintLength.value = !_hintLength.value
+        AppPrefs.hintLengthEnabled = _hintLength.value
     }
 
     fun dismissBlankCountWarning() {
@@ -1871,8 +1988,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             return
         }
         val secs = _sections.value
-        val selected = _selectedSections.value
-        val effectiveContent = getEffectiveContent(content, secs)
+        val scope = generationScope(content, secs)
+        val effectiveContent = scope.content
         // 取消上一次的生成协程
         wordGenerateJob?.cancel()
         sentenceGenerateJob?.cancel()
@@ -1887,7 +2004,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     BlancallMode.SENTENCE -> {
                         var result: BlancallGenerator.SentenceClozeResult? = null
                         withContext(Dispatchers.Default) {
-                            val errorProfile = errorProfileFor(recordsSnapshot)
+                            val errorProfile = errorProfileFor(recordsSnapshot).rebasedForFocus()
                             result = BlancallGenerator.generateSentenceCloze(
                                 effectiveContent, errorProfile = errorProfile, strategy = strat
                             )
@@ -1898,7 +2015,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     BlancallMode.WORD -> {
                         var result: BlancallGenerator.WordClozeResult? = null
                         withContext(Dispatchers.Default) {
-                            val errorProfile = errorProfileFor(recordsSnapshot)
+                            val errorProfile = errorProfileFor(recordsSnapshot).rebasedForFocus()
                             result = BlancallGenerator.generateWordCloze(
                                 effectiveContent, count = _wordBlankCount.value,
                                 errorProfile = errorProfile, strategy = strat, classicalMode = classical
@@ -1918,7 +2035,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 }
                 // 锚点只依赖 content/effectiveContent，与模式无关，统一算一次
                 anchors = withContext(Dispatchers.Default) {
-                    buildSentenceAnchors(content, effectiveContent, secs, selected)
+                    buildSentenceAnchors(content, effectiveContent, scope.sections, scope.selected)
                 }
             } catch (e: Exception) {
                 // 协程被取消（重做过程中再次切换模式）时必须继续上抛，否则下方重置会覆盖新结果

@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
@@ -42,13 +43,11 @@ internal fun LocalClozeCollectPage(
     var selected by remember { mutableStateOf(initialSelected) }
 
     data class StrategyOption(val value: BlancallGenerator.Strategy, val label: String, val desc: String)
-    val strategyOptions = remember {
-        listOf(
-            StrategyOption(BlancallGenerator.Strategy.BALANCED, "均衡", "兼顾重点与覆盖面"),
-            StrategyOption(BlancallGenerator.Strategy.WEAKNESS_FOCUS, "薄弱优先", "优先挖易错内容"),
-            StrategyOption(BlancallGenerator.Strategy.FULL_COVERAGE, "全覆盖", "均匀覆盖全文")
-        )
-    }
+    val strategyOptions = listOf(
+        StrategyOption(BlancallGenerator.Strategy.BALANCED, stringResource(com.ilyskyo.blancall.R.string.strategy_balanced_short), stringResource(com.ilyskyo.blancall.R.string.strategy_balanced_desc)),
+        StrategyOption(BlancallGenerator.Strategy.WEAKNESS_FOCUS, stringResource(com.ilyskyo.blancall.R.string.strategy_weakness), stringResource(com.ilyskyo.blancall.R.string.strategy_weakness_desc)),
+        StrategyOption(BlancallGenerator.Strategy.FULL_COVERAGE, stringResource(com.ilyskyo.blancall.R.string.strategy_full), stringResource(com.ilyskyo.blancall.R.string.strategy_full_desc))
+    )
 
     Box(
         modifier = Modifier
@@ -63,18 +62,18 @@ internal fun LocalClozeCollectPage(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("选择挖空设置", style = MaterialTheme.typography.titleLarge,
+            Text(stringResource(com.ilyskyo.blancall.R.string.ai_select_cloze_settings), style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "本地算法生成挖空",
+                text = stringResource(com.ilyskyo.blancall.R.string.ai_local_algorithm),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(20.dp))
 
             // ── 挖空策略（与练习页 ⋮ 菜单共用同一语义） ──
-            Text("挖空策略", style = MaterialTheme.typography.titleMedium,
+            Text(stringResource(com.ilyskyo.blancall.R.string.pick_strategy), style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(10.dp))
             strategyOptions.forEach { opt ->
@@ -108,12 +107,12 @@ internal fun LocalClozeCollectPage(
 
             Spacer(Modifier.height(20.dp))
             // ── 段落选择（与练习页 ⋮ 菜单「段落分层」同一语义） ──
-            Text("段落选择", style = MaterialTheme.typography.titleMedium,
+            Text(stringResource(com.ilyskyo.blancall.R.string.section_picker_title), style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(10.dp))
             SectionModeItem(
-                emoji = "📖", label = "全文连贯",
-                desc = "按原文顺序，覆盖所有段落",
+                emoji = "📖", label = stringResource(com.ilyskyo.blancall.R.string.section_mode_full),
+                desc = stringResource(com.ilyskyo.blancall.R.string.section_mode_full_desc),
                 selected = sectionMode == SectionMode.FULL,
                 onClick = {
                     sectionMode = SectionMode.FULL
@@ -121,8 +120,8 @@ internal fun LocalClozeCollectPage(
                 }
             )
             SectionModeItem(
-                emoji = "🎯", label = "薄弱集训",
-                desc = "只练错题集中的段落",
+                emoji = "🎯", label = stringResource(com.ilyskyo.blancall.R.string.section_mode_weak),
+                desc = stringResource(com.ilyskyo.blancall.R.string.section_mode_weak_desc),
                 selected = sectionMode == SectionMode.WEAKNESS,
                 onClick = {
                     sectionMode = SectionMode.WEAKNESS
@@ -131,8 +130,8 @@ internal fun LocalClozeCollectPage(
                 }
             )
             SectionModeItem(
-                emoji = "✂️", label = "自选段落",
-                desc = "手动勾选要复习的段落",
+                emoji = "✂️", label = stringResource(com.ilyskyo.blancall.R.string.section_mode_pick),
+                desc = stringResource(com.ilyskyo.blancall.R.string.section_mode_pick_desc),
                 selected = sectionMode == SectionMode.SELECTED,
                 onClick = { sectionMode = SectionMode.SELECTED }
             )
@@ -148,7 +147,7 @@ internal fun LocalClozeCollectPage(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "已选 ${selected.size}/${sections.size}",
+                        stringResource(com.ilyskyo.blancall.R.string.selected_of_total, selected.size, sections.size),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -159,7 +158,7 @@ internal fun LocalClozeCollectPage(
                             sections.map { it.index }.toSet()
                         }
                     }) {
-                        Text(if (selected.size == sections.size) "取消全选" else "全选",
+                        Text(if (selected.size == sections.size) stringResource(com.ilyskyo.blancall.R.string.deselect_all) else stringResource(com.ilyskyo.blancall.R.string.select_all),
                             style = MaterialTheme.typography.labelMedium)
                     }
                 }
@@ -197,12 +196,12 @@ internal fun LocalClozeCollectPage(
                 OutlinedButton(
                     onClick = onCancel,
                     modifier = Modifier.weight(1f)
-                ) { Text("取消") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
                 Spacer(Modifier.width(12.dp))
                 Button(
                     onClick = { onConfirm(strategy, sectionMode, selected) },
                     modifier = Modifier.weight(1.6f)
-                ) { Text("开始") }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.start_action)) }
             }
         }
     }

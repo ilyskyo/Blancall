@@ -38,12 +38,16 @@ import com.ilyskyo.blancall.ui.common.GlassMenuDivider
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,6 +63,12 @@ import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.pressClick
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_MENU_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
@@ -73,74 +83,87 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PracticeScreen(navController: NavController, articleIds: List<Long>, initialMode: BlancallMode? = null, resume: Boolean = false, initialSectionMode: SectionMode? = null, initialConfigId: Long = -1L, initialFocusSentence: Int = -1) {
     val vm: PracticeViewModel = viewModel()
-    val article by vm.article.collectAsState()
-    val mode by vm.mode.collectAsState()
-    val sentenceCloze by vm.sentenceCloze.collectAsState()
-    val wordCloze by vm.wordCloze.collectAsState()
+    val article by vm.article.collectAsStateWithLifecycle()
+    val mode by vm.mode.collectAsStateWithLifecycle()
+    val sentenceCloze by vm.sentenceCloze.collectAsStateWithLifecycle()
+    val wordCloze by vm.wordCloze.collectAsStateWithLifecycle()
     // 反向默写（段落打散默写）：打乱顺序的句子线索 + 用户默写输入 + 判分结果
-    val dictationResult by vm.dictationResult.collectAsState()
-    val dictationInput by vm.dictationInput.collectAsState()
-    val dictationCheckResult by vm.dictationCheckResult.collectAsState()
-    val userAnswers by vm.userAnswers.collectAsState()
-    val checkResults by vm.checkResults.collectAsState()
-    val isSubmitted by vm.isSubmitted.collectAsState()
-    val isSubmitting by vm.isSubmitting.collectAsState()
-    val resumed by vm.resumed.collectAsState()
-    val loadFailed by vm.loadFailed.collectAsState()
-    val totalBlanks by vm.totalBlanks.collectAsState()
+    val dictationResult by vm.dictationResult.collectAsStateWithLifecycle()
+    val dictationInput by vm.dictationInput.collectAsStateWithLifecycle()
+    val dictationCheckResult by vm.dictationCheckResult.collectAsStateWithLifecycle()
+    val userAnswers by vm.userAnswers.collectAsStateWithLifecycle()
+    val checkResults by vm.checkResults.collectAsStateWithLifecycle()
+    val isSubmitted by vm.isSubmitted.collectAsStateWithLifecycle()
+    val isSubmitting by vm.isSubmitting.collectAsStateWithLifecycle()
+    val resumed by vm.resumed.collectAsStateWithLifecycle()
+    val loadFailed by vm.loadFailed.collectAsStateWithLifecycle()
+    val totalBlanks by vm.totalBlanks.collectAsStateWithLifecycle()
 
-    val wordBlankCount by vm.wordBlankCount.collectAsState()
+    val wordBlankCount by vm.wordBlankCount.collectAsStateWithLifecycle()
 
     // 段落分层（F3）
-    val sections by vm.sections.collectAsState()
-    val sectionMode by vm.sectionMode.collectAsState()
-    val selectedSections by vm.selectedSections.collectAsState()
-    val rankedSections by vm.rankedSections.collectAsState()
+    val sections by vm.sections.collectAsStateWithLifecycle()
+    val sectionMode by vm.sectionMode.collectAsStateWithLifecycle()
+    val selectedSections by vm.selectedSections.collectAsStateWithLifecycle()
+    val focusWindowActive by vm.focusWindowActive.collectAsStateWithLifecycle()
+    val rankedSections by vm.rankedSections.collectAsStateWithLifecycle()
 
     // 沉浸模式（F4）
-    val immersiveMode by vm.immersiveMode.collectAsState()
-    val progressiveLevel by vm.progressiveLevel.collectAsState()
+    val immersiveMode by vm.immersiveMode.collectAsStateWithLifecycle()
+    val progressiveLevel by vm.progressiveLevel.collectAsStateWithLifecycle()
 
     // 跨文本联动（F7）
-    val isCrossMode by vm.isCrossMode.collectAsState()
-    val crossArticleTitles by vm.crossArticleTitles.collectAsState()
-    val crossSourceInfo by vm.crossSourceInfo.collectAsState()
+    val isCrossMode by vm.isCrossMode.collectAsStateWithLifecycle()
+    val crossArticleTitles by vm.crossArticleTitles.collectAsStateWithLifecycle()
+    val crossSourceInfo by vm.crossSourceInfo.collectAsStateWithLifecycle()
 
     // AI 挖空（Pro）：难度采集页 + 生成加载态 + 字号缩放（双指）
     // AI 总开关与「使用AI挖空」子开关用 Flow 响应式读取：设置页切换后返回练习页能立即反映
-    val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
-    val useAiCloze by AppPrefs.useAiClozeFlow.collectAsState()
-    val fontScale by vm.fontScale.collectAsState()
-    val showDifficultyInfo by vm.showDifficultyInfo.collectAsState()
-    val isAiGenerating by vm.isAiGenerating.collectAsState()
-    val aiProgress by vm.aiProgress.collectAsState()
-    val aiError by vm.aiError.collectAsState()
-    val difficulty by vm.difficulty.collectAsState()
+    val aiEnabled by AppPrefs.aiEnabledFlow.collectAsStateWithLifecycle()
+    val useAiCloze by AppPrefs.useAiClozeFlow.collectAsStateWithLifecycle()
+    val fontScale by vm.fontScale.collectAsStateWithLifecycle()
+    val showDifficultyInfo by vm.showDifficultyInfo.collectAsStateWithLifecycle()
+    val isAiGenerating by vm.isAiGenerating.collectAsStateWithLifecycle()
+    val aiProgress by vm.aiProgress.collectAsStateWithLifecycle()
+    val aiError by vm.aiError.collectAsStateWithLifecycle()
+    val difficulty by vm.difficulty.collectAsStateWithLifecycle()
     // 填空辅助提示（弱提示淡显 / 强提示统计）
-    val hintChars by vm.hintChars.collectAsState()
-    val weakHintCount by vm.weakHintCount.collectAsState()
-    val strongHintCount by vm.strongHintCount.collectAsState()
+    val hintChars by vm.hintChars.collectAsStateWithLifecycle()
+    val weakHintCount by vm.weakHintCount.collectAsStateWithLifecycle()
+    val strongHintCount by vm.strongHintCount.collectAsStateWithLifecycle()
     // 反向默写整段输入提示
-    val dictationHint by vm.dictationHint.collectAsState()
+    val dictationHint by vm.dictationHint.collectAsStateWithLifecycle()
     // 训练分析（Pro，Markdown）
-    val trainingAnalysis by vm.trainingAnalysis.collectAsState()
-    val analysisLoading by vm.analysisLoading.collectAsState()
-    val analysisError by vm.analysisError.collectAsState()
+    val trainingAnalysis by vm.trainingAnalysis.collectAsStateWithLifecycle()
+    val analysisLoading by vm.analysisLoading.collectAsStateWithLifecycle()
+    val analysisError by vm.analysisError.collectAsStateWithLifecycle()
 
     // 挖空策略与古文模式
-    val strategy by vm.strategy.collectAsState()
-    val classicalMode by vm.classicalMode.collectAsState()
+    val strategy by vm.strategy.collectAsStateWithLifecycle()
+    val classicalMode by vm.classicalMode.collectAsStateWithLifecycle()
 
     // 三点菜单点位（必须在 LaunchedEffect 之前声明）
     // rememberSaveable：旋转横屏重建后保持已选模式，避免答题界面退回"选择模式"
     var modeSelected by rememberSaveable { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+    // 长按菜单里「显示提示」那一行打开的「提示设置」浮层（点击该行仍是原来的总开关）
+    var showHintSheet by remember { mutableStateOf(false) }
+    val hintLength by vm.hintLength.collectAsStateWithLifecycle()
+    // 使用指引的锚点与"看过没"：同一屏最多弹一条，见两处 CoachMark 的 enabled 条件
+    val titleAnchor = rememberCoachAnchor()
+    // 「显示提示」那一行的锚点：长按它就打开提示设置，指引圈要落在这里
+    val hintRowAnchor = rememberCoachAnchor()
+    val coachSeen by AppPrefs.coachSeenFlow.collectAsStateWithLifecycle()
+    val haptic = LocalHapticFeedback.current
+    // semantics 的 lambda 不是 @Composable 上下文，字符串必须先取出来
+    val moreDesc = stringResource(com.ilyskyo.blancall.R.string.more)
     var showModeSheet by remember { mutableStateOf(false) }
     // 跨文复习「自定义挖空」：按文章分别选择配置浮层
     var showCrossCustomSheet by remember { mutableStateOf(false) }
@@ -148,6 +171,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var showSectionSheet by remember { mutableStateOf(false) }
     var showIncompleteDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val resources = LocalResources.current
 
     // 自定义挖空：从配置列表页「开始练习」进入（?configId=）——应用配置直接开始，无弹层
     // 用普通 remember + VM 侧 customConfigName 双重判定：进程死亡重建时 VM 已清空，
@@ -167,17 +191,17 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     modeSelected = true
                 } else {
                     // 配置与当前文章内容不匹配（文章被修改变短等）：已自动回退随机生成，仅提示
-                    Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.cloze_config_mismatch), Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.cloze_config_mismatch), Toast.LENGTH_LONG).show()
                     modeSelected = true
                 }
             } else {
-                Toast.makeText(context, context.getString(com.ilyskyo.blancall.R.string.custom_config_missing), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.custom_config_missing), Toast.LENGTH_SHORT).show()
             }
         }
     }
     var showBackWarning by remember { mutableStateOf(false) }
     var backWarningNoMore by remember { mutableStateOf(false) }
-    val customConfigName by vm.customConfigName.collectAsState()
+    val customConfigName by vm.customConfigName.collectAsStateWithLifecycle()
 
     LaunchedEffect(articleIds) {
         if (articleIds.size > 1) {
@@ -224,8 +248,18 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     val filledCount by remember(userAnswers) {
         derivedStateOf { userAnswers.values.count { it.isNotBlank() } }
     }
-    val showHint by vm.showHint.collectAsState()
-    val blankCountWarning by vm.blankCountWarning.collectAsState()
+    val showHint by vm.showHint.collectAsStateWithLifecycle()
+    // 预览文案跟着两个开关实时变：把"组合"翻译成"你会看到什么"
+    val hintPreview = stringResource(
+        when {
+            hintLength && showHint -> com.ilyskyo.blancall.R.string.hint_preview_both
+            hintLength -> com.ilyskyo.blancall.R.string.hint_preview_length
+            showHint -> com.ilyskyo.blancall.R.string.hint_preview_content
+            else -> com.ilyskyo.blancall.R.string.hint_preview_none
+        }
+    )
+
+    val blankCountWarning by vm.blankCountWarning.collectAsStateWithLifecycle()
 
     // PDF 导出（F8）
     val scope = rememberCoroutineScope()
@@ -279,6 +313,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .weight(1f)
+                    .coachAnchor(titleAnchor)
                     .offset { IntOffset(titleDrag.value.roundToInt(), 0) }
                     .pointerInput(Unit) {
                         var accumulated = 0f
@@ -354,15 +389,24 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             // 三点菜单（玻璃质感）：提交后禁用，避免误切模式；重做后恢复
             if (modeSelected) {
                 Box {
-                    IconButton(
-                        onClick = { showMoreMenu = true },
-                        enabled = !isSubmitted
+                    // 点击 = 菜单（模式/策略/提示总开关/沉浸/段落/导出）。
+                    // 「提示设置」的长按不挂在这里，而是挂在下拉菜单的「显示提示」那一行上 ——
+                    // 长按是隐藏手势，教的时候要能直接圈住"被长按的那一行"，挂在 ⋮ 上圈不到。
+                    // 尺寸保持 40dp 以对齐顶栏其它按钮。
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .pressClick(tier = PressTier.Icon, enabled = !isSubmitted) { showMoreMenu = true },
+                        contentAlignment = Alignment.Center,
                     ) {
                         AppIcon(
                             kind = AppIconKind.MoreVert,
                             tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(22.dp),
-                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.more)
+                            modifier = Modifier
+                                .size(22.dp)
+                                .semantics {
+                                    contentDescription = moreDesc
+                                },
                         )
                     }
                     GlassDropdownMenu(
@@ -433,6 +477,13 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     // ── 提示开关（保留菜单，符合系统开关直觉）──
                     GlassMenuItem(
                         onClick = { vm.toggleHint() },
+                        modifier = Modifier.coachAnchor(hintRowAnchor),
+                        // 长按这一行 = 打开「提示设置」（字数提示 / 内容提示 两个维度分开配）。
+                        // 点击仍是原来的开关：单击切换总开关，长按才进细分。
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showHintSheet = true
+                        },
                         label = { Text(stringResource(com.ilyskyo.blancall.R.string.show_hints), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) },
                         trailing = {
                             GlassSwitch(
@@ -479,10 +530,12 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     // ── 段落分层（始终显示；自定义练习隐藏）──
                     if (customConfigName == null) {
                     GlassMenuDivider()
-                    val sectionLabel = when (sectionMode) {
-                        SectionMode.FULL -> stringResource(com.ilyskyo.blancall.R.string.section_full)
-                        SectionMode.WEAKNESS -> stringResource(com.ilyskyo.blancall.R.string.section_weak)
-                        SectionMode.SELECTED -> stringResource(com.ilyskyo.blancall.R.string.section_selected, selectedSections.size, sections.size)
+                    val sectionLabel = when {
+                        // 句级聚焦：只练目标句及其附近几句，跟段落选择无关，标签如实说明
+                        focusWindowActive -> stringResource(com.ilyskyo.blancall.R.string.section_focus)
+                        sectionMode == SectionMode.FULL -> stringResource(com.ilyskyo.blancall.R.string.section_full)
+                        sectionMode == SectionMode.WEAKNESS -> stringResource(com.ilyskyo.blancall.R.string.section_weak)
+                        else -> stringResource(com.ilyskyo.blancall.R.string.section_selected, selectedSections.size, sections.size)
                     }
                     GlassMenuItem(
                         onClick = {
@@ -531,9 +584,106 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         )
                     }
                 }
+                // ── 长按 ⋮ 打开的「提示设置」──
+                // 为什么单独一个浮层而不是塞进上面的菜单：那个菜单已经在 12 项左右，
+                // 提示设置是"调整怎么提示"，与"切换模式/段落"不同类，混在一起会越加越长。
+                GlassDropdownMenu(
+                    expanded = showHintSheet,
+                    onDismissRequest = { showHintSheet = false },
+                ) {
+                    GlassMenuItem(
+                        enabled = false,
+                        onClick = {},
+                        label = {
+                            Text(
+                                stringResource(com.ilyskyo.blancall.R.string.hint_sheet_title),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                    )
+                    GlassMenuItem(
+                        onClick = { vm.toggleHintLength() },
+                        label = {
+                            Column {
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.hint_length_toggle),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.hint_length_desc),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        trailing = {
+                            GlassSwitch(checked = hintLength, onCheckedChange = { vm.toggleHintLength() })
+                        },
+                    )
+                    GlassMenuItem(
+                        onClick = { vm.toggleHint() },
+                        label = {
+                            Column {
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.hint_content_toggle),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.hint_content_desc),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        trailing = {
+                            GlassSwitch(checked = showHint, onCheckedChange = { vm.toggleHint() })
+                        },
+                    )
+                    GlassMenuDivider()
+                    // 预览：把"两个开关的组合"翻译成"用户实际会看到什么"——
+                    // 光看两个开关名，很难想象"只开字数"和"同时开"的差别
+                    GlassMenuItem(
+                        enabled = false,
+                        onClick = {},
+                        label = {
+                            Text(
+                                hintPreview,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                    )
+                }
             }
         }
     }
+
+        // ── 使用指引（一次性）──
+        // 先教"长按菜单里的「显示提示」能配提示"，等这条看过了，下次进来才教"左右拖标题切模式" ——
+        // 两条同时弹会互相压住，而提示这条更重要（提示是本页最常被误解的功能）。
+        CoachMark(
+            coachKey = "practice_more_long_press",
+            anchor = hintRowAnchor,
+            title = stringResource(com.ilyskyo.blancall.R.string.coach_practice_more_title),
+            body = stringResource(com.ilyskyo.blancall.R.string.coach_practice_more_body),
+            shape = CoachShape.Card,
+            // 只在「显示提示」那一行真的在屏幕上时才弹（即菜单打开时）。菜单没开时锚点是
+            // Rect.Zero、组件本来也不会显示，这里显式写上更清楚。
+            enabled = showMoreMenu,
+            delayMs = 300L,
+        )
+        CoachMark(
+            coachKey = "practice_title_swipe",
+            anchor = titleAnchor,
+            title = stringResource(com.ilyskyo.blancall.R.string.coach_practice_title_title),
+            body = stringResource(com.ilyskyo.blancall.R.string.coach_practice_title_body),
+            shape = CoachShape.Card,
+            enabled = "practice_more_long_press" in coachSeen,
+            delayMs = 900L,
+        )
 
         Spacer(Modifier.height(10.dp))
 
@@ -774,6 +924,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             when (currentMode) {
                                 BlancallMode.SENTENCE -> SentenceClozeContent(
                                     blancall = sentenceCloze,
+                                    showBlankLength = hintLength,
                                     userAnswers = userAnswers,
                                     checkResults = checkResults,
                                     isSubmitted = isSubmitted,
@@ -1015,7 +1166,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                     // 所有选中配置都没有可应用的标注（如文章被改短导致全部失效）：不进入空白练习
                     Toast.makeText(
                         context,
-                        context.getString(com.ilyskyo.blancall.R.string.no_applicable_blanks),
+                        resources.getString(com.ilyskyo.blancall.R.string.no_applicable_blanks),
                         Toast.LENGTH_LONG
                     ).show()
                 }

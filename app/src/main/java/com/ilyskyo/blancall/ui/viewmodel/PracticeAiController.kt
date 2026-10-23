@@ -222,9 +222,9 @@ class PracticeAiController(
                     AiClozeGenerator.buildAnalysisRequest(
                         title = getArticle()?.title.orEmpty(),
                         modeLabel = when (getMode()) {
-                            BlancallMode.SENTENCE -> "句子挖空"
-                            BlancallMode.WORD -> "字词挖空"
-                            BlancallMode.REVERSE -> "反向默写"
+                            BlancallMode.SENTENCE -> appContext.getString(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
+                            BlancallMode.WORD -> appContext.getString(com.ilyskyo.blancall.R.string.cloze_mode_word)
+                            BlancallMode.REVERSE -> appContext.getString(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
                         },
                         scoreLine = buildAnalysisScoreLine(),
                         mistakeSummary = buildAnalysisMistakeSummary() +
@@ -242,7 +242,7 @@ class PracticeAiController(
                         .collect { sb.append(it) }
                     true
                 } ?: false
-                if (!completed || sb.isEmpty()) throw AiClient.AiException("分析生成超时或无内容")
+                if (!completed || sb.isEmpty()) throw AiClient.AiException(appContext.getString(com.ilyskyo.blancall.R.string.ai_error_analysis_timeout))
                 val text = sb.toString().trim()
                 _trainingAnalysis.value = text
                 // 持久化训练分析：退出批改页后仍可在「AI 历史」/学习数据中查看
@@ -308,9 +308,9 @@ class PracticeAiController(
                 put("articleId", getArticle()?.id ?: 0L)
                 put("articleTitle", getArticle()?.title.orEmpty())
                 put("modeLabel", when (getMode()) {
-                    BlancallMode.SENTENCE -> "句子挖空"
-                    BlancallMode.WORD -> "字词挖空"
-                    BlancallMode.REVERSE -> "反向默写"
+                    BlancallMode.SENTENCE -> appContext.getString(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
+                    BlancallMode.WORD -> appContext.getString(com.ilyskyo.blancall.R.string.cloze_mode_word)
+                    BlancallMode.REVERSE -> appContext.getString(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
                 })
                 put("weakHints", getWeakHintCount())
                 put("strongHints", getStrongHintCount())

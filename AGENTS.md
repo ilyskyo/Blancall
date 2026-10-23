@@ -11,8 +11,8 @@
 | 项 | 值 |
 |---|---|
 | applicationId | `com.ilyskyo.blancall` |
-| versionName | `7.4.0` |
-| versionCode | 48 |
+| versionName | `7.5.1`（以 `app/build.gradle.kts` 为准） |
+| versionCode | 50 |
 | local.properties 的 sdk.dir | Android SDK（`AppData\Local\Android\Sdk`） |
 
 与 `Blancall-Std` 的唯一 gradle 差异就是上面三项的applicationId / versionName。

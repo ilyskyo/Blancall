@@ -58,6 +58,9 @@ fun rangePresetLabelRes(preset: RangePreset): Int = when (preset) {
  * @param customRange  自定义区间（仅 [RangePreset.CUSTOM] 时有意义），用于在胶囊上直接显示起止日期
  * @param onSelect     选中某个非自定义预设
  * @param onOpenCustom 选中「自定义」——由调用方打开区间选择面板
+ * @param defaultPreset 默认档位。与 [onResetToDefault] 同时给出时，菜单底部多一行「恢复默认」——
+ *                      时间维度是可反复改的偏好，没有出口的话用户只能靠记忆去猜哪一档才是原来的。
+ * @param onResetToDefault 恢复默认：由调用方把预设与自定义区间一起复位
  */
 @Composable
 fun TimeRangeSelector(
@@ -65,7 +68,9 @@ fun TimeRangeSelector(
     customRange: DateRange?,
     onSelect: (RangePreset) -> Unit,
     onOpenCustom: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    defaultPreset: RangePreset? = null,
+    onResetToDefault: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     val locale = LocalConfiguration.current.locales.get(0)
@@ -129,6 +134,31 @@ fun TimeRangeSelector(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
+                    }
+                )
+            }
+            // 恢复默认：只在当前不是默认档时出现 —— 已经是默认还摆一条"恢复默认"，
+            // 点了没反应，是比没有更差的状态。
+            if (defaultPreset != null && onResetToDefault != null && selected != defaultPreset) {
+                GlassMenuDivider()
+                GlassMenuItem(
+                    onClick = {
+                        expanded = false
+                        onResetToDefault()
+                    },
+                    label = {
+                        Text(
+                            stringResource(R.string.range_reset_default),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    trailing = {
+                        Text(
+                            stringResource(rangePresetLabelRes(defaultPreset)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 )
             }

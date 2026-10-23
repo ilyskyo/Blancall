@@ -45,7 +45,9 @@ import kotlinx.coroutines.withContext
                 dictationInput = dictationInput,
                 clozeJson = clozeJson,
                 // 自定义练习的身份：供「继续练习」恢复后重新挂上锁定
-                configId = activeCustomConfig?.id ?: 0L
+                configId = activeCustomConfig?.id ?: 0L,
+                // 句级聚焦会话的目标句：恢复时要按同一窗口重建锚点（见 PracticeViewModel.loadArticle）
+                focusSentence = activeFocusWindow?.focusSentence ?: -1
             )
             val file = getApplication<Application>().filesDir.resolve("practice_state_${articleId}.json")
             withContext(Dispatchers.IO) {
@@ -59,6 +61,7 @@ import kotlinx.coroutines.withContext
                 json.put("lastPracticeTime", state.lastPracticeTime)
                 if (state.clozeJson != null) json.put("clozeJson", state.clozeJson)
                 if (state.configId > 0L) json.put("configId", state.configId)
+                if (state.focusSentence >= 0) json.put("focusSentence", state.focusSentence)
                 val ansObj = org.json.JSONObject()
                 state.answers.forEach { (k, v) -> ansObj.put(k.toString(), v) }
                 json.put("answers", ansObj)

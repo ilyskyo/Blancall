@@ -12,15 +12,14 @@ import kotlin.math.ceil
  */
 data class ReviewTemplate(
     val id: String,
-    val name: String,
     val intervals: List<Int>,   // 每次复习间隔（天）
     val autoAdjust: Boolean = false,  // 是否根据正确率自动微调
     val isPreset: Boolean = false     // 是否为系统预设模板
 ) {
     companion object {
-        val SPRINT  = ReviewTemplate("sprint",  "冲刺备考", listOf(1, 1, 2, 3, 5, 7),           autoAdjust = true,  isPreset = true)
-        val STANDARD = ReviewTemplate("standard","标准记忆", listOf(1, 2, 4, 7, 15, 30),        autoAdjust = false, isPreset = true)
-        val DEEP     = ReviewTemplate("deep",    "深度长期", listOf(1, 2, 4, 7, 15, 30, 60, 90),autoAdjust = false, isPreset = true)
+        val SPRINT  = ReviewTemplate("sprint",  listOf(1, 1, 2, 3, 5, 7),           autoAdjust = true,  isPreset = true)
+        val STANDARD = ReviewTemplate("standard", listOf(1, 2, 4, 7, 15, 30),        autoAdjust = false, isPreset = true)
+        val DEEP     = ReviewTemplate("deep",    listOf(1, 2, 4, 7, 15, 30, 60, 90),autoAdjust = false, isPreset = true)
 
         val PRESETS = listOf(SPRINT, STANDARD, DEEP)
 
@@ -137,8 +136,13 @@ object EbbinghausScheduler {
     fun getReviewStatus(
         fsrsState: FsrsEngine.CardState?,
         records: List<PracticeRecord>,
-        template: ReviewTemplate = ReviewTemplate.STANDARD
+        template: ReviewTemplate = ReviewTemplate.STANDARD,
+        paused: Boolean = false,
     ): ReviewStatus {
+        // 暂停优先于到期：暂停的文章不该在任何界面被读成「待复习」
+        if (paused && fsrsState != null && fsrsState.reviewCount > 0) {
+            return ReviewStatus.PAUSED
+        }
         // FSRS 状态存在且已有练习 → 完全采用 FSRS 调度
         if (fsrsState != null && fsrsState.reviewCount > 0) {
             val now = System.currentTimeMillis()
@@ -155,5 +159,7 @@ object EbbinghausScheduler {
         data object DUE : ReviewStatus()
         data class PENDING(val daysLeft: Int) : ReviewStatus()
         data object COMPLETED : ReviewStatus()
+        /** 用户主动暂停了该文章的 FSRS 调度（见 FsrsStateStore.pauseArticle） */
+        data object PAUSED : ReviewStatus()
     }
 }

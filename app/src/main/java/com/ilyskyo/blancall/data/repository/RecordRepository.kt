@@ -161,12 +161,27 @@ class RecordRepository(private val filePath: String) {
         return Triple(loaded, maxId, false)
     }
 
-    private fun loadFromFile() {
+    private fun loadFromFile(
+        clearWhenMissing: Boolean = false,
+        allowBackupRecovery: Boolean = true,
+    ) {
         try {
             val file = File(filePath)
-            if (!file.exists()) return
+            if (!file.exists()) {
+                if (clearWhenMissing) {
+                    clearInMemory()
+                    fileNeedsFullRewrite = true
+                }
+                return
+            }
             val text = file.readText()
-            if (text.isBlank()) return
+            if (text.isBlank()) {
+                if (clearWhenMissing) {
+                    clearInMemory()
+                    fileNeedsFullRewrite = true
+                }
+                return
+            }
             val (loaded, maxId, legacy) = parseFile(text)
             // JSONL 文件有内容却一条都读不出（逐行解析全部失败）⇒ 视为损坏，走备份恢复
             if (loaded.isEmpty() && !legacy) {
@@ -182,6 +197,11 @@ class RecordRepository(private val filePath: String) {
             Log.e("RecordRepository", "加载练习记录失败，文件可能已损坏", e)
             // 主文件已不可信：下一次落盘必须整体重写（不能把新记录追加进损坏文件）
             fileNeedsFullRewrite = true
+            if (!allowBackupRecovery) {
+                // 备份导入语义：盘上那份就是唯一真相，不能拿导入前的 .bak 复活旧记录
+                clearInMemory()
+                return
+            }
             // 尝试从备份恢复
             try {
                 val bakFile = File(filePath + ".bak")
@@ -195,61 +215,68 @@ class RecordRepository(private val filePath: String) {
                             articleIndex = loaded.groupBy { it.articleId }
                         }
                         Log.w("RecordRepository", "已从备份文件恢复 ${loaded.size} 条记录")
+                        return
                     }
                 }
             } catch (_: Exception) {
                 Log.e("RecordRepository", "备份恢复也失败，将从空列表开始")
             }
+            clearInMemory()
+        }
+    }
+
+    private fun clearInMemory() {
+        synchronized(stateLock) {
+            _records.value = emptyList()
+            articleIndex = emptyMap()
+            nextId = 1L
         }
     }
 
     /**
      * 全量整体重写（JSONL 内容，含 .bak 轮换）：删除等低频路径用；
-     * 新增走 [appendOrRewrite] 的 O(1) 追加，避免每次 insert 重写全文件。
+     * 新增走 [appendOrRewriteLocked] 的 O(1) 追加，避免每次 insert 重写全文件。
+     * 调用方须已持有 [fileMutex]。
      */
-    private suspend fun saveToFile() {
-        fileMutex.withLock {
-            // 快照必须在锁内读取：并发 insert 时锁外读取会拿到旧值，
-            // 待其获得锁后会用「旧快照」覆盖「新快照」写下的文件（内存新、磁盘旧）
-            val snapshot = _records.value
-            // 文件写入切 IO 线程，避免在 Main 线程上做磁盘 IO（调用方多为 viewModelScope）
-            withContext(Dispatchers.IO) {
-                try {
-                    // 原子写 + fsync 统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
-                    AtomicFiles.writeTextAtomic(File(filePath), serializeRecords(snapshot))
-                    fileNeedsFullRewrite = false
-                } catch (e: Exception) {
-                    Log.e("RecordRepository", "保存练习记录失败", e)
-                    throw e
-                }
+    private suspend fun saveToFileLocked() {
+        // 快照必须在锁内读取：并发 insert 时锁外读取会拿到旧值，
+        // 待其获得锁后会用「旧快照」覆盖「新快照」写下的文件（内存新、磁盘旧）
+        val snapshot = _records.value
+        // 文件写入切 IO 线程，避免在 Main 线程上做磁盘 IO（调用方多为 viewModelScope）
+        withContext(Dispatchers.IO) {
+            try {
+                // 原子写 + fsync 统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
+                AtomicFiles.writeTextAtomic(File(filePath), serializeRecords(snapshot))
+                fileNeedsFullRewrite = false
+            } catch (e: Exception) {
+                Log.e("RecordRepository", "保存练习记录失败", e)
+                throw e
             }
         }
     }
 
     /**
-     * 新增记录的落盘路径：
+     * 新增记录的落盘路径（调用方须已持有 [fileMutex]）：
      * - 常规：JSONL 追加一行（O(1) + fsync），不再每插一条重写全文件；
      * - 旧数组格式首次写入 / 主文件损坏空起步：整体重写一次（数组尾部不能直接
      *   追加，会毁文件；损坏文件不能追加垃圾），写盘走 [AtomicFiles.writeTextAtomic]，
      *   顺带完成 .bak 轮换。
      */
-    private suspend fun appendOrRewrite(record: PracticeRecord) {
-        fileMutex.withLock {
-            // 锁内判断/读取：与全量重写路径互斥，保证转写与追加不会交叉
-            val needsRewrite = fileNeedsFullRewrite
-            val snapshot = _records.value
-            withContext(Dispatchers.IO) {
-                try {
-                    if (needsRewrite) {
-                        AtomicFiles.writeTextAtomic(File(filePath), serializeRecords(snapshot))
-                        fileNeedsFullRewrite = false
-                    } else {
-                        AtomicFiles.appendTextLine(File(filePath), recordToJson(record).toString())
-                    }
-                } catch (e: Exception) {
-                    Log.e("RecordRepository", "保存练习记录失败", e)
-                    throw e
+    private suspend fun appendOrRewriteLocked(record: PracticeRecord) {
+        // 锁内判断/读取：与全量重写路径互斥，保证转写与追加不会交叉
+        val needsRewrite = fileNeedsFullRewrite
+        val snapshot = _records.value
+        withContext(Dispatchers.IO) {
+            try {
+                if (needsRewrite) {
+                    AtomicFiles.writeTextAtomic(File(filePath), serializeRecords(snapshot))
+                    fileNeedsFullRewrite = false
+                } else {
+                    AtomicFiles.appendTextLine(File(filePath), recordToJson(record).toString())
                 }
+            } catch (e: Exception) {
+                Log.e("RecordRepository", "保存练习记录失败", e)
+                throw e
             }
         }
     }
@@ -294,23 +321,28 @@ class RecordRepository(private val filePath: String) {
 
     suspend fun insert(record: PracticeRecord): PracticeRecord {
         awaitLoaded()
-        val newRecord = synchronized(stateLock) {
-            val nr = record.copy(id = nextId++)
-            _records.value = _records.value + nr
-            articleIndex = articleIndex + (nr.articleId to (articleIndex[nr.articleId].orEmpty() + nr))
-            nr
+        return fileMutex.withLock {
+            val newRecord = synchronized(stateLock) {
+                val nr = record.copy(id = nextId++)
+                _records.value = _records.value + nr
+                articleIndex = articleIndex + (nr.articleId to (articleIndex[nr.articleId].orEmpty() + nr))
+                nr
+            }
+            // 内存变更与落盘同持一把锁：reload 不可能落在两者之间
+            appendOrRewriteLocked(newRecord)
+            newRecord
         }
-        appendOrRewrite(newRecord)
-        return newRecord
     }
 
     suspend fun deleteByArticleId(articleId: Long) {
         awaitLoaded()
-        synchronized(stateLock) {
-            _records.value = _records.value.filter { it.articleId != articleId }
-            articleIndex = articleIndex - articleId
+        fileMutex.withLock {
+            synchronized(stateLock) {
+                _records.value = _records.value.filter { it.articleId != articleId }
+                articleIndex = articleIndex - articleId
+            }
+            saveToFileLocked()
         }
-        saveToFile()
     }
 
     /**
@@ -332,27 +364,34 @@ class RecordRepository(private val filePath: String) {
     suspend fun removeByIds(ids: Set<Long>): Int {
         if (ids.isEmpty()) return 0
         awaitLoaded()
-        val removed: Int
-        synchronized(stateLock) {
-            val before = _records.value
-            val after = before.filter { it.id !in ids }
-            removed = before.size - after.size
-            if (removed > 0) {
-                _records.value = after
-                articleIndex = after.groupBy { it.articleId }
+        return fileMutex.withLock {
+            val removed: Int
+            synchronized(stateLock) {
+                val before = _records.value
+                val after = before.filter { it.id !in ids }
+                removed = before.size - after.size
+                if (removed > 0) {
+                    _records.value = after
+                    articleIndex = after.groupBy { it.articleId }
+                }
             }
+            if (removed > 0) saveToFileLocked()
+            removed
         }
-        if (removed > 0) saveToFile()
-        return removed
     }
 
     /**
-     * 备份导入后重载（B1-3）：等首载完成后在写锁内重读整库。
-     * loadFromFile 是全量替换语义、重入安全；与 insert/删除同持 fileMutex 防写读交错。
+     * 备份导入后重载：等首载完成后在写锁内重读整库。
+     * 导入语义下主文件缺失/损坏就是「备份里没有/这份数据不可用」，
+     * 必须清空内存且不回读 `.bak`（那是导入前的旧记录）。
      */
     suspend fun reload() {
-        loadLatch.await()
-        fileMutex.withLock { loadFromFile() }
+        awaitLoaded()
+        withContext(Dispatchers.IO) {
+            fileMutex.withLock {
+                loadFromFile(clearWhenMissing = true, allowBackupRecovery = false)
+            }
+        }
     }
 
     /** 挂起查询：先等待异步加载完成，避免冷启动时返回空结果；走内存索引 O(k) */

@@ -5,6 +5,9 @@ package com.ilyskyo.blancall.data.repository
 
 import android.util.Log
 import com.ilyskyo.blancall.util.AtomicFiles
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -39,16 +42,26 @@ class MaskConfigStore private constructor(private val file: File) {
 
     /** 内存修订号：任何写操作自增。阅读页用它做重算 key，配置变更后遮挡立即刷新 */
     private var revision = 0L
+    // 响应式修订号：阅读页此前每 300ms 轮询 getRevision，白白唤醒 CPU；这里仅供观察
+    private val _revisionFlow = MutableStateFlow(0L)
+    val revisionFlow: StateFlow<Long> = _revisionFlow.asStateFlow()
 
     /** 当前修订号（供 UI 作为重算 key） */
     fun getRevision(): Long = synchronized(lock) { revision }
+
+    private fun bumpRevision() {
+        synchronized(lock) {
+            revision++
+            _revisionFlow.value = revision
+        }
+    }
 
     /**
      * 备份导入后重载（B1-3）：配置读取本就是每次读盘（readRoot），
      * 这里只推进 revision —— 让以它为刷新信号的消费方知道「盘换了」。
      */
     fun reload() {
-        synchronized(lock) { revision++ }
+        bumpRevision()
     }
 
     /**
@@ -239,7 +252,7 @@ class MaskConfigStore private constructor(private val file: File) {
         if (articles.has(key)) articles.remove(key)
         selectedObj(root).remove(key)
         if (had) {
-            revision++
+            bumpRevision()
             writeRoot(root)
         }
     }
@@ -282,7 +295,7 @@ class MaskConfigStore private constructor(private val file: File) {
             }
         }
         if (!replaced) arr.put(entry)
-        revision++
+        bumpRevision()
         writeRoot(root)
         newId
     }
@@ -304,7 +317,7 @@ class MaskConfigStore private constructor(private val file: File) {
         if (selectedObj(root).optLong(key, -1L) == configId) {
             selectedObj(root).remove(key)
         }
-        revision++
+        bumpRevision()
         writeRoot(root)
     }
 
@@ -317,7 +330,7 @@ class MaskConfigStore private constructor(private val file: File) {
     fun setSelected(articleId: Long, configId: Long) = synchronized(lock) {
         val root = readRoot()
         selectedObj(root).put(articleId.toString(), configId)
-        revision++
+        bumpRevision()
         writeRoot(root)
     }
 

@@ -93,12 +93,14 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
                 val fsrsStore = FsrsStateStore.getInstance(
                     filesDir.resolve("fsrs_state.json").absolutePath
                 )
-                fsrsStore.remove(article.id)
                 // 级联清理自定义挖空/遮挡配置、未完成练习进度与首页对应卡片：
                 // 否则首页「添加卡片」仍会列出幽灵配置，点击后进入已删文章 → 无限 loading；
                 // 残留进度文件还会触发通知点击死链；孤儿配置在 UI 中无法再删除。
                 withContext(Dispatchers.IO) {
                     try {
+                        // remove/removeSentencesForArticle 内部会等首载 + 全量序列化 + fsync，
+                        // 必须与其余级联清理一起放在 IO 线程，不能占着主线程做盘写。
+                        fsrsStore.remove(article.id)
                         val clozeStore = CustomClozeStore.getInstance(filesDir)
                         val maskStore = MaskConfigStore.getInstance(filesDir)
                         val layout = HomeLayoutStore.getInstance(filesDir)
@@ -172,11 +174,15 @@ class ArticleViewModel(application: Application) : AndroidViewModel(application)
             val store = FsrsStateStore.getInstance(
                 getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
             )
-            store.awaitLoaded()
-            val orphans = SentenceSelector.orphanSentenceKeys(
-                store.allSentenceStates().keys, article.id, article.content
-            )
-            val removed = store.removeSentenceKeys(orphans)
+            // await/allSentenceStates/removeSentenceKeys 里有阻塞等锁与整文件落盘，
+            // 全部放到 IO；调用方是 viewModelScope（Main）。
+            val removed = withContext(Dispatchers.IO) {
+                store.awaitLoaded()
+                val orphans = SentenceSelector.orphanSentenceKeys(
+                    store.allSentenceStates().keys, article.id, article.content
+                )
+                store.removeSentenceKeys(orphans)
+            }
             if (removed > 0) _orphanStatesPruned.value = removed
         } catch (e: Exception) {
             Log.e("ArticleViewModel", "pruneOrphanSentenceStates failed", e)

@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.algorithm
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,6 +13,8 @@ import org.junit.Test
  *
  * 重点锁定「段落模式下句子锚点必须落在全文正确位置」——这是句子索引三套口径之间唯一的
  * 桥梁，历史上曾出现锚点错标到文章开头的问题，故用真实切分器（而非桩数据）验证。
+ * 另锁定句级聚焦窗口（[PracticeContentOps.focusWindow]）：它决定「点一句去练」只练多大一块，
+ * 历史上曾因按「该句所在段落」聚焦，在没有空行的文章里退化成「重做整篇」。
  */
 class PracticeContentOpsTest {
 
@@ -131,5 +134,83 @@ class PracticeContentOpsTest {
         assertEquals(emptyList<Int>(), PracticeContentOps.buildSentenceAnchors(full, full, secs, emptySet())
             .filter { false })   // 占位：非空输入返回非空
         assertTrue(PracticeContentOps.buildSentenceAnchors(full, full, secs, emptySet()).isNotEmpty())
+    }
+
+    // ── 句级聚焦窗口：点一句去练只练那一块 ──
+
+    @Test
+    fun `聚焦窗口_只覆盖目标句前后各N句`() {
+        val w = PracticeContentOps.focusWindow(full, focusSentence = 2, radius = 1)!!
+        val sents = SentenceSplitter.splitWithPositions(full)
+
+        assertEquals("窗口首句 = 目标句前 1 句", 1, w.firstSentenceIndex)
+        assertEquals("窗口共 3 句", 3, w.sentenceCount)
+        assertEquals("目标句索引原样带出（落盘「继续练习」要用）", 2, w.focusSentence)
+        assertEquals(sents[1].startIndex, w.section.startChar)
+        assertEquals(sents[3].endIndex, w.section.endChar)
+        // 切片重新切句后句数必须一致（句界不能在切片里丢掉）
+        assertEquals(3, SentenceSplitter.splitWithPositions(w.section.text).size)
+    }
+
+    @Test
+    fun `聚焦窗口_逗号结尾的换行分句不粘连`() {
+        // 「每句一行、行尾是逗号」的文章（高考必背源文件风格）：切片必须带上句末那个换行，
+        // 否则窗口文本里相邻两句会粘成一句，挖空就跑到别的句子上去了
+        val byLine = "甲乙丙丁，戊己庚辛\n壬癸子丑，寅卯辰巳\n午未申酉，戌亥甲乙"
+        val sents = SentenceSplitter.splitWithPositions(byLine)
+
+        val one = PracticeContentOps.focusWindow(byLine, focusSentence = 1, radius = 0)!!
+        assertEquals(sents[1].text, one.section.text.trim())
+
+        val three = PracticeContentOps.focusWindow(byLine, focusSentence = 1, radius = 1)!!
+        assertEquals(3, three.sentenceCount)
+        assertEquals(
+            "窗口文本重新切句后仍是那 3 句，不能粘连",
+            sents.map { it.text },
+            SentenceSplitter.splitWithPositions(three.section.text).map { it.text }
+        )
+    }
+
+    @Test
+    fun `聚焦窗口_锚点落在全文对应位置`() {
+        val w = PracticeContentOps.focusWindow(full, focusSentence = 2, radius = 1)!!
+        val anchors = PracticeContentOps.buildSentenceAnchors(
+            fullContent = full,
+            effectiveContent = w.section.text,
+            sections = listOf(w.section),
+            selected = setOf(w.section.index)
+        )
+        val inWindow = SentenceSplitter.splitWithPositions(full)
+            .subList(w.firstSentenceIndex, w.firstSentenceIndex + w.sentenceCount)
+            .map { it.startIndex }
+        assertEquals(inWindow, anchors)
+    }
+
+    @Test
+    fun `聚焦窗口_首末句不越界_非法输入返回null`() {
+        val sents = SentenceSplitter.splitWithPositions(full)
+
+        val first = PracticeContentOps.focusWindow(full, focusSentence = 0, radius = 2)!!
+        assertEquals(0, first.firstSentenceIndex)
+        assertEquals(3, first.sentenceCount)
+
+        val last = PracticeContentOps.focusWindow(full, focusSentence = sents.size - 1, radius = 2)!!
+        assertEquals(sents.size, last.firstSentenceIndex + last.sentenceCount)
+
+        assertNull(PracticeContentOps.focusWindow(full, -1))
+        assertNull(PracticeContentOps.focusWindow(full, sents.size))
+        assertNull(PracticeContentOps.focusWindow("", 0))
+    }
+
+    @Test
+    fun `聚焦窗口_错误率表按窗口句序平移`() {
+        val shifted = PracticeContentOps.shiftSentenceErrorRates(
+            rates = mapOf(1 to 0.5f, 3 to 0.9f, 5 to 0.2f),
+            delta = -1,
+            limit = 3
+        )
+        // 全文第 3 句 = 窗口第 2 句；全文第 5 句在窗口（共 3 句）之外，丢弃
+        assertEquals(mapOf(0 to 0.5f, 2 to 0.9f), shifted)
+        assertTrue(PracticeContentOps.shiftSentenceErrorRates(emptyMap(), -1, 3).isEmpty())
     }
 }

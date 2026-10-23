@@ -28,16 +28,18 @@ import java.io.File
     internal fun PracticeViewModel.updateFsrsState(articleId: Long, rating: FsrsEngine.Rating) {
         // 跨文练习的 articleId = -1（混合内容无单篇归属）：负/零 id 不写 FSRS，避免孤儿状态
         if (articleId <= 0L) return
-        try {
-            val store = FsrsStateStore.getInstance(
-                getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
-            )
-            val prev = store.get(articleId) ?: FsrsEngine.CardState()
-            val now = System.currentTimeMillis()
-            val newState = FsrsEngine.review(prev, rating, now)
-            // 持久化切 IO 线程，避免主线程阻塞文件写
-            viewModelScope.launch {
-                withContext(Dispatchers.IO) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    val store = FsrsStateStore.getInstance(
+                        getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
+                    )
+                    // 必须先等初始加载完成：冷启动经通知直达练习时，store 可能还在读盘，
+                    // 以空 CardState 为基线会把 reviewCount/stability 归零（整段记忆史丢失）。
+                    store.awaitLoaded()
+                    val prev = store.get(articleId) ?: FsrsEngine.CardState()
+                    val now = System.currentTimeMillis()
+                    val newState = FsrsEngine.review(prev, rating, now)
                     store.save(articleId, newState)
                     // 复习事件日志（B3-4）：与状态更新同批落盘；写失败不阻断状态保存
                     ReviewLogStore.append(
@@ -45,9 +47,11 @@ import java.io.File
                         elapsedMs = if (prev.lastReview > 0) now - prev.lastReview else 0L,
                         state = newState
                     )
+                } catch (_: Exception) {
+                    /* FSRS 状态更新失败不影响主流程 */
                 }
             }
-        } catch (_: Exception) { /* FSRS 状态更新失败不影响主流程 */ }
+        }
     }
 
     /**
@@ -67,29 +71,37 @@ import java.io.File
      */
     internal fun PracticeViewModel.updateSentenceStates(ratings: Map<String, FsrsEngine.Rating>) {
         if (ratings.isEmpty()) return
-        try {
-            val store = FsrsStateStore.getInstance(
-                getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
-            )
-            viewModelScope.launch {
-                withContext(Dispatchers.IO) {
-                    ratings.forEach { (key, rating) ->
-                        // 逐条串行：同一次提交里同一个键不会被并发写两次，
-                        // 而 store 内部的 persistLock 负责挡跨提交的并发（见 FsrsStateStore）
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    val store = FsrsStateStore.getInstance(
+                        getApplication<Application>().filesDir.resolve("fsrs_state.json").absolutePath
+                    )
+                    store.awaitLoaded()
+                    val now = System.currentTimeMillis()
+                    val nextStates = LinkedHashMap<String, FsrsEngine.CardState>()
+                    val events = ArrayList<ReviewLogStore.ReviewEvent>(ratings.size)
+                    for ((key, rating) in ratings) {
+                        // 逐句计算但仍只落盘一次：saveSentences 一次全量序列化 + 一次 fsync，
+                        // 日志也合并成一次追加；否则一次提交会触发 N 次整文件重写与 N 次 revision。
                         val prev = store.getSentence(key) ?: FsrsEngine.CardState()
-                        val now = System.currentTimeMillis()
                         val next = FsrsEngine.review(prev, rating, now)
-                        store.saveSentence(key, next)
-                        // 复习事件日志（B3-4）：每条状态更新配一条事件；写失败不阻断状态保存
-                        ReviewLogStore.append(
-                            reviewLogFile(), key, now, rating.value,
+                        nextStates[key] = next
+                        events += ReviewLogStore.ReviewEvent(
+                            key = key,
+                            ts = now,
+                            rating = rating.value,
                             elapsedMs = if (prev.lastReview > 0) now - prev.lastReview else 0L,
                             state = next
                         )
                     }
+                    store.saveSentences(nextStates)
+                    ReviewLogStore.appendAll(reviewLogFile(), events)
+                } catch (_: Exception) {
+                    /* 句子级状态写失败不影响本次练习结果 */
                 }
             }
-        } catch (_: Exception) { /* 句子级状态写失败不影响本次练习结果 */ }
+        }
     }
 
 /** 复习事件日志文件（B3-4）：filesDir 根，命名与 [ReviewLogStore] 同源 */

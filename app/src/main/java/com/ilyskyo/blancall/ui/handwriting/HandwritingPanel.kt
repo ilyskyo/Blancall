@@ -5,6 +5,7 @@ package com.ilyskyo.blancall.ui.handwriting
 
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
+import androidx.core.graphics.createBitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.util.Log
@@ -33,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,6 +49,7 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -166,6 +169,18 @@ fun HandwritingPanel(
     }
     val stylusPresent by StylusPresence.present.collectAsStateWithLifecycle()
 
+    // 识别状态文案在组合期取好：statusText 的赋值发生在协程/手势回调里，不能直接调 stringResource
+    val engineMissingText = stringResource(com.ilyskyo.blancall.R.string.handwriting_engine_missing)
+    val multiCharsText = stringResource(com.ilyskyo.blancall.R.string.handwriting_multi_chars)
+    val notRecognizedText = stringResource(com.ilyskyo.blancall.R.string.handwriting_not_recognized)
+    val segmentUnrecognizedText = stringResource(com.ilyskyo.blancall.R.string.handwriting_segment_unrecognized)
+    val strokeErasedText = stringResource(com.ilyskyo.blancall.R.string.handwriting_stroke_erased)
+    val undoDoneText = stringResource(com.ilyskyo.blancall.R.string.handwriting_undo_done)
+    val hintPenText = stringResource(com.ilyskyo.blancall.R.string.handwriting_hint_pen)
+    val hintFingerText = stringResource(com.ilyskyo.blancall.R.string.handwriting_hint_finger)
+    val hintLatinPenText = stringResource(com.ilyskyo.blancall.R.string.handwriting_hint_latin_pen)
+    val hintLatinFingerText = stringResource(com.ilyskyo.blancall.R.string.handwriting_hint_latin_finger)
+
     // 统一强触感（与首页长按/拖拽同一套「咔嗒」）：划掉是破坏性手势，必须有确认感
     val confirmHaptic = rememberConfirmHaptic()
 
@@ -237,7 +252,7 @@ fun HandwritingPanel(
             color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
         ) {
             Text(
-                "本机未提供手写识别引擎，请改用键盘输入。",
+                engineMissingText,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.padding(12.dp)
@@ -275,7 +290,7 @@ fun HandwritingPanel(
     var pendingResults by remember {
         mutableStateOf<List<HandwritingResult?>>(emptyList())
     }
-    var pendingAt by remember { mutableStateOf(0) }
+    var pendingAt by remember { mutableIntStateOf(0) }
 
     /**
      * 本批段识别期间「是否因期望字表外而禁自动上屏」（由 [recognizeCurrent] 协程写入，
@@ -285,7 +300,7 @@ fun HandwritingPanel(
 
     /** 期望字是表外生僻字时的统一提示文案（整板/段两条路径共用）。 */
     val rareGuardHint: String? = expectedNextChar?.let {
-        "「$it」是生僻字，手写识别暂不支持——点上方内容栏可用键盘输入"
+        stringResource(com.ilyskyo.blancall.R.string.handwriting_rare_char, it.toString())
     }
 
     /**
@@ -355,7 +370,7 @@ fun HandwritingPanel(
             statusText = when {
                 // 期望字表外：候选仍是形近字，附键盘引导（拦自动上屏、不拦点选）
                 pendingRareBlock -> rareGuardHint
-                results.getOrNull(i) == null -> "这一段没认出来，可以重写"
+                results.getOrNull(i) == null -> segmentUnrecognizedText
                 else -> null
             }
         } else {
@@ -377,7 +392,7 @@ fun HandwritingPanel(
     /** 把指定笔画集渲染成白底黑字位图（供识别）。 */
     fun renderInk(ink: List<List<Offset>>): Bitmap? {
         if (ink.isEmpty() || canvasSize.width <= 0 || canvasSize.height <= 0) return null
-        val bmp = Bitmap.createBitmap(canvasSize.width, canvasSize.height, Bitmap.Config.ARGB_8888)
+        val bmp = createBitmap(canvasSize.width, canvasSize.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         canvas.drawColor(paperColor.toArgbInt())
 
@@ -741,7 +756,8 @@ fun HandwritingPanel(
                     return@launch
                 }
                 if (whole != null && whole.isConfident && autoCommit && !guarded) {
-                    commitChars(listOf(whole.best!!.char))
+                    val best = whole.best ?: return@launch
+                    commitChars(listOf(best.char))
                     val view = inkRef.get()
                     // 自动上屏：墨迹「收拢→淡出」退场（只动识别快照里的那批笔画，
                     // 不误清动画期间新落的笔）；enabled=false 时保持原来的瞬时清板。
@@ -752,14 +768,14 @@ fun HandwritingPanel(
                 if (whole != null && whole.candidates.isNotEmpty()) {
                     result = whole
                     statusText = when {
-                        guarded -> "像是写了多个字，请写开一点，也可以直接从候选里点选"
+                        guarded -> multiCharsText
                         else -> null
                     }
                     cbRecognized?.invoke(whole)
                 } else {
                     statusText = when {
-                        guarded -> "像是写了多个字，请写开一点，也可以直接从候选里点选"
-                        else -> "没认出来，再写工整一点试试"
+                        guarded -> multiCharsText
+                        else -> notRecognizedText
                     }
                 }
             } finally {
@@ -826,12 +842,12 @@ fun HandwritingPanel(
                 inkRef.get()?.clearInk()
                 dropPending()
                 result = null
-                statusText = "已划掉，重新写"
+                statusText = strokeErasedText
                 confirmHaptic()
             }
             canUndo -> {
                 cbUndoLast?.invoke()
-                statusText = "已撤回上一个字"
+                statusText = undoDoneText
                 confirmHaptic()
             }
             else -> {
@@ -908,10 +924,10 @@ fun HandwritingPanel(
                 // 空板提示按书写模式切换：有笔「用笔…」；无笔改「用手指…」，
                 // 否则手上只有手指的用户会以为写不了。
                 v.hintText = when {
-                    script == HandwritingScript.Latin && stylusPresent -> HINT_TEXT_LATIN
-                    script == HandwritingScript.Latin -> HINT_TEXT_LATIN_TOUCH
-                    stylusPresent -> HINT_TEXT
-                    else -> HINT_TEXT_TOUCH
+                    script == HandwritingScript.Latin && stylusPresent -> hintLatinPenText
+                    script == HandwritingScript.Latin -> hintLatinFingerText
+                    stylusPresent -> hintPenText
+                    else -> hintFingerText
                 }
                 v.hintTextSizePx = with(density) { 14.sp.toPx() }
                 v.cornerRadiusPx = with(density) { 10.dp.toPx() }
@@ -1001,9 +1017,13 @@ fun HandwritingPanel(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { clearAll() }, enabled = enabled) { Text("清空") }
+                TextButton(onClick = { clearAll() }, enabled = enabled) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.clear))
+                }
                 if (onDismiss != null) {
-                    TextButton(onClick = { clearAll(); onDismiss() }, enabled = enabled) { Text("收起") }
+                    TextButton(onClick = { clearAll(); onDismiss() }, enabled = enabled) {
+                        Text(stringResource(com.ilyskyo.blancall.R.string.collapse_plain))
+                    }
                 }
             }
         }
@@ -1016,11 +1036,13 @@ fun HandwritingPanel(
         ) {
             Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
                 if (statusText != null) {
-                    Text(
-                        statusText!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    statusText?.let { hint ->
+                        Text(
+                            hint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 result?.let { r ->
                     Row(
@@ -1147,23 +1169,6 @@ private const val CANDIDATE_BAR_SIZE = 5
  * 才说明用户写的确实不是本文种。
  */
 private const val ALT_TAKEOVER_WEAK_PRIMARY = 0.45f
-
-/**
- * 空板提示文字。
- *
- * 由 InkBoardView 内部绘制（不是 Compose Text）—— 互操作的 AndroidView 永远画在
- * Compose 内容之上，留在 Compose 里会被不透明的纸面盖住。
- */
-private const val HINT_TEXT = "用笔在这里写一个字"
-
-/** 触屏书写（无笔设备）的空板提示。 */
-private const val HINT_TEXT_TOUCH = "用手指在这里写一个字"
-
-/** 拉丁（英语单词）空板提示：强调「整词连写」，与整词识别策略一致。 */
-private const val HINT_TEXT_LATIN = "用笔连着写完这个单词"
-
-/** 触屏书写（无笔设备）的拉丁空板提示。 */
-private const val HINT_TEXT_LATIN_TOUCH = "用手指连着写完这个单词"
 
 /**
  * 「划掉撤回」的有效窗口（毫秒）。

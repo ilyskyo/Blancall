@@ -108,6 +108,29 @@ class DailySentenceCoordinatorTest {
     }
 
     @Test
+    fun `暂停文章不抽今日句也不进队列`() {
+        store.clear()
+        val a1 = article(1, "山重水复疑无路，柳暗花明又一村。")
+        val a2 = article(2, "会当凌绝顶，一览众山小。")
+        val k1 = SentenceSelector.sentenceKey(1, a1.content)
+        val k2 = SentenceSelector.sentenceKey(2, a2.content)
+        // article 2 更逾期：不排除时它一定会被选中，排除后必须落到 article 1
+        val states = mapOf(
+            k1 to state(due = now - 1 * day, lastReview = now - 10 * day),
+            k2 to state(due = now - 5 * day, lastReview = now - 10 * day),
+        )
+        val excluded = setOf(2L)
+        val snap = DailySentenceCoordinator.ensureToday(
+            store, listOf(a1, a2), states, now, Random(1), excludedArticleIds = excluded,
+        )
+        assertEquals(1L, snap?.articleId)
+        val queue = DailySentenceCoordinator.buildQueue(
+            store, listOf(a1, a2), states, now, excludedArticleIds = excluded,
+        )
+        assertTrue("暂停文章的句子不得从新句/到期句任一路径漏回队列", queue.none { it.articleId == 2L })
+    }
+
+    @Test
     fun `buildQueue 今日置顶且到期按 due 升序并跳过解析失败项`() {
         store.clear()
         val text1 = "海内存知己，天涯若比邻。"

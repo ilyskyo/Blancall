@@ -47,8 +47,8 @@ import kotlin.math.max
 fun TextContentReader(
     title: String,
     content: String,
-    author: String = "",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    author: String = ""
 ) {
     val trimmed = content.trim()
     val firstLine = trimmed.substringBefore("\n")
@@ -134,7 +134,7 @@ fun VectorTextRenderer(
     onScaleChanged: (Float) -> Unit = {}
 ) {
     val density = LocalDensity.current
-    var currentScale by remember { mutableStateOf(initialScale) }
+    var currentScale by remember { mutableFloatStateOf(initialScale) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     

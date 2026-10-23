@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -153,9 +154,13 @@ fun TagColorDots(
 ) {
     if (tags.isEmpty()) return
     val shown = tags.take(max.coerceAtLeast(1))
+    val tagsDescription = stringResource(
+        com.ilyskyo.blancall.R.string.a11y_tag_list,
+        shown.joinToString(", ") { it.name }
+    )
     Row(
         modifier = modifier.semantics {
-            contentDescription = "标签：" + shown.joinToString("、") { it.name }
+            contentDescription = tagsDescription
         },
         verticalAlignment = Alignment.CenterVertically,
     ) {

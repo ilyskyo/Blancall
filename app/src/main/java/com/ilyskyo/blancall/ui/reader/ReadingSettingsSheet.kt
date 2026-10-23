@@ -119,8 +119,11 @@ internal fun ReadingSettingsSheet(
     var imported by remember { mutableStateOf(ReaderFonts.listImportedFonts(context)) }
     val allFonts = remember(sysFonts, imported) { ReaderFonts.presets + sysFonts + imported }
     val defaultFontName = stringResource(com.ilyskyo.blancall.R.string.default_font_name)
-    val currentFontName = remember(allFonts, fontId, defaultFontName) {
-        allFonts.firstOrNull { it.id == fontId }?.name ?: defaultFontName
+    val currentFont = allFonts.firstOrNull { it.id == fontId }
+    val currentFontName = when {
+        currentFont == null -> defaultFontName
+        currentFont.nameRes != 0 -> stringResource(currentFont.nameRes)
+        else -> currentFont.name
     }
     val fontResourceLabel = stringResource(com.ilyskyo.blancall.R.string.reading_font)
     var fontsExpanded by remember { mutableStateOf(false) }
@@ -279,7 +282,11 @@ internal fun ReadingSettingsSheet(
                             FilterChip(
                                 selected = selected,
                                 onClick = { onFontIdChange(f.id) },
-                                label = { Text(f.name) },
+                                label = {
+                                    Text(
+                                        if (f.nameRes != 0) stringResource(f.nameRes) else f.name
+                                    )
+                                },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = when {
                                         selected && isDark -> Color(0x334B5563)

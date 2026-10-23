@@ -3,9 +3,12 @@
 
 package com.ilyskyo.blancall.ui.western
 
+import android.annotation.SuppressLint
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -55,6 +58,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -68,8 +72,10 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -131,7 +137,7 @@ fun WesternThoughtScreen(navController: NavController) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "素材库",
+                text = stringResource(com.ilyskyo.blancall.R.string.nav_library),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -268,7 +274,7 @@ private fun LibraryCard(
                     lineHeight = 16.sp
                 )
                 // meta 行
-                val meta = lib.metaLine.ifBlank { "精选内容 · 持续更新" }
+                val meta = lib.metaLine.ifBlank { stringResource(com.ilyskyo.blancall.R.string.western_selected_content) }
                 Text(
                     text = meta,
                     style = MaterialTheme.typography.labelSmall,
@@ -301,16 +307,19 @@ private fun LibraryCard(
  *     ▾ 下载 PDF ─ 弹出二选：仅本页  /  全部页
  *     ▾ 导入到 Blancall 背诵列表 ─ 弹出二选：仅本页  /  全部页
  *     ✓ 练习当前页正文（topbar 胶囊按钮，二级菜单也有快捷项）
- * - 练习正文：仅对 [extractContentBodyFromAssets] 抽取的"内容正文"挖空，
+ * - 练习正文：仅对 [extractContentBodyFromAssets] 抽取的正文挖空，
  *   标题 / 引用 / 来源注释 / Box 标题 / 章节封面 / 脚注 等辅助内容不会挖空。
  */
 @Composable
+// 只加载随包内置的素材 HTML（无远程/用户内容），交互脚本（目录、菜单 postMessage）必需
+@SuppressLint("SetJavaScriptEnabled")
 fun LibraryContentPage(
     navController: NavController,
     libraryId: String
 ) {
     val lib = BUILT_IN_LIBRARIES.firstOrNull { it.id == libraryId } ?: BUILT_IN_LIBRARIES.first()
     val context = LocalContext.current
+    val resources = LocalResources.current
     var webView by remember { mutableStateOf<WebView?>(null) }
     // 组合层取 WebView 背景色（factory 非 Composable，不能直接读 MaterialTheme）
     val webViewBg = MaterialTheme.colorScheme.background.toArgb()
@@ -324,17 +333,17 @@ fun LibraryContentPage(
     if (showDisclaimer) {
         BlancallAlertDialog(
             onDismissRequest = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false },
-            title = { Text("提示") },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.tip)) },
             text = {
                 Text(
                     when (lib.id) {
-                        "gaokao" -> "该内容非 Blancall 官方制作，它提供的一切联系信息都与 Blancall 无关。"
-                        else -> "该素材库内容由AI汇总整理，不保证内容完全正确。请勿用作论文引用依据、考试答题模板等。它不可替代深度阅读，亦不可作为权威解读。请务必将其视为对话的起点，而非思考的终点。"
+                        "gaokao" -> stringResource(com.ilyskyo.blancall.R.string.western_disclaimer_contact)
+                        else -> stringResource(com.ilyskyo.blancall.R.string.western_disclaimer_ai)
                     }
                 )
             },
             confirmButton = {
-                TextButton(onClick = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false }) { Text("知道了") }
+                TextButton(onClick = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false }) { Text(stringResource(com.ilyskyo.blancall.R.string.coach_got_it)) }
             }
         )
     }
@@ -345,8 +354,11 @@ fun LibraryContentPage(
     var currentPerson by remember { mutableStateOf("") }
     // 当前正在浏览的小节 id（如 sec-2），由 JS 滚动监听上报；空串=整篇
     var currentSection by remember { mutableStateOf("") }
-    // 目录页滚动位置：进入篇目预览前保存，返回时恢复（不回到默认顶部）
-    var savedScrollY by rememberSaveable { mutableStateOf(0) }
+    // 目录页滚动位置：进入篇目预览前保存，返回时恢复（不回到默认顶部）。
+    // 用普通 remember 而非 rememberSaveable：滚动每个像素都写 saveable 会持续进 Bundle；
+    // 这里只需要「同一页面往返」的恢复，配置变化时 WebView 本身也会重建。
+    var savedScrollY by remember { mutableIntStateOf(0) }
+    var savedScrollUrl by remember { mutableStateOf("") }
     // 顶栏「练习」按钮：先弹出练习模式选择选项卡，选定后再导入并进入，不默认任何模式
     var showPracticePicker by remember { mutableStateOf(false) }
     var pendingPracticePerson by remember { mutableStateOf("") }
@@ -424,7 +436,7 @@ fun LibraryContentPage(
             // 练习正文按钮（仅在进入具体人物页后显示，index / concept-map 页不显示）
             if (currentPerson.isNotEmpty() && currentPerson != "index" && currentPerson != "concept-map") {
                 val secNum = currentSection.removePrefix("sec-")
-                val practiceLabel = if (currentSection.isNotBlank()) "练习 · 第${secNum}节" else "练习 · 全文"
+                val practiceLabel = if (currentSection.isNotBlank()) stringResource(com.ilyskyo.blancall.R.string.western_practice_section, secNum) else stringResource(com.ilyskyo.blancall.R.string.western_practice_full)
                 Surface(
                     modifier = Modifier
                         .padding(end = 8.dp)
@@ -468,7 +480,7 @@ fun LibraryContentPage(
                 IconButton(onClick = { showMenu = true }) {
                     M3Icon(
                         imageVector = Icons.Filled.MoreVert,
-                        contentDescription = "更多",
+                        contentDescription = stringResource(com.ilyskyo.blancall.R.string.more),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -485,7 +497,7 @@ fun LibraryContentPage(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "操作",
+                            text = stringResource(com.ilyskyo.blancall.R.string.operation),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -514,7 +526,7 @@ fun LibraryContentPage(
                                     modifier = Modifier.size(20.dp)
                                 )
                             },
-                            label = { Text("下载 PDF", fontWeight = FontWeight.Medium) },
+                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.western_download_pdf), fontWeight = FontWeight.Medium) },
                             onClick = {
                                 showMenu = false
                                 if (currentPerson.isNotBlank()) {
@@ -531,7 +543,7 @@ fun LibraryContentPage(
                                     modifier = Modifier.size(20.dp)
                                 )
                             },
-                            label = { Text("全文导入背诵列表", fontWeight = FontWeight.Medium) },
+                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.western_import_full), fontWeight = FontWeight.Medium) },
                             onClick = {
                                 showMenu = false
                                 if (currentPerson.isNotBlank()) {
@@ -545,7 +557,7 @@ fun LibraryContentPage(
                                                 context, currentPerson, text, currentPerson
                                             )
                                             if (articleId > 0) {
-                                                Toast.makeText(context, "已导入", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.western_imported), Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -555,7 +567,7 @@ fun LibraryContentPage(
                         // （练习当前页的功能已并入顶栏「练习 · 第X节」按钮，菜单不再重复放，避免同一功能多入口）
                     } else {
                         // index / concept-map 页提示：按库类型给对应的引导文案
-                        val guideText = if (lib.id == "gaokao") "请进入某一篇文章" else "请进入某位思想家素材页"
+                        val guideText = if (lib.id == "gaokao") stringResource(com.ilyskyo.blancall.R.string.western_enter_article) else stringResource(com.ilyskyo.blancall.R.string.western_enter_thinker)
                         GlassMenuItem(
                             leadingIcon = {
                                 AppIcon(
@@ -597,15 +609,19 @@ fun LibraryContentPage(
                             allowFileAccess = true
                             allowContentAccess = true
                         }
-                        // 记录滚动位置：返回本页时恢复，避免目录回到顶部
-                        setOnScrollChangeListener { _, _, scrollY, _, _ -> savedScrollY = scrollY }
+                        // 记录滚动位置：返回本页时恢复，避免目录回到顶部。
+                        // 同时记下 URL：站内跳到别的篇目时不能把旧位置套用过去。
+                        setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                            savedScrollY = scrollY
+                            savedScrollUrl = url.orEmpty()
+                        }
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(
                                 view: WebView?,
                                 request: WebResourceRequest?
                             ): Boolean {
                                 val url = request?.url?.toString() ?: return false
-                                val uri = Uri.parse(url)
+                                val uri = url.toUri()
 
                                 // philomenu: scheme — 三点点菜单交互（post 到主线程修改 Compose state）
                                 if (uri.scheme == "philomenu") {
@@ -656,8 +672,10 @@ fun LibraryContentPage(
                                         "})()",
                                     null
                                 )
-                                // 返回本页时恢复目录滚动位置（从篇目预览返回后仍在原处）
-                                if (savedScrollY > 0) view?.scrollTo(0, savedScrollY)
+                                // 只有在「同一个页面」重新加载时才恢复；站内跳转保持新页面自己的位置
+                                if (savedScrollY > 0 && url == savedScrollUrl) {
+                                    view?.scrollTo(0, savedScrollY)
+                                }
                                 // 从 URL 中提取文件名（如 weber.html / arendt.html）
                                 val fileName = url.substringAfterLast("/").substringBefore(".html")
                                 // 仅「具体人物页」才算进入可操作页；index（库首页）与
@@ -759,20 +777,20 @@ private fun resolvePracticeTarget(
         val secNum = sectionId.removePrefix("sec-")
         PracticeTarget(
             assetPath = basePath,
-            scopeLabel = "${personId} · 第${secNum}节",
+            scopeLabel = "$personId · " + context.getString(com.ilyskyo.blancall.R.string.western_section_suffix, secNum),
             isSection = true
         )
     } else {
         PracticeTarget(
             assetPath = basePath,
-            scopeLabel = personId,
+            scopeLabel = "$personId · " + context.getString(com.ilyskyo.blancall.R.string.western_full_text),
             isSection = false
         )
     }
 }
 
 /**
- * 从 assets/philo/xxx.html 提取"内容正文"纯文本。
+ * 从 assets/philo/xxx.html 提取正文纯文本。
  *
  * @param sectionId 可选。传入某个小节 id（如 "sec-2"）时，只提取该小节内的正文；
  *                  传空串则提取整篇人物的全部正文。
@@ -918,6 +936,9 @@ private fun openAssetPdf(context: Context, assetUrl: String) {
 
 /**
  * 素材库注册表（可扩展）：新增库只需在此追加一项，并放入对应 assets 目录。
+ *
+ * 标题、副标题与统计行属于**内置素材的内容元数据**（高考语文资料本身），
+ * 随 asset 固定为中文，不参与界面语言切换 —— 翻译成外语反而会让读者以为素材也变了。
  */
 data class BuiltInLibrary(
     val id: String,

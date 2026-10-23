@@ -42,9 +42,14 @@ class ArticleStorage(private val filePath: String) {
                 // 存量数据迁移（作者行从正文首行搬回 author 字段）：
                 // 迁移后落盘一次，之后 JSON 里已带 author，不会重复触发
                 if (migrated) {
-                    runBlocking { saveToFile() }
-                    Log.w("ArticleStorage", "已将旧数据正文首行的作者迁移到 author 字段")
+                    // 迁移写盘失败（磁盘满等）不能把整个进程带走：数据仍在内存里，
+                    // 下一次正常保存会重试；这里只记录，不改变启动流程。
+                    runCatching { runBlocking { saveToFile() } }
+                        .onFailure { Log.e("ArticleStorage", "author migration save failed", it) }
+                        .onSuccess { Log.w("ArticleStorage", "已将旧数据正文首行的作者迁移到 author 字段") }
                 }
+            } catch (e: Exception) {
+                Log.e("ArticleStorage", "initial load failed, continue with empty library", e)
             } finally {
                 loadLatch.countDown()
             }
@@ -126,16 +131,44 @@ class ArticleStorage(private val filePath: String) {
     }
 
     /** @return 是否发生了旧数据迁移（作者行从正文搬回 author 字段） */
-    /** 备份导入后重载（B1-3）：重读磁盘整体替换内存。loadFromFile 是整库替换语义，重入安全 */
-    fun reload() {
-        loadFromFile()
+    /**
+     * 备份导入后重载：重读磁盘整体替换内存。
+     *
+     * 必须与 `insert/update/delete` 共用 `fileMutex`，否则会出现「导入把文件换掉后，
+     * 导入前发起的全量保存又把旧内存写回」的覆盖；也必须先等首载完成，避免把初始
+     * 加载覆盖到刚恢复的数据上。
+     *
+     * @param clearWhenMissing 导入语义下主文件缺失就是「备份里没有这篇数据」，
+     *   此时必须清空内存，且**不能**回读 `.bak` —— 那里面是导入前的旧库。
+     */
+    suspend fun reload() {
+        awaitLoaded()
+        withContext(Dispatchers.IO) {
+            fileMutex.withLock {
+                loadFromFile(clearWhenMissing = true, allowBackupRecovery = false)
+            }
+        }
     }
 
-    private fun loadFromFile(): Boolean {
+    private fun clearInMemory() {
+        synchronized(stateLock) {
+            _articles.value = emptyList()
+            nextId = 1L
+        }
+    }
+
+    private fun loadFromFile(
+        clearWhenMissing: Boolean = false,
+        allowBackupRecovery: Boolean = true,
+    ): Boolean {
         try {
             val file = File(filePath)
             // 主文件不存在则尝试备份
             if (!file.exists()) {
+                if (clearWhenMissing) {
+                    clearInMemory()
+                    return false
+                }
                 val bakFile = File(filePath + ".bak")
                 if (bakFile.exists()) {
                     bakFile.copyTo(file, overwrite = true)
@@ -145,7 +178,10 @@ class ArticleStorage(private val filePath: String) {
                 }
             }
             val jsonStr = file.readText()
-            if (jsonStr.isBlank()) return false
+            if (jsonStr.isBlank()) {
+                if (clearWhenMissing) clearInMemory()
+                return false
+            }
             val (loaded, maxId, migrated) = parseArticles(jsonStr)
             synchronized(stateLock) {
                 _articles.value = loaded
@@ -154,6 +190,10 @@ class ArticleStorage(private val filePath: String) {
             return migrated
         } catch (e: Exception) {
             Log.e("ArticleStorage", "加载文章失败，文件可能已损坏", e)
+            if (!allowBackupRecovery) {
+                clearInMemory()
+                return false
+            }
             // 尝试从备份恢复
             try {
                 val bakFile = File(filePath + ".bak")
@@ -172,38 +212,42 @@ class ArticleStorage(private val filePath: String) {
             } catch (_: Exception) {
                 Log.e("ArticleStorage", "备份恢复也失败，将从空列表开始")
             }
+            clearInMemory()
             return false
         }
     }
 
-    private suspend fun saveToFile() {
-        fileMutex.withLock {
-            // 快照必须在锁内读取：并发 insert/update 时锁外读取会拿到旧值，
-            // 待其获得锁后会用「旧快照」覆盖「新快照」写下的文件（内存新、磁盘旧）
-            val snapshot = _articles.value
-            // 文件写入切 IO 线程，避免在 Main 线程上做磁盘 IO（调用方多为 viewModelScope）
-            withContext(Dispatchers.IO) {
-                try {
-                    val jsonArray = JSONArray()
-                    for (article in snapshot) {
-                        val obj = JSONObject()
-                        obj.put("id", article.id)
-                        obj.put("title", article.title)
-                        obj.put("content", article.content)
-                        obj.put("createdAt", article.createdAt)
-                        obj.put("updatedAt", article.updatedAt)
-                        obj.put("autoIndent", article.autoIndent)
-                        obj.put("author", article.author)
-                        jsonArray.put(obj)
-                    }
-                    // 原子写 + fsync 统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
-                    AtomicFiles.writeTextAtomic(File(filePath), jsonArray.toString())
-                } catch (e: Exception) {
-                    Log.e("ArticleStorage", "保存文章失败", e)
-                    throw e
+    /** 调用方必须已持有 [fileMutex]（插入/更新/删除已把它当作整体串行锁） */
+    private suspend fun saveToFileLocked() {
+        // 快照必须在锁内读取：并发 insert/update 时锁外读取会拿到旧值，
+        // 待其获得锁后会用「旧快照」覆盖「新快照」写下的文件（内存新、磁盘旧）
+        val snapshot = _articles.value
+        // 文件写入切 IO 线程，避免在 Main 线程上做磁盘 IO（调用方多为 viewModelScope）
+        withContext(Dispatchers.IO) {
+            try {
+                val jsonArray = JSONArray()
+                for (article in snapshot) {
+                    val obj = JSONObject()
+                    obj.put("id", article.id)
+                    obj.put("title", article.title)
+                    obj.put("content", article.content)
+                    obj.put("createdAt", article.createdAt)
+                    obj.put("updatedAt", article.updatedAt)
+                    obj.put("autoIndent", article.autoIndent)
+                    obj.put("author", article.author)
+                    jsonArray.put(obj)
                 }
+                // 原子写 + fsync 统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
+                AtomicFiles.writeTextAtomic(File(filePath), jsonArray.toString())
+            } catch (e: Exception) {
+                Log.e("ArticleStorage", "保存文章失败", e)
+                throw e
             }
         }
+    }
+
+    private suspend fun saveToFile() {
+        fileMutex.withLock { saveToFileLocked() }
     }
 
     suspend fun getById(id: Long): Article? {
@@ -214,31 +258,39 @@ class ArticleStorage(private val filePath: String) {
 
     suspend fun insert(article: Article): Long {
         awaitLoaded()
-        val newArticle = synchronized(stateLock) {
-            val na = article.copy(id = nextId++)
-            _articles.value = _articles.value + na
-            na
+        return fileMutex.withLock {
+            val newArticle = synchronized(stateLock) {
+                val na = article.copy(id = nextId++)
+                _articles.value = _articles.value + na
+                na
+            }
+            // 内存变更与落盘同持一把锁：reload 不可能落在两者之间，
+            // 否则「导入换文件 → 旧快照写回」会把刚恢复的数据覆盖。
+            saveToFileLocked()
+            newArticle.id
         }
-        saveToFile()
-        return newArticle.id
     }
 
     suspend fun update(article: Article) {
         awaitLoaded()
-        synchronized(stateLock) {
-            _articles.value = _articles.value.map {
-                if (it.id == article.id) article else it
+        fileMutex.withLock {
+            synchronized(stateLock) {
+                _articles.value = _articles.value.map {
+                    if (it.id == article.id) article else it
+                }
             }
+            saveToFileLocked()
         }
-        saveToFile()
     }
 
     suspend fun delete(article: Article) {
         awaitLoaded()
-        synchronized(stateLock) {
-            _articles.value = _articles.value.filter { it.id != article.id }
+        fileMutex.withLock {
+            synchronized(stateLock) {
+                _articles.value = _articles.value.filter { it.id != article.id }
+            }
+            saveToFileLocked()
         }
-        saveToFile()
     }
 
     companion object {

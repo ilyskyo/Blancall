@@ -68,27 +68,43 @@ internal object ReviewLogStore {
         elapsedMs: Long,
         state: FsrsEngine.CardState,
         maxBytes: Long = MAX_BYTES,
+    ): Boolean = appendAll(
+        file,
+        listOf(ReviewEvent(key, ts, rating, elapsedMs, state)),
+        maxBytes
+    )
+
+    /**
+     * 批量追加事件：一次打开/一次 fsync。一次练习提交会产生多条句级事件，
+     * 逐条 [append] 会让提交在低速存储上等 N 次 fsync；这里合并成一次写。
+     * 任一事件格式都来自内部构造，不存在部分行写坏的问题（崩溃仍按半行容错）。
+     */
+    fun appendAll(
+        file: File,
+        events: List<ReviewEvent>,
+        maxBytes: Long = MAX_BYTES,
     ): Boolean {
+        if (events.isEmpty()) return true
         return try {
             if (file.isFile && file.length() >= maxBytes) return false
-            val line = JSONObject()
-                .put("v", FORMAT_VERSION)
-                .put("key", key)
-                .put("ts", ts)
-                .put("rating", rating)
-                .put("elapsedMs", elapsedMs)
-                .put("d", state.difficulty)
-                .put("s", state.stability)
-                .put("due", state.due)
-                .put("reps", state.reviewCount)
-                .put("lapses", state.lapses)
-                .toString()
-            AtomicFiles.appendTextLine(file, line)
+            AtomicFiles.appendTextLines(file, events.map { eventToJson(it).toString() })
             true
         } catch (_: Exception) {
             false
         }
     }
+
+    private fun eventToJson(event: ReviewEvent): JSONObject = JSONObject()
+        .put("v", FORMAT_VERSION)
+        .put("key", event.key)
+        .put("ts", event.ts)
+        .put("rating", event.rating)
+        .put("elapsedMs", event.elapsedMs)
+        .put("d", event.state.difficulty)
+        .put("s", event.state.stability)
+        .put("due", event.state.due)
+        .put("reps", event.state.reviewCount)
+        .put("lapses", event.state.lapses)
 
     /**
      * 读取全部可解析的事件（按文件顺序）。

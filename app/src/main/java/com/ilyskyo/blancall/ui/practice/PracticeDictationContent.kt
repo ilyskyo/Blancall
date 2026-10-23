@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -65,7 +66,7 @@ internal fun DictationContent(
     if (dictation == null) {
         // 空态/错误态
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("暂无默写内容，请返回重试",
+            Text(stringResource(com.ilyskyo.blancall.R.string.dictation_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -103,7 +104,7 @@ internal fun DictationContent(
     ) {
         // ── 线索区：打乱顺序的挖空分句 ──
         item(key = "clueTitle") {
-            Text("默写线索（分句已打乱顺序并挖空，点复制可复制单句）",
+            Text(stringResource(com.ilyskyo.blancall.R.string.dictation_clue_title),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
@@ -114,7 +115,7 @@ internal fun DictationContent(
         // ── 输入区 / 结果区 ──
         if (!isSubmitted) {
             item(key = "inputArea") {
-                Text("默写原文",
+                Text(stringResource(com.ilyskyo.blancall.R.string.dictation_original_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
@@ -129,7 +130,7 @@ internal fun DictationContent(
                         // 真机现象就是「页面跟着笔一起滚、字却写不进去」。
                         .penTapToHandwriting(key = "dictationInput") { penWriting = true }
                         .heightIn(min = 120.dp, max = 240.dp),
-                    placeholder = "按原文顺序默写整段，可把复制下来的分句拼回去…",
+                    placeholder = stringResource(com.ilyskyo.blancall.R.string.dictation_placeholder),
                     hintChar = if (!isSubmitted) dictationHintChar else null,
                     maxLines = Int.MAX_VALUE,
                     minHeight = 90.dp,
@@ -164,9 +165,9 @@ internal fun DictationContent(
                     // 改为引导从「手写」模式开关进入（开关在字词/句子页的输入框内）。
                     Text(
                         if (stylusPresent) {
-                            "拿笔点上面的作答区，这里就会出现手写区；写出的字直接落到上面。"
+                            stringResource(com.ilyskyo.blancall.R.string.dictation_handwriting_stylus_hint)
                         } else {
-                            "开启「手写」后，这里常驻手写区；写出的字直接落到上面。"
+                            stringResource(com.ilyskyo.blancall.R.string.dictation_handwriting_toggle_hint)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -195,6 +196,9 @@ internal fun DictationClauseCard(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
     ) {
+        val copyDescription = stringResource(
+            com.ilyskyo.blancall.R.string.a11y_copy_clause, clause.displayOrder + 1
+        )
         Row(
             modifier = Modifier.fillMaxWidth().padding(10.dp),
             verticalAlignment = Alignment.Top
@@ -213,15 +217,19 @@ internal fun DictationClauseCard(
                     if (clipboard != null) {
                         val clip = ClipData.newPlainText("默写分句", clause.displayText)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "已复制：${clause.displayText}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            context.getString(com.ilyskyo.blancall.R.string.dictation_copied, clause.displayText),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 },
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 modifier = Modifier.semantics {
-                    contentDescription = "复制第${clause.displayOrder + 1}句"
+                    contentDescription = copyDescription
                 }
             ) {
-                Text("复制", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(com.ilyskyo.blancall.R.string.dictation_copy), style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -268,21 +276,26 @@ internal fun DictationScoreCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("综合得分：$score%",
+                val scoreDescription = stringResource(
+                    com.ilyskyo.blancall.R.string.a11y_dictation_score, score
+                )
+                Text(stringResource(com.ilyskyo.blancall.R.string.dictation_score, score),
                     style = MaterialTheme.typography.titleMedium,
                     color = scoreColor,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).semantics {
-                        contentDescription = "反向默写综合得分 $score 分"
+                        contentDescription = scoreDescription
                     })
                 if (onViewArticleData != null) {
                     TextButton(onClick = onViewArticleData) {
-                        Text("查看本篇文章数据", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(com.ilyskyo.blancall.R.string.score_view_article), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text("覆盖率 $coverage% · 准确率 $accuracy% · 顺序正确率 $order%",
+            Text(stringResource(
+                com.ilyskyo.blancall.R.string.dictation_breakdown, coverage, accuracy, order
+            ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

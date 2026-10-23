@@ -3,6 +3,10 @@
 
 package com.ilyskyo.blancall.ui.list
 
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInVertically
@@ -30,6 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.Composable
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.animateListItem
@@ -97,6 +102,8 @@ import java.util.Locale
 
 @Composable
 fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
+    // 「长按文章进多选」的锚点：整片列表区
+    val listAnchor = rememberCoachAnchor()
     // 根 tab 页面：返回键 = 退出应用（与「数据」「素材库」tab 平级语义一致，绝不 pop 回上一 tab/首页）
     val rootBackContext = LocalContext.current
     BackHandler {
@@ -122,13 +129,13 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     val perfTag = "ListPerf"
     val perfStart = remember { System.currentTimeMillis() }
     LaunchedEffect(Unit) {
-        Log.d(perfTag, "首帧完成 耗时=${(System.currentTimeMillis() - perfStart)}ms | articles=${articles.size} records=${allRecords.size}")
+        Log.d(perfTag, "first frame done in ${(System.currentTimeMillis() - perfStart)}ms | articles=${articles.size} records=${allRecords.size}")
     }
     LaunchedEffect(articles) {
-        if (articles.isNotEmpty()) Log.d(perfTag, "articles 到达 size=${articles.size} t=${(System.currentTimeMillis() - perfStart)}ms")
+        if (articles.isNotEmpty()) Log.d(perfTag, "articles arrived size=${articles.size} t=${(System.currentTimeMillis() - perfStart)}ms")
     }
     LaunchedEffect(allRecords) {
-        if (allRecords.isNotEmpty()) Log.d(perfTag, "records 到达 size=${allRecords.size} t=${(System.currentTimeMillis() - perfStart)}ms")
+        if (allRecords.isNotEmpty()) Log.d(perfTag, "records arrived size=${allRecords.size} t=${(System.currentTimeMillis() - perfStart)}ms")
     }
     // 预建 文章ID→练习记录 映射，避免每个 ArticleCard 内重复 O(N×M) 过滤
     val recordsByArticle = remember(allRecords) {
@@ -140,23 +147,33 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     }
     // FSRS 状态后台加载：首帧先渲染（无状态=未开始），加载完成后刷新，避免进入列表时同步读文件卡顿
     var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
-    LaunchedEffect(Unit) {
+    var pausedArticleIds by remember { mutableStateOf(fsrsStore.pausedArticleIds()) }
+    val fsrsRevision by fsrsStore.revision.collectAsState()
+    LaunchedEffect(fsrsRevision) {
         fsrsStore.awaitLoaded()
         fsrsStates = fsrsStore.allStates()
+        pausedArticleIds = fsrsStore.pausedArticleIds()
     }
     // 列表逐篇的复习状态也要看用户选的复习计划：与首页同一条映射、同一个参数（ReviewTemplate.fromId），
     // 否则会出现「统计页说今天到期、列表说已完成」这种两屏互相打脸。
     val reviewTemplateId by AppPrefs.reviewTemplateFlow.collectAsState()
     val reviewTemplate = remember(reviewTemplateId) { ReviewTemplate.fromId(reviewTemplateId) }
     // 预计算每篇文章复习状态，避免 Lazy 列表逐项组合时重复对记录排序（记录多的文章尤甚）。
-    // 同时配合下方 items/staggeredItems 的 contentType，消除进入列表与滚动时的重复组合开销。
-    val reviewStatusByArticle = remember(recordsByArticle, fsrsStates, reviewTemplate) {
-        sortedArticles.associate { article ->
-            article.id to EbbinghausScheduler.getReviewStatus(
-                fsrsStates[article.id],
-                recordsByArticle[article.id] ?: emptyList(),
-                reviewTemplate
-            )
+    // 放到 Default 线程计算：千篇文章 × 逐篇排序在组合期主线程会拖慢进入列表；
+    // 初值空表只影响首帧的一瞬，数据到达后列表自动刷新。
+    val reviewStatusByArticle by produceState<Map<Long, EbbinghausScheduler.ReviewStatus>>(
+        initialValue = emptyMap(),
+        recordsByArticle, fsrsStates, reviewTemplate, pausedArticleIds,
+    ) {
+        value = withContext(Dispatchers.Default) {
+            sortedArticles.associate { article ->
+                article.id to EbbinghausScheduler.getReviewStatus(
+                    fsrsStates[article.id],
+                    recordsByArticle[article.id] ?: emptyList(),
+                    reviewTemplate,
+                    paused = article.id in pausedArticleIds,
+                )
+            }
         }
     }
     var deleteTarget by remember { mutableStateOf<Article?>(null) }
@@ -182,7 +199,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     var showExportDialog by remember { mutableStateOf(false) }
     // 导出对话框的预选文章（多选态快捷导出用；-1 = 不预选）
-    var exportPreselectId by remember { mutableStateOf(-1L) }
+    var exportPreselectId by remember { mutableLongStateOf(-1L) }
     val scope = rememberCoroutineScope()
 
     // ── 文章标签：筛选 / 卡片徽标 / 批量打标签 ──
@@ -258,6 +275,14 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 .widthIn(max = if (LocalIsLargeScreen) GridMaxWidth else 600.dp)
                 .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
+        CoachMark(
+            coachKey = "list_long_press_multi",
+            anchor = listAnchor,
+            title = stringResource(com.ilyskyo.blancall.R.string.coach_list_long_title),
+            body = stringResource(com.ilyskyo.blancall.R.string.coach_list_long_body),
+            shape = CoachShape.Card,
+            enabled = !crossSelectMode && filteredArticles.isNotEmpty(),
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -304,7 +329,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                                     enabled = selectedIds.size == 1,
                                                     modifier = Modifier.height(40.dp)
                                                 ) {
-                                                    Text("导出", style = MaterialTheme.typography.labelMedium,
+                                                    Text(stringResource(com.ilyskyo.blancall.R.string.export_action),
+                                                        style = MaterialTheme.typography.labelMedium,
                                                         color = MaterialTheme.colorScheme.onSurface)
                                                 }
                         }
@@ -318,7 +344,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                                         onClick = { navController.navigate("ai_history") },
                                                         modifier = Modifier.height(40.dp)
                                                     ) {
-                                                        Text("AI对话记录", style = MaterialTheme.typography.labelMedium,
+                                                        Text(stringResource(com.ilyskyo.blancall.R.string.ai_chat_records),
+                                                            style = MaterialTheme.typography.labelMedium,
                                                             color = MaterialTheme.colorScheme.onSurface)
                                                     }
                                                 }
@@ -341,7 +368,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                                     },
                                                     modifier = Modifier.height(40.dp)
                                                 ) {
-                                                    Text("导出", style = MaterialTheme.typography.labelMedium,
+                                                    Text(stringResource(com.ilyskyo.blancall.R.string.export_action),
+                                                        style = MaterialTheme.typography.labelMedium,
                                                         color = MaterialTheme.colorScheme.onSurface)
                                                 }
                         }
@@ -472,7 +500,10 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                 article = article,
                                 // 筛选/删除/多选都会整体增删行：入场、换位、退场统一由 animateListItem 管
                                 // （单列 LazyColumn 与双列交错网格共用同一组 spec）
-                                modifier = animateListItem(),
+                                modifier = animateListItem().then(
+                                    // 首篇锚点：长按多选的指引圈只圈第一篇（圈整块列表等于没圈）
+                                    if (article.id == filteredArticles.firstOrNull()?.id) Modifier.coachAnchor(listAnchor) else Modifier
+                                ),
                                 tags = chipTagsByArticle[article.id].orEmpty(),
                                 dateFormat = dateFormat,
                                 reviewStatus = reviewStatusByArticle[article.id]
@@ -522,7 +553,10 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                 article = article,
                                 // 筛选/删除/多选都会整体增删行：入场、换位、退场统一由 animateListItem 管
                                 // （单列 LazyColumn 与双列交错网格共用同一组 spec）
-                                modifier = animateListItem(),
+                                modifier = animateListItem().then(
+                                    // 首篇锚点：长按多选的指引圈只圈第一篇（圈整块列表等于没圈）
+                                    if (article.id == filteredArticles.firstOrNull()?.id) Modifier.coachAnchor(listAnchor) else Modifier
+                                ),
                                 tags = chipTagsByArticle[article.id].orEmpty(),
                                 dateFormat = dateFormat,
                                 reviewStatus = reviewStatusByArticle[article.id]
@@ -629,7 +663,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         shape = RoundedCornerShape(12.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                     ) {
-                        AdaptiveButtonLabel("发给 AI")
+                        AdaptiveButtonLabel(stringResource(com.ilyskyo.blancall.R.string.ai_send_to))
                     }
                 }
                 // 跨文复习（≥2篇时显示）
@@ -814,7 +848,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     },
                     enabled = selectedArticle != null
                 ) {
-                    Text("导出")
+                    Text(stringResource(com.ilyskyo.blancall.R.string.export_action))
                 }
             },
             dismissButton = {
@@ -866,6 +900,7 @@ private fun ArticleCard(
         is EbbinghausScheduler.ReviewStatus.DUE -> stringResource(com.ilyskyo.blancall.R.string.to_review) to MaterialTheme.colorScheme.error
         is EbbinghausScheduler.ReviewStatus.PENDING -> pluralStringResource(com.ilyskyo.blancall.R.plurals.review_in_days, s.daysLeft, s.daysLeft) to MaterialTheme.colorScheme.outline
         is EbbinghausScheduler.ReviewStatus.COMPLETED -> stringResource(com.ilyskyo.blancall.R.string.mastered) to MaterialTheme.colorScheme.primary
+        is EbbinghausScheduler.ReviewStatus.PAUSED -> stringResource(com.ilyskyo.blancall.R.string.plan_paused) to MaterialTheme.colorScheme.tertiary
     }
     GlassCard(
         modifier = modifier.heroElement("article/${article.id}")
@@ -929,10 +964,15 @@ private fun ArticleCard(
                         }
                     }
                     Spacer(modifier = Modifier.height(6.dp))
+                    val charCount = pluralStringResource(
+                        com.ilyskyo.blancall.R.plurals.char_count_short,
+                        article.content.length,
+                        article.content.length
+                    )
                     Text(
                         text = buildString {
                             if (article.author.isNotBlank()) append(article.author.trim()).append("  ·  ")
-                            append(article.content.length.toString()).append(" 字符  ·  ")
+                            append(charCount).append("  ·  ")
                             append(dateFormat.format(Date(article.createdAt)))
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -1008,7 +1048,10 @@ private suspend fun exportArticlePdf(context: android.content.Context, article: 
         }
         // 文件名清洗：标题可能含 / \ : 等非法字符（直接拼入会创建子路径导致导出失败）
         val safeName = article.title.trim().replace(Regex("""[\\/:*?"<>|\r\n]"""), "_").take(50)
-        val suffix = if (asCloze) "挖空" else "原文"
+        val suffix = context.getString(
+            if (asCloze) com.ilyskyo.blancall.R.string.export_file_suffix_cloze
+            else com.ilyskyo.blancall.R.string.export_file_suffix_original
+        )
         val file = withContext(Dispatchers.IO) {
             PdfExporter.export(context, config, "${safeName}_$suffix.pdf")
         }
@@ -1017,7 +1060,11 @@ private suspend fun exportArticlePdf(context: android.content.Context, article: 
         }
     } catch (e: Exception) {
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                context,
+                context.getString(com.ilyskyo.blancall.R.string.export_failed_reason, e.message.orEmpty()),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 }

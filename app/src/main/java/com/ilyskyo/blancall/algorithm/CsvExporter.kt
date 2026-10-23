@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import kotlinx.coroutines.Dispatchers
@@ -30,10 +31,19 @@ object CsvExporter {
 
     private const val TAG = "CsvExporter"
 
-    /** CSV 表头 */
-    private val HEADER = listOf(
-        "ID", "文章ID", "文章标题", "模式", "总空数", "正确数", "正确率",
-        "用时(秒)", "练习时间", "错误数", "错误明细"
+    /** CSV 表头（随界面语言） */
+    private fun header(context: Context): List<String> = listOf(
+        context.getString(R.string.csv_header_id),
+        context.getString(R.string.csv_header_article_id),
+        context.getString(R.string.csv_header_article_title),
+        context.getString(R.string.csv_header_mode),
+        context.getString(R.string.csv_header_total_blanks),
+        context.getString(R.string.csv_header_correct),
+        context.getString(R.string.csv_header_accuracy),
+        context.getString(R.string.csv_header_duration_sec),
+        context.getString(R.string.csv_header_time),
+        context.getString(R.string.csv_header_error_count),
+        context.getString(R.string.csv_header_error_detail),
     )
 
     /**
@@ -50,8 +60,10 @@ object CsvExporter {
         try {
             // 文章标题预取（IO 线程，避免主线程磁盘读取）
             val titleMap = records.map { it.articleId }.distinct().associateWith { id ->
-                runCatching { articleRepo.getArticleById(id)?.title ?: "文章#$id" }
-                    .getOrDefault("文章#$id")
+                runCatching {
+                    articleRepo.getArticleById(id)?.title
+                        ?: context.getString(R.string.ov_article_fallback, id)
+                }.getOrElse { context.getString(R.string.ov_article_fallback, id) }
             }
 
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -59,7 +71,7 @@ object CsvExporter {
 
             // UTF-8 BOM：保证 Excel 正确识别中文编码
             sb.append('\uFEFF')
-            sb.append(HEADER.joinToString(",") { escape(it) })
+            sb.append(header(context).joinToString(",") { escape(it) })
             sb.append("\r\n")
 
             for (r in records) {
@@ -70,23 +82,28 @@ object CsvExporter {
                     ""
                 } else {
                     r.mistakes.joinToString("; ") { m ->
-                        val type = when (m.errorType) {
-                            "TYPO" -> "错字"
-                            "MISSING" -> "漏填"
-                            "EXTRA" -> "多填"
-                            "WRONG_ORDER" -> "乱序"
-                            else -> "错误"
-                        }
-                        "[$type] 应填「${m.correctAnswer}」" +
-                            if (m.userAnswer.isNotBlank()) "·你填「${m.userAnswer}」" else ""
+                        val type = context.getString(
+                            when (m.errorType) {
+                                "TYPO" -> R.string.mistake_bar_typo
+                                "GLYPH_CONFUSED" -> R.string.mistake_bar_glyph
+                                "MISSING" -> R.string.mistake_bar_missing
+                                "EXTRA" -> R.string.mistake_bar_extra
+                                "WRONG_ORDER" -> R.string.mistake_bar_order
+                                else -> R.string.mistake_bar_incorrect
+                            }
+                        )
+                        context.getString(R.string.csv_mistake_expected, type, m.correctAnswer) +
+                            if (m.userAnswer.isNotBlank()) {
+                                " · " + context.getString(R.string.csv_mistake_user, m.userAnswer)
+                            } else ""
                     }
                 }
 
                 val row = listOf(
                     r.id.toString(),
                     r.articleId.toString(),
-                    titleMap[r.articleId] ?: "文章#${r.articleId}",
-                    modeLabel(r.mode),
+                    titleMap[r.articleId] ?: context.getString(R.string.ov_article_fallback, r.articleId),
+                    modeLabel(context, r.mode),
                     r.totalBlanks.toString(),
                     r.correctCount.toString(),
                     accuracy,
@@ -118,11 +135,11 @@ object CsvExporter {
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/csv"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TITLE, "Blancall 练习记录")
+            putExtra(Intent.EXTRA_TITLE, context.getString(R.string.csv_export_title))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(
-            Intent.createChooser(shareIntent, "导出练习记录")
+            Intent.createChooser(shareIntent, context.getString(R.string.csv_share_title))
         )
     }
 
@@ -137,10 +154,10 @@ object CsvExporter {
         }
     }
 
-    private fun modeLabel(mode: String): String = when (mode) {
-        "SENTENCE" -> "句子挖空"
-        "WORD" -> "字词挖空"
-        "REVERSE" -> "反向默写"
+    private fun modeLabel(context: Context, mode: String): String = when (mode) {
+        "SENTENCE" -> context.getString(R.string.cloze_mode_sentence)
+        "WORD" -> context.getString(R.string.cloze_mode_word)
+        "REVERSE" -> context.getString(R.string.cloze_mode_reverse)
         else -> mode
     }
 }

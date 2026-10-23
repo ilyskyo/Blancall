@@ -8,6 +8,12 @@
     <!-- 关键交互的触感反馈（长按 / 拖拽 / 下拉达阈值等） -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- 保存赞赏码图片到系统相册：Android 10+ 走 MediaStore 不需要权限，
+         只有 9 及以下要写公共 Pictures 目录，故按 maxSdkVersion 收口，不影响新系统的权限面。 -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <!-- AI 对话需要网络 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -44,7 +50,6 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.Blancall.Splash"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode">

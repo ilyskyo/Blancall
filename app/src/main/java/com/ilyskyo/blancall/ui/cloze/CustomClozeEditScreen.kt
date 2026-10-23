@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -67,6 +69,10 @@ import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.CoachShape
+import com.ilyskyo.blancall.ui.common.coachAnchor
+import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.ScrollProgressBadge
 import com.ilyskyo.blancall.ui.common.TopBarIconAction
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
@@ -100,6 +106,7 @@ fun CustomClozeEditScreen(
     pick: Boolean = false
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val customWord = stringResource(com.ilyskyo.blancall.R.string.custom)
     val pickBlanksFirstMsg = stringResource(com.ilyskyo.blancall.R.string.cloze_pick_blanks_first)
     val scope = rememberCoroutineScope()
@@ -116,15 +123,17 @@ fun CustomClozeEditScreen(
     // 每句的选中区间（句内字符 [start, end)）
     val selected = remember { mutableStateMapOf<Int, MutableList<IntRange>>() }
     // 已加载/已保存配置的三要素（拆成基础类型才能随旋转保存恢复）
-    var savedId by rememberSaveable { mutableStateOf(if (configId > 0) configId else 0L) }
+    var savedId by rememberSaveable { mutableLongStateOf(if (configId > 0) configId else 0L) }
     var savedName by rememberSaveable { mutableStateOf("") }
-    var savedCreatedAt by rememberSaveable { mutableStateOf(0L) }
+    var savedCreatedAt by rememberSaveable { mutableLongStateOf(0L) }
     // 当前文章已有配置（用于默认命名去重与保存重名校验）
     var existingConfigs by remember { mutableStateOf<List<CustomClozeStore.CustomConfig>>(emptyList()) }
     // 未保存改动：返回（含系统返回）先弹确认，防误触丢失
     var dirty by rememberSaveable { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
+    // 「点按选中挖空 / 长按切换粒度」一次性指引圈的锚点（正文第一句）
+    val bodyAnchor = rememberCoachAnchor()
 
     // 旋转/进程重建恢复编辑现场：levels+selected 序列化快照（rememberSaveable 自动回放）
     var editorSnapshot by rememberSaveable { mutableStateOf<String?>(null) }
@@ -357,7 +366,7 @@ fun CustomClozeEditScreen(
             Toast.makeText(
                 context,
                 // 非组合上下文：走 resources.getQuantityString，quantity 要单独传一次
-                context.resources.getQuantityString(com.ilyskyo.blancall.R.plurals.save_cloze_toast, total, cfg.name, total),
+                resources.getQuantityString(com.ilyskyo.blancall.R.plurals.save_cloze_toast, total, cfg.name, total),
                 Toast.LENGTH_SHORT
             ).show()
             onDone(true)
@@ -416,6 +425,15 @@ fun CustomClozeEditScreen(
                 .widthIn(max = 600.dp)
                 .padding(horizontal = 20.dp)
         ) {
+            // 首次进入教编辑手势：点按选中挖空、长按句子切换粒度（看过即不再出现）
+            CoachMark(
+                coachKey = "cloze_edit_long_press",
+                anchor = bodyAnchor,
+                title = stringResource(com.ilyskyo.blancall.R.string.coach_cloze_edit_title),
+                body = stringResource(com.ilyskyo.blancall.R.string.coach_cloze_edit_body),
+                shape = CoachShape.Card,
+                enabled = article != null,
+            )
             // ── 顶栏：返回 + 标题 + 保存（常驻右上角，SettingsScreen 同款规范）──
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
@@ -506,16 +524,6 @@ fun CustomClozeEditScreen(
                     clozeMode = next
                 }
             })
-            Spacer(Modifier.height(4.dp))
-            Text(
-                when (clozeMode) {
-                    "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_hint_sentence)
-                    "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_hint_reverse)
-                    else -> stringResource(com.ilyskyo.blancall.R.string.cloze_hint_default)
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Spacer(Modifier.height(8.dp))
 
             // ── 正文句子列表 ──
@@ -524,8 +532,10 @@ fun CustomClozeEditScreen(
                 Text(stringResource(com.ilyskyo.blancall.R.string.article_missing_deleted),
                     color = MaterialTheme.colorScheme.error)
             } else if (article != null) {
-                val sentences = remember(article?.id, article?.content) {
-                    SentenceSplitter.split(article!!.content)
+                // article 是 by 委托属性，无法智能转换；先取值再进 remember，避免捕获外层可空变量
+                val articleContent = article?.content.orEmpty()
+                val sentences = remember(article?.id, articleContent) {
+                    SentenceSplitter.split(articleContent)
                 }
                 // 全局空序号偏移：按句序累计前文已选空数（预览编号与练习一致）
                 var blankOffset = 0
@@ -550,6 +560,7 @@ fun CustomClozeEditScreen(
                                 mode = clozeMode,
                                 selectedRanges = ranges,
                                 blankIndexOffset = offsetBefore,
+                                modifier = if (sIdx == 0) Modifier.coachAnchor(bodyAnchor) else Modifier,
                                 onToggle = { range ->
                                     toggleHaptic()
                                     pushUndo()
@@ -640,7 +651,7 @@ fun CustomClozeEditScreen(
                     val name = savedName.trim().ifBlank { nextDefaultName() }
                     if (isNameTaken(name, savedId)) {
                         Toast.makeText(context,
-                            context.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
+                            resources.getString(com.ilyskyo.blancall.R.string.cloze_name_taken), Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     savedName = name
@@ -753,7 +764,8 @@ private fun SentenceEditCard(
     selectedRanges: List<IntRange>,
     blankIndexOffset: Int,
     onToggle: (IntRange) -> Unit,
-    onExplode: () -> Unit
+    onExplode: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val tokens = when (mode) {
         // 句子/反向模式：单位固定为复句（无炸）
@@ -768,7 +780,7 @@ private fun SentenceEditCard(
         merged.any { it.first <= range.first && range.last <= it.last }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
@@ -778,7 +790,18 @@ private fun SentenceEditCard(
             when (mode) {
                 "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.sentence_index, index)
                 "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.sentence_index_recite, index)
-                else -> stringResource(com.ilyskyo.blancall.R.string.sentence_index_level, index, ClozeTokens.levelName(level))
+                // B2-1/S1：粒度名在 UI 层取资源，算法层不再产出文案
+                else -> stringResource(
+                    com.ilyskyo.blancall.R.string.sentence_index_level, index,
+                    stringResource(
+                        when (level) {
+                            0 -> com.ilyskyo.blancall.R.string.cloze_level_whole
+                            1 -> com.ilyskyo.blancall.R.string.cloze_level_clause
+                            2 -> com.ilyskyo.blancall.R.string.cloze_level_word
+                            else -> com.ilyskyo.blancall.R.string.cloze_level_char
+                        }
+                    )
+                )
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant

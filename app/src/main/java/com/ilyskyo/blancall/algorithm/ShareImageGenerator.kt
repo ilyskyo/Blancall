@@ -9,6 +9,8 @@ import android.graphics.*
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
+import androidx.core.graphics.createBitmap
+import com.ilyskyo.blancall.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -89,9 +91,13 @@ object ShareImageGenerator {
 
             // ── 正文分行（预览最多 25 行）──
             val contentLines = wrapToLines(config.content, bodyPaint, maxLineWidth)
-            val previewLines = if (contentLines.size > 25)
-                contentLines.take(22) + listOf("……（更多内容请打开 Blancall 查看）")
-            else contentLines
+            val previewLines = if (contentLines.size > 25) {
+                // 页脚文案随语言长短不一，先按正文宽度换行（最多两行），避免俄文等长句溢出画布
+                val moreLines = wrapToLines(
+                    context.getString(R.string.share_footer_more), bodyPaint, maxLineWidth
+                ).take(2)
+                contentLines.take(22) + moreLines
+            } else contentLines
 
             val titleLineH = 64f
             val bodyLineH = 52f
@@ -109,7 +115,7 @@ object ShareImageGenerator {
             val imageHeight = totalH.toInt().coerceIn(minHeight, 4096)
 
             // ── 创建位图 ──
-            val bitmap = Bitmap.createBitmap(IMAGE_WIDTH, imageHeight, Bitmap.Config.ARGB_8888)
+            val bitmap = createBitmap(IMAGE_WIDTH, imageHeight, Bitmap.Config.ARGB_8888)
             try {
                 val canvas = Canvas(bitmap)
 
@@ -237,7 +243,7 @@ object ShareImageGenerator {
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(intent, "分享笔记"))
+            context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_note)))
             true
         } catch (e: Exception) {
             Log.w(TAG, "FileProvider 分享图片失败，尝试回退", e)
@@ -249,7 +255,7 @@ object ShareImageGenerator {
                     putExtra(Intent.EXTRA_STREAM, fallbackUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                context.startActivity(Intent.createChooser(intent, "分享笔记"))
+                context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_note)))
                 true
             } catch (e2: Exception) {
                 Log.w(TAG, "回退分享图片仍失败", e2)
