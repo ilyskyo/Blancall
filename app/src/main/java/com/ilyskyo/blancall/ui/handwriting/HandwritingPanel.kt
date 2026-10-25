@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ilyskyo.blancall.data.handwriting.HandwritingRecognizer
 import com.ilyskyo.blancall.data.handwriting.HandwritingScript
 import com.ilyskyo.blancall.data.handwriting.HandwritingResult
+import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.PressTier
 import com.ilyskyo.blancall.ui.common.pressFeedback
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -149,11 +150,15 @@ fun HandwritingPanel(
      */
     expectedWord: String? = null,
     /**
-     * 墨迹上报（错题回顾）：每次**消费墨迹的提交**把被消费的笔画连同当时板面尺寸
-     * 一起上报（strokes, boardW, boardH）；点标点快捷键、键盘路径不消费墨迹，不回调。
+     * 墨迹上报（错题回顾）：本次识别产生上屏内容时，把**这次识别看到的整块墨迹快照**
+     * 连同板面尺寸一起上报（strokes, boardW, boardH）；点标点快捷键、键盘路径不回调。
      *
-     * ⚠️ 上报发生在笔画被 removeStrokes/animateStrokesOut 移除的同一帧 ——
-     * 这是「这批墨迹存在过」的唯一可捕获时刻（事后快照已拿不到）。
+     * 为什么是整次识别的快照，而不是「被消费的那几笔」：
+     * - 同一识别（连写切段）可能分几次上屏，逐次累积会把同一画面拆成多份；
+     * - 低置信候选期间板上可能又落了新笔，提交瞬间再取快照已不是识别时的笔迹。
+     * 接收端每个空只保留最后一份（见 PracticeViewModel.recordInkSnapshot）：
+     * 重写/多次尝试不会叠在一起，存档里永远是**最终识别时**的画面。
+     *
      * 实现方只应轻量暂存（引用），禁止在主线程做序列化与磁盘 IO。
      */
     onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
@@ -224,6 +229,12 @@ fun HandwritingPanel(
     var result by remember { mutableStateOf<HandwritingResult?>(null) }
     var statusText by remember { mutableStateOf<String?>(null) }
 
+    /**
+     * 产出当前 [result] 的那次识别所看到的墨迹快照。
+     * 点候选时板上可能已经又落了新笔，不能拿那一刻的板面当「识别时写的」。
+     */
+    var recognizedInk by remember { mutableStateOf<List<List<Offset>>>(emptyList()) }
+
     // 笔尖悬停（仅主动笔具备的能力）与墨迹本身一样，已下沉到 InkBoardView 内部绘制 ——
     // 悬停提示要跟着笔尖走，留在 Compose 里同样会被流水线拖慢。
     // 这里只需要基础色（不再 copy(alpha)：透明度由 View 侧按「空闲/悬停」两档施加，
@@ -267,8 +278,9 @@ fun HandwritingPanel(
      *
      * 一定要按批传：调用方的更新是 `value + 新内容`，同一帧里分多次写会互相覆盖。
      *
-     * @param strokes 本次提交**被消费**的笔画（自动上屏 / 整词 / 逐段推进传入；
+     * @param strokes 本次上屏对应的**整次识别快照**（自动上屏 / 整词 / 逐段推进传入；
      *   标点快捷键与键盘路径为空）。同帧上报给 [onInkCommitted]，供错题墨迹存档。
+     *   同一识别分多次上屏时传的是同一份快照，接收端以最后一份为准、不会累积。
      */
     fun commitChars(chars: List<Char>, strokes: List<List<Offset>> = emptyList()) {
         if (chars.isEmpty()) return
@@ -315,19 +327,19 @@ fun HandwritingPanel(
      *   **合并成同一批**提交——若先单独 commit 一次再走本函数，同帧两次写入会互相覆盖，
      *   点选的字会被后一批（旧快照 + 后续段）覆盖丢失（真机：连写「谁说你」→ 点「谁」
      *   候选 → 只上屏「说你」）。
-     * @param prefixStrokes 与 [prefix] 同批被消费的笔画（点选那一段的墨迹）——
-     *   供错题墨迹存档，必须与后续段合并成同一份上报（否则存档缺「点选的那一段」）。
+     * @param snapshot 产生这一批段的**整次识别快照**（同一次识别的各段共用一份）——
+     *   供错题墨迹存档。传入被消费段落的子集会把同一次识别拆散、回看时叠在一起。
      */
     fun advancePending(
         from: Int,
         prefix: List<Char> = emptyList(),
-        prefixStrokes: List<List<Offset>> = emptyList()
+        snapshot: List<List<Offset>> = emptyList()
     ) {
         val segs = pendingSegments
         val results = pendingResults
         if (from >= segs.size) {
             // 无后续段时，prefix（点选字）也必须上屏——单独按批提交后收尾
-            if (prefix.isNotEmpty()) commitChars(prefix, prefixStrokes)
+            if (prefix.isNotEmpty()) commitChars(prefix, snapshot)
             pendingSegments = emptyList()
             pendingResults = emptyList()
             pendingAt = 0
@@ -362,7 +374,7 @@ fun HandwritingPanel(
             if (prefix.isEmpty() && autoCommit && enabled) view?.animateStrokesOut(consumedGroups)
             else view?.removeStrokes(consumed)
         }
-        if (commit.isNotEmpty()) commitChars(commit, prefixStrokes + consumed)
+        if (commit.isNotEmpty()) commitChars(commit, snapshot)
         if (i < segs.size) {
             // 停在这一段等用户点候选；板上只留下「这一段 + 后面的段」
             pendingAt = i
@@ -498,6 +510,8 @@ fun HandwritingPanel(
         val ink = inkRef.get()?.snapshotWithTiming().orEmpty()
         if (ink.isEmpty() || canvasSize.width <= 0 || canvasSize.height <= 0) return
         val inkStrokes = ink.map { it.pts }
+        // 本轮识别的画面：候选点选后提交时要报的就是它（而不是那一刻的板面）
+        recognizedInk = inkStrokes
         // 宽度先验按文种给：汉字近方形（1.0），拉丁小写字母连写只有高的六成左右
         // （0.62）—— 用汉字先验去数英文字母会少算一半，这是英文连写拆不准的主因。
         val aspect = if (script == HandwritingScript.Latin) CHAR_ASPECT_LATIN else CHAR_ASPECT_CJK
@@ -605,7 +619,7 @@ fun HandwritingPanel(
                                             wordChars.joinToString(" ") { it.joinToString("") }
                                     )
                                 }
-                                commitChars(joined, wordSegs.flatten().flatten())
+                                commitChars(joined, inkStrokes)
                                 pendingSegments = emptyList()
                                 pendingResults = emptyList()
                                 pendingAt = 0
@@ -704,7 +718,7 @@ fun HandwritingPanel(
                                 if (autoCommit && enabled) view?.animateStrokesOut(segments)
                                 else view?.removeStrokes(consumed)
                             }
-                            commitChars(word, consumed)
+                            commitChars(word, inkStrokes)
                             pendingSegments = emptyList()
                             pendingResults = emptyList()
                             pendingAt = 0
@@ -719,7 +733,7 @@ fun HandwritingPanel(
                     pendingSegments = segments
                     pendingResults = segResults
                     pendingAt = 0
-                    advancePending(0)
+                    advancePending(0, snapshot = inkStrokes)
                     return@launch
                 }
 
@@ -757,7 +771,7 @@ fun HandwritingPanel(
                 }
                 if (whole != null && whole.isConfident && autoCommit && !guarded) {
                     val best = whole.best ?: return@launch
-                    commitChars(listOf(best.char))
+                    commitChars(listOf(best.char), inkStrokes)
                     val view = inkRef.get()
                     // 自动上屏：墨迹「收拢→淡出」退场（只动识别快照里的那批笔画，
                     // 不误清动画期间新落的笔）；enabled=false 时保持原来的瞬时清板。
@@ -1031,8 +1045,8 @@ fun HandwritingPanel(
         // ── 候选字条 ──
         AnimatedVisibility(
             visible = result != null || statusText != null,
-            enter = fadeIn(),
-            exit = fadeOut()
+            enter = fadeIn(MotionFade.alpha(MotionFade.enter)),
+            exit = fadeOut(MotionFade.alpha(MotionFade.exit)),
         ) {
             Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
                 if (statusText != null) {
@@ -1072,15 +1086,13 @@ fun HandwritingPanel(
                                         advancePending(
                                             pendingAt + 1,
                                             prefix = listOf(c.char),
-                                            prefixStrokes = seg
+                                            snapshot = recognizedInk
                                         )
                                     } else {
                                         // 非连写（单字识别）路径：独立一次提交后清板。
-                                        // 快照须在 clearAll 前取 —— 那正是「这批墨迹还在」的时刻
-                                        commitChars(
-                                            listOf(c.char),
-                                            inkRef.get()?.snapshotStrokes().orEmpty()
-                                        )
+                                        // 报的是那次识别的快照，不是此刻板面 —— 等候选期间
+                                        // 可能又落了新笔，事后快照会把两批墨迹叠在一起
+                                        commitChars(listOf(c.char), recognizedInk)
                                         clearAll()
                                     }
                                 }

@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.home
 
 import androidx.compose.ui.res.pluralStringResource
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
@@ -80,7 +81,9 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
+import com.ilyskyo.blancall.algorithm.MistakeNotebook
 import com.ilyskyo.blancall.algorithm.SentenceSelector
+import com.ilyskyo.blancall.algorithm.StudyCoach
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
@@ -118,6 +121,7 @@ import com.ilyskyo.blancall.ui.common.navigateReveal
 import com.ilyskyo.blancall.ui.navigation.navigateToTab
 import com.ilyskyo.blancall.ui.reader.updateArticleReaderPrefs
 import com.ilyskyo.blancall.ui.theme.AppPrefs
+import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
@@ -264,6 +268,8 @@ fun HomeScreen(
     // 滚动驱动的导航栏自动收起：内容前进时导航栏让位、回滚时恢复（首页不再需要避让留白）
     val navBarScrollConn = rememberAutoHideNavBarOnScroll()
     var showAddCardSheet by remember { mutableStateOf(false) }
+    // 添加卡片 → 文章卡片：等「添加」面板退场完再开文章选择面板，避免两个 Modal 窗口叠在一起
+    var pendingArticlePicker by remember { mutableStateOf(false) }
     // 学习数据弹窗显隐（悬浮于底部导航栏之上，不随内容滚动）
     var showStatsPopup by remember { mutableStateOf(false) }
     val homeScope = rememberCoroutineScope()
@@ -422,6 +428,74 @@ fun HomeScreen(
         }
     }
 
+    // ── 今日计划：唯一判定来自 StudyCoach，本页只取数与执行 ──
+    val examEpochDay by ReminderPrefs.examEpochDayFlow.collectAsState()
+    val goalMinutes by ReminderPrefs.goalMinutesFlow.collectAsState()
+    val dailyPracticeGoal by ReminderPrefs.dailyPracticeGoalFlow.collectAsState()
+    var planNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            planNow = System.currentTimeMillis()
+        }
+    }
+    val planInput = remember(
+        allRecords, articles, dueArticles, resumables, sentenceUi,
+        goalMinutes, dailyPracticeGoal, examEpochDay, planNow,
+    ) {
+        val recordsByArticle = allRecords.groupBy { it.articleId }
+        val today = java.time.LocalDate.now()
+        val entries = MistakeNotebook.entries(allRecords, onlyUnresolved = true)
+        val weakest = articles.mapNotNull { a ->
+            val rs = recordsByArticle[a.id].orEmpty()
+            val total = rs.sumOf { it.totalBlanks }
+            if (total <= 0) null else a to (rs.sumOf { it.correctCount }.toFloat() / total)
+        }.minByOrNull { it.second }?.takeIf { it.second < 0.85f }
+        StudyCoach.Input(
+            now = planNow,
+            dueArticles = dueArticles.map { a ->
+                val st = fsrsStates[a.id]
+                val last = recordsByArticle[a.id].orEmpty().maxByOrNull { it.timestamp }
+                StudyCoach.DueArticle(
+                    articleId = a.id,
+                    title = a.title,
+                    due = st?.due ?: planNow,
+                    lastReview = st?.lastReview ?: 0L,
+                    reviewCount = st?.reviewCount ?: 0,
+                    lapses = st?.lapses ?: 0,
+                    estimatedBlanks = last?.totalBlanks
+                        ?: (a.content.length / 25).coerceIn(3, 80),
+                    lastDurationMs = last?.duration ?: 0L,
+                )
+            },
+            resumables = resumables.map {
+                StudyCoach.Resumable(
+                    it.articleId,
+                    articles.firstOrNull { a -> a.id == it.articleId }?.title.orEmpty(),
+                    it.mode, it.answered, it.total, it.lastTime
+                )
+            },
+            dueSentenceCount = sentenceUi?.pendingDueCount ?: 0,
+            weakestArticleId = weakest?.first?.id,
+            weakestArticleTitle = weakest?.first?.title.orEmpty(),
+            weakMistakeCount = weakest?.first?.let { w ->
+                entries.count { it.articleId == w.id }
+            } ?: 0,
+            mistakeCount = entries.size,
+            goalMinutes = goalMinutes,
+            secondsPerBlank = StudyCoach.secondsPerBlank(
+                allRecords.map { it.duration to it.totalBlanks }
+            ),
+            todayPracticeCount = allRecords.count {
+                java.time.Instant.ofEpochMilli(it.timestamp)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate() == today
+            },
+            dailyPracticeGoal = dailyPracticeGoal,
+            examEpochDay = examEpochDay.takeIf { it > 0L },
+        )
+    }
+    val todayPlan = remember(planInput) { StudyCoach.buildPlan(planInput) }
+
     // 从 ImportScreen 保存成功后返回时接收信号
     var showSaveSuccessDialog by remember { mutableStateOf(false) }
     var savedArticleId by remember { mutableLongStateOf(0L) }
@@ -445,7 +519,7 @@ fun HomeScreen(
     }
 
     // 保存成功弹窗
-    if (showSaveSuccessDialog) {
+    AnimatedOverlayPresence(visible = showSaveSuccessDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showSaveSuccessDialog = false },
             shape = RoundedCornerShape(28.dp),
@@ -641,6 +715,43 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(18.dp))
 
+            // ── 今日计划：一个入口、最多三件事，点第一条直接开练 ──
+            TodayPlanCard(
+                input = planInput,
+                plan = todayPlan,
+                onStartItem = { item ->
+                    when (item.kind) {
+                        StudyCoach.Kind.RESUME ->
+                            navController.navigate("practice/${item.articleId}?resume=true")
+                        StudyCoach.Kind.REVIEW_ARTICLE,
+                        StudyCoach.Kind.WEAK_ARTICLE ->
+                            navController.navigate("practice/${item.articleId}?mode=SENTENCE")
+                        StudyCoach.Kind.SENTENCE_CARDS ->
+                            navController.navigate("sentence_cards")
+                        StudyCoach.Kind.MISTAKE_DRILL ->
+                            navController.navigate(
+                                if (item.articleId > 0) "mistakes?articleId=${item.articleId}" else "mistakes"
+                            )
+                        StudyCoach.Kind.DAILY_GOAL ->
+                            navController.navigateToTab("list")
+                    }
+                },
+                onStartBudget = { minutes ->
+                    val budget = StudyCoach.budget(planInput, minutes)
+                    when {
+                        budget.articleIds.size > 1 -> navController.navigate(
+                            "cross/${budget.articleIds.joinToString(",")}?budget=$minutes"
+                        )
+                        budget.articleIds.size == 1 -> navController.navigate(
+                            "practice/${budget.articleIds.first()}?mode=SENTENCE&budget=$minutes"
+                        )
+                        budget.includeSentenceCards -> navController.navigate("sentence_cards")
+                    }
+                },
+                onExamEpochDayChange = { ReminderPrefs.examEpochDay = it },
+            )
+            Spacer(Modifier.height(18.dp))
+
             // 两条指引各指各的真实目标：非编辑态指第一张卡片、编辑态指「＋」按钮。
             // 二者按 editMode 互斥，不会同屏叠两个弹层。
             CoachMark(
@@ -793,7 +904,15 @@ fun HomeScreen(
             Spacer(Modifier.height(16.dp))
 
             // ── 添加卡片：由画布顶部「+」唤起，列出未加入的系统卡与全部自定义配置 ──
-            if (showAddCardSheet) {
+            AnimatedOverlayPresence(
+                visible = showAddCardSheet,
+                onExitFinished = {
+                    if (pendingArticlePicker) {
+                        pendingArticlePicker = false
+                        showArticlePickerSheet = true
+                    }
+                },
+            ) {
                 val systemAddable = listOf(
                     Triple(
                         HomeLayoutStore.CardType.DUE,
@@ -861,9 +980,9 @@ fun HomeScreen(
                     onDismiss = { showAddCardSheet = false },
                     onAddSystem = { type ->
                         if (type == HomeLayoutStore.CardType.ARTICLE) {
-                            // 文章卡片先选文章：收起当前面板，弹出选择文章面板
+                            // 文章卡片先选文章：等当前面板播完退场，再弹出选择文章面板
+                            pendingArticlePicker = true
                             showAddCardSheet = false
-                            showArticlePickerSheet = true
                         } else {
                             val cardId = when (type) {
                                 HomeLayoutStore.CardType.DUE -> HomeLayoutStore.CARD_ID_DUE
@@ -933,8 +1052,10 @@ fun HomeScreen(
         // ② 学习数据弹窗：做完一次新练习、且首页没有「学习数据」卡片时弹出（有卡片则不弹，信息不重复）
         AnimatedVisibility(
             visible = showStatsPopup && !cardEditMode,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 3 }),
+            enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                slideInVertically(Motion.sheetSlide()) { it / 3 },
+            exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                slideOutVertically(Motion.sheetSlide()) { it / 3 },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 20.dp)
@@ -959,7 +1080,7 @@ fun HomeScreen(
     }
 
     // ── 「选择文章」底部面板：添加卡片 → 文章卡片，点选一篇文章单独成一张卡 ──
-    if (showArticlePickerSheet) {
+    AnimatedOverlayPresence(visible = showArticlePickerSheet) {
         HomeArticlePickerSheet(
             sheetState = articlePickerSheetState,
             articles = articles,
@@ -986,7 +1107,7 @@ fun HomeScreen(
 
     // ── 「管理最近文章」底部面板：编辑态入口，逐条从首页移除（仅首页隐藏，不删文章）──
     // 原「长按文章行 → 从首页删除」已下线：它与「长按卡片进编辑态」互相打架（用户反馈「一些卡片长按无效」）
-    if (showManageArticlesSheet) {
+    AnimatedOverlayPresence(visible = showManageArticlesSheet) {
         val maxPanelHeight = with(LocalDensity.current) {
             LocalWindowInfo.current.containerSize.height.toDp()
         } * 0.55f

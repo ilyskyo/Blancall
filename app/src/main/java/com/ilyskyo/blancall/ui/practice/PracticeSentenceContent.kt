@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.practice
 
 import androidx.compose.animation.core.Animatable
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -70,7 +71,7 @@ internal fun SentenceClozeContent(
     onViewArticleData: (() -> Unit)? = null,
     onBlankFocus: (Int) -> Unit = {},
     onAnswerChange: (Int, String) -> Unit,
-    /** 墨迹上报（错题回顾）：手写被消费时回调（blankIdx 已在内部绑定）；透传给书写板与底部弹层 */
+    /** 墨迹上报（错题回顾）：手写识别产生上屏内容时回调整次识别快照（blankIdx 已在内部绑定） */
     onInkCommitted: ((Int, List<List<Offset>>, Int, Int) -> Unit)? = null,
     /**
      * 是否在每个空位旁标出「这一空几个字」。
@@ -354,8 +355,7 @@ internal fun SentenceClozeContent(
         }
 
         // ── 就地书写面板：手写态下点击某个挖空后弹出 ──
-        val sheetIdx = sheetBlankIndex
-        if (sheetIdx != null && !isSubmitted) {
+        AnimatedOverlayPresence(target = sheetBlankIndex.takeIf { !isSubmitted }) { sheetIdx ->
             HandwritingAnswerSheet(
                 answer = userAnswers[sheetIdx] ?: "",
                 hintChar = hintChars[sheetIdx],
@@ -471,6 +471,22 @@ internal fun SentenceBlankInline(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+                // 逐空错因：句子模式是默认入口，答错后不能只给「你写的 → 应该是」——
+                // 漏填 / 多填 / 顺序错 / 形近需要不同的复习动作，和字词模式同一套标签。
+                if (!isCorrect) {
+                    Spacer(Modifier.width(4.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                        shape = MaterialTheme.shapes.extraSmall
+                    ) {
+                        Text(
+                            sentenceErrorLabel(checkResult.result),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                        )
+                    }
+                }
                 // 相似度标签（与反向默写统一口径，正确时为100%不重复显示）
                 if (!isCorrect && checkResult.similarity > 0f) {
                     Spacer(Modifier.width(4.dp))
@@ -505,6 +521,19 @@ internal fun SentenceBlankInline(
     }
 }
 
+
+/** 句子模式的逐空错因标签（与字词模式同一套文案）。 */
+@Composable
+private fun sentenceErrorLabel(result: AnswerChecker.Result): String = stringResource(
+    when (result) {
+        AnswerChecker.Result.TYPO -> com.ilyskyo.blancall.R.string.mistake_bar_typo
+        AnswerChecker.Result.GLYPH_CONFUSED -> com.ilyskyo.blancall.R.string.mistake_bar_glyph
+        AnswerChecker.Result.MISSING -> com.ilyskyo.blancall.R.string.mistake_bar_missing
+        AnswerChecker.Result.EXTRA -> com.ilyskyo.blancall.R.string.mistake_bar_extra
+        AnswerChecker.Result.WRONG_ORDER -> com.ilyskyo.blancall.R.string.mistake_bar_order
+        else -> com.ilyskyo.blancall.R.string.mistake_bar_incorrect
+    }
+)
 
 /** 淡显提示字（弱提示）：5s 淡入到浅灰。用于输入框内部 overlay 与句内空位。 */
 @Composable

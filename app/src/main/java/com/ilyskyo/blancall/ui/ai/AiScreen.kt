@@ -3,10 +3,16 @@
 
 package com.ilyskyo.blancall.ui.ai
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.data.ai.AiReplyNotifier
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.viewmodel.AiViewModel
 
@@ -75,8 +82,28 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
         if (resumeSessionId != null) {
             // 从历史会话恢复（继续对话）
             vm.resumeSession(resumeSessionId)
+            // 从完成通知点进来：内容已经看到，撤掉那条通知
+            AiReplyNotifier.cancel(context, resumeSessionId)
         } else {
             vm.initContext(articleIds)
+        }
+    }
+
+    // AI 回复完成通知依赖 Android 13+ 的通知权限；在真正开始一次回复时申请，
+    // 比一进页面就弹权限框更贴近用户当下正在做的事。每次进入对话页最多问一次，
+    // 用户拒绝后不再在每次发送时重复弹系统框（会变成骚扰，且系统也会自动拒绝）。
+    var askedNotificationPermission by remember { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(isSending) {
+        if (!isSending || askedNotificationPermission) return@LaunchedEffect
+        askedNotificationPermission = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 

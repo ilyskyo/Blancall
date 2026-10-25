@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.data.model.PracticeState
 import com.ilyskyo.blancall.data.model.PracticeStatus
+import com.ilyskyo.blancall.notification.PracticeLiveUpdate
 import com.ilyskyo.blancall.util.AtomicFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,9 +21,10 @@ import kotlinx.coroutines.withContext
  */
 
     /** 保存练习进度到文件（为「继续练习」预留）。必须从协程调用，文件写入切到 IO 线程。
-     *  dictationInput 仅反向默写模式使用，其他模式传空串即可 */
-    internal suspend fun PracticeViewModel.savePracticeState(articleId: Long, answers: Map<Int, String>, dictationInput: String = "") {
-        try {
+     *  dictationInput 仅反向默写模式使用，其他模式传空串即可。
+     *  返回是否真的写成功：退后台要「先存下来再上岛」，不能把失败当成已保存。 */
+    internal suspend fun PracticeViewModel.savePracticeState(articleId: Long, answers: Map<Int, String>, dictationInput: String = ""): Boolean {
+        return try {
             // 本次挖好的空序列化：供「继续练习」恢复（无需重新生成/选难度）
             val clozeJson = when (_mode.value) {
                 BlancallMode.SENTENCE -> _sentenceCloze.value?.let { BlancallGenerator.sentenceClozeToJson(it) }
@@ -68,7 +70,44 @@ import kotlinx.coroutines.withContext
                 // 原子写 + fsync（练习进度是「继续练习」的恢复来源，防写一半被杀损坏）
                 AtomicFiles.writeTextAtomic(file, json.toString())
             }
-        } catch (_: Exception) { /* 静默保存，不影响主流程 */ }
+            true
+        } catch (_: Exception) {
+            // 静默保存，不影响主流程；false 只用于阻止「没存下也上岛」
+            false
+        }
+    }
+
+    /**
+     * 应用退到后台时保存当前作答，供常驻通知点进来续练。
+     *
+     * 与「部分提交」的区别：这里不判分、不写记录、不改 FSRS，只留一份可恢复的答题现场。
+     * 没有任何输入 / 跨文练习 / 已提交的会话返回 null —— 前两者恢复不了，后者已经结束了。
+     */
+    internal suspend fun PracticeViewModel.saveForAppExit(): PracticeLiveUpdate.ExitSnapshot? {
+        if (_isSubmitted.value || isCrossMode.value) return null
+        val article = article.value ?: return null
+        if (article.id <= 0L) return null
+        val mode = _mode.value
+        val answers = when (mode) {
+            BlancallMode.SENTENCE -> _sentenceAnswers.value
+            BlancallMode.WORD -> _wordAnswers.value
+            BlancallMode.REVERSE -> emptyMap()
+        }
+        val dictation = _dictationInput.value
+        val hasInput = if (mode == BlancallMode.REVERSE) dictation.isNotBlank()
+        else answers.values.any { it.isNotBlank() }
+        val total = _totalBlanks.value
+        if (!hasInput || total <= 0) return null
+        if (!savePracticeState(article.id, answers, dictation)) return null
+        return PracticeLiveUpdate.ExitSnapshot(
+            articleId = article.id,
+            articleTitle = article.title,
+            mode = mode,
+            totalBlanks = total,
+            answeredBlanks = if (mode == BlancallMode.REVERSE) total
+            else answers.values.count { it.isNotBlank() },
+            typedChars = dictation.count { !it.isWhitespace() },
+        )
     }
 
     /** 删除指定文章的练习进度文件（完整提交后调用，避免首页继续显示已完成练习） */

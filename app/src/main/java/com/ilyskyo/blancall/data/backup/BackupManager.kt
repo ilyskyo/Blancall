@@ -83,6 +83,8 @@ object BackupManager {
         // 成就解锁时刻（AchievementTimelineStore）：徽章本身是派生的，但「何时拿到」只有这一份，
         // 备份里没有它，恢复之后统计页就答不出「这周新得了几枚」
         "achievements.json",
+        // 考试倒排目标（ReminderPrefs 镜像文件）：只存 pref 会在一键备份里静默丢失
+        "exam_goal.json",
     )
 
     /** 单条目解压上限，防异常压缩包拖垮内存（正常学习数据远小于此值）。 */

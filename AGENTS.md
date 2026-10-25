@@ -11,7 +11,7 @@
 | 项 | 值 |
 |---|---|
 | applicationId | `com.ilyskyo.blancall` |
-| versionName | `7.5.1`（以 `app/build.gradle.kts` 为准） |
+| versionName | `7.5.2`（以 `app/build.gradle.kts` 为准） |
 | versionCode | 50 |
 | local.properties 的 sdk.dir | Android SDK（`AppData\Local\Android\Sdk`） |
 

@@ -20,6 +20,18 @@ import java.io.File
 class MotionVocabularyTest {
 
     @Test
+    fun 默认过渡守卫不是空转() {
+        // 反向对照：每条新规则都必须真的能命中一个坏样本，
+        // 否则“全项目零命中”可能只是正则写坏了。
+        listOf(
+            "fadeIn()", "fadeOut()", "expandVertically()", "shrinkVertically()",
+            "scaleIn()", "scaleOut()", "animateContentSize()"
+        ).forEach { sample ->
+            assertTrue("守卫匹配不到 $sample", BANNED.any { it.containsMatchIn(sample) })
+        }
+    }
+
+    @Test
     fun 词表之外没有裸的动画参数() {
         val root = File("src/main/java")
         assertTrue("找不到 ${root.absolutePath} —— 测试工作目录变了，这个守卫已经失效", root.isDirectory)
@@ -115,6 +127,15 @@ class MotionVocabularyTest {
             Regex("""\bStiffness"""),
             Regex("""\bkeyframes\("""),
             Regex("""\bInfiniteTransition\b"""),
+            // 不写 spec 的库默认过渡同样是“词表外的数字”：时长/曲线写死在库里，
+            // 减动效下也不会坍缩。展开/收起必须显式走 Motion。
+            Regex("""\bfadeIn\(\s*\)"""),
+            Regex("""\bfadeOut\(\s*\)"""),
+            Regex("""\bexpandVertically\(\s*\)"""),
+            Regex("""\bshrinkVertically\(\s*\)"""),
+            Regex("""\bscaleIn\(\s*\)"""),
+            Regex("""\bscaleOut\(\s*\)"""),
+            Regex("""\banimateContentSize\(\s*\)"""),
         )
     }
 }

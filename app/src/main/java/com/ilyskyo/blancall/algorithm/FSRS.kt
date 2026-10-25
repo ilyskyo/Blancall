@@ -135,6 +135,12 @@ object FsrsEngine {
         else -> DEFAULT_REQUEST_RETENTION // standard 及未知值
     }
 
+    /**
+     * 当前配置的目标留存率（到期那一刻的留存率）。
+     * 提醒侧用它给「即将遗忘」划警戒线：留存率离目标只剩几个百分点时就该提前说一声。
+     */
+    fun targetRetention(): Double = requestRetention
+
     /** 当前记忆留存率 R(t) = (1 + factor·t/S)^(-w20)，0-1（FSRS-6 幂律曲线） */
     fun retentionRate(state: CardState, now: Long = System.currentTimeMillis()): Double {
         if (state.stability <= 0.0) return 0.0

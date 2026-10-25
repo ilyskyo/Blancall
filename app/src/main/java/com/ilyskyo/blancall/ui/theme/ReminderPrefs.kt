@@ -7,6 +7,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.ilyskyo.blancall.util.AtomicFiles
+import org.json.JSONObject
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +29,7 @@ enum class ReminderFrequency(val labelRes: Int, val daysPerWeek: Int) {
  */
 object ReminderPrefs {
     private lateinit var prefs: SharedPreferences
+    private lateinit var filesDir: File
 
     // 用于 recordStudyToday 原子读写的锁（避免连续天数计算竞态）
     private val streakLock = Any()
@@ -41,6 +45,13 @@ object ReminderPrefs {
 
     private val _goalMinutesFlow = MutableStateFlow(10)
     val goalMinutesFlow: StateFlow<Int> = _goalMinutesFlow.asStateFlow()
+
+    // ── 考试日期（epochDay；0 = 未设置）──
+    // 不挂在 Article 上：倒排是「一段时间的全局目标」，给每篇文章各填一个日期既难维护，
+    // 也会让「按当前速度排不完」失去统一口径。存 epochDay 而非时间戳：跨时区/夏令时
+    // 不会把「距考试 30 天」算成 29 或 31 天。
+    private val _examEpochDayFlow = MutableStateFlow(0L)
+    val examEpochDayFlow: StateFlow<Long> = _examEpochDayFlow.asStateFlow()
 
     private val _frequencyFlow = MutableStateFlow(ReminderFrequency.DAILY)
     val frequencyFlow: StateFlow<ReminderFrequency> = _frequencyFlow.asStateFlow()
@@ -76,10 +87,12 @@ object ReminderPrefs {
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("reminder_prefs", Context.MODE_PRIVATE)
+        filesDir = context.applicationContext.filesDir
         _enabledFlow.value = prefs.getBoolean("reminder_enabled", false)
         _hourFlow.value = prefs.getInt("reminder_hour", 20)
         _minuteFlow.value = prefs.getInt("reminder_minute", 0)
         _goalMinutesFlow.value = prefs.getInt("reminder_goal_minutes", 10)
+        _examEpochDayFlow.value = readExamGoalFromFile() ?: prefs.getLong("exam_epoch_day", 0L)
         val freqName = prefs.getString("reminder_frequency", "DAILY") ?: "DAILY"
         _frequencyFlow.value = try { ReminderFrequency.valueOf(freqName) } catch (_: Exception) { ReminderFrequency.DAILY }
         _studyStreakDays.value = prefs.getInt("study_streak_days", 0)
@@ -126,6 +139,52 @@ object ReminderPrefs {
                 _goalMinutesFlow.value = value
             }
         }
+
+    /**
+     * 考试日期（epochDay，0 = 未设置）。
+     *
+     * 权威来源是 filesDir/exam_goal.json（在备份清单里），SharedPreferences 只作旧版本迁移源：
+     * 偏好文件不在「一键备份」的承诺范围内，只存 pref 会让恢复后倒排目标凭空消失。
+     */
+    var examEpochDay: Long
+        get() = if (::prefs.isInitialized) _examEpochDayFlow.value else 0L
+        set(value) {
+            if (::prefs.isInitialized) {
+                val v = value.coerceAtLeast(0L)
+                prefs.edit { putLong("exam_epoch_day", v) }
+                _examEpochDayFlow.value = v
+                writeExamGoalToFile(v)
+            }
+        }
+
+    /** 备份恢复后重读考试日期（LearningDataReloader 调用）。 */
+    fun reloadExamGoal() {
+        if (!::prefs.isInitialized) return
+        _examEpochDayFlow.value = readExamGoalFromFile() ?: prefs.getLong("exam_epoch_day", 0L)
+    }
+
+    private fun examGoalFile(): File? =
+        if (::filesDir.isInitialized) File(filesDir, "exam_goal.json") else null
+
+    private fun readExamGoalFromFile(): Long? = try {
+        val f = examGoalFile()
+        if (f == null || !f.isFile) null
+        else JSONObject(f.readText()).optLong("epochDay", 0L).coerceAtLeast(0L)
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun writeExamGoalToFile(epochDay: Long) {
+        try {
+            val f = examGoalFile() ?: return
+            AtomicFiles.writeTextAtomic(
+                f,
+                JSONObject().put("version", 1).put("epochDay", epochDay).toString()
+            )
+        } catch (_: Exception) {
+            // 目标日期是可选数据；写失败不阻断设置，内存值仍生效
+        }
+    }
 
     var frequency: ReminderFrequency
         get() {

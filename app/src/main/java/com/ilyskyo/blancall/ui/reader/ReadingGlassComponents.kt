@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.applyGlassThemeBackground
+import com.ilyskyo.blancall.ui.common.applyGlassThemeTint
 import com.ilyskyo.blancall.ui.common.pressFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -165,6 +167,8 @@ internal fun LiquidGlassPill(
                     // 淡出完成后 INVISIBLE：退出命中测试与绘制（样貌不变，本就不可见），
                     // 否则消失的玻璃仍拦截其区域点击，下层正文点不了
                     view.visibility = if (touchAlpha > 0.05f) View.VISIBLE else View.INVISIBLE
+                    view.applyGlassThemeBackground(isDark, 230)
+                    view.applyGlassThemeTint(isDark, darkTintIsBlack = true, darkTintAlpha = 0.25f, lightTintAlpha = 0.12f)
                     if (view.getTag(com.ilyskyo.blancall.R.id.lg_bound_tag) == null) {
                         view.post {
                             if (view.isAttachedToWindow && view.getTag(com.ilyskyo.blancall.R.id.lg_bound_tag) == null) {

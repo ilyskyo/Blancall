@@ -28,7 +28,47 @@ enum class ReminderReason {
     SentenceCardDue,
     /** 今天练习次数未达目标 */
     DailyGoalMissed,
+    /** 复习时间还没到，但按当前间隔即将到期（提前告知是哪一篇） */
+    TaskDueSoon,
+    /** 记忆留存率已逼近目标线，再拖就会遗忘（FSRS 曲线预测） */
+    ForgettingSoon,
+    /** 最近一次练习正确率偏低，提醒尽快复习错题 */
+    PracticeAccuracy,
 }
+
+/**
+ * 提前量：未来 [DUE_SOON_WINDOW_MS] 内到期、但此刻还没到期的任务算「即将到期」。
+ * 72 小时覆盖「明天 / 后天」，再远就属于每周计划而不是本次提醒。
+ */
+internal const val DUE_SOON_WINDOW_MS: Long = 72L * 60 * 60 * 1000
+
+/** 正确率低于该值才提醒复习；与评分卡「≥80 主色」的及格线同口径。 */
+internal const val PRACTICE_ACCURACY_REVIEW_THRESHOLD = 80
+
+/** 最近一次练习超过该时长就不再拿它说事：提醒的是「刚刚那次」，不是陈年旧账。 */
+internal const val PRACTICE_ACCURACY_FRESH_MS: Long = 24L * 60 * 60 * 1000
+
+/** 即将到期的一篇任务（由 Worker 取数，判定层只负责选中最早的那篇）。 */
+data class ReminderUpcomingTask(
+    val articleId: Long,
+    val title: String,
+    val dueAt: Long,
+)
+
+/** 一条遗忘风险（保留率百分比取整，避免文案层再碰浮点格式）。 */
+data class ReminderForgettingRisk(
+    val articleId: Long,
+    val title: String,
+    val retentionPercent: Int,
+)
+
+/** 最近一次练习的结果（时间用于在文案里指明「哪一次」）。 */
+data class ReminderLastPractice(
+    val articleId: Long,
+    val title: String,
+    val accuracyPercent: Int,
+    val practicedAt: Long,
+)
 
 /**
  * 一条待发提醒：判定结果本身，**不含文案与 Intent**。
@@ -38,23 +78,36 @@ enum class ReminderReason {
  *
  * @param articleId 有具体文章时给出，用于深链（无则为 -1）
  * @param count 相关数量：到期项数 / 到期句数 / 还差几次 / 连续天数 / 薄弱条数（含义随 reason 而定）
+ * @param articleTitle 具体到哪一篇：到期复习取最早到期的一篇，未完成 / 预测 / 正确率取对应文章
+ * @param dueAt [ReminderReason.TaskDueSoon] 的到期时间戳
+ * @param retentionPercent [ReminderReason.ForgettingSoon] 的当前保留率（0-100）
+ * @param accuracyPercent [ReminderReason.PracticeAccuracy] 的正确率（0-100）
+ * @param practicedAt [ReminderReason.PracticeAccuracy] 那次练习的时间戳
  */
 data class ReminderPlanItem(
     val reason: ReminderReason,
     val articleId: Long = -1L,
     val count: Int = 0,
+    val articleTitle: String = "",
+    val dueAt: Long = 0L,
+    val retentionPercent: Int = 0,
+    val accuracyPercent: Int = 0,
+    val practicedAt: Long = 0L,
 )
 
 /**
  * 「此刻该发哪些提醒」的唯一判定处：纯函数、无 Android 依赖，供 JVM 单测直接覆盖。
  *
  * ## 优先级（从高到低）
- * `IncompletePractice > DueReview > DailyGoalMissed > NoStudyToday > WeakContent > SentenceCardDue > StreakContinue`
+ * `IncompletePractice > DueReview > PracticeAccuracy > ForgettingSoon > TaskDueSoon >
+ *  DailyGoalMissed > NoStudyToday > WeakContent > SentenceCardDue > StreakContinue`
  *
- * 拆成两层理解：
- * - **行动召唤层**（前四个）：都指向「现在去做点什么」，四者互斥，最多产出一条；
- * - **补充提示层**（后三个）：在召唤之外补一句，最多产出一条。
- * 一次最多两条（行动召唤 + 薄弱内容），其余情况都只发一条。
+ * 拆成三层理解：
+ * - **行动召唤层**（前三 + 目标/未学习）：都指向「现在去做点什么」，互斥，最多产出一条；
+ * - **提前预警层**（遗忘预知 / 即将到期）：只在没有任何行动召唤时产出，最多一条 ——
+ *   已经该复习时再说「明天要复习」是噪音；预警是「今天没事，但别忘」的那一句；
+ * - **补充提示层**（薄弱内容 / 句子卡 / 连续学习）：行动召唤之外补一句，最多一条。
+ * 一次最多两条；只有「行动召唤 + 薄弱内容」会同时出现。
  *
  * ## 去重 / 互斥规则与理由
  * - **R1 今天已练过 → 不发 `NoStudyToday`**：状态自相矛盾，用户明明练了还被告知「今天没练」。
@@ -64,6 +117,13 @@ data class ReminderPlanItem(
  *   进行中目标，再叠加泛化召唤只会造成选择困难；先把开了头的做完。
  * - **R4 `DailyGoalMissed` 仅在今天已练过、且目标 >0、且未达标时产出**：没练过时 `NoStudyToday`
  *   已承担「去练」的召唤，再报「还差几次」是重复；目标 <=0 视为未设置。
+ * - **R4b `PracticeAccuracy` 排在到期复习之后、目标之前**：刚练砸了的那一篇有明确的补救动作，
+ *   优先级高于「再练几次凑目标」这类泛化召唤；但已经到期的内容更紧急，先让它。
+ *   只认 24 小时内的最近一次，且正确率 < [PRACTICE_ACCURACY_REVIEW_THRESHOLD]；
+ *   新鲜度由 Worker 预筛，纯函数只做阈值判断。
+ * - **R4c 提前预警只在行动召唤为空时产出**：先处理「现在该做什么」；已经到期/未完成时，
+ *   「哪篇快到期」不构成新的可执行动作，只会抢走注意力。
+ *   `ForgettingSoon`（留存率逼近目标线）比 `TaskDueSoon`（未来 72 小时内到期）更紧急，二者只发一条。
  * - **R5 `WeakContent` 仅在今天已练过时产出**：没练过时应先给门槛最低的召唤；薄弱巩固是
  *   「已经开始之后的下一步」。它允许与**行动召唤**并存 —— 它是一条**具体到「练哪几处」的建议**，
  *   与「该去练习」不重复（这是补充层里唯一的例外，句子卡与连续学习都必须独占）。
@@ -82,11 +142,14 @@ object ReminderPlan {
     private val PRIORITY: Map<ReminderReason, Int> = mapOf(
         ReminderReason.IncompletePractice to 0,
         ReminderReason.DueReview to 1,
-        ReminderReason.DailyGoalMissed to 2,
-        ReminderReason.NoStudyToday to 3,
-        ReminderReason.WeakContent to 4,
-        ReminderReason.SentenceCardDue to 5,
-        ReminderReason.StreakContinue to 6,
+        ReminderReason.PracticeAccuracy to 2,
+        ReminderReason.ForgettingSoon to 3,
+        ReminderReason.TaskDueSoon to 4,
+        ReminderReason.DailyGoalMissed to 5,
+        ReminderReason.NoStudyToday to 6,
+        ReminderReason.WeakContent to 7,
+        ReminderReason.SentenceCardDue to 8,
+        ReminderReason.StreakContinue to 9,
     )
 
     /**
@@ -105,6 +168,11 @@ object ReminderPlan {
      * @param incompleteRemaining 未完成练习剩余待填空数
      * @param weakCount 薄弱内容条数
      * @param streakDays 当前连续学习天数
+     * @param dueArticleTitle 最早到期那篇文章的标题（可为空串，文案层回落到「未命名文章」）
+     * @param incompleteArticleTitle 未完成练习所属文章的标题
+     * @param upcomingTasks 未来 [DUE_SOON_WINDOW_MS] 内到期的任务（Worker 已排除暂停与已到期）
+     * @param forgettingRisks 保留率逼近目标线的任务（Worker 已排除暂停与已到期）
+     * @param lastPractice 最近一次练习（超过 [PRACTICE_ACCURACY_FRESH_MS] 由本函数忽略）
      * @param allowReasons 本次允许发送的原因集合（渠道关闭 / 外部约束）；默认全开
      */
     fun decide(
@@ -121,13 +189,22 @@ object ReminderPlan {
         incompleteRemaining: Int = 0,
         weakCount: Int = 0,
         streakDays: Int = 0,
+        dueArticleTitle: String = "",
+        incompleteArticleTitle: String = "",
+        upcomingTasks: List<ReminderUpcomingTask> = emptyList(),
+        forgettingRisks: List<ReminderForgettingRisk> = emptyList(),
+        lastPractice: ReminderLastPractice? = null,
         allowReasons: Set<ReminderReason> = ReminderReason.entries.toSet(),
     ): List<ReminderPlanItem> {
-        // now 目前不参与分支（跨天由 ReminderStateStore 用 DayBucket 负责），但保留在签名里：
-        // 判定将来要「按当天剩余时间收敛」（如临近午夜不再催目标），且调用方统一传时钟
-        // 能让测试完全脱离真实时间。当前刻意不使用，避免写出无法验证的伪时区逻辑。
+        // now 只用于「最近一次练习是否还新鲜」：跨天去重由 ReminderStateStore 用 DayBucket 负责。
+        // 时钟由调用方传入，测试完全不依赖真实时间。
         val dueCount = dueArticleCount + dueSentenceCount
         val out = ArrayList<ReminderPlanItem>(2)
+        val freshLowAccuracy = lastPractice?.takeIf {
+            it.accuracyPercent < PRACTICE_ACCURACY_REVIEW_THRESHOLD &&
+                now >= it.practicedAt &&
+                now - it.practicedAt <= PRACTICE_ACCURACY_FRESH_MS
+        }
 
         // ── 行动召唤层：互斥，最多一条（R8：allowReasons 在分支里判，缺席时由次高优先级顶上）──
         when {
@@ -136,6 +213,7 @@ object ReminderPlan {
                     ReminderReason.IncompletePractice,
                     articleId = incompleteArticleId,
                     count = incompleteRemaining,
+                    articleTitle = incompleteArticleTitle,
                 )
 
             dueCount > 0 && ReminderReason.DueReview in allowReasons ->
@@ -143,6 +221,17 @@ object ReminderPlan {
                     ReminderReason.DueReview,
                     articleId = firstDueArticleId,
                     count = dueCount,
+                    articleTitle = dueArticleTitle,
+                )
+
+            // R4b：刚练砸了的那一篇，比「再练几次凑目标」更具体、更该先做
+            freshLowAccuracy != null && ReminderReason.PracticeAccuracy in allowReasons ->
+                out += ReminderPlanItem(
+                    ReminderReason.PracticeAccuracy,
+                    articleId = freshLowAccuracy.articleId,
+                    articleTitle = freshLowAccuracy.title,
+                    accuracyPercent = freshLowAccuracy.accuracyPercent,
+                    practicedAt = freshLowAccuracy.practicedAt,
                 )
 
             // R4：仅「已练过 + 设了目标 + 没达标」
@@ -158,12 +247,37 @@ object ReminderPlan {
                 out += ReminderPlanItem(ReminderReason.NoStudyToday, count = streakDays)
         }
 
+        // ── 提前预警层（R4c）：没有行动召唤时才说「哪篇快到期 / 快忘了」 ──
+        if (out.isEmpty()) {
+            val risk = forgettingRisks.minByOrNull { it.retentionPercent }
+            val upcoming = upcomingTasks.minByOrNull { it.dueAt }
+            when {
+                risk != null && ReminderReason.ForgettingSoon in allowReasons ->
+                    out += ReminderPlanItem(
+                        ReminderReason.ForgettingSoon,
+                        articleId = risk.articleId,
+                        count = forgettingRisks.size,
+                        articleTitle = risk.title,
+                        retentionPercent = risk.retentionPercent,
+                    )
+
+                upcoming != null && ReminderReason.TaskDueSoon in allowReasons ->
+                    out += ReminderPlanItem(
+                        ReminderReason.TaskDueSoon,
+                        articleId = upcoming.articleId,
+                        count = upcomingTasks.size,
+                        articleTitle = upcoming.title,
+                        dueAt = upcoming.dueAt,
+                    )
+            }
+        }
+
         // ── 补充提示层 ──
         // R5：薄弱内容可与行动召唤并存（补充层里唯一的例外）
         if (hasStudiedToday && weakCount > 0 && ReminderReason.WeakContent in allowReasons) {
             out += ReminderPlanItem(ReminderReason.WeakContent, count = weakCount)
         } else if (out.isEmpty()) {
-            // 到这里说明：没有任何行动召唤，也没有薄弱内容 —— 才轮得到下面两条轻提示
+            // 到这里说明：没有任何行动召唤 / 预警，也没有薄弱内容 —— 才轮得到下面两条轻提示
             when {
                 // R7：句子卡只在「一条都没有」时发
                 !sentenceCardPracticedToday && ReminderReason.SentenceCardDue in allowReasons ->

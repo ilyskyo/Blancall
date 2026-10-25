@@ -3,8 +3,13 @@
 
 package com.ilyskyo.blancall.ui.practice
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -27,6 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.Motion
@@ -62,6 +68,8 @@ import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.AnswerChecker
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
+import com.ilyskyo.blancall.data.repository.OneShotCloze
+import com.ilyskyo.blancall.notification.PracticeLiveUpdate
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.CoachMark
 import com.ilyskyo.blancall.ui.common.CoachShape
@@ -79,10 +87,13 @@ import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.ilyskyo.blancall.ui.viewmodel.PracticeViewModel
 import com.ilyskyo.blancall.ui.viewmodel.SectionMode
 import com.ilyskyo.blancall.ui.viewmodel.ensureHintTimer
+import com.ilyskyo.blancall.ui.viewmodel.saveForAppExit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.setValue
 
@@ -105,6 +116,13 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     val resumed by vm.resumed.collectAsStateWithLifecycle()
     val loadFailed by vm.loadFailed.collectAsStateWithLifecycle()
     val totalBlanks by vm.totalBlanks.collectAsStateWithLifecycle()
+
+    // 这两个值来自导航参数，而不是 Composable 形参：
+    // 9 个形参 + 默认值会触发当前 Compose 编译器生成一段被 ART 拒绝的字节码
+    // （VerifyError: Undefined unexpected as arg to if-eqz）。从 currentBackStackEntry
+    // 读取既避开该缺陷，也让 cross/practice 两条路由共用同一个入口。
+    val launchOneShotToken = navController.currentBackStackEntry?.arguments?.getLong("oneShot") ?: 0L
+    val launchBudgetMinutes = navController.currentBackStackEntry?.arguments?.getInt("budget") ?: 0
 
     val wordBlankCount by vm.wordBlankCount.collectAsStateWithLifecycle()
 
@@ -170,6 +188,29 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     var showStrategySheet by remember { mutableStateOf(false) }
     var showSectionSheet by remember { mutableStateOf(false) }
     var showIncompleteDialog by remember { mutableStateOf(false) }
+    // 时间预算：从进入练习页开始计时，到点只提醒「该收尾了」，不强制中断作答。
+    // 承诺 15 分钟却拖到 25 分钟比不承诺更伤，因此提示里默认动作是「提交已答」。
+    var budgetDeadline by rememberSaveable {
+        mutableLongStateOf(
+            if (launchBudgetMinutes > 0) System.currentTimeMillis() + launchBudgetMinutes * 60_000L else 0L
+        )
+    }
+    var budgetLeftMinutes by rememberSaveable {
+        mutableIntStateOf(launchBudgetMinutes.coerceAtLeast(0))
+    }
+    var showBudgetEnd by remember { mutableStateOf(false) }
+    LaunchedEffect(budgetDeadline) {
+        while (budgetDeadline > 0L) {
+            val remain = budgetDeadline - System.currentTimeMillis()
+            if (remain <= 0L) {
+                budgetLeftMinutes = 0
+                showBudgetEnd = true
+                break
+            }
+            budgetLeftMinutes = ((remain + 59_999L) / 60_000L).toInt()
+            delay(15_000L)
+        }
+    }
     val context = LocalContext.current
     val resources = LocalResources.current
 
@@ -177,26 +218,43 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // 用普通 remember + VM 侧 customConfigName 双重判定：进程死亡重建时 VM 已清空，
     // 必须重新应用配置（rememberSaveable 会把"已应用"误恢复为 true，导致随机挖空且不锁定）
     var customConfigApplied by remember { mutableStateOf(false) }
-    LaunchedEffect(initialConfigId, article?.id) {
-        if (initialConfigId > 0 && article != null && articleIds.size == 1 &&
-            !customConfigApplied && vm.customConfigName.value == null
+    LaunchedEffect(initialConfigId, launchOneShotToken, article?.id) {
+        if (article == null || articleIds.size != 1 || customConfigApplied ||
+            vm.customConfigName.value != null
         ) {
-            customConfigApplied = true
+            return@LaunchedEffect
+        }
+        customConfigApplied = true
+        val articleId = articleIds.first()
+        // 两条来源共用同一段应用逻辑：
+        // - configId：落盘的长期配置（自定义挖空列表进入）；
+        // - oneShot：遮挡转练 / 错题只练这一批生成的一次性快照（内存，进程死亡即失效）。
+        val cfg = if (launchOneShotToken > 0L) {
+            OneShotCloze.take(articleId, launchOneShotToken)?.config
+        } else if (initialConfigId > 0L) {
             // 配置读取放 IO 线程；按 (articleId, configId) 双键精确读取（不跨文章串篇）
-            val cfg = withContext(Dispatchers.IO) {
-                CustomClozeStore.getInstance(context.filesDir).getConfig(articleIds.first(), initialConfigId)
+            withContext(Dispatchers.IO) {
+                CustomClozeStore.getInstance(context.filesDir)
+                    .getConfig(articleId, initialConfigId)
             }
-            if (cfg != null) {
-                if (vm.startCustomPractice(cfg)) {
-                    modeSelected = true
-                } else {
-                    // 配置与当前文章内容不匹配（文章被修改变短等）：已自动回退随机生成，仅提示
-                    Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.cloze_config_mismatch), Toast.LENGTH_LONG).show()
-                    modeSelected = true
-                }
+        } else {
+            null
+        }
+        if (cfg != null) {
+            if (vm.startCustomPractice(cfg)) {
+                modeSelected = true
             } else {
-                Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.custom_config_missing), Toast.LENGTH_SHORT).show()
+                // 配置与当前文章内容不匹配（文章被修改变短等）：已自动回退随机生成，仅提示
+                Toast.makeText(context, resources.getString(com.ilyskyo.blancall.R.string.cloze_config_mismatch), Toast.LENGTH_LONG).show()
+                modeSelected = true
             }
+        } else {
+            val msg = if (launchOneShotToken > 0L) {
+                com.ilyskyo.blancall.R.string.oneshot_cloze_expired
+            } else {
+                com.ilyskyo.blancall.R.string.custom_config_missing
+            }
+            Toast.makeText(context, resources.getString(msg), Toast.LENGTH_SHORT).show()
         }
     }
     var showBackWarning by remember { mutableStateOf(false) }
@@ -231,6 +289,38 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
         if (resumed) {
             modeSelected = true
         }
+    }
+
+    // 通知权限：真正开始一次答题时申请一次，和 AI 对话页同一策略。
+    // 没有权限时仍然会存档，只是上不了岛 —— 权限是系统级开关，不能在退后台那一刻再问。
+    var askedNotificationPermission by remember { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(modeSelected) {
+        if (!modeSelected || askedNotificationPermission) return@LaunchedEffect
+        askedNotificationPermission = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // 「练习进行中」上岛会话：只在答题界面登记，真正的内容由退后台回调从 VM 现读取。
+    // 不把答案放进 key：否则每敲一个字都要重建 Session；退后台的 lambda 拿到的仍是最新状态。
+    val liveArticleId = article?.id ?: -1L
+    LaunchedEffect(liveArticleId, modeSelected, isSubmitted, isCrossMode, totalBlanks > 0) {
+        val active = modeSelected && !isSubmitted && !isCrossMode &&
+            liveArticleId > 0L && totalBlanks > 0
+        PracticeLiveUpdate.updateSession(
+            if (active) PracticeLiveUpdate.Session(liveArticleId) { vm.saveForAppExit() } else null
+        )
+    }
+    DisposableEffect(Unit) {
+        // 只注销内存态，不撤通知：退后台后 Activity 销毁时，通知要留在系统里等用户点回来
+        onDispose { PracticeLiveUpdate.updateSession(null) }
     }
 
     // 沉浸模式：提交后记录渐进结果
@@ -356,6 +446,14 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            if (budgetDeadline > 0L && !isSubmitted) {
+                Text(
+                    stringResource(com.ilyskyo.blancall.R.string.budget_remaining, budgetLeftMinutes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+            }
             // 已提交：快捷操作
             if (isSubmitted && modeSelected) {
                 TextButton(onClick = { vm.reset() }) { Text(stringResource(com.ilyskyo.blancall.R.string.redo_desc)) }
@@ -939,7 +1037,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                     onViewArticleData = viewArticleData,
                                     onBlankFocus = { vm.ensureHintTimer(it) },
                                     onAnswerChange = { i, a -> vm.updateAnswer(i, a) },
-                                    onInkCommitted = { i, s, w, h -> vm.appendInk(i, s, w, h) }
+                                    onInkCommitted = { i, s, w, h -> vm.recordInkSnapshot(i, s, w, h) }
                                 )
                                 BlancallMode.WORD -> WordClozeContent(
                                     blancall = wordCloze,
@@ -956,7 +1054,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                     onViewArticleData = viewArticleData,
                                     onBlankFocus = { vm.ensureHintTimer(it) },
                                     onAnswerChange = { i, a -> vm.updateAnswer(i, a) },
-                                    onInkCommitted = { i, s, w, h -> vm.appendInk(i, s, w, h) }
+                                    onInkCommitted = { i, s, w, h -> vm.recordInkSnapshot(i, s, w, h) }
                                 )
                                 BlancallMode.REVERSE -> DictationContent(
                                     dictationResult = dictationResult,
@@ -980,7 +1078,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
         }
 
         // PDF 导出对话框（F8）
-        if (showExportDialog) {
+        AnimatedOverlayPresence(visible = showExportDialog) {
             ExportPdfDialog(
                 onDismiss = { showExportDialog = false },
                 onExport = { includeAnswer ->
@@ -1098,7 +1196,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     }
 
     // ── 未完成提交确认弹窗 ──
-    if (showIncompleteDialog) {
+    AnimatedOverlayPresence(visible = showIncompleteDialog) {
         val filled = userAnswers.values.count { it.isNotBlank() }
         val unfilled = totalBlanks - filled
         IncompleteSubmitDialog(
@@ -1111,8 +1209,33 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
         )
     }
 
+    // ── 时间预算到点：提醒收尾（不强制中断）──
+    AnimatedOverlayPresence(visible = showBudgetEnd) {
+        BlancallAlertDialog(
+            onDismissRequest = {
+                showBudgetEnd = false
+                budgetDeadline = 0L
+            },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.budget_end_title)) },
+            text = { Text(stringResource(com.ilyskyo.blancall.R.string.budget_end_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBudgetEnd = false
+                    budgetDeadline = 0L
+                    vm.submitPartial()
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.budget_end_submit)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showBudgetEnd = false
+                    budgetDeadline = 0L
+                }) { Text(stringResource(com.ilyskyo.blancall.R.string.budget_end_continue)) }
+            }
+        )
+    }
+
     // ── 二级：切换模式 BottomSheet ──
-    if (showModeSheet) {
+    AnimatedOverlayPresence(visible = showModeSheet) {
         GlassModalBottomSheet(
             onDismissRequest = { showModeSheet = false },
             dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
@@ -1150,7 +1273,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     }
 
     // ── 跨文复习「自定义挖空」：按文章分别选择配置（未选择/配置被删的文章自然不参与挖空）──
-    if (showCrossCustomSheet) {
+    AnimatedOverlayPresence(visible = showCrossCustomSheet) {
         // 参与文章按混合来源顺序（distinctBy 保留首次出现顺序，即输入文章顺序）
         val crossArticles = crossSourceInfo
             .distinctBy { it.articleId }
@@ -1175,7 +1298,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     }
 
     // ── 返回未保存提示弹窗（返回本身不承担保存；要保存请点右上角提交）──
-    if (showBackWarning) {
+    AnimatedOverlayPresence(visible = showBackWarning) {
         BlancallAlertDialog(
             onDismissRequest = { showBackWarning = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.unsubmitted_title), fontWeight = FontWeight.SemiBold) },
@@ -1214,7 +1337,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     }
 
     // ── 二级：挖空策略 BottomSheet ──
-    if (showStrategySheet) {
+    AnimatedOverlayPresence(visible = showStrategySheet) {
         GlassModalBottomSheet(
             onDismissRequest = { showStrategySheet = false },
             dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
@@ -1249,7 +1372,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     }
 
     // ── 二级：段落模式 BottomSheet ──
-    if (showSectionSheet) {
+    AnimatedOverlayPresence(visible = showSectionSheet) {
         GlassModalBottomSheet(
             onDismissRequest = { showSectionSheet = false },
             dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {

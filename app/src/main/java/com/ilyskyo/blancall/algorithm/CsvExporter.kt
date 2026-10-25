@@ -44,6 +44,8 @@ object CsvExporter {
         context.getString(R.string.csv_header_time),
         context.getString(R.string.csv_header_error_count),
         context.getString(R.string.csv_header_error_detail),
+        // 第 12 列：稳定契约（不随界面语言变），供本程序重新导入时恢复逐空错因
+        "mistakes_json",
     )
 
     /**
@@ -103,14 +105,17 @@ object CsvExporter {
                     r.id.toString(),
                     r.articleId.toString(),
                     titleMap[r.articleId] ?: context.getString(R.string.ov_article_fallback, r.articleId),
-                    modeLabel(context, r.mode),
+                    // 模式写枚举名而不是本地化标签：导入端要按同一契约解析，
+                    // 本地化标签会随界面语言变，换语言后旧 CSV 就再也导不回来。
+                    r.mode,
                     r.totalBlanks.toString(),
                     r.correctCount.toString(),
                     accuracy,
                     durationSec.toString(),
                     dateFormat.format(Date(r.timestamp)),
                     r.mistakes.size.toString(),
-                    mistakesStr
+                    mistakesStr,
+                    DataInterchange.mistakesToCsvJson(r.mistakes),
                 )
                 sb.append(row.joinToString(",") { escape(it) })
                 sb.append("\r\n")
@@ -154,10 +159,4 @@ object CsvExporter {
         }
     }
 
-    private fun modeLabel(context: Context, mode: String): String = when (mode) {
-        "SENTENCE" -> context.getString(R.string.cloze_mode_sentence)
-        "WORD" -> context.getString(R.string.cloze_mode_word)
-        "REVERSE" -> context.getString(R.string.cloze_mode_reverse)
-        else -> mode
-    }
 }

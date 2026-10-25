@@ -15,6 +15,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,15 +60,15 @@ fun GlassModalBottomSheet(
     }
 
     // ── 退场要真的播 ──
-    // 调用方一律写作 `if (flag) GlassModalBottomSheet(...)`，flag 一翻整块面板同帧出组合：
-    // 面板不是被下滑带走的，而是被删除 —— scrim 也在那一刻凭空消失，用户读作「卡了一下」。
-    // 组件挡不住自己被移出组合，但**由面板发起**的关闭（点遮罩、按返回）可以：
-    // 先把 sheetState 收到 Hidden（M3 原生动画：面板下滑 + scrim 淡出），播完再通知调用方撤销。
-    // 于是 11 处调用点一行都不用改。
-    // 减动效下走「不等退场」而不是「延后 dismiss」：完成信号可能永不到来，
-    // 等它就是把界面永久卡在「正在关闭」里。
+    // 两种关闭：
+    // - 面板自己发起（点遮罩、返回、下滑）：requestDismiss 先 hide() 播完 M3 原生退场；
+    // - 调用方按钮直接改 flag：外层 AnimatedOverlayPresence 把 LocalOverlayExitRequested
+    //   置 true，本组件同样先 hide() 再回执，宿主收到回执才移除子树。
+    // 减动效下直接回执，不等一个不会到来的完成信号。
     val scope = rememberCoroutineScope()
     var dismissing by remember { mutableStateOf(false) }
+    val externalExit = LocalOverlayExitRequested.current
+    val notifyExitFinished = LocalOverlayExitFinished.current
     // 关闭回执：面板是被手势「收走」的，手指需要知道这一下被收到了。
     // 只有用户发起的关闭走这里（点遮罩、按返回、拖到底），
     // 面板内按钮翻 flag 的那条路不经过本函数 —— 也就不会和按钮自己的回执叠成两下。
@@ -78,6 +79,7 @@ fun GlassModalBottomSheet(
             dismissHaptic()
             if (!Motion.exitsAreAnimated) {
                 onDismissRequest()
+                notifyExitFinished?.invoke()
             } else {
                 scope.launch {
                     try {
@@ -85,11 +87,33 @@ fun GlassModalBottomSheet(
                         // 不需要也不应该再用 invokeOnCompletion 那套旧写法。
                         sheetState.hide()
                         onDismissRequest()
+                        notifyExitFinished?.invoke()
                     } catch (_: CancellationException) {
-                        // 退场中途被打断（例如面板又被抓住）→ 放行，允许再次关闭
+                        // 退场中途被打断（例如面板又被抓住）→ 放行，允许再次关闭。
+                        // 但回执必须照发：不发就等于宿主永远留着这层壳，
+                        // 而 Hidden 的 ModalBottomSheet 窗口照样吃触摸 —— 整页会「看得见、点不动」。
                         dismissing = false
+                        notifyExitFinished?.invoke()
                     }
                 }
+            }
+        }
+    }
+
+    // 外部状态翻转（按钮/成功页/副作用把 flag 置 false）时，由本组件把 M3 的退场播完，
+    // 再通知宿主移除子树。不回调 onDismissRequest：调用方的状态已经是 false 了。
+    LaunchedEffect(externalExit) {
+        if (!externalExit || dismissing) return@LaunchedEffect
+        dismissing = true
+        if (!Motion.exitsAreAnimated) {
+            notifyExitFinished?.invoke()
+        } else {
+            try {
+                sheetState.hide()
+                notifyExitFinished?.invoke()
+            } catch (_: CancellationException) {
+                // 不能等一个被打断的 hide：宿主必须收到回执，否则面板永久留在组合里
+                notifyExitFinished?.invoke()
             }
         }
     }

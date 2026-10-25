@@ -16,7 +16,9 @@ import androidx.work.WorkerParameters
 import com.ilyskyo.blancall.algorithm.DayBucket
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.SentenceSelector
+import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.data.model.PracticeStatus
+import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.ui.theme.ReminderFrequency
@@ -31,6 +33,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /**
  * 每日学习提醒 Worker（CoroutineWorker）：
@@ -127,6 +130,41 @@ class ReminderWorker(
             .filterValues { FsrsEngine.isDue(it, now) }
         val firstDueArticleId = dueArticles.entries.minByOrNull { it.value.due }?.key ?: -1L
 
+        // 未来 72 小时内到期、但此刻还没到期：提前说「哪一篇快到期了」
+        val upcomingTasks = articleStates
+            .filterKeys { it !in pausedArticleIds }
+            .filterValues { state ->
+                state.reviewCount > 0 && state.due > now &&
+                    state.due <= now + DUE_SOON_WINDOW_MS
+            }
+            .entries
+            .sortedBy { it.value.due }
+            .take(MAX_PREDICTED_TASKS)
+            .map { (id, state) -> ReminderUpcomingTask(id, articleTitle(id), state.due) }
+
+        // 「快要遗忘」= 还没有到期，但留存率已经贴近目标线。
+        // 目标线是到期那一刻的留存率（standard 0.90 / deep 0.95 / sprint 0.85），
+        // 所以留 3 个百分点的提前量：再拖一两天就会掉到目标以下。
+        val dangerRetention = (FsrsEngine.targetRetention() + FORGETTING_MARGIN)
+            .coerceAtMost(MAX_FORGETTING_RETENTION)
+        val forgettingRisks = articleStates
+            .filterKeys { it !in pausedArticleIds }
+            .filterValues { state ->
+                state.reviewCount > 0 && !FsrsEngine.isDue(state, now) &&
+                    FsrsEngine.retentionRate(state, now) < dangerRetention
+            }
+            .entries
+            .sortedBy { FsrsEngine.retentionRate(it.value, now) }
+            .take(MAX_PREDICTED_TASKS)
+            .map { (id, state) ->
+                ReminderForgettingRisk(
+                    articleId = id,
+                    title = articleTitle(id),
+                    retentionPercent = (FsrsEngine.retentionRate(state, now) * 100)
+                        .roundToInt().coerceIn(0, 100),
+                )
+            }
+
         val sentenceStates = fsrs?.allSentenceStates().orEmpty()
         val dueSentenceCount = sentenceStates.count { (key, state) ->
             key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) &&
@@ -139,12 +177,25 @@ class ReminderWorker(
         }
 
         val incomplete = findIncompletePractice()
-        val weakCount = getWeakContentCount()
+        val records = loadRecords()
+        val todayCount = records.count { DayBucket.localDate(it.timestamp) == today }
+        val weakCount = countWeakContent(records)
+        val lastPractice = records
+            .filter { it.totalBlanks > 0 }
+            .maxByOrNull { it.timestamp }
+            ?.let { record ->
+                ReminderLastPractice(
+                    articleId = record.articleId,
+                    title = articleTitle(record.articleId),
+                    accuracyPercent = accuracyPercentOf(record),
+                    practicedAt = record.timestamp,
+                )
+            }
 
         return ReminderPlan.decide(
             now = now,
             hasStudiedToday = ReminderPrefs.hasStudiedToday(),
-            todayCount = countTodayPractices(now),
+            todayCount = todayCount,
             dailyGoal = ReminderPrefs.dailyPracticeGoal,
             dueArticleCount = dueArticles.size,
             dueSentenceCount = dueSentenceCount,
@@ -155,9 +206,31 @@ class ReminderWorker(
             incompleteRemaining = incomplete?.remaining ?: 0,
             weakCount = weakCount,
             streakDays = ReminderPrefs.studyStreakDays,
+            dueArticleTitle = if (firstDueArticleId > 0) articleTitle(firstDueArticleId) else "",
+            incompleteArticleTitle = incomplete?.let { articleTitle(it.articleId) }.orEmpty(),
+            upcomingTasks = upcomingTasks,
+            forgettingRisks = forgettingRisks,
+            lastPractice = lastPractice,
             allowReasons = allowedReasons(),
         )
     }
+
+    /** 文章标题：取不到时返回空串，由通知文案回落到「未命名文章」，绝不让整条提醒发不出去。 */
+    private suspend fun articleTitle(articleId: Long): String {
+        if (articleId <= 0L) return ""
+        return runCatching {
+            val repo = ArticleRepository.getInstance(
+                context.filesDir.resolve("articles.json").absolutePath
+            )
+            // 与仓储加载同一个上限：损坏的 articles.json 不能把整次提醒卡到 WorkManager 超时
+            withTimeoutOrNull(2000L) { repo.getArticleById(articleId)?.title }.orEmpty()
+        }.getOrDefault("")
+    }
+
+    /** 正确率（0-100）；调用前已保证 totalBlanks > 0。 */
+    private fun accuracyPercentOf(record: PracticeRecord): Int =
+        (record.correctCount.toFloat() / record.totalBlanks * 100)
+            .roundToInt().coerceIn(0, 100)
 
     /** 未完成练习的定位信息（仅取数，判定在 [ReminderPlan]）。 */
     private data class IncompletePractice(val articleId: Long, val remaining: Int)
@@ -193,49 +266,32 @@ class ReminderWorker(
         return null
     }
 
-    /** 今天已完成的练习次数（按设备时区日历天，与统计页同口径）。 */
-    private suspend fun countTodayPractices(now: Long): Int {
+    /**
+     * 一次性读取练习记录：今日次数、薄弱内容、最近一次练习都要用它。
+     * 精确等待加载完成（2 秒上限），避免把「还没加载完」当成「今天没练 / 没有记录」。
+     */
+    private suspend fun loadRecords(): List<PracticeRecord> {
         return try {
             val recordRepo = RecordRepository.getInstance(
                 context.filesDir.resolve("records.json").absolutePath
             )
             withTimeoutOrNull(2000L) { recordRepo.awaitLoaded() }
-            val today = DayBucket.localDate(now)
-            recordRepo.records.value.count { DayBucket.localDate(it.timestamp) == today }
+            recordRepo.records.value
         } catch (_: Exception) {
-            0
+            emptyList()
         }
     }
 
-    /**
-     * 统计薄弱内容（错误过的题目数量）。
-     * RecordRepository 单例异步加载，首次可能为空，这里在 Worker 线程轮询等待最多 2 秒。
-     */
-    private suspend fun getWeakContentCount(): Int {
-        return try {
-            val recordRepo = RecordRepository.getInstance(
-                context.filesDir.resolve("records.json").absolutePath
-            )
-
-            // 精确等待仓储加载完成（带 2 秒上限，避免异常情况卡住 Worker）。
-            // 旧实现用「records 是否为空」当加载信号轮询：对确实没有任何练习记录的用户，
-            // 每次提醒都会白等满 2 秒才继续。
-            withTimeoutOrNull(2000L) { recordRepo.awaitLoaded() }
-
-            val allRecords = recordRepo.records.value
-            if (allRecords.isEmpty()) return 0
-
-            // 统计所有出现过的错误（按 blankIndex+articleId 去重）
-            val mistakeSet = mutableSetOf<String>()
-            for (record in allRecords) {
-                for (m in record.mistakes) {
-                    mistakeSet.add("${record.articleId}_${m.blankIndex}")
-                }
+    /** 统计薄弱内容（错误过的题目数量，按文章+空号去重）。 */
+    private fun countWeakContent(records: List<PracticeRecord>): Int {
+        if (records.isEmpty()) return 0
+        val mistakeSet = mutableSetOf<String>()
+        for (record in records) {
+            for (m in record.mistakes) {
+                mistakeSet.add("${record.articleId}_${m.blankIndex}")
             }
-            mistakeSet.size
-        } catch (_: Exception) {
-            0
         }
+        return mistakeSet.size
     }
 
     /** 当前是否在免打扰窗口内（小时取自同一份 [now]，与判定共用时钟）。 */
@@ -291,6 +347,15 @@ class ReminderWorker(
          * 这里再设一道上限是兜底：将来规则变动也不至于一次刷屏。
          */
         private const val MAX_PER_RUN = 2
+
+        /** 预警层最多扫描几篇（只需找出最早/最危险的一篇，扫描上限防止超大题库拖慢 Worker）。 */
+        private const val MAX_PREDICTED_TASKS = 20
+
+        /** 「即将遗忘」的提前量：留存率高于目标线不足 3 个百分点时开始预警。 */
+        private const val FORGETTING_MARGIN = 0.03
+
+        /** 提前量再大也不预警高于该留存率的内容，避免刚复习完就被说「快忘了」。 */
+        private const val MAX_FORGETTING_RETENTION = 0.98
 
         /**
          * 调度下一次提醒。计算从当前时间到下一个提醒日目标时间的延迟。

@@ -12,6 +12,9 @@ class ArticleRepository(filePath: String) {
 
     val allArticles: Flow<List<Article>> = storage.articles
 
+    /** 挂起直到首次读盘完成；桌面小组件等非页面消费者需要它避免读到空库。 */
+    suspend fun awaitLoaded() = storage.awaitLoaded()
+
     suspend fun getArticleById(id: Long): Article? = storage.getById(id)
 
     suspend fun insert(article: Article): Long = storage.insert(article)

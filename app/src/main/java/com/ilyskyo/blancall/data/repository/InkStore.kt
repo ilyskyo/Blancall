@@ -20,14 +20,19 @@ data class InkPayload(
     val blanks: List<BlankInk>
 )
 
-/** 单个空（错题）的墨迹：按提交批次分组。 */
+/**
+ * 单个空（错题）的墨迹：按识别批次分组。
+ *
+ * 新存档每个空只有一份（最后一次识别的整块快照）；列表形态保留是为了兼容旧存档
+ * 与备份（旧数据里是每次上屏一个批次）。
+ */
 data class BlankInk(
     val blankIndex: Int,
     val batches: List<InkBatch>
 )
 
 /**
- * 一个提交批次的墨迹：带上当时板面尺寸（旋转 / 分屏改板尺寸也能正确复现）。
+ * 一次识别的墨迹快照：带上当时板面尺寸（旋转 / 分屏改板尺寸也能正确复现）。
  * [strokes] 每笔为一条点串（px 坐标）。
  */
 data class InkBatch(

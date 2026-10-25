@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.ui.statistics
 import androidx.activity.compose.BackHandler
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -19,6 +20,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,13 +32,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.ilyskyo.blancall.R
+import com.ilyskyo.blancall.algorithm.MistakeNotebook
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.HapticTier
+import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MarkdownText
 import com.ilyskyo.blancall.ui.common.StateSwap
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
+import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.TagDot
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.repository.TagStore
@@ -46,9 +54,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
@@ -57,12 +75,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -115,6 +136,7 @@ import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 易错榜里的一篇。
@@ -455,17 +477,20 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // （有 FSRS 状态且 reviewCount>0 才是自适应调度），不在这里另立一套口径。
     val adaptiveIds = remember(fsrsStates) { fsrsStates.filterValues { it.reviewCount > 0 }.keys }
 
-    // 学习任务流入口卡：只统计真正由 FSRS 调度（练过）的文章，暂停项单独计数
+    // 学习任务流下拉提示：只统计真正由 FSRS 调度（练过）的文章，暂停项不算到期
     val flowDueCount = remember(fsrsStates, pausedArticleIds, nowTick) {
         fsrsStates.count { (id, state) ->
             state.reviewCount > 0 && id !in pausedArticleIds && nowTick >= state.due
         }
     }
-    val flowPausedCount = remember(fsrsStates, pausedArticleIds) {
-        pausedArticleIds.count { (fsrsStates[it]?.reviewCount ?: 0) > 0 }
-    }
-    val flowActiveCount = remember(fsrsStates) {
-        fsrsStates.count { it.value.reviewCount > 0 }
+    // 「下一步」的到期文章输入：与任务流同一份 FSRS 到期判定，取最早到期的一篇
+    val firstDueArticleId = remember(fsrsStates, pausedArticleIds, nowTick) {
+        fsrsStates.entries
+            .filter { (id, state) ->
+                state.reviewCount > 0 && id !in pausedArticleIds && nowTick >= state.due
+            }
+            .minByOrNull { it.value.due }
+            ?.key
     }
 
     // ── 句子记忆统计：取自句子级 FSRS 状态，留存率口径与文章一致（同函数同参数）──
@@ -499,6 +524,11 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             incorrect = (mistakeAgg.first["INCORRECT"] ?: 0).toFloat() / total,
             totalMistakes = mistakeAgg.second
         )
+    }
+
+    // 错题本入口：未攻克数量与错题本页同一口径（MistakeNotebook），不在界面另算一次
+    val unresolvedMistakes = remember(allRecords) {
+        MistakeNotebook.entries(allRecords, onlyUnresolved = true).size
     }
 
     // ── 成就徽章 ──
@@ -666,6 +696,80 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         // 滚动驱动的底栏自动收起：内容前进时导航栏让位、回滚时恢复（不再需要避让留白）
         val navBarScrollConn = rememberAutoHideNavBarOnScroll()
 
+        // ── 下拉进入学习任务流 ──
+        // 任务流不再做成一张可点的卡片：滚到列表顶部后继续下拉，越过阈值先给一次
+        // Threshold 触感（「跨过了一道界」），随后直接进入任务流页。
+        val flowListState = rememberLazyListState()
+        val flowPullOffset = remember { Animatable(0f) }
+        val flowPullScope = rememberCoroutineScope()
+        val flowPullThresholdPx = with(LocalDensity.current) { OVERVIEW_FLOW_PULL_THRESHOLD.toPx() }
+        val flowPullMaxPx = with(LocalDensity.current) { OVERVIEW_FLOW_PULL_MAX.toPx() }
+        // AtomicBoolean：判定发生在 NestedScrollConnection 的闭包里，捕获的必须是每帧最新的值。
+        // armed 保证一次拖动只响一次；navigated 保证同一帧的多个 onPreScroll 不会重复导航。
+        val flowPullArmed = remember { AtomicBoolean(true) }
+        val flowPullNavigated = remember { AtomicBoolean(false) }
+        // 触感强度在设置里改完要立刻生效，所以经 rememberUpdatedState 透传。
+        val flowPullHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Threshold))
+
+        /** 未达阈值就松手：把跟手位移收回 0。导航已触发时不再回弹，免得转场中内容往上跳。 */
+        fun settleFlowPull() {
+            if (flowPullNavigated.get()) return
+            if (flowPullOffset.value <= 0.5f) return
+            flowPullScope.launch {
+                try {
+                    flowPullOffset.animateTo(0f, Motion.pullRecoil())
+                } finally {
+                    // 动画被新的拖动取消时也要重新给一次「到位」额度，否则第二次下拉不响
+                    flowPullArmed.set(true)
+                }
+            }
+        }
+
+        fun enterStudyFlow() {
+            if (flowPullNavigated.compareAndSet(false, true)) {
+                navController.navigate("study_flow")
+            }
+        }
+
+        val flowPullConnection = remember(flowListState, flowPullThresholdPx, flowPullMaxPx) {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    val dy = available.y
+                    // 仅「已在顶部 + 手指拖拽」才积累；松手后的惯性帧不得把位移继续往外拉。
+                    if (dy > 0f && !flowListState.canScrollBackward &&
+                        source == NestedScrollSource.Drag
+                    ) {
+                        if (!flowPullNavigated.get()) {
+                            flowPullScope.launch {
+                                val next = (flowPullOffset.value + dy).coerceIn(0f, flowPullMaxPx)
+                                flowPullOffset.snapTo(next)
+                                if (flowPullReached(next, flowPullThresholdPx) &&
+                                    flowPullArmed.compareAndSet(true, false)
+                                ) {
+                                    flowPullHaptic()
+                                    enterStudyFlow()
+                                }
+                            }
+                        }
+                        // 消费本段下拉：不让列表进入系统过度滚动光效
+                        return Offset(0f, dy)
+                    }
+                    if (dy != 0f && flowPullOffset.value > 0f) {
+                        flowPullScope.launch {
+                            flowPullOffset.snapTo(0f)
+                            flowPullArmed.set(true)
+                        }
+                    }
+                    return Offset.Zero
+                }
+
+                override suspend fun onPreFling(available: Velocity): Velocity {
+                    settleFlowPull()
+                    return Velocity.Zero
+                }
+            }
+        }
+
         // 空态 ⇄ 数据面的切换：用户练完第一篇再回到本页时就会跨过这一次。
         // weight 在 AnimatedContent 的子树里是失效的（只 modifyParentData，没有 Column 去消费），
         // 所以撑剩余高度上提到这里的 modifier；两个分支各自收成一个根节点，内部改回 fillMaxSize。
@@ -705,12 +809,48 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Spacer(Modifier.height(12.dp))
 
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(navBarScrollConn),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        // 底部只留呼吸留白：导航栏改为「滚动自动收起」后不再需要 120dp 避让底距
-                        contentPadding = PaddingValues(bottom = 12.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clipToBounds()
+                            // 松手兜底：慢松手时嵌套滚动不会派发 fling 回调（同首页纪律），
+                            // 这里在 Final pass 仅观察、不消费：指针全抬起且仍有位移就回弹。
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Final)
+                                        if (event.changes.none { it.pressed }) settleFlowPull()
+                                    }
+                                }
+                            }
                     ) {
+                        // 指示器画在列表下层：内容跟手下移后，顶部让出的空隙里露出来。
+                        // 读到的是 Animatable 的当前值（绘相位），不会每帧重组整页。
+                        FlowPullIndicator(
+                            pullPx = { flowPullOffset.value },
+                            thresholdPx = flowPullThresholdPx,
+                            modifier = Modifier.align(Alignment.TopCenter)
+                        )
+                        LazyColumn(
+                            state = flowListState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { translationY = flowPullOffset.value }
+                                .nestedScroll(flowPullConnection)
+                                .nestedScroll(navBarScrollConn),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            // 底部只留呼吸留白：导航栏改为「滚动自动收起」后不再需要 120dp 避让底距
+                            contentPadding = PaddingValues(bottom = 12.dp)
+                        ) {
+                            // 手势提示兼无障碍入口：可见面只说明方向，不是可点卡片；
+                            // 读屏用户通过自定义操作进入（可见面无点击语义）。
+                            item(key = "overview_flow_pull_hint") {
+                                FlowPullHint(
+                                    dueCount = flowDueCount,
+                                    onOpen = { enterStudyFlow() },
+                                )
+                            }
                         // ── 最近训练分析（有则显示） ──
                         latestAnalysis?.let { item ->
                             item(key = "latestAnalysis") {
@@ -774,9 +914,45 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         // ── 「下一步」行动卡（置顶）──
                         // 整页其余卡片都在陈列「练了多少 / 错在哪一类 / 哪篇弱」，用户看完仍要自己回答
                         // 「所以现在练什么」。这张卡把已有结论汇成一个动词：到期句数 + 最弱一篇 → 一个按钮。
-                        // 只给「最该做的那一件」（有最弱篇就薄弱训练，只有到期句就去复习），
-                        // 不给三个入口 —— 选择本身就是负担。
+                        // 只给「最该做的那一件」：到期文章 > 薄弱篇 > 到期句，与首页今日计划同序。
                         val nextWeakest = stats.weakestArticles.firstOrNull()
+                        item(key = "overview_mistake_notebook") {
+                            AnimatedOverviewCard {
+                                GlassCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pressClick { navController.navigate("mistakes") }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                stringResource(R.string.mistake_notebook_title),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                if (unresolvedMistakes > 0) {
+                                                    stringResource(R.string.ov_notebook_count, unresolvedMistakes)
+                                                } else {
+                                                    stringResource(R.string.notebook_empty)
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        AppIcon(
+                                            AppIconKind.ChevronRight,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         item(key = "overview_card_next_step") {
                             AnimatedOverviewCard {
                                 NextStepCard(
@@ -787,28 +963,23 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                             com.ilyskyo.blancall.R.string.ov_article_fallback, w.articleId
                                         )
                                     }.orEmpty(),
+                                    dueArticleId = firstDueArticleId,
+                                    dueArticleTitle = firstDueArticleId?.let { id ->
+                                        articles.firstOrNull { it.id == id }?.title
+                                            ?: stringResource(
+                                                com.ilyskyo.blancall.R.string.ov_article_fallback, id
+                                            )
+                                    }.orEmpty(),
                                     onWeaknessDrill = { articleId ->
                                         navController.navigate("practice/$articleId?mode=SENTENCE&sectionMode=WEAKNESS")
                                     },
-                                    onGoReview = { navController.navigate("sentence_cards") }
+                                    onGoReview = { navController.navigate("sentence_cards") },
+                                    onGoArticle = { articleId ->
+                                        navController.navigate("practice/$articleId?mode=SENTENCE")
+                                    }
                                 )
                             }
                         }
-                        // ── 学习任务流入口（B3：把「下一次复习在哪天」从预测卡升级为可管理的时间线）──
-                        // 放在「下一步」之后：先给用户一个动词，再给一个能自由调节整条计划的入口。
-                        if (flowActiveCount > 0) {
-                            item(key = "overview_card_flow") {
-                                AnimatedOverviewCard {
-                                    StudyFlowEntryCard(
-                                        dueCount = flowDueCount,
-                                        pausedCount = flowPausedCount,
-                                        activeCount = flowActiveCount,
-                                        onOpen = { navController.navigate("study_flow") },
-                                    )
-                                }
-                            }
-                        }
-
                         // ── 总览卡片（仪表盘 + 连续天数 + 时长） ──
                         // 每张卡都要稳定 key：裸 `item {` 的卡没有 key，滚动把卡片回收再滚回来时
                         // Compose 认不出「这是同一张卡」，会当成新卡重新组合。
@@ -1291,6 +1462,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                 }
                             }
                         }
+                        }
                     }
                 }
             }
@@ -1318,8 +1490,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     )
 
     // 最近训练分析详情
-    latestAnalysis?.let { item ->
-        if (showLatestAnalysis) {
+    AnimatedOverlayPresence(target = latestAnalysis.takeIf { showLatestAnalysis }) { item ->
             BlancallAlertDialog(
                 onDismissRequest = { showLatestAnalysis = false },
                 shape = RoundedCornerShape(20.dp),
@@ -1339,11 +1510,10 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                     TextButton(onClick = { showLatestAnalysis = false }) { Text(stringResource(com.ilyskyo.blancall.R.string.close)) }
                 }
             )
-        }
     }
 
     // 自定义区间选择面板：确认后写回 epochDay，并把预设切到「自定义」
-    if (showRangePicker) {
+    AnimatedOverlayPresence(visible = showRangePicker) {
         DateRangePickerSheet(
             initial = activeRange,
             today = todayKey,
@@ -1466,11 +1636,14 @@ private fun NextStepCard(
     dueSentences: Int,
     weakest: WeakArticle?,
     weakestTitle: String,
+    dueArticleId: Long?,
+    dueArticleTitle: String,
     onWeaknessDrill: (Long) -> Unit,
     onGoReview: () -> Unit,
+    onGoArticle: (Long) -> Unit,
 ) {
     // 「下一步练什么」的优先级由纯函数决定（可单测），这里只负责渲染结果
-    val step = NextStepDecider.decide(dueSentences, weakest?.articleId)
+    val step = NextStepDecider.decide(dueSentences, weakest?.articleId, dueArticleId)
     val hue = Macaron.continueP()
     GlassCard(containerColor = hue.fill) {
         Column(Modifier.padding(16.dp)) {
@@ -1486,6 +1659,17 @@ private fun NextStepCard(
             }
             Spacer(Modifier.height(10.dp))
             when (step) {
+                is NextStep.DueArticle -> {
+                    NextStepPrimary(
+                        headline = stringResource(
+                            com.ilyskyo.blancall.R.string.ov_next_step_due_article_title, dueArticleTitle
+                        ),
+                        scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_article),
+                        limit = null,
+                        actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_action_start),
+                        onAction = { onGoArticle(step.articleId) },
+                    )
+                }
                 is NextStep.WeaknessDrill -> {
                     // A2-9：读屏原先把标题和按钮读成两条互不相干的句子，缺「这是什么」。
                     // 标题区合并成一个语义节点，显式给出「最弱一篇 + 标题 + 正确率」（复用既有键）；
@@ -1728,7 +1912,7 @@ private fun TodayGoalCard(
     }
 
     // ── 自定义目标次数输入对话框 ──
-    if (showCustomGoalDialog) {
+    AnimatedOverlayPresence(visible = showCustomGoalDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showCustomGoalDialog = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_goal_title)) },
@@ -1899,8 +2083,10 @@ private fun ForgettingPredictionCard(
 
                     AnimatedVisibility(
                         visible = expanded,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
+                        enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                            expandVertically(Motion.contentSize()),
+                        exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                            shrinkVertically(Motion.contentSize()),
                     ) {
                         Column(Modifier.padding(top = 8.dp)) {
                             MemoryDecayChart(
@@ -2347,80 +2533,121 @@ private fun achievementDescRes(id: String): Int = when (id) {
 }
 
 /**
- * 数据页里的学习任务流入口：先把「今天有几项、有没有暂停」讲清，再让整卡可点。
- * 不放第二个按钮 —— 整张卡就是入口，右侧数字是摘要而不是操作。
+ * 下拉是否已越过「进入学习任务流」的阈值。
+ *
+ * 抽成纯函数供 JVM 单测：手势闭包里的判定与测试断言的必须是同一件事。
+ * 阈值非正时永不成立 —— 那是一个配置错误，不该变成「一碰就进」。
+ */
+internal fun flowPullReached(pullPx: Float, thresholdPx: Float): Boolean =
+    thresholdPx > 0f && pullPx >= thresholdPx
+
+/** 下拉进入学习任务流的阈值：滚到顶后再拉这么远即触发（1:1 跟手，不含阻尼）。 */
+private val OVERVIEW_FLOW_PULL_THRESHOLD = 88.dp
+
+/** 下拉位移上限：越过阈值后继续拉，内容也不会无限下移。 */
+private val OVERVIEW_FLOW_PULL_MAX = 140.dp
+
+/** 指示器在开始下拉后的前 24dp 内淡入，避免刚碰屏幕就闪出一个圆环。 */
+private val OVERVIEW_FLOW_INDICATOR_FADE_IN = 24.dp
+
+/**
+ * 任务流下拉提示：一行小字 + 向下箭头，说明这个手势的存在与方向。
+ *
+ * 刻意不做成可点卡片 —— 入口只有下拉这一条路。读屏用户拿不到手势，
+ * 所以这里挂一条不可见的自定义操作（标签是「进入学习任务流」）作为等价入口。
  */
 @Composable
-private fun StudyFlowEntryCard(
-    dueCount: Int,
-    pausedCount: Int,
-    activeCount: Int,
-    onOpen: () -> Unit,
-) {
-    val accent = Macaron.continueP().accent
-    GlassCard(
-        containerColor = Macaron.continueP().fill,
-        onClick = onOpen,
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(accent.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AppIcon(
-                        AppIconKind.Insights,
-                        modifier = Modifier.size(20.dp),
-                        tint = accent
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(com.ilyskyo.blancall.R.string.flow_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        stringResource(
-                            com.ilyskyo.blancall.R.string.flow_entry_summary,
-                            dueCount, pausedCount
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        "$dueCount",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accent
-                    )
-                    Text(
-                        stringResource(com.ilyskyo.blancall.R.string.flow_summary_due_label),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(Modifier.width(6.dp))
-                AppIcon(
-                    AppIconKind.ChevronRight,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+private fun FlowPullHint(dueCount: Int, onOpen: () -> Unit) {
+    val actionLabel = stringResource(com.ilyskyo.blancall.R.string.flow_pull_action)
+    val hint = if (dueCount > 0) {
+        stringResource(com.ilyskyo.blancall.R.string.flow_pull_hint_due, dueCount)
+    } else {
+        stringResource(com.ilyskyo.blancall.R.string.flow_pull_hint)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(actionLabel) {
+                        onOpen()
+                        true
+                    }
                 )
             }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                stringResource(com.ilyskyo.blancall.R.string.flow_entry_action, activeCount),
-                style = MaterialTheme.typography.labelMedium,
-                color = accent
-            )
-        }
+            .padding(top = 2.dp, bottom = 2.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AppIcon(
+            AppIconKind.ChevronRight,
+            modifier = Modifier
+                .size(12.dp)
+                .graphicsLayer { rotationZ = 90f },
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            hint,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            textAlign = TextAlign.Center
+        )
     }
 }
+
+/**
+ * 下拉指示器：跟手位移越大圆环越满；到阈值时正好填满，同时触发触感与导航。
+ *
+ * 位移与进度都在绘制阶段读取，不把每帧变化带进组合/测量。
+ */
+@Composable
+private fun FlowPullIndicator(
+    pullPx: () -> Float,
+    thresholdPx: Float,
+    modifier: Modifier = Modifier,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val surface = MaterialTheme.colorScheme.surface
+    Box(
+        modifier = modifier
+            .size(38.dp)
+            .graphicsLayer {
+                val pull = pullPx()
+                alpha = (pull / OVERVIEW_FLOW_INDICATOR_FADE_IN.toPx()).coerceIn(0f, 1f)
+                val progress = if (thresholdPx > 0f) (pull / thresholdPx).coerceIn(0f, 1f) else 0f
+                scaleX = 0.85f + 0.15f * progress
+                scaleY = 0.85f + 0.15f * progress
+                // 指示器居中于「已经被拉出来的空隙」：中心 = 位移的一半
+                translationY = pull * 0.5f - 19.dp.toPx()
+            }
+            .drawBehind {
+                drawCircle(color = surface, radius = size.minDimension / 2f)
+                val progress = if (thresholdPx > 0f) {
+                    (pullPx() / thresholdPx).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+                val stroke = 2.dp.toPx()
+                drawArc(
+                    color = accent,
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress,
+                    useCenter = false,
+                    topLeft = Offset(stroke, stroke),
+                    size = Size(size.width - stroke * 2f, size.height - stroke * 2f),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        AppIcon(
+            AppIconKind.ChevronRight,
+            modifier = Modifier
+                .size(16.dp)
+                .graphicsLayer { rotationZ = 90f },
+            tint = accent
+        )
+    }
+}
+

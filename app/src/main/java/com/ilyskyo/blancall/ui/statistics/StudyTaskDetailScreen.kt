@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.StudyCoach
 import com.ilyskyo.blancall.algorithm.StudyFlow
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.data.repository.ArticleRepository
@@ -253,7 +254,7 @@ fun StudyTaskDetailScreen(navController: NavController, articleId: Long) {
                     contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)
                 ) {
                     item(key = "detail_hero") {
-                        DetailHeroCard(task = task, startedAt = startedAt)
+                        DetailHeroCard(task = task, startedAt = startedAt, now = nowTick)
                     }
                     item(key = "detail_advice") {
                         DetailSection(index = 0) {
@@ -398,7 +399,7 @@ private fun DetailSection(index: Int, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DetailHeroCard(task: FlowTask, startedAt: Long) {
+private fun DetailHeroCard(task: FlowTask, startedAt: Long, now: Long) {
     val accent = phaseAccent(task.phase)
     val paused = task.phase == StudyFlow.Phase.PAUSED
     GlassCard(
@@ -453,6 +454,12 @@ private fun DetailHeroCard(task: FlowTask, startedAt: Long) {
                         dueDateLabel(task),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        schedulingReasonText(StudyCoach.reasonOf(task.state, now)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
                     )
                 }
             }

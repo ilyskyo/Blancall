@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.data.repository
 
 import android.util.Log
+import com.ilyskyo.blancall.data.model.AnsweredBlank
 import com.ilyskyo.blancall.data.model.MistakeDetail
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.util.AtomicFiles
@@ -86,7 +87,25 @@ class RecordRepository(private val filePath: String) {
                         // 旧记录无此字段 → -1（热力图对该处回退比例估算，并标「位置为估算」）
                         sentenceIndex = m.optInt("sentenceIndex", -1),
                         // 旧记录无此字段 → -1（逐空轻重分不出来，只能看会话级均值）
-                        similarity = m.optDouble("similarity", -1.0).toFloat()
+                        similarity = m.optDouble("similarity", -1.0).toFloat(),
+                        // 旧记录无此字段 → 空串（错题本退回句索引/答案对照，不假装知道原句）
+                        sentenceText = m.optString("sentenceText", "")
+                    )
+                )
+            }
+            val answeredArr = obj.optJSONArray("answeredBlanks") ?: JSONArray()
+            val answeredBlanks = mutableListOf<AnsweredBlank>()
+            for (j in 0 until answeredArr.length()) {
+                val a = answeredArr.optJSONObject(j) ?: continue
+                answeredBlanks.add(
+                    AnsweredBlank(
+                        blankIndex = a.optInt("blankIndex", 0),
+                        correctAnswer = a.optString("correctAnswer", ""),
+                        userAnswer = a.optString("userAnswer", ""),
+                        errorType = a.optString("errorType", ""),
+                        sentenceIndex = a.optInt("sentenceIndex", -1),
+                        sentenceText = a.optString("sentenceText", ""),
+                        similarity = a.optDouble("similarity", -1.0).toFloat()
                     )
                 )
             }
@@ -112,7 +131,9 @@ class RecordRepository(private val filePath: String) {
                 // 旧记录无此字段 → 空列表（句级错误画像视为无数据）
                 mistakeSentenceIndices = obj.optJSONArray("mistakeSentenceIndices")
                     ?.let { arr -> List(arr.length()) { arr.optInt(it) } }
-                    ?: emptyList()
+                    ?: emptyList(),
+                // 旧记录无此字段 → 空列表（错题本视为「历史错题均未确认攻克」）
+                answeredBlanks = answeredBlanks
             )
         } catch (e: Exception) {
             Log.w("RecordRepository", "跳过损坏的记录（$where）: ${e.message}")
@@ -313,9 +334,27 @@ class RecordRepository(private val filePath: String) {
             // 每条错处都挂一个 -1 只会放大文件，读侧的默认值本来就是 -1
             if (m.sentenceIndex >= 0) mObj.put("sentenceIndex", m.sentenceIndex)
             if (m.similarity >= 0f) mObj.put("similarity", m.similarity.toDouble())
+            if (m.sentenceText.isNotEmpty()) mObj.put("sentenceText", m.sentenceText)
             mistakesArr.put(mObj)
         }
         obj.put("mistakes", mistakesArr)
+        // 逐空全量结果：旧记录没有这个概念，空列表时**不写键**（与既有字段的稀疏写法一致）。
+        // 这是错题本判断「后来写对过没有」的唯一依据，新记录必须完整落。
+        if (record.answeredBlanks.isNotEmpty()) {
+            val answeredArr = JSONArray()
+            for (a in record.answeredBlanks) {
+                val aObj = JSONObject()
+                    .put("blankIndex", a.blankIndex)
+                    .put("correctAnswer", a.correctAnswer)
+                    .put("userAnswer", a.userAnswer)
+                    .put("errorType", a.errorType)
+                if (a.sentenceIndex >= 0) aObj.put("sentenceIndex", a.sentenceIndex)
+                if (a.similarity >= 0f) aObj.put("similarity", a.similarity.toDouble())
+                if (a.sentenceText.isNotEmpty()) aObj.put("sentenceText", a.sentenceText)
+                answeredArr.put(aObj)
+            }
+            obj.put("answeredBlanks", answeredArr)
+        }
         return obj
     }
 

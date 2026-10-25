@@ -10,6 +10,8 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.ilyskyo.blancall.MainActivity
 import com.ilyskyo.blancall.R
+import java.text.DateFormat
+import java.util.Date
 
 /**
  * 提醒通知的构造与发送（Android 侧）。
@@ -36,10 +38,22 @@ object NotificationHelper {
     const val EXTRA_NAV_ACTION = "nav_action"
     const val EXTRA_ARTICLE_ID = "article_id"
 
+    /** 本次点击来自通知动作按钮（供未来埋点/行为区分；当前与正文点击同路由） */
+    const val EXTRA_FROM_ACTION = "from_action"
+
+    /** 动作 PendingIntent 的 requestCode 偏移：与内容点击（通知 ID）错开 */
+    private const val ACTION_REQUEST_OFFSET = 100_000
+
     /** 深链 action 字符串（与 MainActivity.handleNotificationIntent 的映射约定，见交付报告） */
     const val NAV_HOME = "home"
     const val NAV_PRACTICE = "practice"
     const val NAV_SENTENCE_CARDS = "sentence_cards"
+
+    /** 练习进行中通知：回到上次作答现场（resume=true），不是重新开始一篇 */
+    const val NAV_RESUME_PRACTICE = "resume_practice"
+
+    /** 学习任务详情：给「即将到期 / 即将遗忘」用，点进去能看到该篇的留存率与到期日 */
+    const val NAV_STUDY_TASK = "study_task"
 
     /** 通知 ID 基数：`基数 + reason.ordinal`，保证不同 reason 不互相覆盖 */
     private const val NOTIFICATION_ID_BASE = 1001
@@ -94,10 +108,18 @@ object NotificationHelper {
 
             ReminderReason.IncompletePractice -> {
                 title = context.getString(R.string.notif_incomplete_title)
-                body = res.getQuantityString(
-                    R.plurals.notif_incomplete_body, item.count, item.count
-                )
-                navAction = NAV_PRACTICE
+                val name = item.articleTitle.ifBlank { context.getString(R.string.untitled_article) }
+                body = if (item.articleTitle.isNotBlank()) {
+                    res.getQuantityString(
+                        R.plurals.notif_incomplete_named, item.count, name, item.count
+                    )
+                } else {
+                    res.getQuantityString(
+                        R.plurals.notif_incomplete_body, item.count, item.count
+                    )
+                }
+                // 未完成练习：恢复现场（resume=true），不是从第一空重新开始
+                navAction = NAV_RESUME_PRACTICE
                 articleId = item.articleId
             }
 
@@ -110,10 +132,56 @@ object NotificationHelper {
 
             ReminderReason.DueReview -> {
                 title = context.getString(R.string.notif_due_review_title)
-                body = res.getQuantityString(
-                    R.plurals.notif_due_review_body, item.count, item.count
+                val name = item.articleTitle.ifBlank { context.getString(R.string.untitled_article) }
+                body = if (item.articleTitle.isNotBlank()) {
+                    // 具体到哪一篇：只有一项时说「《X》到了」，多项时说「《X》等 N 项」
+                    if (item.count <= 1) {
+                        context.getString(R.string.notif_due_review_named_one, name)
+                    } else {
+                        res.getQuantityString(
+                            R.plurals.notif_due_review_named, item.count, name, item.count
+                        )
+                    }
+                } else {
+                    res.getQuantityString(
+                        R.plurals.notif_due_review_body, item.count, item.count
+                    )
+                }
+                // 有具体文章就直接进练习；只有句子到期时去句子卡
+                navAction = if (item.articleId > 0) NAV_PRACTICE else NAV_SENTENCE_CARDS
+                articleId = item.articleId
+            }
+
+            ReminderReason.TaskDueSoon -> {
+                title = context.getString(R.string.notif_due_soon_title)
+                val name = item.articleTitle.ifBlank { context.getString(R.string.untitled_article) }
+                body = context.getString(
+                    R.string.notif_due_soon_body, name, formatDateTime(context, item.dueAt)
                 )
-                navAction = NAV_HOME
+                navAction = NAV_STUDY_TASK
+                articleId = item.articleId
+            }
+
+            ReminderReason.ForgettingSoon -> {
+                title = context.getString(R.string.notif_forgetting_title)
+                val name = item.articleTitle.ifBlank { context.getString(R.string.untitled_article) }
+                body = context.getString(
+                    R.string.notif_forgetting_body, name, item.retentionPercent
+                )
+                navAction = NAV_STUDY_TASK
+                articleId = item.articleId
+            }
+
+            ReminderReason.PracticeAccuracy -> {
+                title = context.getString(R.string.notif_practice_accuracy_title)
+                val name = item.articleTitle.ifBlank { context.getString(R.string.untitled_article) }
+                body = context.getString(
+                    R.string.notif_practice_accuracy_body,
+                    name,
+                    formatDateTime(context, item.practicedAt),
+                    item.accuracyPercent,
+                )
+                navAction = NAV_PRACTICE
                 articleId = item.articleId
             }
 
@@ -132,7 +200,7 @@ object NotificationHelper {
             }
         }
 
-        val notification = NotificationCompat.Builder(context, NotificationChannels.channelIdFor(reason))
+        val builder = NotificationCompat.Builder(context, NotificationChannels.channelIdFor(reason))
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
@@ -141,9 +209,19 @@ object NotificationHelper {
             .setGroup(GROUP_KEY)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
 
-        manager(context)?.notify(notificationIdFor(reason), notification)
+        // 「开始」只做开始，不做「跳过」：跳过要写调度状态（今天不练这篇），
+        // 语义影响远大于一个按钮的收益。只有已经指向具体内容（文章/句子卡）时才挂
+        // ——首页类提醒没有明确的第一件，挂上去只会多一次无效点击。
+        if (navAction != NAV_HOME) {
+            builder.addAction(
+                R.drawable.ic_notification,
+                context.getString(R.string.notif_action_start),
+                actionIntent(context, navAction, articleId, reason)
+            )
+        }
+
+        manager(context)?.notify(notificationIdFor(reason), builder.build())
     }
 
     /**
@@ -187,6 +265,43 @@ object NotificationHelper {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    /**
+     * 通知动作的 PendingIntent：与内容点击走同一条深链，但 requestCode 必须错开。
+     * 若与内容点击共用 requestCode + 相同 extras，系统会把它当成同一个 PendingIntent
+     * （动作点了等于点正文），在部分 ROM 上还会互相覆盖。
+     */
+    private fun actionIntent(
+        context: Context,
+        navAction: String,
+        articleId: Long,
+        reason: ReminderReason,
+    ): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_NAV_ACTION, navAction)
+            if (articleId > 0) putExtra(EXTRA_ARTICLE_ID, articleId)
+            putExtra(EXTRA_FROM_ACTION, true)
+        }
+        return PendingIntent.getActivity(
+            context,
+            ACTION_REQUEST_OFFSET + notificationIdFor(reason),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /**
+     * 通知里展示「什么时候到期 / 哪一次练习」用的本地化时间。
+     * 用应用当前语言（configuration.locales[0]）而不是 JVM 默认 Locale：
+     * 应用内切换语言后，系统 Locale 可能还没变，用默认 Locale 会混进另一种语言的月份名。
+     */
+    private fun formatDateTime(context: Context, epochMillis: Long): String {
+        if (epochMillis <= 0L) return ""
+        val locale = context.resources.configuration.locales[0]
+        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+            .format(Date(epochMillis))
     }
 
     private fun manager(context: Context): NotificationManager? =

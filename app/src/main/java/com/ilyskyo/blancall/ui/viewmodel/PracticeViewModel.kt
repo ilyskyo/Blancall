@@ -22,6 +22,7 @@ import com.ilyskyo.blancall.algorithm.SentencePracticeRatings
 import com.ilyskyo.blancall.algorithm.SentenceSplitter
 import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.algorithm.WeaknessMath
+import com.ilyskyo.blancall.data.model.AnsweredBlank
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.MistakeDetail
 import com.ilyskyo.blancall.data.model.PracticeRecord
@@ -204,9 +205,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private val _isSubmitting = MutableStateFlow(false)
     val isSubmitting: StateFlow<Boolean> = _isSubmitting.asStateFlow()
 
-    // ── 错题墨迹缓冲（错题回顾）：按空聚合手写笔迹，提交时只保留答错空并落盘 ──
-    // 值为提交批次列表（同空多次写 = 多个批次）；会话切换 / 落盘后清空（见 saveWrongInk）。
-    private val inkBuffer = LinkedHashMap<Int, MutableList<InkBatch>>()
+    // ── 错题墨迹缓冲（错题回顾）：每个空只保留**最后一次识别**的墨迹快照 ──
+    // 重写/多次尝试直接覆盖，不按提交次数累积 —— 每次识别都在清空过的板上从同一位置起笔，
+    // 累积后回看会全部叠在一起，看不出当时写的是什么。会话切换 / 落盘后清空（见 saveWrongInk）。
+    private val inkBuffer = LinkedHashMap<Int, InkBatch>()
 
     internal val _totalBlanks = MutableStateFlow(0)
     val totalBlanks: StateFlow<Int> = _totalBlanks.asStateFlow()
@@ -1656,17 +1658,18 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 手写笔迹上报（错题回顾）：按空聚合；同一空多次提交追加为多个批次。
+     * 手写墨迹上报（错题回顾）：[strokes] 是**整次识别的快照**（不是被消费的几笔）。
      *
+     * 每个空只留最后一份：同一识别的多次上屏重复上报同一快照，覆盖即可；
+     * 重写/多次尝试则整份替换 —— 旧批次一旦留下，回看时会和新画面叠在一起。
      * 只缓存在内存（量级 = 一次练习的错题数）；落盘在 [submitInternal] 按 mistakes
      * 过滤后随记录一起完成（只存答错空），见 [saveWrongInk]。
      */
-    fun appendInk(blankIndex: Int, strokes: List<List<Offset>>, boardW: Int, boardH: Int) {
+    fun recordInkSnapshot(blankIndex: Int, strokes: List<List<Offset>>, boardW: Int, boardH: Int) {
         // 设置项关闭时不再存档（已存数据保留，见设置页「清空已存的错题墨迹」）
         if (!AppPrefs.keepInkEnabled) return
         if (strokes.isEmpty() || boardW <= 0 || boardH <= 0) return
-        inkBuffer.getOrPut(blankIndex) { mutableListOf() }
-            .add(InkBatch(boardW, boardH, strokes))
+        inkBuffer[blankIndex] = InkBatch(boardW, boardH, strokes)
     }
 
     fun submitAnswers() {
@@ -1842,6 +1845,21 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     else -> null
                 }
             }
+            // 空白 → 判分当时的完整原句：错题本与「后来写对过没有」都以文字为锚，
+            // 句索引只服务热力图的全文坐标。跨文/锚点不可用时句子文本仍可取到，
+            // 因此这里刻意不跟 anchorsUsable 绑定。
+            val blankSentenceText: (Int) -> String = { blankIdx ->
+                when (mode) {
+                    BlancallMode.SENTENCE -> sentenceCloze?.blanks
+                        ?.firstOrNull { it.index == blankIdx }
+                        ?.sentenceIndex
+                        ?.let { sentenceCloze.sentences.getOrNull(it) }
+                    BlancallMode.WORD -> wordCloze?.sentences
+                        ?.firstOrNull { s -> s.blanks.any { it == blankIdx } }
+                        ?.text
+                    else -> null
+                }.orEmpty()
+            }
             val answeredSentenceStarts = if (!anchorsUsable) emptyList()
             else results.keys.mapNotNull { blankIdx -> blankSentenceIndex(blankIdx)?.let { anchors.getOrNull(it) } }.distinct()
             // 空位 → 【全文切句】句子索引：取锚点（全文坐标）在全文切句起点表中的下标。
@@ -1865,7 +1883,23 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         it.key, it.value.correctAnswer, it.value.userAnswer, it.value.result.name,
                         blankToFullSentenceIndex[it.key] ?: -1,
                         // 逐空相似度一并留存：会话级均值继续给统计页用，这一份用来分「一笔之差」和「全错」
-                        it.value.similarity
+                        it.value.similarity,
+                        blankSentenceText(it.key)
+                    )
+                }
+            // 逐空全量结果（含答对）：错题本靠它区分「还在错」与「后来写对了」。
+            // 只落已判分的空；partial 提交跳过的空不在 results 里，自然不会被误记成答对。
+            val answeredBlanks = results.entries
+                .sortedBy { it.key }
+                .map {
+                    AnsweredBlank(
+                        blankIndex = it.key,
+                        correctAnswer = it.value.correctAnswer,
+                        userAnswer = it.value.userAnswer,
+                        errorType = if (it.value.result == AnswerChecker.Result.CORRECT) "" else it.value.result.name,
+                        sentenceIndex = blankToFullSentenceIndex[it.key] ?: -1,
+                        sentenceText = blankSentenceText(it.key),
+                        similarity = it.value.similarity
                     )
                 }
             // 本次答错的句子（去重集合）：由上面的逐错落点直接汇出，不再另走一遍锚点换算
@@ -1885,7 +1919,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         weakHints = _weakHintCount.value,
                         strongHints = _strongHintCount.value,
                         answeredSentenceStarts = answeredSentenceStarts,
-                        mistakeSentenceIndices = mistakeSentenceIndices
+                        mistakeSentenceIndices = mistakeSentenceIndices,
+                        answeredBlanks = answeredBlanks
                     )
                 ) else null
                 saved?.let { saveWrongInk(it) }
@@ -1922,20 +1957,25 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             } else {
                 clearPracticeState(articleId)
             }
+            // 桌面小组件的到期数立刻跟随本次提交（不等系统 15 分钟刷新）
+            if (graded) {
+                com.ilyskyo.blancall.widget.BlancallWidgetRefresh.request(getApplication())
+            }
         }.also { it.invokeOnCompletion { _isSubmitting.value = false } }
     }
 
     /**
      * 错题墨迹落盘（错题回顾的旁路存档）：
      * - 只保留「答错空」的手写笔迹（与 mistakes 同口径），写入 `ink/<recordId>.json`；
+     * - 每个空存的是它最后一次识别的快照（单批次），不是整场练习的笔迹历史；
      * - 落盘后清空缓冲 —— 「部分提交后再练再交」时第二条记录只包含新增墨迹；
      * - 任何失败只记日志（InkStore 内部兜底），绝不影响练习主流程。
      */
     private fun saveWrongInk(record: PracticeRecord) {
         val wrong = record.mistakes.map { it.blankIndex }.toSet()
         val blanks = inkBuffer.entries
-            .filter { it.key in wrong && it.value.isNotEmpty() }
-            .map { BlankInk(it.key, it.value.toList()) }
+            .filter { it.key in wrong }
+            .map { BlankInk(it.key, listOf(it.value)) }
         inkBuffer.clear()
         if (blanks.isEmpty()) return
         try {

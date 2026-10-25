@@ -158,7 +158,7 @@ fun AnswerInputField(
     expectedWord: String? = null,
     /**
      * 墨迹上报（错题回顾）：透传给内嵌 [HandwritingPanel]（见其参数注释）；
-     * 回调参数为（被消费的笔画, 板宽 px, 板高 px）。
+     * 回调参数为（整次识别的墨迹快照, 板宽 px, 板高 px）。
      */
     onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
@@ -459,7 +459,7 @@ fun InlineHandwritingAnswer(
     expectedNextChar: Char? = null,
     /** 英文默写的「答案先验」（剩余标准答案）；null = 不启用。 */
     expectedWord: String? = null,
-    /** 墨迹上报（错题回顾）：透传给面板（见 [HandwritingPanel] 参数注释）。 */
+    /** 墨迹上报（错题回顾）：透传整次识别的墨迹快照（见 [HandwritingPanel] 参数注释）。 */
     onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     Column(modifier = modifier.animateContentSize(Motion.contentSize())) {

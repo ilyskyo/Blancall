@@ -39,7 +39,12 @@ fun TopBarIconAction(
     Box(
         modifier = modifier
             .size(36.dp)
-            .pressFeedback(src, PressTier.Icon, enabled = enabled)
+            .pressFeedback(
+                src,
+                PressTier.Icon,
+                enabled = enabled,
+                hapticTier = HapticTier.Toggle,
+            )
             .clip(RoundedCornerShape(10.dp))
             .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center

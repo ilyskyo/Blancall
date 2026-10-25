@@ -4,14 +4,10 @@
 package com.ilyskyo.blancall.ui.common
 
 import android.os.Build
-import com.ilyskyo.blancall.ui.common.Motion
-import com.ilyskyo.blancall.ui.common.MotionFade
 import android.widget.FrameLayout
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -272,6 +268,9 @@ fun NavRail(
                     },
                     update = { view ->
                         view.visibility = if (railGlassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
+                        // 系统夜间模式在页面存活时切换：update 是唯一会重跑的入口
+                        view.applyGlassThemeBackground(isDark, 170)
+                        view.applyGlassThemeTint(isDark, darkTintIsBlack = true, darkTintAlpha = 0.25f, lightTintAlpha = 0.12f)
                     },
                     modifier = Modifier
                         .fillMaxSize()
@@ -353,6 +352,8 @@ fun NavRail(
                         },
                         update = { view ->
                             view.visibility = if (railGlassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
+                            view.applyGlassThemeBackground(isDark, 150)
+                            view.applyGlassThemeTint(isDark, darkTintIsBlack = false, darkTintAlpha = 0.14f, lightTintAlpha = 0.10f)
                         },
                         modifier = Modifier
                             .fillMaxSize()
@@ -389,18 +390,29 @@ fun NavRail(
                     val label = stringResource(labelId)
                     val selected = index == currentTab
                     val tint = if (selected) accent else subTint
+                    val src = remember { MutableInteractionSource() }
+                    val tabHaptic = rememberHaptic(HapticTier.Toggle)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(64.dp)
                             .padding(vertical = 3.dp)
                             .clip(RoundedCornerShape(50))
-                            // 选中指示由下方的波态玻璃胶囊（②.5 层）承担（与底栏滑块同构），
-                            // 项内不再叠加纯色块——否则色块会盖住玻璃、退化成普通高亮。
+                            // 与底栏同一套语义：Role.Tab + Selected 让读屏知道「这是导航」
+                            // 与「当前在哪」；clickable 同时提供指针与无障碍激活，触感只在这里
+                            // 触发一次（pressFeedback 不重复挂 hapticTier）。
+                            .pressFeedback(src, PressTier.Container)
                             .clickable(
+                                interactionSource = src,
                                 indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { onSelect(index) },
+                                role = Role.Tab,
+                            ) {
+                                tabHaptic()
+                                onSelect(index)
+                            }
+                            .semantics {
+                                this[SemanticsProperties.Selected] = selected
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -716,6 +728,8 @@ fun BottomNavBar(
                     },
                     update = { view ->
                         view.visibility = if (glassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
+                        view.applyGlassThemeBackground(isDark, 230)
+                        view.applyGlassThemeTint(isDark, darkTintIsBlack = true, darkTintAlpha = 0.25f, lightTintAlpha = 0.12f)
                     },
                     modifier = Modifier
                         .fillMaxSize()
@@ -808,7 +822,11 @@ fun BottomNavBar(
                             .semantics(mergeDescendants = true) {
                                 this[SemanticsProperties.Selected] = selected
                                 this[SemanticsProperties.Role] = Role.Tab
-                                onClick(label = null) { onSelect(index); true }
+                                onClick(label = null) {
+                                    tabHaptic()
+                                    onSelect(index)
+                                    true
+                                }
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -874,6 +892,8 @@ fun BottomNavBar(
                         },
                         update = { view ->
                             view.visibility = if (glassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
+                            view.applyGlassThemeBackground(isDark, 190)
+                            view.applyGlassThemeTint(isDark, darkTintIsBlack = false, darkTintAlpha = 0.14f, lightTintAlpha = 0.10f)
                         },
                         modifier = Modifier
                             .size(width = sliderWDp, height = 48.dp)

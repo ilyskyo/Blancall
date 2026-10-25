@@ -42,11 +42,119 @@ object PdfExporter {
 
     data class BlankExportInfo(val index: Int, val correctAnswer: String)
 
+    /**
+     * 组卷导出：一个 section = 一篇文章。空位编号在篇内从 1 开始，
+     * 答案页按篇分组，避免「第 12 空」在两篇文章之间失去指代。
+     */
+    suspend fun exportPaper(
+        context: Context,
+        paperTitle: String,
+        sections: List<ExamPaper.Section>,
+        includeAnswer: Boolean,
+        fileName: String = "blancall_paper.pdf",
+    ): File = withContext(Dispatchers.IO) {
+        val usable = sections.filter { it.displayText.isNotBlank() }
+        if (usable.isEmpty()) throw IOException(context.getString(R.string.pdf_empty_content))
+        val file = File(context.cacheDir, fileName)
+        val document = PdfDocument()
+        try {
+            val tf = loadTypeface(context)
+            val bodyP = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = tf; textSize = FS_BODY }
+            val titleP = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = tf; textSize = FS_TITLE; isFakeBoldText = true }
+            val sectionP = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                typeface = tf; textSize = FS_SECTION; isFakeBoldText = true
+            }
+            val subP = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = tf; textSize = FS_SUB; color = 0xFF666666.toInt() }
+            val lineP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFCCCCCC.toInt(); strokeWidth = 1f }
+            val blankP = Paint(bodyP).apply { color = CLOZE_COLOR; isFakeBoldText = true }
+
+            val ctx = PageCtx(document)
+            try {
+                var y = MG + FS_TITLE
+                for (line in wrap(titleP, paperTitle)) {
+                    ctx.canvas.drawText(line, MG, y, titleP); y += LG_TITLE
+                }
+                val lineY = y + 6f
+                ctx.canvas.drawLine(MG, lineY, PW - MG, lineY, lineP)
+                y = lineY + LG_BODY
+
+                usable.forEachIndexed { index, section ->
+                    if (index > 0) {
+                        ctx.newPage()
+                        y = MG + FS_SECTION
+                    }
+                    for (line in wrap(sectionP, section.title)) {
+                        ctx.canvas.drawText(line, MG, y, sectionP); y += LG_SECTION
+                    }
+                    if (section.author.isNotBlank()) {
+                        for (line in wrap(subP, section.author)) {
+                            ctx.canvas.drawText(line, MG, y, subP); y += LG_SUB
+                        }
+                    }
+                    y += 4f
+                    y = drawBody(ctx, y, section.displayText, bodyP, blankP, (PW - 2 * MG).toFloat())
+                    y += 8f
+                }
+            } finally {
+                ctx.finish()
+            }
+
+            if (includeAnswer && usable.any { it.blanks.isNotEmpty() }) {
+                ctx.newPage()
+                try {
+                    drawPaperAnswerBody(
+                        ctx = ctx,
+                        startY = drawAnswerTitle(
+                            ctx.canvas, titleP, lineP,
+                            context.getString(R.string.pdf_answer_key)
+                        ),
+                        sections = usable,
+                        sectionP = sectionP,
+                        bodyP = bodyP,
+                    )
+                } finally {
+                    ctx.finish()
+                }
+            }
+            FileOutputStream(file).use { document.writeTo(it) }
+        } finally {
+            document.close()
+        }
+        file
+    }
+
+    private fun drawPaperAnswerBody(
+        ctx: PageCtx,
+        startY: Float,
+        sections: List<ExamPaper.Section>,
+        sectionP: Paint,
+        bodyP: Paint,
+    ): Float {
+        var y = startY
+        for (section in sections) {
+            if (section.blanks.isEmpty()) continue
+            if (y > PH - MG - LG_BODY) { ctx.newPage(); y = MG + FS_SECTION }
+            ctx.canvas.drawText(section.title.ifBlank { "-" }, MG, y, sectionP)
+            y += LG_SECTION
+            for (b in section.blanks) {
+                for (line in wrap(bodyP, "[${b.index + 1}] ${b.answer}")) {
+                    if (y > PH - MG - LG_BODY) { ctx.finish(); ctx.newPage(); y = MG + FS_BODY }
+                    ctx.canvas.drawText(line, MG, y, bodyP)
+                    y += LG_BODY
+                }
+            }
+            y += 8f
+        }
+        return y
+    }
+
     // A4 尺寸（PostScript pt = 1/72 inch）
     private const val PW = 595; private const val PH = 842
     private const val MG = 50f
-    private const val FS_TITLE = 20f; private const val FS_SUB = 11f; private const val FS_BODY = 13f
-    private const val LG_TITLE = 28f; private const val LG_SUB = 20f; private const val LG_BODY = 22f
+    private const val FS_TITLE = 20f; private const val FS_SECTION = 16f
+    private const val FS_SUB = 11f; private const val FS_BODY = 13f
+    private const val LG_TITLE = 28f; private const val LG_SECTION = 24f
+    private const val LG_SUB = 20f; private const val LG_BODY = 22f
     private val CLOZE_COLOR = 0xFF4A90D9.toInt()
     private const val TAG = "PdfExporter"
 

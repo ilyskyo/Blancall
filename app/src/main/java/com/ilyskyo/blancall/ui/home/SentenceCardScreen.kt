@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.home
 
 import com.ilyskyo.blancall.ui.common.StateSwap
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -122,7 +123,7 @@ import androidx.compose.ui.res.stringResource
  *   一次加载不重排：记完一个还有下一个，直到全部记完（新文章/首次使用不会只有 1 张卡）；
  *   范围由筛选（标签）限定；
  * - 手势：上滑 = 下一张（不评级），下滑 = 回看上一张（已评只读盖章），不足阈值回弹；
- *   边界（首张下滑/末张上滑）与飞出动画期间的输入一律回弹/忽略，卡不会停在半途；
+ *   边界（首张下滑/末张上滑）回弹复位；飞离途中按住会接住卡片、可立即反向，取消不提交索引；
  * - 三键评级（忘记/不熟/记住了 → AGAIN/HARD/GOOD）写入句子级 FSRS 状态（[FsrsStateStore.saveSentence]），
  *   评完自动前进；完成页展示本次会话的评级分布（会话内记录，不落盘）；
  * - 主动复习：顶栏「复习」按钮用户可随时自行点击，进入全量再学一轮（含已学过未到期的句子，
@@ -263,19 +264,8 @@ fun SentenceCardScreen(navController: NavController) {
     var areaHeightPx by remember { mutableIntStateOf(0) }
     val flyDistance = if (areaHeightPx > 0) areaHeightPx.toFloat() * 1.1f else 2000f
     var animating by remember { mutableStateOf(false) }
-    /**
-     * 已发出但尚未提交的推进数。飞行可以被手指抢占（见 onDragStart），而 index 要等
-     * 各自协程的 finally 才落 —— 没有这个计数，连滑两次会算出同一个目标、第二张被吞掉。
-     * 只由 advance() 自己加减，别处不碰，所以不需要和 193/200/444 那几处直接写 index 的地方同步。
-     */
-    var inFlight by remember { mutableIntStateOf(0) }
-    /** 第几次飞行：只有最新那次有权清 animating，否则被抢占的旧飞行会提前解锁输入。 */
+    /** 第几次飞行：抢占后旧协程的 finally 不许再清掉新飞行的输入锁。 */
     var flyToken by remember { mutableIntStateOf(0) }
-    /**
-     * 飞离过程中收到的一次评分先暂存这里（最多一个，后来的不覆盖先来的）。
-     * 见 [rate]：不在飞行途中结算，等这一张落位后应用到"露出来的那张"。
-     */
-    var pendingRating by remember { mutableStateOf<FsrsEngine.Rating?>(null) }
     // 飞离那张卡所在的协程：下一次按下要能抢占它（见 onDragStart）
     var flyJob by remember { mutableStateOf<Job?>(null) }
 
@@ -285,30 +275,26 @@ fun SentenceCardScreen(navController: NavController) {
      * advance() 能否真的翻走。
      * 抽出来是为了让**提交回执**在拖拽松手那一刻就判得准：
      * 到头翻不动时该响的是「没走成」那一档，不是「走了」那一档。
-     *
-     * 基准是 `currentIndex + inFlight` 而不是 currentIndex：飞离协程要等动画结束才落 index，
-     * 只看 currentIndex 的话连滑两次会算出同一个目标（第二张被吞掉）。
      */
     fun canAdvance(forward: Boolean): Boolean {
         val items = queue ?: return false
-        val base = (currentIndex + inFlight).coerceIn(0, items.size)
-        return if (forward) base < items.size else base > 0
+        return if (forward) currentIndex < items.size else currentIndex > 0
     }
 
     /**
      * 翻卡：上滑离场前进 / 下滑离场回看（回看只读）。
-     * 边界（首张下滑、末张上滑）：不做翻卡，只把拖出的卡**回弹复位**，
-     * 避免停在半途看起来像"卡死"。
+     * 边界（首张下滑、末张上滑）：不做翻卡，只把拖出的卡**回弹复位**。
      *
-     * 两处物理：
-     * 1. 松手速度带进弹簧（[Motion.cardFly]）—— 甩得越快飞得越快，
-     *    这是改造前 `tween(300)` 永远给不出的「有重量」；
-     * 2. 飞行途中被下一次按下抢占时（见 `onDragStart` 里的 `flyJob?.cancel()`），
-     *    这一张的推进**照旧完成**（finally 里落 index）。
-     *    改造前的 `animating` 是一把 300ms 的输入锁：动画期间拖拽与评分一律被挡掉，
-     *    那是「可中断」的字面反面。现在动画可以被手指打断，而且打断不丢卡片。
+     * 索引只在飞离动画**完整播完**后提交。动画被手指抢占时，这张卡停在当前偏移、
+     * 索引不动，用户可以立刻反向拖回 —— 这才是「可中断」。旧实现把提交放在 finally，
+     * 于是刚按住就被判成翻页，手还按着底层已经换了一张。
+     *
+     * 同一时刻只允许一个飞离动画。飞离期间评分按钮仍属于当前卡（currentIndex 尚未提交），
+     * 此时点评级会结算**当前这张**且不再触发第二次推进；旧实现把它排队到下一张，
+     * 用户会在没看清下一句时替它做了评价。
      */
     fun advance(forward: Boolean, releaseVelocity: Float = 0f) {
+        if (animating) return
         val items = queue ?: return
         if (!canAdvance(forward)) {
             scope.launch { dragY.animateTo(0f, Motion.cardRebound(), initialVelocity = releaseVelocity) }
@@ -316,22 +302,19 @@ fun SentenceCardScreen(navController: NavController) {
         }
         animating = true
         val myToken = ++flyToken
-        // 基准带上在飞的推进数：连滑两次才不会算出同一个目标、把第二张吞掉
-        val nextIndex = advanceTargetIndex(currentIndex, inFlight, forward, items.size)
-        inFlight++
+        val nextIndex = advanceTargetIndex(currentIndex, forward, items.size)
         val targetOffset = if (forward) -flyDistance else flyDistance
         flyJob = scope.launch {
             try {
                 // 初速度 = 松手那一刻的 finger velocity：飞离的快慢由手指决定，不是由定时器决定
                 dragY.animateTo(targetOffset, Motion.cardFly(), initialVelocity = releaseVelocity)
+                // 取消可能晚于动画完成：手指已经接管时 token 已推进，不能再提交索引。
+                if (myToken != flyToken) return@launch
                 dragY.snapTo(0f)
-            } catch (_: CancellationException) {
-                // 被下一次按下抢占：归位与索引推进分别在 onDragStart（snapTo）与 finally 里完成
-            } finally {
                 currentIndex = nextIndex
-                inFlight--
-                // 只有最新那次飞行有权清标志。被抢占的旧飞行提前清的话，
-                // 排队中的评分（LaunchedEffect(animating) 靠它结算）会落在还没落位的卡上。
+            } catch (_: CancellationException) {
+                // 手指接管：不提交索引，也不 snap —— 卡片从当前偏移继续跟手
+            } finally {
                 if (myToken == flyToken) animating = false
             }
         }
@@ -339,15 +322,11 @@ fun SentenceCardScreen(navController: NavController) {
 
     /** 三键评级：FSRS 更新 → 本地即时展示 → IO 落盘 → 自动前进 */
     fun rate(item: DailySentenceCoordinator.QueueItem, rating: FsrsEngine.Rating) {
-        // 飞行途中按钮仍绑定在**正在离场那张卡**上，此刻直接结算会把同一张卡评两次
-        // （currentIndex 要等飞离协程的 finally 才落）。所以这里不吞输入，而是**排队**：
-        // 手指落下的这一次评分照样算数，只是等这一张真正翻走之后，落到"当时露出来的那张"上。
-        // 旧写法 `if (animating) return` 是直接把点击丢掉，用户读成"点了没反应"。
-        if (animating) {
-            pendingRating = pendingRating ?: rating
-            haptic()
-            return
-        }
+        // 飞行途中 currentIndex 仍指向正在离场的那张，按钮也还绑在它上面：
+        // 照常结算当前卡，但不再调用 advance()（一次飞离只推进一张）。
+        // 旧实现在这里把评分排队，等下一张露出后替它打分 —— 用户看不见那张卡，
+        // 却已经替它选了评级。
+        val alreadyFlying = animating
         haptic()
         val ts = System.currentTimeMillis()
         val prevState = states[item.key] ?: FsrsEngine.CardState()
@@ -366,19 +345,11 @@ fun SentenceCardScreen(navController: NavController) {
                     elapsedMs = if (prevState.lastReview > 0) ts - prevState.lastReview else 0L,
                     state = next
                 )
+                // 桌面小组件的到期数立刻跟随本次评级，不等系统 15 分钟轮询
+                com.ilyskyo.blancall.widget.BlancallWidgetRefresh.request(context)
             }
         }
-        advance(forward = true)
-    }
-
-    // 这一张真正落位（currentIndex 已在飞离协程的 finally 里提交）之后，结算排队的那次评分。
-    // 用 LaunchedEffect 而不是在 finally 里直接调 rate：Kotlin 的局部函数之间不能互相前向引用，
-    // 且在那里调用会让 currentIndex 的读写缠进同一段协程。
-    LaunchedEffect(animating) {
-        if (animating) return@LaunchedEffect
-        val r = pendingRating ?: return@LaunchedEffect
-        pendingRating = null
-        queue?.getOrNull(currentIndex)?.let { rate(it, r) }
+        if (!alreadyFlying) advance(forward = true)
     }
 
     Box(
@@ -740,14 +711,15 @@ fun SentenceCardScreen(navController: NavController) {
                                         .pointerInput(currentIndex, items.size) {
                                             detectVerticalDragGestures(
                                                 onDragStart = {
-                                                    // 手指接管即作废排队的评分：用户注意力已经回到这张卡上，
-                                                    // 再按"上一次点击"结算会翻到他没想看的那张。
-                                                    pendingRating = null
-                                                    // 动画可以被手指打断：新按下先抢占上一次飞离，
-                                                    // 被打断那张的推进在 advance 的 finally 里照常完成。
-                                                    // 这里立刻归零 —— 否则新拖动会从旧卡飞出的半途偏移接着算。
+                                                    // 手指接管：取消飞离协程，但保留卡片当前偏移 ——
+                                                    // 卡片就从手指按下的地方继续跟手，可以立刻反向拖回。
+                                                    // 旧实现这里先 snapTo(0)，卡片会在指尖下瞬移回原位；
+                                                    // 而且被取消的协程仍会在 finally 提交索引，手还按着
+                                                    // 底层就换成下一张了。现在取消不提交、不归零。
                                                     flyJob?.cancel()
-                                                    scope.launch { dragY.snapTo(0f) }
+                                                    // 即使旧协程先一步跑完动画，也不能再提交索引。
+                                                    flyToken++
+                                                    animating = false
                                                 },
                                                 onVerticalDrag = { change, dragAmount ->
                                                     change.consume()
@@ -912,7 +884,7 @@ fun SentenceCardScreen(navController: NavController) {
     }
 
     // ── 抽句范围筛选面板（标签 + 文章两个维度，多选；即时写入 AppPrefs，背后句子池实时刷新）──
-    if (showFilterSheet) {
+    AnimatedOverlayPresence(visible = showFilterSheet) {
         val maxPanelHeight = with(LocalDensity.current) {
             LocalWindowInfo.current.containerSize.height.toDp()
         } * 0.5f
@@ -1117,11 +1089,11 @@ private val SessionRatingsSaver = Saver<SnapshotStateMap<String, FsrsEngine.Rati
 )
 
 /**
- * 翻卡该落到第几张：基准 = 已提交的 index + 还在飞的推进数。
+ * 翻卡该落到第几张：只基于已提交的 index（飞离途中不提交，抢占时也不提交）。
  *
  * 单独抽成纯函数是为了能被 JVM 测到 —— 竞态的后果全部体现在这个数上，
  * 而它发生在协程与动画之间，屏幕上看不出来（少一张卡只是「划得挺顺」）。
  * 上界用 size（不是 size-1）：那一档是「完成」页。
  */
-internal fun advanceTargetIndex(current: Int, inFlight: Int, forward: Boolean, size: Int): Int =
-    (current + inFlight + if (forward) 1 else -1).coerceIn(0, size)
+internal fun advanceTargetIndex(current: Int, forward: Boolean, size: Int): Int =
+    (current + if (forward) 1 else -1).coerceIn(0, size)

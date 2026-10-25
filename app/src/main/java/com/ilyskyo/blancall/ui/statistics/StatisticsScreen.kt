@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.statistics
 
 import androidx.compose.animation.core.Animatable
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.compose.animation.core.animateFloatAsState
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.core.tween
@@ -34,7 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.MemoryHeatmap
+import com.ilyskyo.blancall.algorithm.ReviewTimeline
 import com.ilyskyo.blancall.algorithm.WeakSentenceRank
 import com.ilyskyo.blancall.algorithm.WeaknessMath
 import com.ilyskyo.blancall.data.model.MistakeDetail
@@ -45,6 +48,7 @@ import com.ilyskyo.blancall.data.repository.InkBatch
 import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
+import com.ilyskyo.blancall.data.repository.ReviewLogStore
 import com.ilyskyo.blancall.data.repository.StatsRepository
 import com.ilyskyo.blancall.data.repository.ArticleStats
 import com.ilyskyo.blancall.ui.common.AmbientBackground
@@ -55,6 +59,7 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.common.DailyTrendChart
 import com.ilyskyo.blancall.ui.common.GaugeProgress
+import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.StatItem
@@ -146,6 +151,29 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
         weakSnapshot = current.entries.joinToString(";") { "${it.key}=${it.value}" }
     }
 
+    // ── 真实复习轨迹（消费 fsrs_reviews.jsonl）──
+    // 日志只写不读是旧审计里唯一的「纯收益」缺口：这里按文章级 key（a:<id>）取事件，
+    // 给出实际间隔与「第几次才稳住」。日志不进备份，卡片上必须标明「仅本机」。
+    var reviewSeries by remember(articleId) { mutableStateOf<ReviewTimeline.Series?>(null) }
+    LaunchedEffect(articleId, records) {
+        val series = withContext(Dispatchers.IO) {
+            val file = context.filesDir.resolve(ReviewLogStore.FILE_NAME)
+            if (!file.isFile) return@withContext ReviewTimeline.build(emptyList())
+            val events = ReviewLogStore.read(file)
+                .filter { it.key == "a:$articleId" }
+                .map {
+                    ReviewTimeline.Event(
+                        ts = it.ts,
+                        rating = it.rating,
+                        elapsedMs = it.elapsedMs,
+                        stability = it.state.stability,
+                    )
+                }
+            ReviewTimeline.build(events)
+        }
+        reviewSeries = series
+    }
+
     // ── 历史筛选状态 ──
     var filterMode by remember { mutableStateOf<String?>(null) } // null=全部
     val filteredRecords = remember(records, filterMode) {
@@ -181,8 +209,22 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
             ) {
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
-                Text(stringResource(com.ilyskyo.blancall.R.string.statistics_title),
-                    style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
+                Text(
+                    stringResource(com.ilyskyo.blancall.R.string.statistics_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
+                )
+                GlassButton(
+                    onClick = { navController.navigate("mistakes?articleId=$articleId") },
+                    modifier = Modifier.height(40.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.mistake_notebook_entry),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
             // 记录列表：统计卡片与练习记录可滚动
             LazyColumn(
@@ -369,6 +411,15 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
                             )
                         }
                     )
+                }
+            }
+        }
+
+        // ═══════ 真实复习轨迹（复习日志的读取方）═══════
+        reviewSeries?.let { series ->
+            item {
+                AnimatedStatCard {
+                    ReviewTimelineCard(series = series)
                 }
             }
         }
@@ -560,6 +611,109 @@ private fun HistoryMonthHeader(monthStartMs: Long, monthFormat: java.text.DateFo
     }
 }
 
+/**
+ * 真实复习轨迹：显示的是**事实**（这次隔了几天、复习后稳定度怎么变），
+ * 与热力图上的预测曲线是两回事。卡片上常驻「仅本机」：日志不进备份，换机归零。
+ */
+@Composable
+private fun ReviewTimelineCard(series: ReviewTimeline.Series) {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.review_timeline_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ) {
+                    Text(
+                        stringResource(R.string.review_timeline_local_only),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = when (series.summary) {
+                    ReviewTimeline.Summary.NO_DATA -> stringResource(R.string.review_timeline_none)
+                    ReviewTimeline.Summary.ONLY_ONE -> stringResource(R.string.review_timeline_one)
+                    ReviewTimeline.Summary.STEADY_FROM_START ->
+                        stringResource(R.string.review_timeline_steady_start)
+                    ReviewTimeline.Summary.STEADY_AFTER ->
+                        stringResource(
+                            R.string.review_timeline_steady_after,
+                            series.steadyFromReview ?: 1
+                        )
+                    ReviewTimeline.Summary.STILL_SHAKY -> stringResource(R.string.review_timeline_shaky)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (series.points.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.review_timeline_interval_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                series.points.takeLast(6).forEach { p ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(R.string.review_timeline_review_no, p.review),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(64.dp)
+                        )
+                        Text(
+                            if (p.review == 1) stringResource(R.string.review_timeline_first)
+                            else stringResource(R.string.review_timeline_gap, formatDays(p.intervalDays)),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            ratingLabel(p.rating),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (p.rating <= ReviewTimeline.RATING_HARD) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatDays(days: Double): String {
+    if (days < 1.0) return "<1"
+    val rounded = kotlin.math.round(days * 10) / 10.0
+    return if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
+}
+
+@Composable
+private fun ratingLabel(rating: Int): String = stringResource(
+    when (rating) {
+        1 -> R.string.rating_again
+        2 -> R.string.rating_hard
+        3 -> R.string.rating_good
+        else -> R.string.rating_easy
+    }
+)
+
 // ── 单条练习记录 ──
 @Composable
 private fun RecordCard(
@@ -577,8 +731,10 @@ private fun RecordCard(
     LaunchedEffect(record.id) {
         inkByBlank = withContext(Dispatchers.IO) {
             if (!inkStore.has(record.id)) return@withContext emptyMap<Int, List<InkBatch>>()
+            // 新存档每个空只有一份最终识别快照；旧存档按每次上屏分批次，
+            // 全部画出来会叠成一团 —— 统一只取最后一份，回看才看得清写了什么
             inkStore.load(record.id)?.blanks
-                ?.associate { it.blankIndex to it.batches }
+                ?.associate { it.blankIndex to it.batches.takeLast(1) }
                 ?: emptyMap()
         }
     }
@@ -706,7 +862,7 @@ private fun RecordCard(
         }
     }
     // 放大对照：大图墨迹 + 你填的/应为 对照（内容与错误行一致，避免来回滚动）
-    enlarged?.let { blank ->
+    AnimatedOverlayPresence(target = enlarged) { blank ->
         val m = record.mistakes.firstOrNull { it.blankIndex == blank.blankIndex }
         BlancallAlertDialog(
             onDismissRequest = { enlarged = null },

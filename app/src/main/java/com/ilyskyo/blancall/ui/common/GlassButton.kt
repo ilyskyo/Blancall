@@ -52,7 +52,12 @@ fun GlassButton(
 
     Box(
         modifier = modifier
-            .pressFeedback(src, PressTier.Container, enabled = enabled)
+            .pressFeedback(
+                src,
+                PressTier.Container,
+                enabled = enabled,
+                hapticTier = HapticTier.Toggle,
+            )
             .alpha(if (enabled) 1f else 0.4f)
             .clip(shape)
             .background(bgColor)

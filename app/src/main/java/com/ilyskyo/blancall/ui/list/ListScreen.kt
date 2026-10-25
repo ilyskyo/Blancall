@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.list
 
 import com.ilyskyo.blancall.ui.common.CoachMark
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.CoachShape
 import com.ilyskyo.blancall.ui.common.coachAnchor
 import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
@@ -67,6 +68,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
+import com.ilyskyo.blancall.algorithm.ExamPaper
 import com.ilyskyo.blancall.algorithm.PdfExporter
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.algorithm.TagOps
@@ -198,8 +200,8 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     var showExportDialog by remember { mutableStateOf(false) }
-    // 导出对话框的预选文章（多选态快捷导出用；-1 = 不预选）
-    var exportPreselectId by remember { mutableLongStateOf(-1L) }
+    // 导出对话框的预选文章（多选态快捷导出用；空 = 不预选）
+    var exportPreselectIds by remember { mutableStateOf(setOf<Long>()) }
     val scope = rememberCoroutineScope()
 
     // ── 文章标签：筛选 / 卡片徽标 / 批量打标签 ──
@@ -318,15 +320,14 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                                         style = MaterialTheme.typography.labelMedium,
                                                         color = MaterialTheme.colorScheme.onSurface)
                                                 }
-                                                // 导出：仅选中 1 篇时可用（多选批量导出置灰——导出为单篇功能）
+                                                // 导出：多选态直接把选中的文章带进导出对话框（选多篇 = 组卷）
                                                 GlassButton(
                                                     onClick = {
-                                                        val id = selectedIds.singleOrNull() ?: return@GlassButton
-                                                        val art = articles.firstOrNull { it.id == id } ?: return@GlassButton
-                                                        exportPreselectId = art.id
+                                                        if (selectedIds.isEmpty()) return@GlassButton
+                                                        exportPreselectIds = selectedIds
                                                         showExportDialog = true
                                                     },
-                                                    enabled = selectedIds.size == 1,
+                                                    enabled = selectedIds.isNotEmpty(),
                                                     modifier = Modifier.height(40.dp)
                                                 ) {
                                                     Text(stringResource(com.ilyskyo.blancall.R.string.export_action),
@@ -362,7 +363,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                                         if (articles.isEmpty()) {
                                                             Toast.makeText(context, noArticlesToExportMsg, Toast.LENGTH_SHORT).show()
                                                         } else {
-                                                            exportPreselectId = -1L
+                                                            exportPreselectIds = emptySet()
                                                             showExportDialog = true
                                                         }
                                                     },
@@ -690,7 +691,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     }
 
     // 批量打标签面板：完成 → 应用并退出多选；取消 → 保留多选与选择
-    if (tagPickTargets.isNotEmpty()) {
+    AnimatedOverlayPresence(visible = tagPickTargets.isNotEmpty()) {
         TagPickerSheet(
             targets = tagPickTargets,
             onDismiss = { tagPickTargets = emptyList() },
@@ -702,7 +703,7 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     }
 
     // 删除确认对话框（引用公共组件）
-    deleteTarget?.let { target ->
+    AnimatedOverlayPresence(target = deleteTarget) { target ->
         DeleteConfirmDialog(
             title = stringResource(com.ilyskyo.blancall.R.string.confirm_delete_title),
             message = stringResource(com.ilyskyo.blancall.R.string.delete_article_confirm, target.title),
@@ -715,16 +716,16 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     }
 
     // 批量删除确认对话框
-    if (deleteTargets.isNotEmpty()) {
+    AnimatedOverlayPresence(target = deleteTargets.takeIf { it.isNotEmpty() }) { targets ->
         BlancallAlertDialog(
             onDismissRequest = { deleteTargets = emptyList() },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.confirm_delete_title)) },
             text = {
-                Text(pluralStringResource(com.ilyskyo.blancall.R.plurals.delete_articles_confirm, deleteTargets.size, deleteTargets.size))
+                Text(pluralStringResource(com.ilyskyo.blancall.R.plurals.delete_articles_confirm, targets.size, targets.size))
             },
             confirmButton = {
                 TextButton(onClick = {
-                    deleteTargets.forEach { articleViewModel.deleteArticle(it) }
+                    targets.forEach { articleViewModel.deleteArticle(it) }
                     deleteTargets = emptyList()
                     exitCrossSelect()
                 }) { Text(stringResource(com.ilyskyo.blancall.R.string.delete), color = MaterialTheme.colorScheme.error) }
@@ -735,22 +736,29 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         )
     }
 
-    // 导出 PDF 对话框
-    if (showExportDialog) {
-        // 预选：多选态快捷导出传入选中的文章；正常入口为 -1（不预选）
-        var selectedArticle by remember {
-            mutableStateOf(articles.firstOrNull { it.id == exportPreselectId })
+    // 导出 / 出卷对话框（同一入口：选 1 篇 = 单篇导出，选多篇 = 组卷）
+    AnimatedOverlayPresence(visible = showExportDialog) {
+        // 预选：多选态快捷导出带入选中的文章；正常入口默认第一篇
+        var selectedIds by remember {
+            mutableStateOf(
+                exportPreselectIds.ifEmpty {
+                    articles.firstOrNull()?.id?.let { setOf(it) } ?: emptySet()
+                }
+            )
         }
         // 导出类型：false = 原文 PDF（完整正文）；true = 挖空 PDF（保留空位呈现）
         var exportAsCloze by remember { mutableStateOf(false) }
-        // 排序结果缓存，避免每次重组新建列表
+        // 每篇取几个空：0 = 生成器默认密度；出卷时可按篇均题量收口
+        var maxBlanksPerArticle by remember { mutableStateOf(0) }
+        // 挖空卷默认附答案页（答案与题目分页），单篇与组卷一致
+        var includeAnswers by remember { mutableStateOf(true) }
         val sortedArticles = remember(articles) { articles.sortedByDescending { it.updatedAt } }
+        val selectedArticles = sortedArticles.filter { it.id in selectedIds }
         BlancallAlertDialog(
             onDismissRequest = { showExportDialog = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.export_pdf)) },
             text = {
                 Column {
-                    // ── 导出类型（必选其一，默认原文）──
                     Text(
                         stringResource(com.ilyskyo.blancall.R.string.export_type),
                         style = MaterialTheme.typography.labelMedium,
@@ -778,30 +786,71 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         )
                     }
                     Spacer(Modifier.height(6.dp))
-                    // 说明行随类型实时切换：两种导出结果差异一眼可见
                     Text(
                         if (exportAsCloze) stringResource(com.ilyskyo.blancall.R.string.export_pdf_cloze_desc)
                         else stringResource(com.ilyskyo.blancall.R.string.export_pdf_original_desc),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (exportAsCloze) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.exam_paper_blanks_per_article),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(0, 5, 8, 10).forEach { n ->
+                                FilterChip(
+                                    selected = maxBlanksPerArticle == n,
+                                    onClick = { maxBlanksPerArticle = n },
+                                    label = {
+                                        Text(
+                                            if (n == 0) stringResource(com.ilyskyo.blancall.R.string.exam_paper_blank_default)
+                                            else n.toString()
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                stringResource(com.ilyskyo.blancall.R.string.exam_paper_include_answers),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            com.ilyskyo.blancall.ui.common.GlassSwitch(
+                                checked = includeAnswers,
+                                onCheckedChange = { includeAnswers = it }
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(14.dp))
                     Text(
                         stringResource(com.ilyskyo.blancall.R.string.pick_articles_to_export),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     Column(
-                        modifier = Modifier.heightIn(max = 320.dp),
+                        modifier = Modifier.heightIn(max = 240.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         sortedArticles.forEach { article ->
-                            val isSelected = selectedArticle?.id == article.id
+                            val isSelected = article.id in selectedIds
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .pressClick { selectedArticle = article },
+                                    .pressClick {
+                                        selectedIds = if (isSelected) selectedIds - article.id
+                                        else selectedIds + article.id
+                                    },
                                 shape = RoundedCornerShape(8.dp),
                                 color = if (isSelected)
                                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -811,9 +860,12 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    RadioButton(
-                                        selected = isSelected,
-                                        onClick = { selectedArticle = article }
+                                    Checkbox(
+                                        checked = isSelected,
+                                        onCheckedChange = {
+                                            selectedIds = if (isSelected) selectedIds - article.id
+                                            else selectedIds + article.id
+                                        }
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
@@ -838,17 +890,28 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
             confirmButton = {
                 Button(
                     onClick = {
-                        val article = selectedArticle
-                        if (article != null) {
+                        if (selectedArticles.isNotEmpty()) {
                             showExportDialog = false
                             scope.launch {
-                                exportArticlePdf(context, article, exportAsCloze)
+                                exportPaperPdf(
+                                    context = context,
+                                    articles = selectedArticles,
+                                    asCloze = exportAsCloze,
+                                    maxBlanksPerArticle = maxBlanksPerArticle,
+                                    includeAnswers = includeAnswers && exportAsCloze,
+                                )
                             }
                         }
                     },
-                    enabled = selectedArticle != null
+                    enabled = selectedArticles.isNotEmpty()
                 ) {
-                    Text(stringResource(com.ilyskyo.blancall.R.string.export_action))
+                    Text(
+                        if (selectedArticles.size > 1) {
+                            stringResource(com.ilyskyo.blancall.R.string.exam_paper_start, selectedArticles.size)
+                        } else {
+                            stringResource(com.ilyskyo.blancall.R.string.export_action)
+                        }
+                    )
                 }
             },
             dismissButton = {
@@ -1041,19 +1104,51 @@ internal fun buildArticleExportConfig(
         )
     }
 
-private suspend fun exportArticlePdf(context: android.content.Context, article: Article, asCloze: Boolean) {
+/**
+ * 导出 / 组卷：单篇与多篇走同一个 [PdfExporter.exportPaper]。
+ * 多篇时每篇从新页开始，答案页按篇分组；题号在篇内从 1 开始。
+ */
+private suspend fun exportPaperPdf(
+    context: android.content.Context,
+    articles: List<Article>,
+    asCloze: Boolean,
+    maxBlanksPerArticle: Int,
+    includeAnswers: Boolean,
+) {
     try {
-        val config = withContext(Dispatchers.Default) {
-            buildArticleExportConfig(article.title, article.content, asCloze, article.author)
+        val sources = articles.map {
+            ExamPaper.Source(it.title, it.author, it.content)
         }
-        // 文件名清洗：标题可能含 / \ : 等非法字符（直接拼入会创建子路径导致导出失败）
-        val safeName = article.title.trim().replace(Regex("""[\\/:*?"<>|\r\n]"""), "_").take(50)
+        val sections = withContext(Dispatchers.Default) {
+            ExamPaper.build(sources, asCloze, maxBlanksPerArticle)
+        }
         val suffix = context.getString(
             if (asCloze) com.ilyskyo.blancall.R.string.export_file_suffix_cloze
             else com.ilyskyo.blancall.R.string.export_file_suffix_original
         )
+        val fileName = if (articles.size == 1) {
+            // 文件名清洗：标题可能含 / \ : 等非法字符（直接拼入会创建子路径导致导出失败）
+            val safeName = articles.first().title.trim()
+                .replace(Regex("""[\\/:*?"<>|\r\n]"""), "_")
+                .take(50)
+                .ifBlank { "blancall" }
+            "${safeName}_$suffix.pdf"
+        } else {
+            "Blancall_paper_${System.currentTimeMillis()}.pdf"
+        }
+        val paperTitle = if (articles.size == 1) {
+            articles.first().title
+        } else {
+            context.getString(com.ilyskyo.blancall.R.string.exam_paper_title, articles.size)
+        }
         val file = withContext(Dispatchers.IO) {
-            PdfExporter.export(context, config, "${safeName}_$suffix.pdf")
+            PdfExporter.exportPaper(
+                context = context,
+                paperTitle = paperTitle,
+                sections = sections,
+                includeAnswer = includeAnswers,
+                fileName = fileName,
+            )
         }
         withContext(Dispatchers.Main) {
             PdfExporter.sharePdf(context, file)

@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.ai
 
 import android.content.Context
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -345,7 +346,7 @@ fun AiHistoryScreen(
     }
 
     // ── 训练分析详情 ──
-    showAnalysis?.let { item ->
+    AnimatedOverlayPresence(target = showAnalysis) { item ->
         BlancallAlertDialog(
             onDismissRequest = { showAnalysis = null },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
@@ -380,7 +381,7 @@ fun AiHistoryScreen(
     }
 
     // ── 删除会话确认 ──
-    pendingDeleteSession?.let { session ->
+    AnimatedOverlayPresence(target = pendingDeleteSession) { session ->
         BlancallAlertDialog(
             onDismissRequest = { pendingDeleteSession = null },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
@@ -401,7 +402,7 @@ fun AiHistoryScreen(
     }
 
     // ── 删除分析确认 ──
-    pendingDeleteAnalysis?.let { item ->
+    AnimatedOverlayPresence(target = pendingDeleteAnalysis) { item ->
         BlancallAlertDialog(
             onDismissRequest = { pendingDeleteAnalysis = null },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),

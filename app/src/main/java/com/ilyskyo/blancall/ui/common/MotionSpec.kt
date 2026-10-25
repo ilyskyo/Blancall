@@ -6,8 +6,6 @@ package com.ilyskyo.blancall.ui.common
 import android.annotation.SuppressLint
 
 import android.animation.ValueAnimator
-import com.ilyskyo.blancall.ui.common.Motion
-import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.ContentTransform
@@ -253,13 +251,6 @@ object Motion {
         dpSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
 
     /**
-     * 底部导航栏滑块按 index 落位，一格 tab 宽的行程。
-     *
-     * LowBouncy + StiffnessMediumLow 是从改造前的裸 float
-     * `spring(0.6f, 380f)` 平移过来的（400f ≈ 380f）—— 底栏是每次切页都要露面的东西，
-     * 收拢成词表时**不许**顺手改手感，所以这里保留原参数而不是复用别的档。
-     */
-    /**
      * 首页卡片换槽的落位位移。
      *
      * 改造前是 `animateDpAsState(slotX, tween(220))`：一条与手指无关的定时补间，
@@ -302,6 +293,13 @@ object Motion {
     fun contentSize(): FiniteAnimationSpec<IntSize> =
         if (reduced) snap() else spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
 
+    /**
+     * 底部导航栏滑块按 index 落位，一格 tab 宽的行程。
+     *
+     * LowBouncy + StiffnessMediumLow 是从改造前的裸 float
+     * `spring(0.6f, 380f)` 平移过来的（400f ≈ 380f）—— 底栏是每次切页都要露面的东西，
+     * 收拢成词表时**不许**顺手改手感，所以这里保留原参数而不是复用别的档。
+     */
     fun sliderIndex(): FiniteAnimationSpec<Float> =
         floatSpring(Spring.DampingRatioLowBouncy, Spring.StiffnessMediumLow)
 

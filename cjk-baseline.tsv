@@ -43,3 +43,6 @@ notification/NotificationHelper.kt	1
 ui/cloze/CustomClozeEditScreen.kt	1
 # AI 等价复核的提示词是发给模型的指令（非 UI 文案），与判定逻辑绑定、进不了 strings.xml
 algorithm/AiEquivalenceJudge.kt	16
+
+# AI 流式管理器：Log.w 的开发日志不会上屏，抽进资源只会把调试文案带进用户资源表
+data/ai/AiStreamer.kt	1

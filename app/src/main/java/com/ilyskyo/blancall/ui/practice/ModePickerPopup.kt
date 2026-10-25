@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
@@ -169,20 +170,16 @@ fun AdaptiveModePicker(
         else -> ExpandDirection.BOTTOM_SHEET
     }
 
-    // 关闭复位（关键路径，必须在 BOTTOM_SHEET 的 return 之前注册）：
-    // 底部面板没有浮窗退场动画，visible=false 时立即移除组合。
-    // ⚠️ 不能把该逻辑放在下方 effect2 中 —— BOTTOM_SHEET 分支在上方直接 return，
-    // effect2 在底部面板路径永远不可达：关闭时 sheet 组合永不移除 ⇒ M3 模态窗口
-    //（Hidden 态、全屏透明 scrim）残留并吞掉后续所有点击
-    //（真机 bug「点掉底部面板后再点练习永远无反应」的根因）。
-    LaunchedEffect(visible) {
-        if (!visible && expandDirection == ExpandDirection.BOTTOM_SHEET) {
-            isShowing = false
-        }
-    }
-
     if (expandDirection == ExpandDirection.BOTTOM_SHEET) {
-        AdaptiveBottomSheetPicker(onDismiss = onDismiss, onModeSelected = onModeSelected)
+        // 底部面板的退场由 GlassModalBottomSheet 自己播完（M3 hide + scrim），
+        // 宿主等它给出回执后才撤掉组合 —— 旧实现 visible=false 立刻 isShowing=false，
+        // 面板和遮罩在同帧消失，等于没有退场。
+        AnimatedOverlayPresence(
+            visible = visible,
+            onExitFinished = { isShowing = false },
+        ) {
+            AdaptiveBottomSheetPicker(onDismiss = onDismiss, onModeSelected = onModeSelected)
+        }
         return
     }
 

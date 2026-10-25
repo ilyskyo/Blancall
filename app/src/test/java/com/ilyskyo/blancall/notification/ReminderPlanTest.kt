@@ -30,6 +30,11 @@ class ReminderPlanTest {
         incompleteRemaining: Int = 0,
         weakCount: Int = 0,
         streakDays: Int = 0,
+        dueArticleTitle: String = "",
+        incompleteArticleTitle: String = "",
+        upcomingTasks: List<ReminderUpcomingTask> = emptyList(),
+        forgettingRisks: List<ReminderForgettingRisk> = emptyList(),
+        lastPractice: ReminderLastPractice? = null,
         allowReasons: Set<ReminderReason> = ReminderReason.entries.toSet(),
     ): List<ReminderPlanItem> = ReminderPlan.decide(
         now = 1_700_000_000_000L,
@@ -45,6 +50,11 @@ class ReminderPlanTest {
         incompleteRemaining = incompleteRemaining,
         weakCount = weakCount,
         streakDays = streakDays,
+        dueArticleTitle = dueArticleTitle,
+        incompleteArticleTitle = incompleteArticleTitle,
+        upcomingTasks = upcomingTasks,
+        forgettingRisks = forgettingRisks,
+        lastPractice = lastPractice,
         allowReasons = allowReasons,
     )
 
@@ -258,6 +268,167 @@ class ReminderPlanTest {
     fun `最多产出两条`() {
         val plans = decide(hasStudiedToday = true, todayCount = 0, dailyGoal = 3, weakCount = 2, streakDays = 5)
         assertTrue("一次不该刷屏：$plans", plans.size <= 2)
+    }
+
+    // ── (a)(b)(c)(d)(e) 具体内容与预警层 ──
+
+    @Test
+    fun `到期复习带上最早到期那篇的标题与 id`() {
+        val plans = decide(
+            hasStudiedToday = true,
+            dueArticleCount = 2,
+            firstDueArticleId = 7L,
+            dueArticleTitle = "出师表",
+        )
+        val item = plans.single()
+        assertEquals(ReminderReason.DueReview, item.reason)
+        assertEquals("出师表", item.articleTitle)
+        assertEquals(7L, item.articleId)
+    }
+
+    @Test
+    fun `未完成练习带上文章标题`() {
+        val plans = decide(
+            hasStudiedToday = true,
+            hasIncompletePractice = true,
+            incompleteArticleId = 42L,
+            incompleteRemaining = 3,
+            incompleteArticleTitle = "岳阳楼记",
+        )
+        val item = plans.single()
+        assertEquals(ReminderReason.IncompletePractice, item.reason)
+        assertEquals("岳阳楼记", item.articleTitle)
+        assertEquals(3, item.count)
+    }
+
+    @Test
+    fun `没有行动召唤时提醒即将到期的任务并选中最早一篇`() {
+        val dueAt1 = 1_700_010_000_000L
+        val dueAt2 = 1_700_005_000_000L
+        val plans = decide(
+            hasStudiedToday = true,
+            upcomingTasks = listOf(
+                ReminderUpcomingTask(1L, "后到期", dueAt1),
+                ReminderUpcomingTask(2L, "先到期", dueAt2),
+            ),
+        )
+        val item = plans.single()
+        assertEquals(ReminderReason.TaskDueSoon, item.reason)
+        assertEquals(2L, item.articleId)
+        assertEquals("先到期", item.articleTitle)
+        assertEquals("到期时间要原样带给文案层", dueAt2, item.dueAt)
+        assertEquals("count 是候选总数", 2, item.count)
+    }
+
+    @Test
+    fun `即将到期不抢已到期复习的注意力`() {
+        val plans = decide(
+            hasStudiedToday = true,
+            dueArticleCount = 1,
+            dueArticleTitle = "已到期",
+            upcomingTasks = listOf(ReminderUpcomingTask(2L, "快到期", 1_700_005_000_000L)),
+        )
+        assertEquals(listOf(ReminderReason.DueReview), plans.map { it.reason })
+    }
+
+    @Test
+    fun `遗忘预知优先于即将到期并选中留存率最低的一篇`() {
+        val plans = decide(
+            hasStudiedToday = true,
+            upcomingTasks = listOf(ReminderUpcomingTask(2L, "快到期", 1_700_005_000_000L)),
+            forgettingRisks = listOf(
+                ReminderForgettingRisk(3L, "较稳", retentionPercent = 92),
+                ReminderForgettingRisk(4L, "最危险", retentionPercent = 88),
+            ),
+        )
+        val item = plans.single()
+        assertEquals(ReminderReason.ForgettingSoon, item.reason)
+        assertEquals(4L, item.articleId)
+        assertEquals("最危险", item.articleTitle)
+        assertEquals(88, item.retentionPercent)
+        assertEquals(2, item.count)
+    }
+
+    @Test
+    fun `正确率低于阈值时提醒并带上哪一次`() {
+        val at = 1_700_000_000_000L - 60 * 60 * 1000L
+        val plans = decide(
+            hasStudiedToday = true,
+            lastPractice = ReminderLastPractice(9L, "兰亭集序", accuracyPercent = 62, practicedAt = at),
+        )
+        val item = plans.single()
+        assertEquals(ReminderReason.PracticeAccuracy, item.reason)
+        assertEquals("兰亭集序", item.articleTitle)
+        assertEquals(9L, item.articleId)
+        assertEquals(62, item.accuracyPercent)
+        assertEquals("练习时间用于文案里指明哪一次", at, item.practicedAt)
+    }
+
+    @Test
+    fun `正确率达标不再提醒复习错题`() {
+        val at = 1_700_000_000_000L - 60 * 60 * 1000L
+        listOf(PRACTICE_ACCURACY_REVIEW_THRESHOLD, 95).forEach { accuracy ->
+            val plans = decide(
+                hasStudiedToday = true,
+                lastPractice = ReminderLastPractice(9L, "兰亭集序", accuracy, at),
+            )
+            assertTrue(
+                "正确率 $accuracy 已达到复习门槛：$plans",
+                plans.none { it.reason == ReminderReason.PracticeAccuracy },
+            )
+        }
+    }
+
+    @Test
+    fun `超过24小时的练习不再拿来说事`() {
+        val tooOld = 1_700_000_000_000L - PRACTICE_ACCURACY_FRESH_MS - 1
+        val plans = decide(
+            hasStudiedToday = true,
+            lastPractice = ReminderLastPractice(9L, "兰亭集序", 30, tooOld),
+        )
+        assertTrue(plans.none { it.reason == ReminderReason.PracticeAccuracy })
+    }
+
+    @Test
+    fun `时钟偏差导致的未来练习时间应忽略`() {
+        val future = 1_700_000_000_000L + 60 * 60 * 1000L
+        val plans = decide(
+            hasStudiedToday = true,
+            lastPractice = ReminderLastPractice(9L, "兰亭集序", 30, future),
+        )
+        assertTrue(plans.none { it.reason == ReminderReason.PracticeAccuracy })
+    }
+
+    @Test
+    fun `到期复习优先于正确率提醒`() {
+        val plans = decide(
+            hasStudiedToday = true,
+            dueArticleCount = 1,
+            lastPractice = ReminderLastPractice(9L, "兰亭集序", 20, 1_700_000_000_000L - 1000L),
+        )
+        assertEquals(listOf(ReminderReason.DueReview), plans.map { it.reason })
+    }
+
+    @Test
+    fun `有行动召唤时预警不出现`() {
+        val plans = decide(
+            hasStudiedToday = true,
+            hasIncompletePractice = true,
+            incompleteRemaining = 2,
+            upcomingTasks = listOf(ReminderUpcomingTask(2L, "快到期", 1_700_005_000_000L)),
+            forgettingRisks = listOf(ReminderForgettingRisk(3L, "快忘了", 89)),
+        )
+        assertEquals(listOf(ReminderReason.IncompletePractice), plans.map { it.reason })
+    }
+
+    @Test
+    fun `关闭遗忘预知渠道时退回泛化召唤而不是发别的预警`() {
+        val plans = decide(
+            hasStudiedToday = false,
+            forgettingRisks = listOf(ReminderForgettingRisk(3L, "快忘了", 89)),
+            allowReasons = ReminderReason.entries.toSet() - ReminderReason.ForgettingSoon,
+        )
+        assertEquals(listOf(ReminderReason.NoStudyToday), plans.map { it.reason })
     }
 
     // ── 免打扰窗口（纯函数） ──

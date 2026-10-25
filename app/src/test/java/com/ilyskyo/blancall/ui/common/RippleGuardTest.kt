@@ -33,6 +33,9 @@ class RippleGuardTest {
         var sites = 0
         root.walkBottomUp().filter { it.extension == "kt" }.forEach { file ->
             val path = file.invariantSeparatorsPath.substringAfter("com/ilyskyo/blancall/")
+            // Glance 桌面小组件不是 Compose Material 树：那里的 clickable 绑定 RemoteViews 动作，
+            // 根本没有 indication 形参，也不存在涟漪。只豁免 widget/ 目录，别处照查。
+            if (path.startsWith("widget/")) return@forEach
             files++
             val lines = blankOutCommentsAndLiterals(file.readText()).split('\n')
             lines.forEachIndexed { index, line ->
@@ -83,7 +86,8 @@ class RippleGuardTest {
             "onFocusEvent" to "焦点状态没被读出来，框无从画起",
             "drawWithContent" to "焦点框必须压在调用方的背景之上（border 会被玻璃面盖住）",
             "ringShown" to "没有焦点框的开关状态",
-            "PressInteraction.Press" to "触摸后节点仍持有焦点，缺这条判据就会有一圈永久停在最后点过的卡片上"
+            "isInTouchMode" to "缺这条判据，触摸焦点会留下永久框、键盘焦点反而可能没有框",
+            "shouldShowFocusRing" to "焦点来源判定必须走可测试的纯函数"
         ).forEach { (token, why) ->
             assertTrue("pressFeedback 里找不到 $token —— $why", body.contains(token))
         }

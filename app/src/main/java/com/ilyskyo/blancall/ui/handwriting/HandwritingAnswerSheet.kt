@@ -59,7 +59,7 @@ fun HandwritingAnswerSheet(
     expectedNextChar: Char? = null,
     /** 英文默写的「答案先验」（剩余标准答案）；null = 不启用。 */
     expectedWord: String? = null,
-    /** 墨迹上报（错题回顾）：透传给面板（见 [HandwritingPanel] 参数注释）。 */
+    /** 墨迹上报（错题回顾）：透传整次识别的墨迹快照（见 [HandwritingPanel] 参数注释）。 */
     onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     // 书写模式提示：有笔设备说「用笔」；无笔设备说「用手指」（见 StylusPresence）

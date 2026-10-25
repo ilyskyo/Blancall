@@ -8,8 +8,10 @@ import android.content.pm.ApplicationInfo
 import android.os.StrictMode
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.data.ai.AiConfigStore
+import com.ilyskyo.blancall.data.ai.AiReplyNotifier
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.notification.NotificationHelper
+import com.ilyskyo.blancall.notification.PracticeLiveUpdate
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.theme.ThemeManager
@@ -81,6 +83,8 @@ class BlancallApp : Application() {
         AppPrefs.init(this)
         // AI 对话 / 联网搜索 多配置存储（SharedPreferences + JSON，Key 以 SecurePrefs 密文落盘）
         AiConfigStore.init(this)
+        // AI 回复完成通知：建高优先级渠道 + 注册前后台跟踪（从 Application 起算，避免漏掉首个 onStart）
+        AiReplyNotifier.init(this)
         // FSRS 智能调度：按「复习频率」设置加载目标留存率（默认 90% 标准记忆）
         FsrsEngine.configure(
             FsrsEngine.DEFAULT_PARAMS,
@@ -91,6 +95,9 @@ class BlancallApp : Application() {
 
         // 通知渠道（创建幂等，重复调用安全）
         NotificationHelper.createChannel(this)
+
+        // 练习进行中通知：退后台自动存档 + Android 16 Live Updates（各家灵动岛）
+        PracticeLiveUpdate.init(this)
 
         // 后台预热 FSRS 状态单例：getInstance 内部 load() 会同步读盘，
         // 提前在后台线程触发，避免首页首帧在主线程阻塞读 fsrs_state.json。

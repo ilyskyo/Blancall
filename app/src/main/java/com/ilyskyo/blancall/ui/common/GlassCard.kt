@@ -84,7 +84,7 @@ fun GlassCard(
     // 按下一块卡片，屏幕上没有任何东西回应你。现在补的是缩放＋亮度＋（长按时）触感，
     // 见 pressFeedback：接在点击修饰符之前，让整块的绘制一起沉下去。
     val pressModifier = if (onClick != null || onLongClick != null) {
-        Modifier.pressFeedback(src, PressTier.Card)
+        Modifier.pressFeedback(src, PressTier.Card, hapticTier = HapticTier.Toggle)
     } else {
         Modifier
     }

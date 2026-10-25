@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.data.ai
 
 import android.content.Context
+import android.util.Log
 import com.ilyskyo.blancall.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,8 +57,12 @@ object AiStreamer {
     private val sessions = ConcurrentHashMap<Long, StreamEntry>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** 完成会话的内存保留时长：过期后自动清理，防内存增长 */
-    private val COMPLETED_RETENTION_MS = 5 * 60 * 1000L
+    /**
+     * 完成会话的内存保留时长：过期后自动清理，防内存增长。
+     * 从 5 分钟放宽到 30 分钟：关闭「保存与 AI 的对话」的用户点到完成通知时，
+     * 只能靠这份内存态恢复内容，5 分钟对「后台放一会儿再回来看」太短。
+     */
+    private val COMPLETED_RETENTION_MS = 30 * 60 * 1000L
 
     /**
      * 启动（或取代）某个会话的一次流式回答。
@@ -88,6 +93,8 @@ object AiStreamer {
         session: SessionMeta
     ): StateFlow<StreamState> {
         cancelInternal(sessionId)
+        // 请求由界面发起，此时应用一定在前台；先登记前后台跟踪，避免完成时把前台误判成后台
+        AiReplyNotifier.ensureTracking(appContext, assumeForeground = true)
         val state = MutableStateFlow(StreamState("", complete = false))
         val job = scope.launch {
             val sb = StringBuilder()
@@ -115,8 +122,17 @@ object AiStreamer {
             }
             // 记录完成时间，启动延时清理
             sessions[sessionId]?.completedAt = System.currentTimeMillis()
-            // 结束：尝试落盘历史（页面可能已销毁，这里不依赖 ViewModel）
+            // 先落盘历史：通知只是锦上添花，任何通知侧异常都不能连累用户丢失这一轮回复
             saveSessionQuietly(appContext, session, state.value)
+            // 用户已把应用推到后台：用系统通知告诉他「回复好了」。
+            // 前台完成不弹通知 —— 用户正看着流式输出，再弹是重复打扰。
+            val finished = state.value
+            if (finished.error == null && finished.text.isNotBlank() &&
+                AiReplyNotifier.isAppInBackground()
+            ) {
+                runCatching { AiReplyNotifier.notifyCompleted(appContext, sessionId, session.title) }
+                    .onFailure { Log.w(TAG, "AI 完成通知发送失败（回复已正常落盘）", it) }
+            }
             scope.launch {
                 delay(COMPLETED_RETENTION_MS)
                 prune()
@@ -124,6 +140,9 @@ object AiStreamer {
         }
         val entry = StreamEntry(job, state, session)
         sessions[sessionId] = entry
+        // 极快的回答可能在 entry 入表之前就结束了，那样协程里的 completedAt 写不到任何对象，
+        // 这个 entry 就永远不会被 prune 掉。入表后补一次判定。
+        if (state.value.complete) entry.completedAt = System.currentTimeMillis()
         return entry.state.asStateFlow()
     }
 
@@ -141,6 +160,18 @@ object AiStreamer {
 
     /** 查询某会话的元信息（进行中会话的标题/文章等；不存在返回 null） */
     fun metaOf(sessionId: Long): SessionMeta? = sessions[sessionId]?.meta
+
+    /**
+     * 已成功完成、但可能还没落盘（历史开关关闭）的会话快照。
+     * 供 [com.ilyskyo.blancall.ui.viewmodel.AiViewModel.resumeSession] 从通知返回时兜底；
+     * 只认「完成且无错误且有正文」的状态，进行中/失败都不算。
+     */
+    fun completedSnapshot(sessionId: Long): Pair<SessionMeta, StreamState>? {
+        val entry = sessions[sessionId] ?: return null
+        val stateValue = entry.state.value
+        if (!stateValue.complete || stateValue.error != null || stateValue.text.isBlank()) return null
+        return entry.meta to stateValue
+    }
 
     /** 已注册会话的元信息（含进行中与已完成但未清理的），供历史页展示 */
     fun metaOfAll(): List<SessionMeta> = sessions.values.map { it.meta }
@@ -200,6 +231,7 @@ object AiStreamer {
     }
 
     private const val STREAM_TIMEOUT_MS = 120_000L
+    private const val TAG = "AiStreamer"
 }
 
 /** 轻量开关读取：避免 AiStreamer 依赖 AppPrefs（ui.theme）造成循环 */

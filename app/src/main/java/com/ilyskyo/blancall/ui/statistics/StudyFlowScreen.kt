@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.statistics
 
 import android.text.format.DateFormat
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -74,6 +75,7 @@ import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.algorithm.SentenceSelector
+import com.ilyskyo.blancall.algorithm.StudyCoach
 import com.ilyskyo.blancall.algorithm.StudyFlow
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.PracticeRecord
@@ -358,6 +360,7 @@ fun StudyFlowScreen(navController: NavController) {
                                 Box(modifier = animateListItem()) {
                                     FlowTaskRow(
                                         task = task,
+                                        now = nowTick,
                                         onOpen = {
                                             haptic()
                                             navController.navigate("study_task/${task.articleId}")
@@ -385,17 +388,17 @@ fun StudyFlowScreen(navController: NavController) {
     }
 
     val sheetTask = tasks.firstOrNull { it.articleId == sheetTaskId }
-    if (sheetTask != null) {
+    AnimatedOverlayPresence(target = sheetTask) { task ->
         FlowAdjustSheet(
-            task = sheetTask,
+            task = task,
             now = nowTick,
             onDismiss = { sheetTaskId = 0L },
-            onReschedule = { target -> reschedule(sheetTask, target) },
-            onTogglePause = { togglePause(sheetTask) },
+            onReschedule = { target -> reschedule(task, target) },
+            onTogglePause = { togglePause(task) },
         )
     }
 
-    if (showPauseAllConfirm) {
+    AnimatedOverlayPresence(visible = showPauseAllConfirm) {
         val ids = tasks.filter { it.phase != StudyFlow.Phase.PAUSED }.map { it.articleId }
         BlancallAlertDialog(
             onDismissRequest = { showPauseAllConfirm = false },
@@ -1008,6 +1011,7 @@ private fun FlowNowMarker() {
 @Composable
 internal fun FlowTaskRow(
     task: FlowTask,
+    now: Long,
     onOpen: () -> Unit,
     onAdjust: () -> Unit,
     onTogglePause: () -> Unit,
@@ -1074,6 +1078,14 @@ internal fun FlowTaskRow(
                             ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        // 「为什么今天轮到它」：只写事实（忘过几次 / 隔了几天），不露 FSRS 术语。
+                        // 没有这一行，用户看到到期只会怀疑算法在乱推，然后开始无视提醒。
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            schedulingReasonText(StudyCoach.reasonOf(task.state, now)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
                         )
                         if (task.sentenceDue > 0) {
                             Spacer(Modifier.height(2.dp))
@@ -1169,6 +1181,17 @@ internal fun FlowDetailStat(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/** 调度理由的展示文案：纯事实、无算法术语。 */
+@Composable
+internal fun schedulingReasonText(reason: StudyCoach.Reason): String = when (reason.kind) {
+    StudyCoach.ReasonKind.FIRST -> stringResource(R.string.reason_first)
+    StudyCoach.ReasonKind.LAPSED -> stringResource(R.string.reason_lapsed, reason.count)
+    StudyCoach.ReasonKind.LONG_GAP -> stringResource(R.string.reason_long_gap, reason.days)
+    StudyCoach.ReasonKind.OVERDUE -> stringResource(R.string.reason_overdue, reason.days)
+    StudyCoach.ReasonKind.STABLE -> stringResource(R.string.reason_stable, reason.count)
+    StudyCoach.ReasonKind.SCHEDULED -> stringResource(R.string.reason_scheduled)
 }
 
 @Composable

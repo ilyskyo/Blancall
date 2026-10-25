@@ -44,10 +44,12 @@ import androidx.compose.runtime.*
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppLocale
 
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
+import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.Motion
@@ -1239,6 +1241,69 @@ fun SettingsScreen(navController: NavController) {
                     )
                 }
                 // 预留更多库：在此 Row 之后追加即可（如化学句子大全）
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                )
+                // 内容包：用户自己的 zip（txt/md + 清单），可浏览、可一键全文导入
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.content_pack_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.content_pack_settings_desc),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    GlassButton(
+                        onClick = { navController.navigate("content_packs") },
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.open),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                // 数据互换：人类可读 JSON 导出 + CSV 回灌
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.interchange_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.interchange_settings_desc),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    GlassButton(
+                        onClick = { navController.navigate("data_interchange") },
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.open),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -1372,7 +1437,7 @@ fun SettingsScreen(navController: NavController) {
             }
 
             // ── 赞赏码保存完成弹窗 ──
-            donationSavedDir?.let { dir ->
+            AnimatedOverlayPresence(target = donationSavedDir) { dir ->
                 BlancallAlertDialog(
                     onDismissRequest = { donationSavedDir = null },
                     title = {
@@ -1420,7 +1485,7 @@ fun SettingsScreen(navController: NavController) {
     }
 
     // ── 首页副标题编辑弹窗 ──
-    if (showSubtitleDialog) {
+    AnimatedOverlayPresence(visible = showSubtitleDialog) {
         var editText by remember(homeSubtitle) { mutableStateOf(homeSubtitle) }
         BlancallAlertDialog(
             onDismissRequest = { showSubtitleDialog = false },
@@ -1457,7 +1522,7 @@ fun SettingsScreen(navController: NavController) {
     }
 
     // ── 归档确认弹窗：确认后才导出并裁剪 ──
-    if (archiveDialogVisible) {
+    AnimatedOverlayPresence(visible = archiveDialogVisible) {
         BlancallAlertDialog(
             onDismissRequest = { archiveDialogVisible = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.data_archive_confirm_title)) },
@@ -1495,7 +1560,7 @@ fun SettingsScreen(navController: NavController) {
     }
 
     // ── 导入备份确认弹窗：确认后才覆盖当前学习数据 ──
-    pendingImportUri?.let { importUri ->
+    AnimatedOverlayPresence(target = pendingImportUri) { importUri ->
         BlancallAlertDialog(
             onDismissRequest = { pendingImportUri = null },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.import_backup_title)) },
@@ -1564,7 +1629,7 @@ fun SettingsScreen(navController: NavController) {
     }
 
     // ── 导入成功提示：各 Store 已全量重载（B1-3），无需重启 ──
-    backupRestartMessage?.let { message ->
+    AnimatedOverlayPresence(target = backupRestartMessage) { message ->
         BlancallAlertDialog(
             onDismissRequest = { backupRestartMessage = null },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.import_success)) },
@@ -1828,7 +1893,7 @@ private fun ReminderSettingsCard() {
     }
 
     // ── 时间选择弹窗 ──
-    if (showTimePicker) {
+    AnimatedOverlayPresence(visible = showTimePicker) {
         TimePickerDialog(
             currentHour = hour,
             currentMinute = minute,
@@ -1843,7 +1908,7 @@ private fun ReminderSettingsCard() {
     }
 
     // ── 自定义目标分钟数输入对话框 ──
-    if (showCustomMinutesDialog) {
+    AnimatedOverlayPresence(visible = showCustomMinutesDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showCustomMinutesDialog = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_daily_goal_title)) },

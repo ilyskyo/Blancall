@@ -7,6 +7,7 @@ import android.annotation.SuppressLint
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -68,6 +69,7 @@ import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.TagColorDots
 import com.ilyskyo.blancall.ui.common.listItemEnter
+import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.rememberEnteredOnFirstFrame
 import com.ilyskyo.blancall.ui.common.pressClick
@@ -668,7 +670,8 @@ private fun RecentCard(
                                 enter = listItemEnter(index),
                                 // 入场是逐条交错的揭示；退场也得写明，否则走库默认那对
                                 // fadeOut+shrinkVertically（时序写死、减动效下不坍缩）
-                                exit = fadeOut(MotionFade.alpha(MotionFade.exit)),
+                                exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                                    shrinkVertically(Motion.contentSize()),
                             ) {
                                 RecentArticleRow(
                                     article = article,

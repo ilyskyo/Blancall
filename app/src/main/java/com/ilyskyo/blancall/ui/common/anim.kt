@@ -81,11 +81,13 @@ fun rememberEnteredOnFirstFrame(): Boolean {
 }
 
 /**
- * 带弹簧入场 / 退场的 AlertDialog（drop-in 替换 M3 `AlertDialog`）。
+ * 带弹簧入场 / 退场的 AlertDialog。
  *
- * 仅把内层 M3 卡片包进 [AnimatedVisibility]（scale + fade 弹簧），
- * 原 `title` / `text` / `confirmButton` / `dismissButton` 等参数全部透传，行为零变化。
- * 为避免 Dialog 嵌套，内层用 [Surface] 复刻 M3 对话框的卡片外观。
+ * 内层卡片包进 [AnimatedVisibility]（scale + fade），原 `title` / `text` /
+ * `confirmButton` / `dismissButton` 等参数全部透传；内层用 [Surface] 复刻 M3 卡片外观。
+ *
+ * **要让“按钮直接把 flag 置 false”也播完退场，必须用 [AnimatedOverlayPresence] 包住**；
+ * 只写 `if (flag) BlancallAlertDialog(...)` 时组件会被同帧移除，任何内部动画都来不及播。
  *
  * 注意：ModalBottomSheet 已有官方动画，请勿用本组件包裹。
  */
@@ -104,35 +106,54 @@ fun BlancallAlertDialog(
     // text 块之后的底部间距；当按钮直接放在 text 内部时传 0.dp，避免按钮下方出现 24dp 空白
     textBottomSpacing: Dp = 24.dp
 ) {
-    // 由本组件发起的关闭（点遮罩、按返回）不再立刻通知调用方，而是等退场播完 —— 见下方注释。
+    // 两条关闭路径汇到 shouldExit：
+    // - 点遮罩/返回：本组件发起，播完后回调 onDismissRequest；
+    // - 按钮/副作用把 flag 置 false：由外层 AnimatedOverlayPresence 通过
+    //   LocalOverlayExitRequested 通知本组件，播完后回执给宿主移除。
+    // 没有宿主时保持旧行为（组件自己发起的那条仍能完整退场）。
     var dismissRequested by remember { mutableStateOf(false) }
     var exitPlayed by remember { mutableStateOf(false) }
+    var exitFinished by remember { mutableStateOf(false) }
+    var contentVisible by remember { mutableStateOf(false) }
+    var hasOpened by remember { mutableStateOf(false) }
+    val externalExit = LocalOverlayExitRequested.current
+    val notifyExitFinished = LocalOverlayExitFinished.current
+    val shouldExit = dismissRequested || externalExit
     // 关闭回执：点遮罩/按返回是用户自己发起的「我要关掉」，给轻的一下。
     // 按钮路径不走这里（调用方直接翻 flag），所以不会与按钮自己的回执叠成两下。
     val dismissHaptic = rememberHaptic(HapticTier.Toggle)
-    Dialog(onDismissRequest = { dismissRequested = true }, properties = properties ?: DialogProperties()) {
-        var visible by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { visible = true }
-        // ── 延后撤销 ──
-        // 调用方一律写作 `if (flag) BlancallAlertDialog(...)`：flag 一翻，本组件同帧出组合，
-        // Dialog 窗口连带被拆 —— 于是下面那行 exit **永远不会播**（改造前它是死代码，
-        // 约 30 个界面的关闭都是「凭空消失」，用户读作卡了一下）。
-        // 组件挡不住自己被移出组合，但**由 Dialog 自己发起**的关闭可以：
-        // 先把退场播完，等 AnimatedVisibility 把内容层 dispose 的那一刻再通知调用方撤销窗口，
-        // 期间 flag 仍是 true，所以退场有地方可播。30 个调用点一行都不用改。
-        // 减动效下走「跳过动画」而不是「延后 dismiss」：不等一个不会到来的完成信号，
-        // 否则界面会永久停在「正在退出」里 —— 比没有动画更糟。
-        LaunchedEffect(dismissRequested) {
-            if (dismissRequested) {
-                dismissHaptic()
-                visible = false
+
+    LaunchedEffect(shouldExit) {
+        contentVisible = !shouldExit
+        if (shouldExit) {
+            // 还没等到入场那一帧就被关掉：AnimatedVisibility 内容从未组合，
+            // 不会发 onDispose，不能在这里干等退场完成。
+            if (!hasOpened) {
+                exitFinished = true
+                if (dismissRequested) onDismissRequest()
+                notifyExitFinished?.invoke()
             }
+        } else {
+            exitPlayed = false
+            exitFinished = false
         }
-        LaunchedEffect(dismissRequested, exitPlayed) {
-            if (dismissRequested && (exitPlayed || !Motion.exitsAreAnimated)) onDismissRequest()
-        }
+    }
+    LaunchedEffect(dismissRequested) {
+        if (dismissRequested) dismissHaptic()
+    }
+    LaunchedEffect(shouldExit, exitPlayed, notifyExitFinished) {
+        if (!shouldExit) return@LaunchedEffect
+        if (!exitPlayed && Motion.exitsAreAnimated) return@LaunchedEffect
+        if (exitFinished) return@LaunchedEffect
+        exitFinished = true
+        // 只有组件自己发起的关闭需要回调调用方；外部关闭时调用方状态已经是 false。
+        if (dismissRequested) onDismissRequest()
+        notifyExitFinished?.invoke()
+    }
+
+    Dialog(onDismissRequest = { dismissRequested = true }, properties = properties ?: DialogProperties()) {
         AnimatedVisibility(
-            visible = visible,
+            visible = contentVisible,
             // 位移=弹簧、alpha=tween（词表见 Motion / MotionFade）。
             // 入场原来是 MediumBouncy + StiffnessLow（约 900ms 才稳），换成 Motion.press()
             // 后到达更快、尾段只留一次极小回弹 —— 对话框是被「按」出来的，不是飘出来的。
@@ -148,6 +169,7 @@ fun BlancallAlertDialog(
             // 退场播完的唯一可靠信号：内容层被 AnimatedVisibility 移出组合。
             // 用固定时长猜完成时刻会随弹簧参数漂移，这条不会。
             DisposableEffect(Unit) {
+                hasOpened = true
                 onDispose { exitPlayed = true }
             }
             // 玻璃面板：默认半透明染色（深色暖黑 0.94 / 浅色白 0.95）+ 1dp 高光描边，

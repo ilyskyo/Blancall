@@ -170,6 +170,12 @@ fun LiquidGlassPopupBackdrop(
             },
             modifier = Modifier.matchParentSize(),
             update = { view ->
+                view.applyGlassThemeTint(
+                    isDark,
+                    darkTintIsBlack = true,
+                    darkTintAlpha = tintAlphaDark,
+                    lightTintAlpha = tintAlphaLight,
+                )
                 if (view.getTag(R.id.lg_bound_tag) == null) {
                     view.post {
                         if (view.isAttachedToWindow && view.getTag(R.id.lg_bound_tag) == null) {
@@ -282,7 +288,15 @@ fun LiquidGlassPageBar(
                 },
                 modifier = Modifier.matchParentSize(),
                 update = { view ->
-                    if (view.getTag(R.id.lg_bound_tag) == null) {
+                    view.applyGlassThemeTint(
+                        isDark,
+                        darkTintIsBlack = true,
+                        darkTintAlpha = tintAlphaDark,
+                        lightTintAlpha = tintAlphaLight,
+                    )
+                    val bound = view.getTag(R.id.lg_bound_tag) != null
+                    if (!bound) view.applyGlassThemeBackground(isDark, 230)
+                    if (!bound) {
                         view.post {
                             if (view.isAttachedToWindow && view.getTag(R.id.lg_bound_tag) == null) {
                                 sourceRef.get()?.let { view.bind(it) }

@@ -81,8 +81,35 @@ data class PracticeRecord(
     // 本次判分【答错】的句子在【全文切句】中的句子索引（相对单篇文章/当次练习全文口径）。
     // 供句级错误画像聚合（薄弱优先策略、薄弱集训段落排序）；跨文练习不落此字段
     // （混合坐标仅对当次 mix 有效，换组合无法复用）；旧记录缺失 → 空列表（句级统计视为无数据）。
-    val mistakeSentenceIndices: List<Int> = emptyList()
+    val mistakeSentenceIndices: List<Int> = emptyList(),
+    // 本次**全部已判分空**的逐空结果（不只错题）。错题本需要它才能判断
+    // 「这个字后来写对过没有」：只靠 mistakes 只能看见错，永远不知道是否已攻克。
+    // 旧记录为空 → 错题本把历史错题一律视为「未攻克」，并明确标注无法判断。
+    val answeredBlanks: List<AnsweredBlank> = emptyList()
 )
+
+/**
+ * 一次练习中单个空的判分结果（含答对的）。
+ *
+ * 为什么不复用 [MistakeDetail]：那个类型语义是「错处」，把答对也塞进去会让所有
+ * 既有统计（错因分布、错题数）需要重新过滤一遍，漏一处就多算一次错。
+ * 两者字段刻意保持同名同序，导出/导入可以逐字段对照。
+ *
+ * [sentenceText] 是判分当时那句原文，用来解决「句索引会随文章编辑整体错位」：
+ * 错题本展示与重练定位都以文字为锚，索引只作为热力图的旧坐标使用。
+ */
+data class AnsweredBlank(
+    val blankIndex: Int,
+    val correctAnswer: String,
+    val userAnswer: String,
+    // 空串 = 答对；其余见 [ErrorType]
+    val errorType: String = "",
+    val sentenceIndex: Int = -1,
+    val sentenceText: String = "",
+    val similarity: Float = -1f,
+) {
+    val correct: Boolean get() = errorType.isEmpty()
+}
 
 data class MistakeDetail(
     val blankIndex: Int,
@@ -103,5 +130,9 @@ data class MistakeDetail(
     // 为什么逐空也要留：记录里原先只有会话级的 `similarity`（各空均值），
     // 于是「一笔之差」和「全错」在盘上是同一个数 —— 回顾、热力图、AI 都分不出轻重。
     // 均值继续留给现有统计页用，两者并存不冲突。
-    val similarity: Float = -1f
+    val similarity: Float = -1f,
+    // 判分当时的完整原句。句索引会随文章编辑整体错位，文字不会：
+    // 错题本用它显示「这句到底长什么样」、重练时用它在新正文里重新定位。
+    // 旧记录为空串 → 展示层退回句索引或只显示答案对照，绝不跳到可能错误的句子。
+    val sentenceText: String = ""
 )

@@ -52,7 +52,7 @@ internal fun WordClozeContent(
     onViewArticleData: (() -> Unit)? = null,
     onBlankFocus: (Int) -> Unit = {},
     onAnswerChange: (Int, String) -> Unit,
-    /** 墨迹上报（错题回顾）：手写被消费时回调（blankIdx 已在内部绑定）；透传给内嵌书写板 */
+    /** 墨迹上报（错题回顾）：手写识别产生上屏内容时回调整次识别快照（blankIdx 已在内部绑定） */
     onInkCommitted: ((Int, List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     blancall?.let {
@@ -200,7 +200,7 @@ internal fun BlankCard(
     /** 该空的识别文种（按标准答案自动选） */
     script: HandwritingScript = HandwritingScript.Chinese,
     onValueChange: (String) -> Unit,
-    /** 墨迹上报（错题回顾）：透传给内嵌书写板（blankIdx 由调用方绑定） */
+    /** 墨迹上报（错题回顾）：透传整次识别的墨迹快照（blankIdx 由调用方绑定） */
     onInkCommitted: ((List<List<Offset>>, Int, Int) -> Unit)? = null
 ) {
     // 只有「非目标」卡才需要整卡点击切目标（点输入框仍能正常打字，互不冲突）

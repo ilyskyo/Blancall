@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.cloze
 
 import android.widget.Toast
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -596,7 +597,7 @@ fun CustomClozeEditScreen(
     }
 
     // ── 模式切换确认（已选内容非空时）──
-    if (showModeSwitchConfirm) {
+    AnimatedOverlayPresence(visible = showModeSwitchConfirm) {
         BlancallAlertDialog(
             onDismissRequest = { showModeSwitchConfirm = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.switch_mode_title), fontWeight = FontWeight.SemiBold) },
@@ -622,7 +623,7 @@ fun CustomClozeEditScreen(
     }
 
     // ── 保存命名弹窗（新建配置时）──
-    if (showSaveDialog) {
+    AnimatedOverlayPresence(visible = showSaveDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showSaveDialog = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.save_cloze_title), fontWeight = FontWeight.SemiBold) },
@@ -679,7 +680,7 @@ fun CustomClozeEditScreen(
     }
 
     // ── 未保存改动退出确认 ──
-    if (showExitConfirm) {
+    AnimatedOverlayPresence(visible = showExitConfirm) {
         BlancallAlertDialog(
             onDismissRequest = { showExitConfirm = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.exit_confirm_title), fontWeight = FontWeight.SemiBold) },

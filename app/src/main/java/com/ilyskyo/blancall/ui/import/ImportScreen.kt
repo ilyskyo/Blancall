@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.import
 
 import com.ilyskyo.blancall.ui.common.FadeDialogWindow
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import android.net.Uri
 import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -495,7 +496,7 @@ fun ImportScreen(navController: NavController) {
     }
 
     // 标题建议弹窗
-    if (showTitleSuggestionDialog) {
+    AnimatedOverlayPresence(visible = showTitleSuggestionDialog) {
         val firstLine = content.lines().firstOrNull()?.trim()?.take(TITLE_TRUNCATE_LENGTH) ?: ""
         BlancallAlertDialog(
             onDismissRequest = {
@@ -575,7 +576,7 @@ fun ImportScreen(navController: NavController) {
     }
 
     // 大文件预警对话框
-    if (showLargeFileWarning) {
+    AnimatedOverlayPresence(visible = showLargeFileWarning) {
         BlancallAlertDialog(
             onDismissRequest = { showLargeFileWarning = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.text_too_long_title)) },

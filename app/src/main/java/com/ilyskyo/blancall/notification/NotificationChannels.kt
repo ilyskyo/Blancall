@@ -16,7 +16,9 @@ import com.ilyskyo.blancall.R
  * 每种打扰都能被单独关掉，这也是 Android 8+ 渠道机制存在的本意。
  *
  * 渠道一旦用某个 ID 建过，后续只能改名字/描述，**不能改重要性**（系统会忽略），
- * 所以三个渠道的重要性在首次创建时就定死为 DEFAULT，不引入高优先级以免打扰。
+ * 所以重要性在首次创建时就定死：提醒类一律 DEFAULT，不引入高优先级以免打扰；
+ * 只有「练习进行中」是 LOW —— 它是用户自己正在做的事的实时状态，不该出声，
+ * 同时 LOW 满足 Android 16 Live Updates 对渠道非 MIN 的要求。
  */
 object NotificationChannels {
 
@@ -28,6 +30,18 @@ object NotificationChannels {
 
     /** 继续完成与今日目标（未完成练习、今日未学习、薄弱内容、连续学习、目标未达） */
     const val CHANNEL_GOAL = "continue_goal"
+
+    /** 练习正确率（练完一次后正确率偏低、需要复习错题） */
+    const val CHANNEL_PRACTICE = "practice_result"
+
+    /**
+     * 练习进行中（离开应用时的 Live Update / 常驻进度通知）。
+     *
+     * 不并进 [CHANNEL_GOAL]：那条渠道承载的是「系统提醒你该练了」，会被一揽子关掉；
+     * 本渠道是用户自己正在做的事情的实时状态，两者打扰语义不同，必须能分开控制。
+     * 重要性 LOW：练习期间不该出声，LOW 也满足 Android 16 Live Updates 对渠道非 MIN 的要求。
+     */
+    const val CHANNEL_ONGOING = "practice_ongoing"
 
     /**
      * 旧渠道 ID，**保留不删**：用户可能在系统设置里对它有自定义（关掉 / 静音），
@@ -41,8 +55,16 @@ object NotificationChannels {
 
     /** 该 reason 应落在哪个渠道。同一条 reason 永远映射到同一渠道，避免用户关了一个渠道又被另一个顶上来。 */
     fun channelIdFor(reason: ReminderReason): String = when (reason) {
-        ReminderReason.DueReview -> CHANNEL_DUE_REVIEW
+        // 「任务即将到期 / 即将遗忘」与真正到期共用一条渠道：
+        // 对用户来说都是「该复习了」，拆开只会让要关的人多关一处。
+        ReminderReason.DueReview,
+        ReminderReason.TaskDueSoon,
+        ReminderReason.ForgettingSoon -> CHANNEL_DUE_REVIEW
+
         ReminderReason.SentenceCardDue -> CHANNEL_SENTENCE_CARD
+
+        ReminderReason.PracticeAccuracy -> CHANNEL_PRACTICE
+
         ReminderReason.NoStudyToday,
         ReminderReason.WeakContent,
         ReminderReason.IncompletePractice,
@@ -84,9 +106,27 @@ object NotificationChannels {
         manager.createNotificationChannel(
             channel(
                 context,
+                CHANNEL_PRACTICE,
+                R.string.notif_channel_practice_name,
+                R.string.notif_channel_practice_desc,
+            )
+        )
+        manager.createNotificationChannel(
+            channel(
+                context,
                 CHANNEL_ID_LEGACY,
                 R.string.notif_channel_legacy_name,
                 R.string.notif_channel_legacy_desc,
+            )
+        )
+        manager.createNotificationChannel(
+            channel(
+                context,
+                CHANNEL_ONGOING,
+                R.string.notif_channel_ongoing_name,
+                R.string.notif_channel_ongoing_desc,
+                importance = NotificationManager.IMPORTANCE_LOW,
+                showBadge = false,
             )
         )
     }
@@ -96,12 +136,14 @@ object NotificationChannels {
         id: String,
         nameRes: Int,
         descRes: Int,
+        importance: Int = NotificationManager.IMPORTANCE_DEFAULT,
+        showBadge: Boolean = true,
     ): NotificationChannel = NotificationChannel(
         id,
         context.getString(nameRes),
-        NotificationManager.IMPORTANCE_DEFAULT,
+        importance,
     ).apply {
         description = context.getString(descRes)
-        setShowBadge(true)
+        setShowBadge(showBadge)
     }
 }

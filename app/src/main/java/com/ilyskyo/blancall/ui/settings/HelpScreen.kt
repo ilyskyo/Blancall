@@ -23,6 +23,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.ui.common.Motion
+import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.BackButton
 
 @Composable
@@ -499,8 +501,10 @@ private fun HelpSection(
             // 展开内容（带动画）
             AnimatedVisibility(
                 visible = expanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                enter = expandVertically(Motion.contentSize()) +
+                    fadeIn(MotionFade.alpha(MotionFade.enter)),
+                exit = shrinkVertically(Motion.contentSize()) +
+                    fadeOut(MotionFade.alpha(MotionFade.exit))
             ) {
                 Column(
                     modifier = Modifier.padding(

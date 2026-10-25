@@ -5,12 +5,18 @@ package com.ilyskyo.blancall.ui.common
 
 import com.ilyskyo.blancall.R
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.isSelected
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -45,13 +51,28 @@ class BottomNavAccessibilityTest {
             .map { rule.activity.getString(it) }
 
     @Test
-    fun 四个导航项都可被无障碍激活() {
-        renderBar(currentTab = 0)
-        val withClick = rule.onAllNodes(hasClickAction()).fetchSemanticsNodes()
-        assertTrue("带点击动作的导航项应为 4，实为 ${withClick.size}", withClick.size == 4)
+    fun 四个导航项都可被无障碍激活且真的切换() {
+        val selectedTabs = mutableListOf<Int>()
+        renderBar(currentTab = 0, onSelect = { selectedTabs += it })
+        val tabs = rule.onAllNodes(hasClickAction())
+        val withClick = tabs.fetchSemanticsNodes()
+        assertEquals("带点击动作的导航项应为 4，实为 ${withClick.size}", 4, withClick.size)
+
+        // 逐项执行读屏实际会发出的动作，而不是只看「有没有这个动作」。
+        repeat(4) { index ->
+            tabs[index].performSemanticsAction(SemanticsActions.OnClick)
+        }
+        rule.runOnIdle {
+            assertEquals("四个导航项都应把点击交给 onSelect", listOf(0, 1, 2, 3), selectedTabs)
+        }
 
         val selected = rule.onAllNodes(isSelected()).fetchSemanticsNodes()
-        assertTrue("选中态节点应恰好 1 个，实为 ${selected.size}", selected.size == 1)
+        assertEquals("选中态节点应恰好 1 个，实为 ${selected.size}", 1, selected.size)
+        rule.onAllNodes(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        ).fetchSemanticsNodes().let {
+            assertEquals("四个导航项都应是 Role.Tab", 4, it.size)
+        }
     }
 
     @Test
@@ -70,9 +91,9 @@ class BottomNavAccessibilityTest {
         }
     }
 
-    private fun renderBar(currentTab: Int) {
+    private fun renderBar(currentTab: Int, onSelect: (Int) -> Unit = {}) {
         rule.setContent {
-            BottomNavBar(currentTab = currentTab, onSelect = {}, showLibraryTab = true)
+            BottomNavBar(currentTab = currentTab, onSelect = onSelect, showLibraryTab = true)
         }
         rule.waitForIdle()
     }

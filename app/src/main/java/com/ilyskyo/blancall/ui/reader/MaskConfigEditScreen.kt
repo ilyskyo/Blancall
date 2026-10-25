@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.reader
 
 import android.widget.Toast
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -636,7 +637,7 @@ fun MaskConfigEditScreen(
     }
 
     // ── 保存命名弹窗（与自定义挖空同款交互）──
-    if (showSaveDialog) {
+    AnimatedOverlayPresence(visible = showSaveDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showSaveDialog = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.save_mask_title), fontWeight = FontWeight.SemiBold) },
@@ -678,7 +679,7 @@ fun MaskConfigEditScreen(
     }
 
     // ── 未保存改动退出确认 ──
-    if (showExitConfirm) {
+    AnimatedOverlayPresence(visible = showExitConfirm) {
         BlancallAlertDialog(
             onDismissRequest = { showExitConfirm = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.exit_mask_title), fontWeight = FontWeight.SemiBold) },

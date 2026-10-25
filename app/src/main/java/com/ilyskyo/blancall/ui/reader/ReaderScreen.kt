@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.reader
 
 import android.widget.Toast
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.FadeDialogWindow
 import com.ilyskyo.blancall.ui.common.StateSwap
 import androidx.activity.compose.BackHandler
@@ -57,8 +58,12 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.MaskToCloze
+import com.ilyskyo.blancall.algorithm.SentenceSplitter
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.repository.CustomClozeStore
+import com.ilyskyo.blancall.data.repository.OneShotCloze
 import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.heroElement
@@ -676,26 +681,52 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
             ) {
                 ReadingModeScreen(
                     article = art,
-                    onExit = { readingMode = false }
+                    onExit = { readingMode = false },
+                    onPracticeParagraph = { paragraphStart, spans ->
+                        // 一次性快照：遮挡配置语义与挖空配置语义不混写（报告明确红线）。
+                        // 段落起点 + 段内遮块 → 全文切句区间 → 一次性自定义挖空。
+                        val sentenceRanges = MaskToCloze.convert(
+                            paragraphStart = paragraphStart,
+                            spans = spans,
+                            sentences = SentenceSplitter.splitWithPositions(art.content),
+                        )
+                        if (sentenceRanges.isEmpty()) {
+                            Toast.makeText(
+                                context,
+                                resources.getString(com.ilyskyo.blancall.R.string.reader_practice_section_failed),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            val cfg = CustomClozeStore.CustomConfig(
+                                id = -1L,
+                                name = resources.getString(com.ilyskyo.blancall.R.string.reader_practice_section_name),
+                                createdAt = 0L,
+                                blanks = sentenceRanges.map {
+                                    CustomClozeStore.BlankSpec(it.sentenceIndex, it.a, it.b)
+                                },
+                                mode = "SENTENCE",
+                            )
+                            val token = OneShotCloze.put(art.id, cfg)
+                            navController.navigate("practice/${art.id}?mode=SENTENCE&oneShot=$token")
+                        }
+                    }
                 )
             }
         }
     }
 
     // 删除确认对话框（引用公共组件）
-    if (showDeleteDialog) {
-        article?.let { art ->
-            DeleteConfirmDialog(
-                title = stringResource(com.ilyskyo.blancall.R.string.confirm_delete_title),
-                message = stringResource(com.ilyskyo.blancall.R.string.confirm_delete_message, art.title),
-                onConfirm = {
-                    articleViewModel.deleteArticle(art)
-                    showDeleteDialog = false
-                    navController.popBackStack()
-                },
-                onDismiss = { showDeleteDialog = false }
-            )
-        }
+    AnimatedOverlayPresence(target = article.takeIf { showDeleteDialog }) { art ->
+        DeleteConfirmDialog(
+            title = stringResource(com.ilyskyo.blancall.R.string.confirm_delete_title),
+            message = stringResource(com.ilyskyo.blancall.R.string.confirm_delete_message, art.title),
+            onConfirm = {
+                articleViewModel.deleteArticle(art)
+                showDeleteDialog = false
+                navController.popBackStack()
+            },
+            onDismiss = { showDeleteDialog = false }
+        )
     }
 
     // 模式选择弹窗：常驻组件，内部状态控制显隐，保证退场动画完整播放
@@ -715,18 +746,16 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     )
 
     // 标签选择面板（单篇）：标签即时落盘；取消/完成都只收起面板
-    if (showTagPicker) {
-        val target = article
-        if (target != null) {
-            TagPickerSheet(
-                targets = listOf(target),
-                onDismiss = { showTagPicker = false },
-                onApplied = { showTagPicker = false },
-            )
-        } else {
-            // 文章尚未加载完成（极端时序）：直接收起，避免空目标面板
-            showTagPicker = false
-        }
+    LaunchedEffect(showTagPicker, article) {
+        // 文章尚未加载完成（极端时序）：收起请求，避免面板在文章到达后突然自己弹出
+        if (showTagPicker && article == null) showTagPicker = false
+    }
+    AnimatedOverlayPresence(target = article.takeIf { showTagPicker }) { target ->
+        TagPickerSheet(
+            targets = listOf(target),
+            onDismiss = { showTagPicker = false },
+            onApplied = { showTagPicker = false },
+        )
     }
 
     // ── 全屏编辑对话框 ──

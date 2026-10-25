@@ -65,7 +65,13 @@ fun BackButton(
     Surface(
         modifier = modifier
             .size(40.dp)
-            .pressFeedback(src, PressTier.Icon, layerShape = CircleShape, dimOnPress = false)
+            .pressFeedback(
+                src,
+                PressTier.Icon,
+                layerShape = CircleShape,
+                dimOnPress = false,
+                hapticTier = HapticTier.Toggle,
+            )
             // 这里**不能**再加 .clip(CircleShape)：clip 挂在 Surface 外面会把 Surface
             // 自己画的 elevation 投影裁掉（投影画在圆的外侧），结果是白页面上白圆盘
             // 完全没有边界 —— 看着就像一颗裸箭头。v7.2.4 没有这层 clip 所以是好的；

@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.tag
 
 import com.ilyskyo.blancall.ui.common.StateSwap
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -401,7 +402,7 @@ fun TagManagerScreen(navController: NavController) {
     }
 
     // ── 新建 / 编辑面板 ──
-    if (creating) {
+    AnimatedOverlayPresence(visible = creating) {
         TagEditorSheet(
             initialTag = null,
             existingTags = data.tags,
@@ -412,7 +413,7 @@ fun TagManagerScreen(navController: NavController) {
             },
         )
     }
-    editing?.let { target ->
+    AnimatedOverlayPresence(target = editing) { target ->
         TagEditorSheet(
             initialTag = target,
             existingTags = data.tags,
@@ -430,7 +431,7 @@ fun TagManagerScreen(navController: NavController) {
     }
 
     // ── 删除二次确认（级联解绑）──
-    deleteTarget?.let { target ->
+    AnimatedOverlayPresence(target = deleteTarget) { target ->
         val boundCount = data.links.values.count { target.id in it }
         BlancallAlertDialog(
             onDismissRequest = { deleteTarget = null },
@@ -460,7 +461,7 @@ fun TagManagerScreen(navController: NavController) {
     }
 
     // ── 管理该标签下的文章：勾选=绑定，取消勾选=移出（单次落盘，见 setTagArticles）──
-    managing?.let { tag ->
+    AnimatedOverlayPresence(target = managing) { tag ->
         // 初始勾选态：当前已绑定的文章（打开时快照一次，会话内以本地状态为准）
         var checked by remember(tag.id) {
             mutableStateOf(

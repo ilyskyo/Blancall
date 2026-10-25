@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FormatLineSpacing
 import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.*
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextAlign
+import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,6 +87,7 @@ import com.ilyskyo.blancall.ui.common.HapticTier
 import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.ReadingMaxWidth
 import com.ilyskyo.blancall.ui.common.pinchZoomByTouch
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.common.tapGesturesPenAware
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
@@ -99,6 +102,9 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 // ========== 阅读背景 / 配色 ==========
+
+/** 一段可用于「遮挡转练」的正文：全文起点 + 段内已遮区间 */
+private data class PracticeParagraph(val start: Int, val text: String, val spans: List<IntRange>)
 
 /** 米白纸张色 */
 private val PaperBeige = Color(0xFFF6F0E6)
@@ -136,7 +142,12 @@ internal const val LgRefractionOffsetDp = 70f // 20-120dp：采样偏移（对�
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
+fun ReadingModeScreen(
+    article: Article,
+    onExit: () -> Unit,
+    /** 「把这一段变成挖空」：段落起点（全文坐标）+ 段内遮块区间；转换与导航由外层负责 */
+    onPracticeParagraph: (Int, List<IntRange>) -> Unit = { _, _ -> },
+) {
     // 章节翻页的回执：「跨过去一页」是轻的一下（Toggle），
     // 而不是 Compose 语义类型那一下 —— 与 ui/common/Haptics.kt 同一套直振栈。
     val pageHaptic = rememberHaptic(HapticTier.Toggle)
@@ -242,6 +253,42 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
 
     var controlsVisible by remember { mutableStateOf(true) }
     var settingsVisible by remember { mutableStateOf(false) }
+    // 「遮挡段 → 一次性挖空」：只列出真的被遮住的段落，避免用户从头翻找
+    var showPracticeSheet by remember { mutableStateOf(false) }
+    var practiceChoices by remember { mutableStateOf<List<PracticeParagraph>>(emptyList()) }
+    LaunchedEffect(
+        showPracticeSheet,
+        readerPrefs.occlusionMode,
+        readerPrefs.occlusionCustomConfigId,
+        article.id,
+    ) {
+        if (!showPracticeSheet) return@LaunchedEffect
+        practiceChoices = withContext(Dispatchers.IO) {
+            val paras = ReaderOcclusion.splitParagraphs(article.content)
+            val customSpansByPara: Map<Int, List<IntRange>> =
+                if (readerPrefs.occlusionMode == "custom" && readerPrefs.occlusionCustomConfigId > 0L) {
+                    val cfg = MaskConfigStore.getInstance(context.filesDir)
+                        .getConfigs(article.id)
+                        .firstOrNull { it.id == readerPrefs.occlusionCustomConfigId }
+                    cfg?.spans
+                        ?.groupBy { it.p }
+                        ?.mapValues { (_, spans) -> spans.map { it.a until it.e } }
+                        .orEmpty()
+                } else {
+                    emptyMap()
+                }
+            paras.mapIndexedNotNull { idx, p ->
+                val spans = if (readerPrefs.occlusionMode == "custom") {
+                    customSpansByPara[idx].orEmpty()
+                } else {
+                    ReaderOcclusion.localRangesInPara(p.text, readerPrefs.occlusionMode)
+                        .map { it.start until it.end }
+                }
+                if (spans.isEmpty()) null
+                else PracticeParagraph(start = p.start, text = p.text, spans = spans)
+            }
+        }
+    }
     // 遮挡自定义浮层：null=无 / "list"=配置列表 / "edit"=编辑器（编辑器从列表进出）
     var maskOverlay by remember { mutableStateOf<String?>(null) }
     var maskEditConfigId by remember { mutableLongStateOf(-1L) }
@@ -735,6 +782,19 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                 )
+                if (controlsVisible && occlusionEnabled) {
+                    GlassIconButton(
+                        onClick = { showPracticeSheet = true },
+                        buttonSize = 38.dp
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PlayArrow,
+                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.reader_practice_section_cd),
+                            tint = accentColor,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
                 if (controlsVisible) {
                     GlassIconButton(onClick = { settingsVisible = true }, buttonSize = 38.dp) {
                         Icon(
@@ -845,6 +905,74 @@ fun ReadingModeScreen(article: Article, onExit: () -> Unit) {
                     Spacer(Modifier.width(36.dp))
                 }
             }  // close LiquidGlassPill content
+    }
+
+    // ── 遮挡段转练：选一段 → 一次性挖空（不写配置库，不新增第三套语义）──
+    if (showPracticeSheet) {
+        BlancallAlertDialog(
+            onDismissRequest = { showPracticeSheet = false },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.reader_practice_section_title)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.reader_practice_section_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    if (practiceChoices.isEmpty()) {
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.reader_practice_section_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 380.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            practiceChoices.forEach { choice ->
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pressClick {
+                                            showPracticeSheet = false
+                                            onPracticeParagraph(choice.start, choice.spans)
+                                        }
+                                ) {
+                                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                                        Text(
+                                            text = choice.text.take(48) + if (choice.text.length > 48) "…" else "",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = stringResource(
+                                                com.ilyskyo.blancall.R.string.reader_practice_section_spans,
+                                                choice.spans.size
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPracticeSheet = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.close))
+                }
+            }
+        )
     }
 
     // ── 阅读设置面板（液态玻璃底部面板）──

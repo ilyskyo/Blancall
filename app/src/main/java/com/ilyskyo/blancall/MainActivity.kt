@@ -26,11 +26,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import com.ilyskyo.blancall.data.ai.AiReplyNotifier
 import com.ilyskyo.blancall.notification.NotificationHelper
+import com.ilyskyo.blancall.notification.PracticeLiveUpdate
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.ProvideWindowSizeClass
 import com.ilyskyo.blancall.ui.navigation.AppNavigation
 import com.ilyskyo.blancall.ui.navigation.NavigationDispatcher
+import com.ilyskyo.blancall.ui.navigation.ShareTextDispatcher
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.theme.BlancallTheme
 import com.ilyskyo.blancall.ui.settings.SettingsSessionState
@@ -115,8 +118,9 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
 
-        // 处理通知点击跳转
+        // 处理通知点击跳转 / 系统分享文本
         handleNotificationIntent(intent)
+        handleShareIntent(intent)
 
         setContent {
             // 窗口尺寸类别：随窗口大小实时变化（旋转、分屏、折叠展开均会更新），
@@ -161,6 +165,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 回到前台即撤掉「练习进行中」的岛卡；再次退后台会按最新进度重发
+        PracticeLiveUpdate.onAppForegrounded()
+    }
+
+    override fun onStop() {
+        // 先让通知侧存档再上岛（异步写盘）；此刻练习页仍登记着会话，返回键离开时不会走到这里
+        PracticeLiveUpdate.onAppBackgrounded()
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         // 用户可能在系统设置中重新开启了通知权限，回到 App 时补调度
@@ -171,7 +187,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleNotificationIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    /**
+     * 系统分享（ACTION_SEND text/plain）：把文本交给确认页。
+     *
+     * 这里只转发、不解析、不入库：脏文本必须在确认页由用户看过再决定。
+     * 也接受 ACTION_PROCESS_TEXT（文本选择菜单），但只在用户显式选中本应用时触发。
+     */
+    private fun handleShareIntent(intent: android.content.Intent?) {
+        if (intent == null) return
+        val isSend = intent.action == android.content.Intent.ACTION_SEND
+        val isProcessText = intent.action == android.content.Intent.ACTION_PROCESS_TEXT
+        if (!isSend && !isProcessText) return
+        if (intent.type != null && !intent.type.orEmpty().startsWith("text/")) return
+        val text = intent.getCharSequenceExtra(android.content.Intent.EXTRA_TEXT)?.toString()
+            ?: intent.getCharSequenceExtra(android.content.Intent.EXTRA_PROCESS_TEXT)?.toString()
+        if (!text.isNullOrBlank()) ShareTextDispatcher.submit(text)
     }
 
     /**
@@ -180,13 +215,28 @@ class MainActivity : ComponentActivity() {
     private fun handleNotificationIntent(intent: android.content.Intent?) {
         val navAction = intent?.getStringExtra(NotificationHelper.EXTRA_NAV_ACTION) ?: return
         val articleId = intent.getLongExtra(NotificationHelper.EXTRA_ARTICLE_ID, -1L)
+        val aiSessionId = intent.getLongExtra(AiReplyNotifier.EXTRA_SESSION_ID, -1L)
+
+        // 应用还停在同一个练习页（通知就是退后台时挂上的）：点击只是把任务带回前台。
+        // 此时再 navigate 会在返回栈上压一层一模一样的练习页，返回键要按两次才出得去。
+        if (navAction == NotificationHelper.NAV_RESUME_PRACTICE &&
+            PracticeLiveUpdate.hasActiveSession(articleId)
+        ) return
 
         // 用 NotificationHelper 里的常量，不写裸字符串：通知塞的是什么、这里就得认什么，
         // 两边各写一份字面量时，改了一边就会**静默**退回首页（用户点了通知落在首页，看不出是 bug）。
         val route = when (navAction) {
             NotificationHelper.NAV_PRACTICE ->
                 if (articleId > 0) "practice/$articleId" else "home"
+            // 练习进行中：resume=true 才会从 practice_state 恢复答题现场，而不是重新开始
+            NotificationHelper.NAV_RESUME_PRACTICE ->
+                if (articleId > 0) "practice/$articleId?resume=true" else "home"
             NotificationHelper.NAV_SENTENCE_CARDS -> "sentence_cards"
+            NotificationHelper.NAV_STUDY_TASK ->
+                if (articleId > 0) "study_task/$articleId" else "study_flow"
+            // AI 回复完成通知：直达对应会话，继续追问或查看完整回复
+            AiReplyNotifier.NAV_AI_RESUME ->
+                if (aiSessionId > 0) "ai_resume/$aiSessionId" else "home"
             // 旧版本发出去的通知里可能还留着这个值（PendingIntent 会在系统里存很久），保留映射
             "statistics" -> if (articleId > 0) "statistics/$articleId" else "overview"
             else -> "home"

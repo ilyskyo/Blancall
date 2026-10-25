@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.ai
 
 import androidx.compose.foundation.background
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -332,7 +333,7 @@ private fun ProfileActions(
         }
     }
 
-    if (showRenameDialog) {
+    AnimatedOverlayPresence(visible = showRenameDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showRenameDialog = false },
             shape = RoundedCornerShape(24.dp),
@@ -361,7 +362,7 @@ private fun ProfileActions(
         )
     }
 
-    if (showDeleteDialog) {
+    AnimatedOverlayPresence(visible = showDeleteDialog) {
         BlancallAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             shape = RoundedCornerShape(24.dp),

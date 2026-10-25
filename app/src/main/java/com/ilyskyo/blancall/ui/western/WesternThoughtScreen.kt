@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.western
 
 import android.annotation.SuppressLint
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 
 import android.content.Context
 import android.content.Intent
@@ -330,7 +331,7 @@ fun LibraryContentPage(
             (lib.id == "western" && !AppPrefs.isDisclaimerSeen("western"))
     ) }
 
-    if (showDisclaimer) {
+    AnimatedOverlayPresence(visible = showDisclaimer) {
         BlancallAlertDialog(
             onDismissRequest = { AppPrefs.markDisclaimerSeen(lib.id); showDisclaimer = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.tip)) },

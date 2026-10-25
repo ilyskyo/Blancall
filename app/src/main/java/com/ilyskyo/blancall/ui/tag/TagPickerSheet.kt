@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.tag
 
 import com.ilyskyo.blancall.ui.common.StateSwap
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -323,7 +324,7 @@ fun TagPickerSheet(
     }
 
     // 清除全部：二次确认（只清绑定，不删标签）
-    if (confirmClear) {
+    AnimatedOverlayPresence(visible = confirmClear) {
         BlancallAlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.clear_all_tags)) },

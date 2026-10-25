@@ -14,6 +14,7 @@ import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.ui.ai.AiHistoryMessage
 import com.ilyskyo.blancall.ui.ai.loadAiSessionData
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import kotlinx.coroutines.Dispatchers
@@ -180,11 +181,24 @@ class AiViewModel(application: Application) : AndroidViewModel(application) {
     fun resumeSession(sessionId: Long) {
         viewModelScope.launch {
             val app = getApplication<Application>()
-            val (savedIds, savedMessages) = withContext(Dispatchers.IO) {
+            val restored = withContext(Dispatchers.IO) {
                 loadAiSessionData(app, sessionId)
-            } ?: run {
-                _messages.value = listOf(UiMessage(idCounter.incrementAndGet(), "error", app.getString(com.ilyskyo.blancall.R.string.ai_error_history_missing)))
-                return@launch
+            }
+            val (savedIds, savedMessages) = restored ?: run {
+                // 历史开关关闭时磁盘没有这份会话；从完成通知点进来只能靠应用级内存快照恢复。
+                // 只接受「完成且成功」的快照，进行中/失败仍按历史缺失处理。
+                val snapshot = AiStreamer.completedSnapshot(sessionId)
+                if (snapshot == null) {
+                    _messages.value = listOf(UiMessage(idCounter.incrementAndGet(), "error", app.getString(com.ilyskyo.blancall.R.string.ai_error_history_missing)))
+                    return@launch
+                }
+                val (meta, state) = snapshot
+                val messages = meta.historyMessages
+                    .filter { it.role == "user" || it.role == "assistant" }
+                    .map { AiHistoryMessage(it.role, it.content) }
+                    .toMutableList()
+                    .apply { add(AiHistoryMessage("assistant", state.text)) }
+                meta.articleIds to messages
             }
 
             val repo = ArticleRepository.getInstance(app.filesDir.resolve("articles.json").absolutePath)

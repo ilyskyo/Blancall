@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 50
-        versionName = "7.5.1"
+        versionCode = 51
+        versionName = "7.5.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -161,6 +161,7 @@ dependencies {
 
     // WorkManager（每日学习提醒，已迁入版本目录）
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.glance.appwidget)
 
     // Markdown 解析（AI 对话 / 训练分析文本渲染）
     implementation(libs.commonmark)

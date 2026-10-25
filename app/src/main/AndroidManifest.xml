@@ -5,6 +5,10 @@
     <!-- Android 13+ 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Android 16+ 实时更新（Live Updates）：允许系统把进行中的练习提升为状态栏胶囊 / 灵动岛。
+         普通权限，安装时授予；旧系统会忽略。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+
     <!-- 关键交互的触感反馈（长按 / 拖拽 / 下拉达阈值等） -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
@@ -24,6 +28,9 @@
          应用在无笔设备上功能完整（笔输入入口自动隐藏，键盘输入不受影响）。 -->
     <uses-feature android:name="android.hardware.stylus" android:required="false" />
 
+    <!-- resizeableActivity=true 是系统「长按悬浮通知下拉呼出小窗」的前提：
+         只有应用可调整窗口时，系统才会把通知点击放进自由窗口而不是强制全屏。
+         活动也不锁方向，小窗横竖切换不会重建任务。不要改成 false。 -->
     <application
         android:name=".BlancallApp"
         android:enableOnBackInvokedCallback="true"
@@ -58,7 +65,39 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- 系统分享文本 → 确认切句页。绝不静默建文章：分享内容常带导航栏/广告/乱码 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- 文本选择菜单里的「Blancall」：与分享同一确认页 -->
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
+
+        <!-- 桌面小组件：2x2 / 4x2，今日到期数与每日一句 -->
+        <receiver
+            android:name=".widget.BlancallWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/blancall_widget_info" />
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

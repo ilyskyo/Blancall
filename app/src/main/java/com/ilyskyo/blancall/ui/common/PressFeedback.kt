@@ -7,27 +7,28 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -74,6 +75,10 @@ private fun PressTier.pressedScale(): Float = when (this) {
     PressTier.Plain -> 1f
 }
 
+/** 只有键盘 / 方向键这类非触摸焦点才画框；触摸焦点不留下可见框。 */
+internal fun shouldShowFocusRing(focused: Boolean, inTouchMode: Boolean): Boolean =
+    focused && !inTouchMode
+
 /**
  * 统一的「按下」反馈：**缩放 + 亮度**，没有涟漪。
  *
@@ -91,6 +96,15 @@ private fun PressTier.pressedScale(): Float = when (this) {
  * 用 `border(…, Color.Transparent, …)` 占位再换色，它不占布局，切换时不抖动。
  * 也因此**不要**改用全局 `LocalIndication provides null`：
  * 那会把没接入本反馈的组件的焦点框一并删掉。
+ *
+ * 焦点来源不能用「最近有没有 PressInteraction」推断：触摸后节点常常仍持有焦点，
+ * 而一次滚动或点击留下的 Press 会让该实例此后永远不再画框。Android 的
+ * `View.isInTouchMode` 恰好就是「这次焦点是不是手指给的」这一判据：触摸为 true，
+ * 方向键 / Tab / 键盘为 false。因此只要在焦点事件发生时读它，不需要采样交互流。
+ * 这比按时间窗口猜 Press 更可靠，也让「Tab 离开再回来」重新有框。
+ *
+ * 可选的 [hapticTier] 只在**按下**时触发一次轻振；默认关闭。动作本身的确认/破坏性
+ * 回执仍由调用点显式选择，这样不会出现「按下一下、松开又一下」的双振。
  *
  * 用法：把 `clickable(..., interactionSource = src, indication = null)` 里那个
  * 同一个 `src` 传进来，并把这个修饰符接在点击修饰符**之前**，
@@ -116,18 +130,18 @@ fun Modifier.pressFeedback(
     ringWidth: Dp = 2.dp,
     layerShape: Shape = RectangleShape,
     dimOnPress: Boolean = true,
+    hapticTier: HapticTier? = null,
 ): Modifier {
     val pressed = interactionSource.collectIsPressedAsState()
     val hovered = interactionSource.collectIsHoveredAsState()
     var focused by remember { mutableStateOf(false) }
     var ringShown by remember { mutableStateOf(false) }
-    var sawPress by remember { mutableStateOf(false) }
-    LaunchedEffect(interactionSource) {
-        interactionSource.interactions.collect { interaction ->
-            if (interaction is PressInteraction.Press) {
-                // 焦点先于按下到达时也要收框
-                sawPress = true
-                ringShown = false
+    val view = LocalView.current
+    if (hapticTier != null) {
+        val pressHaptic = rememberHaptic(hapticTier)
+        LaunchedEffect(interactionSource, pressHaptic) {
+            interactionSource.interactions.collect { interaction ->
+                if (interaction is PressInteraction.Press) pressHaptic()
             }
         }
     }
@@ -159,11 +173,7 @@ fun Modifier.pressFeedback(
     return this
         .onFocusEvent {
             focused = it.isFocused
-            // 手指点过之后节点仍持有焦点；只给「没有按下过的焦点」画框，
-            // 否则一圈会永久停在最后点过的那张卡片上。
-            // 本套 Compose（1.10.4）的 FocusState 没有 focusCause —— 判据只能从
-            // interactionSource 自己拿：触摸/点击必然先送一次 PressInteraction.Press。
-            if (it.isFocused) ringShown = !sawPress else ringShown = false
+            ringShown = shouldShowFocusRing(it.isFocused, view.isInTouchMode)
         }
         .drawWithContent {
             drawContent()
@@ -219,12 +229,13 @@ fun Modifier.combinedPress(
     tier: PressTier = PressTier.Card,
     enabled: Boolean = true,
     ringRadius: Dp? = null,
+    hapticTier: HapticTier? = null,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier {
     val src = remember { MutableInteractionSource() }
     return this
-        .pressFeedback(src, tier, enabled, ringRadius)
+        .pressFeedback(src, tier, enabled, ringRadius, hapticTier = hapticTier)
         .combinedClickable(
             interactionSource = src,
             indication = null,
@@ -246,11 +257,12 @@ fun Modifier.pressClick(
     tier: PressTier = PressTier.Card,
     enabled: Boolean = true,
     ringRadius: Dp? = null,
+    hapticTier: HapticTier? = null,
     onClick: () -> Unit,
 ): Modifier {
     val src = remember { MutableInteractionSource() }
     return this
-        .pressFeedback(src, tier, enabled, ringRadius)
+        .pressFeedback(src, tier, enabled, ringRadius, hapticTier = hapticTier)
         .clickable(
             interactionSource = src,
             indication = null,

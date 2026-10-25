@@ -54,6 +54,7 @@ import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.CoachMark
 import com.ilyskyo.blancall.ui.common.CoachShape
@@ -325,7 +326,7 @@ fun MaskConfigListScreen(
     }
 
     // ── 重命名弹窗 ──
-    if (renameTarget != null) {
+    AnimatedOverlayPresence(visible = renameTarget != null) {
         BlancallAlertDialog(
             onDismissRequest = { renameTarget = null },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.rename_config_title), fontWeight = FontWeight.SemiBold) },
@@ -369,8 +370,7 @@ fun MaskConfigListScreen(
     }
 
     // ── 删除确认弹窗 ──
-    val targetToDelete = deleteTarget
-    if (targetToDelete != null) {
+    AnimatedOverlayPresence(target = deleteTarget) { targetToDelete ->
         BlancallAlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(com.ilyskyo.blancall.R.string.delete_config_title), fontWeight = FontWeight.SemiBold) },
