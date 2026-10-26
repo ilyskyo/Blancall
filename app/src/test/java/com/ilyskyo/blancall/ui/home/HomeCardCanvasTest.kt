@@ -4,7 +4,10 @@
 package com.ilyskyo.blancall.ui.home
 
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
+import androidx.compose.ui.geometry.Offset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -380,5 +383,158 @@ class HomeCardCanvasTest {
         assertEquals(0, out[1].lockCol)
         assertEquals("p1 不应被动到", cards[0], out[0])
         assertEquals(mapOf("p1" to listOf(0, 0), "p2" to listOf(1, 0)), layoutOf(out))
+    }
+
+    // ------------------------------------------------------------------
+    // isScrollIntent：单指「甩页面」vs「拿起卡片」的意图判定
+    // ------------------------------------------------------------------
+
+    private val density = 2.75f
+    private val slopPx = 8f * density // 22px，约等于系统 8dp touch slop
+
+    /** 竖直快甩：速度越过 900dp/s → 一定是滚动，不能拖卡 */
+    @Test
+    fun `fast vertical flick counts as scroll`() {
+        assertTrue(
+            isScrollIntent(
+                accumulated = Offset(0f, 26f),
+                lastStep = Offset.Zero,
+                velocity = Offset(0f, 945f * density),
+                elapsedMs = 120,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    /** 缓慢的小位移：按住卡片再挪动的手感 → 不是滚动 */
+    @Test
+    fun `slow short vertical drag is not scroll`() {
+        assertFalse(
+            isScrollIntent(
+                accumulated = Offset(0f, 10f),
+                lastStep = Offset.Zero,
+                velocity = Offset(0f, 320f * density),
+                elapsedMs = 240,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    /** 横向 / 斜向移动不可能是页面滚动（首页只能纵向滚） */
+    @Test
+    fun `horizontal and diagonal drags are never scroll`() {
+        assertFalse(
+            "横向快甩",
+            isScrollIntent(
+                accumulated = Offset(40f, 2f),
+                lastStep = Offset.Zero,
+                velocity = Offset(4000f, 500f),
+                elapsedMs = 40,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+        assertFalse(
+            "45° 斜向快拖（换列 / 拉伸）",
+            isScrollIntent(
+                accumulated = Offset(30f, 30f),
+                lastStep = Offset.Zero,
+                velocity = Offset(3000f, 3000f),
+                elapsedMs = 40,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    /** 按下 90ms 内就竖直越过 slop：没有「按住再拿」的停顿 → 按滚动处理 */
+    @Test
+    fun `quick onset vertical move counts as scroll below flick speed`() {
+        assertTrue(
+            isScrollIntent(
+                accumulated = Offset(0f, 9f),
+                lastStep = Offset.Zero,
+                velocity = Offset(0f, 720f * density),
+                elapsedMs = 60,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    /** 速度采样丢失时，起手一步跨过 3 倍 slop 仍要判为滚动 */
+    @Test
+    fun `large jump within the onset window counts as scroll`() {
+        assertTrue(
+            isScrollIntent(
+                accumulated = Offset(0f, 70f),
+                lastStep = Offset.Zero,
+                velocity = Offset.Zero,
+                elapsedMs = 100,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    /** 慢慢拖过很长的距离不是「一步跨过」，仍然由卡片接管 */
+    @Test
+    fun `large travel after the jump window is a deliberate drag`() {
+        assertFalse(
+            isScrollIntent(
+                accumulated = Offset(0f, 70f),
+                lastStep = Offset.Zero,
+                velocity = Offset.Zero,
+                elapsedMs = 300,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    @Test
+    fun `zero movement is not scroll`() {
+        assertFalse(
+            isScrollIntent(
+                accumulated = Offset.Zero,
+                lastStep = Offset.Zero,
+                velocity = Offset.Zero,
+                elapsedMs = 40,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    /** 「先停住、再甩」：速度采样只剩一帧时算不出速度，但单帧位移足够大仍判为滚动 */
+    @Test
+    fun `big single frame step after a pause counts as scroll even without velocity`() {
+        assertTrue(
+            isScrollIntent(
+                accumulated = Offset(0f, 50f),
+                lastStep = Offset(0f, 50f),
+                velocity = Offset.Zero,
+                elapsedMs = 400,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
+    }
+
+    /** 反之：慢慢拖的每一帧位移都很小，即使累计到 slop 也仍是拿起卡片 */
+    @Test
+    fun `small single frame steps stay a deliberate drag`() {
+        assertFalse(
+            isScrollIntent(
+                accumulated = Offset(0f, 24f),
+                lastStep = Offset(0f, 6f),
+                velocity = Offset(0f, 120f * density),
+                elapsedMs = 400,
+                touchSlopPx = slopPx,
+                density = density
+            )
+        )
     }
 }

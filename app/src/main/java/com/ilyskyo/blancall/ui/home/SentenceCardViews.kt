@@ -73,6 +73,8 @@ import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.TagChipRow
 import com.ilyskyo.blancall.ui.common.TagChipUi
+import com.ilyskyo.blancall.ui.common.DonationInviteRow
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import kotlin.math.roundToInt
@@ -86,9 +88,9 @@ import kotlinx.coroutines.delay
 /**
  * 一张句子卡：来源标题（今日句带角标）+ 来源文章标签 + 句文（内滚居中）+ 底部状态行。
  *
- * [revealed] 控制**回忆面 / 答案面**：只有「已学过但今天还没评」的句子会先给挖空提示
- * （[SentenceCloze]），等用户回忆后再由界面把 [revealed] 置 true 显示整句；
- * 新句（第一次认读）与已评卡（回看）恒为完整显示，不受该参数影响。
+ * [revealed] 控制**回忆面 / 答案面**：今天还没评的句子会先给挖空提示（[SentenceCloze]），
+ * 等用户回忆后再由界面把 [revealed] 置 true 显示整句；新句（第一次认读）默认也给全文，
+ * 只有用户打开「首次也遮挡」([clozeNewEnabled]) 时才跟着遮；今天已评的卡（回看）恒为完整显示。
  * 揭晓是**同一段文字换可见度**（横条退、藏住的字进，见 [ClozeCueText] 的 progress），
  * 不是把这一块换成另一块 —— 换卡时进度按 `item.key` 立即归零，防漏答案。
  */
@@ -103,17 +105,21 @@ internal fun SentenceCardFace(
     revealed: Boolean = true,
     /** 是否启用挖空遮挡（用户偏好，见 AppPrefs.sentenceClozeEnabled）：关掉 = 整句直出 */
     clozeEnabled: Boolean = true,
+    /** 首次见到的句子（没评过级的新句）是否也遮挡（见 AppPrefs.sentenceClozeNewEnabled）：关 = 新句先给全文 */
+    clozeNewEnabled: Boolean = false,
     modifier: Modifier,
 ){
     val context = LocalContext.current
     val rated = isRatedToday(state, now)
     // 「挖不挖得出空」只由句子文本决定，remember 之后列表滚动重组时不再逐帧重算
     val hidesAnything = remember(item.text) { SentenceCloze.hidesAnything(item.text) }
-    // 是不是「回忆面」= 已学过（不是第一次）+ 今天还没评 + 用户开着遮挡 + 这句确实挖得出空。
-    // 新句给全文：第一次是"输入"，对陌生句子先考后教是反学习规律的。
+    // 是不是「回忆面」= 今天还没评 + 用户开着遮挡 + 这句确实挖得出空 + 这句不是第一次见。
+    // 「第一次见」默认给全文：先认读再回忆是学习规律；但用户可以在 ⋮ 菜单里打开
+    // 「首次也遮挡」——那时新句也走正反面（先挖空，点「显示答案」读全文）。
     // **刻意不含 `!revealed`**：揭晓是这张卡内部的一段过渡（见 revealAnim），不是"换一个面"——
     // 把它算进来，揭晓那一帧整块会被换成另一段布局，那正是要治的硬切。
-    val recallFace = clozeEnabled && !rated && (state?.reviewCount ?: 0) > 0 && hidesAnything
+    val recallFace = clozeEnabled && !rated && hidesAnything &&
+        ((state?.reviewCount ?: 0) > 0 || clozeNewEnabled)
     // 揭晓进度（0 = 只给线索，1 = 整句）：驱动"空位横条退场 + 被藏住的字入场"，全程零重排。
     // 按 [item.key] remember ⇒ 换卡的那一帧就是 0；换卡时再 snap 一次兜底，
     // 否则上一张的进度会以"答案正在淡出"的形式挂在新卡上（等于替他漏答案）。
@@ -597,6 +603,10 @@ internal fun SentenceDoneView(
         countUp.snapTo(0f)
         countUp.animateTo(1f, MotionFade.number(MotionFade.countUp, MotionFade.celebrateStep * 2))
     }
+    // 累计完成一轮（赞赏邀请的门槛依据）。用 remember 而非 rememberSaveable：
+    // 「再复习一轮」后应当再算一轮，而 rememberSaveable 会让第二次进来时不再累加。
+    // 代价是旋转屏幕可能多计一次 —— 门槛是 5，多算一次无实质影响。
+    LaunchedEffect(Unit) { AppPrefs.noteDonationCompletion() }
 
     Column(
         modifier = Modifier
@@ -745,5 +755,14 @@ internal fun SentenceDoneView(
         ) {
             Text(stringResource(com.ilyskyo.blancall.R.string.back_to_home), style = MaterialTheme.typography.labelLarge)
         }
+        // 完成态赞赏入口：一行字，不是按钮（理由见 DonationInvite.kt 顶部注释）。
+        // 间距写在传入的 modifier 里而不是外面另加 Spacer —— 闸门没放行时该组件整体不渲染，
+        // Spacer 若在外面会留下 20dp 空洞。它属于「已经做完了」的余韵，不与三个按钮同拍强调。
+        DonationInviteRow(
+            slot = "sentence_done",
+            modifier = Modifier
+                .doneEnter(stage > 3)
+                .padding(top = 8.dp)
+        )
     }
 }

@@ -329,30 +329,31 @@ private fun DueCard(
     modifier: Modifier,
 ) {
     val hue = Macaron.review()
+    val headerTitle = if (dueArticles.isEmpty()) {
+        stringResource(com.ilyskyo.blancall.R.string.due_tasks)
+    } else {
+        stringResource(com.ilyskyo.blancall.R.string.due_tasks_count, dueArticles.size)
+    }
     GlassCard(
         modifier = modifier,
         shape = HOME_CARD_SHAPE,
         containerColor = hue.fill,
     ) {
-        // 外层 Column 不滚动：标题固定在顶部、正文吃满余下空间并内滚 → 标题永不与内容重叠
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(m.pad),
-        ) {
-            CardHeader(
-                dotColor = hue.accent,
-                title = if (dueArticles.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.due_tasks)
-                else stringResource(com.ilyskyo.blancall.R.string.due_tasks_count, dueArticles.size),
-            )
-            Spacer(Modifier.height(if (m.short) 0.dp else if (m.compact) 2.dp else 4.dp))
-            // 空占位与待复习列表原先各自换 subtree，卡内这块切换是硬切
-            StateSwap(
-                targetState = dueArticles.isEmpty(),
-                label = "homeDueSwap",
-                modifier = Modifier.weight(1f),
-            ) {
-                if (it) {
+        // 空态 / 单条要相对**整卡**居中（与并排卡片的文字落在同一条水平线）；
+        // 若仍按「标题 + 正文」的纵向流排布，重心会被标题压到卡片下半部分。
+        // 多条仍走原来的「标题固定顶部 + 列表吃满余下空间并内滚」。
+        StateSwap(
+            targetState = dueArticles.isEmpty(),
+            label = "homeDueSwap",
+            modifier = Modifier.fillMaxSize(),
+        ) { empty ->
+            when {
+                empty -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                ) {
+                    CardHeader(dotColor = hue.accent, title = headerTitle)
                     CardEmptyState(
                         icon = AppIconKind.Check,
                         title = stringResource(com.ilyskyo.blancall.R.string.no_due_today),
@@ -360,11 +361,36 @@ private fun DueCard(
                         accent = hue.accent,
                         compact = m.compact,
                         short = m.short,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                dueArticles.size == 1 -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                ) {
+                    CardHeader(dotColor = hue.accent, title = headerTitle)
+                    DueRow(
+                        article = dueArticles.first(),
+                        accent = hue.accent,
+                        anchorArticleId = anchorArticleId,
+                        onAnchorMeasured = onAnchorMeasured,
+                        onPracticeArticle = onPracticeArticle,
+                        m = m,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .align(Alignment.Center),
                     )
-                } else {
+                }
+
+                else -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                ) {
+                    CardHeader(dotColor = hue.accent, title = headerTitle)
+                    Spacer(Modifier.height(if (m.short) 0.dp else if (m.compact) 2.dp else 4.dp))
                     CardBody(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -376,47 +402,72 @@ private fun DueCard(
                         },
                     ) {
                         dueArticles.forEach { article ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .pressClick { onPracticeArticle(article.id) }
-                                    .practiceAnchorModifier(article.id, anchorArticleId, onAnchorMeasured)
-                                    .padding(vertical = if (m.short) 2.dp else if (m.compact) 3.dp else 5.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        article.title,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    // 矮卡（1 行高）只留标题：作者行会把两行内容顶出卡片可视区
-                                    if (article.author.isNotBlank() && !m.short) {
-                                        Text(
-                                            article.author.trim(),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                                Text(
-                                    stringResource(com.ilyskyo.blancall.R.string.review_action),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = hue.accent,
-                                    maxLines = 1,
-                                    modifier = Modifier.padding(start = if (m.compact) 6.dp else 8.dp),
-                                )
-                            }
+                            DueRow(
+                                article = article,
+                                accent = hue.accent,
+                                anchorArticleId = anchorArticleId,
+                                onAnchorMeasured = onAnchorMeasured,
+                                onPracticeArticle = onPracticeArticle,
+                                m = m,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** 待复习行：标题 / 作者左对齐卡片标题行文字（圆点 8dp + 间隙 8dp） */
+@Composable
+private fun DueRow(
+    article: Article,
+    accent: Color,
+    anchorArticleId: Long,
+    onAnchorMeasured: (Long, Rect) -> Unit,
+    onPracticeArticle: (Long) -> Unit,
+    m: CardMetrics,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .pressClick { onPracticeArticle(article.id) }
+            .practiceAnchorModifier(article.id, anchorArticleId, onAnchorMeasured)
+            .padding(vertical = if (m.short) 2.dp else if (m.compact) 3.dp else 5.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp),
+        ) {
+            Text(
+                article.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // 矮卡（1 行高）只留标题：作者行会把两行内容顶出卡片可视区
+            if (article.author.isNotBlank() && !m.short) {
+                Text(
+                    article.author.trim(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text(
+            stringResource(com.ilyskyo.blancall.R.string.review_action),
+            style = MaterialTheme.typography.labelSmall,
+            color = accent,
+            maxLines = 1,
+            modifier = Modifier.padding(start = if (m.compact) 6.dp else 8.dp),
+        )
     }
 }
 
@@ -438,29 +489,30 @@ private fun ContinueCard(
     val rows = remember(resumables, articleMap) {
         resumables.mapNotNull { item -> articleMap[item.articleId]?.let { item to it } }
     }
+    val headerTitle = if (rows.isEmpty()) {
+        stringResource(com.ilyskyo.blancall.R.string.resume_tasks)
+    } else {
+        stringResource(com.ilyskyo.blancall.R.string.resume_tasks_count, rows.size)
+    }
     GlassCard(
         modifier = modifier,
         shape = HOME_CARD_SHAPE,
         containerColor = hue.fill,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(m.pad),
-        ) {
-            CardHeader(
-                dotColor = hue.accent,
-                title = if (rows.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.resume_tasks)
-                else stringResource(com.ilyskyo.blancall.R.string.resume_tasks_count, rows.size),
-            )
-            Spacer(Modifier.height(if (m.short) 0.dp else if (m.compact) 2.dp else 4.dp))
-            // 空占位与待继续行列表原先各自换 subtree，卡内这块切换是硬切
-            StateSwap(
-                targetState = rows.isEmpty(),
-                label = "homeContinueSwap",
-                modifier = Modifier.weight(1f),
-            ) {
-                if (it) {
+        // 空态 / 单条相对整卡居中（与并排的「添加文章」卡文字同一条水平线），
+        // 多条仍按「标题 + 列表」纵向排布。
+        StateSwap(
+            targetState = rows.isEmpty(),
+            label = "homeContinueSwap",
+            modifier = Modifier.fillMaxSize(),
+        ) { empty ->
+            when {
+                empty -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                ) {
+                    CardHeader(dotColor = hue.accent, title = headerTitle)
                     CardEmptyState(
                         icon = AppIconKind.TrackChanges,
                         title = stringResource(com.ilyskyo.blancall.R.string.no_practice_in_progress),
@@ -468,11 +520,36 @@ private fun ContinueCard(
                         accent = hue.accent,
                         compact = m.compact,
                         short = m.short,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                rows.size == 1 -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                ) {
+                    CardHeader(dotColor = hue.accent, title = headerTitle)
+                    val (item, art) = rows.first()
+                    ContinueRow(
+                        item = item,
+                        art = art,
+                        accent = hue.accent,
+                        onResumePractice = onResumePractice,
+                        m = m,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .align(Alignment.Center),
                     )
-                } else {
+                }
+
+                else -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(m.pad),
+                ) {
+                    CardHeader(dotColor = hue.accent, title = headerTitle)
+                    Spacer(Modifier.height(if (m.short) 0.dp else if (m.compact) 2.dp else 4.dp))
                     CardBody(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -484,57 +561,80 @@ private fun ContinueCard(
                         },
                     ) {
                         rows.forEach { (item, art) ->
-                            val modeLabel = when (item.mode) {
-                                "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
-                                "WORD" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word)
-                                "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
-                                else -> stringResource(com.ilyskyo.blancall.R.string.practice_short)
-                            }
-                            val remaining = stringResource(
-                                com.ilyskyo.blancall.R.string.remaining_of_total, item.total - item.answered, item.total
+                            ContinueRow(
+                                item = item,
+                                art = art,
+                                accent = hue.accent,
+                                onResumePractice = onResumePractice,
+                                m = m,
+                                modifier = Modifier.fillMaxWidth(),
                             )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .pressClick { onResumePractice(item) }
-                                    .padding(vertical = if (m.short) 2.dp else if (m.compact) 3.dp else 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        art.title,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    // 矮卡（1 行高）只留标题，副行会把内容顶出可视区
-                                    if (!m.short) {
-                                        Text(
-                                            buildString {
-                                                if (art.author.isNotBlank()) append(art.author.trim()).append(" · ")
-                                                append(modeLabel).append(" · ").append(remaining)
-                                            },
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                                Text(
-                                    stringResource(com.ilyskyo.blancall.R.string.continue_action),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = hue.accent,
-                                    maxLines = 1,
-                                    modifier = Modifier.padding(start = if (m.compact) 6.dp else 8.dp),
-                                )
-                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** 待继续行：标题 / 副行左对齐卡片标题行文字（圆点 8dp + 间隙 8dp） */
+@Composable
+private fun ContinueRow(
+    item: ResumableItem,
+    art: Article,
+    accent: Color,
+    onResumePractice: (ResumableItem) -> Unit,
+    m: CardMetrics,
+    modifier: Modifier = Modifier,
+) {
+    val modeLabel = when (item.mode) {
+        "SENTENCE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence)
+        "WORD" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word)
+        "REVERSE" -> stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse)
+        else -> stringResource(com.ilyskyo.blancall.R.string.practice_short)
+    }
+    val remaining = stringResource(
+        com.ilyskyo.blancall.R.string.remaining_of_total, item.total - item.answered, item.total
+    )
+    Row(
+        modifier = modifier
+            .pressClick { onResumePractice(item) }
+            .padding(vertical = if (m.short) 2.dp else if (m.compact) 3.dp else 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp),
+        ) {
+            Text(
+                art.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // 矮卡（1 行高）只留标题，副行会把内容顶出可视区
+            if (!m.short) {
+                Text(
+                    buildString {
+                        if (art.author.isNotBlank()) append(art.author.trim()).append(" · ")
+                        append(modeLabel).append(" · ").append(remaining)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text(
+            stringResource(com.ilyskyo.blancall.R.string.continue_action),
+            style = MaterialTheme.typography.labelSmall,
+            color = accent,
+            maxLines = 1,
+            modifier = Modifier.padding(start = if (m.compact) 6.dp else 8.dp),
+        )
     }
 }
 

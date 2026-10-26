@@ -166,7 +166,6 @@
     <string name="import_backup_warning">将用备份文件整体替换当前的文章库与练习进度，现有学习数据会被覆盖且无法撤销。导入完成后应用需重启一次才能生效。</string>
     <string name="minutes_unit">%1$d 分钟</string>
     <string name="reminder_on_at">已开启 · %1$s</string>
-    <string name="donation_ask">求求了，如果可以的话，请扫码支持一下我 🥹</string>
     <string name="reminder_enable">开启提醒</string>
     <string name="notification_permission_required">提醒功能需要通知权限，请在系统设置中开启后返回应用</string>
     <string name="reminder_time">提醒时间</string>
@@ -183,8 +182,12 @@
     <string name="preset_9pm">晚上 9:00</string>
     <string name="edit_home_subtitle">编辑首页副标题</string>
     <string name="custom_subtitle">自定义副标题</string>
-    <string name="donation_title">赞赏区·本软件完全免费</string>
-    <string name="donation_motive">哪怕一分钱，也是坚持更新下去的动力</string>
+    <string name="donation_heading">支持 Blancall</string>
+    <string name="donation_statement">Blancall 完全免费，所有功能都能用。</string>
+    <string name="donation_invite">如果它确实帮到了你，欢迎赞赏。</string>
+    <string name="donation_nudge_prefix">愿意的话，</string>
+    <string name="donation_nudge_link">点这里赞赏</string>
+    <string name="donation_never">不再提示</string>
     <string name="donation_qr">赞赏二维码</string>
     <string name="donation_hide">隐藏该区域</string>
     <string name="donation_hide_hint">本次使用将保持隐藏，下次打开软件后自动恢复</string>
@@ -308,6 +311,8 @@
     <string name="sentence_cloze_toggle">遮挡回忆</string>
     <string name="sentence_cloze_on_desc">凭首字回想整句</string>
     <string name="sentence_cloze_off_desc">整句直接显示</string>
+    <string name="sentence_cloze_new_toggle">首次见到的句子也遮挡</string>
+    <string name="sentence_cloze_new_desc">新句先挖空，点「显示答案」读全文</string>
     <string name="no_tags_create_hint">还没有标签，可在「设置 → 文章标签」中创建</string>
     <string name="import_text_title">导入文本</string>
     <string name="paste_text">粘贴文本</string>
@@ -1081,8 +1086,6 @@
     <string name="flow_detail_lapses">遗忘</string>
     <string name="flow_pause_all_confirm_title">暂停全部任务？</string>
     <string name="flow_pause_all_confirm_body">所有正在计划中的文章将退出待复习与提醒，句子卡也会暂停抽取；可随时在这里恢复。</string>
-    <string name="flow_pull_hint">下拉进入学习任务流</string>
-    <string name="flow_pull_hint_due">下拉进入学习任务流 · %1$d 项待复习</string>
     <string name="flow_pull_action">进入学习任务流</string>
     <plurals name="flow_days_later">
         <item quantity="other">%1$d 天后</item>
@@ -1585,6 +1588,10 @@
     <string name="help_168">在设置中开启「联网搜索」并填写 Tavily Key 后，提问时会自动联网搜索核验知识，AI 将优先参考搜索到的权威信息作答（可帮助核验背诵内容与考试知识点）。未配置时 AI 仅基于文章与自身知识回答。</string>
     <string name="help_169">隐私与安全</string>
     <string name="help_170">API Key 经系统加密后仅存本机，不会上传。注意：对话时文章内容与学习数据会发送至你所配置的 API 服务。关闭「启用 AI 功能」后，所有 AI 入口将不再显示。</string>
+    <!-- ── 学习任务流手势：可见提示已移除，说明只留在本页（help_171+）── -->
+    <string name="help_171">数据页 · 学习任务流</string>
+    <string name="help_172">在「数据」页滚到最顶部，继续往下拉；圆环拉满、手机震动一下再松手 → 打开学习任务流（按时间排出正在计划中的文章）</string>
+    <string name="help_173">任务流里每篇都能暂停、恢复或调整下次复习时间；滑到底再上拉，或点左上角返回，回到数据页</string>
     <string name="sentence_status_first">第一次记忆</string>
     <string name="sentence_status_recorded_next">已记录 · 下次 %1$d 天后</string>
     <string name="sentence_status_due_last">待复习 · 上次 %1$d 天前</string>
@@ -1620,7 +1627,7 @@
     <string name="review_timeline_steady_start">从第一次起就一直稳</string>
     <string name="review_timeline_steady_after">第 %1$d 次复习后稳住</string>
     <string name="review_timeline_shaky">最近一次又没稳住</string>
-    <string name="review_timeline_interval_hint">每次复习的實際間隔</string>
+    <string name="review_timeline_interval_hint">每次复习的实际间隔</string>
     <string name="review_timeline_review_no">第 %1$d 次</string>
     <string name="review_timeline_first">首次复习</string>
     <string name="review_timeline_gap">隔 %1$s 天</string>
@@ -1628,19 +1635,19 @@
     <string name="rating_hard">不熟</string>
     <string name="rating_good">记住</string>
     <string name="rating_easy">轻松</string>
-    <string name="notebook_entry_count">共 %1 处</string>
+    <string name="notebook_entry_count">共 %1$d 处</string>
     <string name="reader_practice_section_cd">练这一段</string>
     <string name="reader_practice_section_title">把这一段变成挖空</string>
     <string name="reader_practice_section_hint">选一段刚才遮着回忆的段落，只练它</string>
     <string name="reader_practice_section_empty">当前没有可转换的遮挡段</string>
-    <string name="reader_practice_section_spans">遮了 %1 处</string>
+    <string name="reader_practice_section_spans">遮了 %1$d 处</string>
     <string name="reader_practice_section_name">遮挡转练</string>
     <string name="reader_practice_section_failed">这一段没有可练习的空位</string>
     <string name="reason_first">第一次复习</string>
-    <string name="reason_lapsed">忘过 %1 次</string>
-    <string name="reason_long_gap">上次隔了 %1 天</string>
-    <string name="reason_overdue">已逾期 %1 天</string>
-    <string name="reason_stable">已经稳住 %1 次</string>
+    <string name="reason_lapsed">忘过 %1$d 次</string>
+    <string name="reason_long_gap">上次隔了 %1$d 天</string>
+    <string name="reason_overdue">已逾期 %1$d 天</string>
+    <string name="reason_stable">已经稳住 %1$d 次</string>
     <string name="reason_scheduled">按计划到期</string>
     <string name="today_plan_title">今日计划</string>
     <string name="today_plan_exam_days">距考试 %1$d 天</string>
@@ -1703,6 +1710,7 @@
     <string name="content_pack_delete_title">删除内容包</string>
     <string name="content_pack_delete_body">删除「%1$s」不会删除已经导入的文章。</string>
     <string name="content_pack_import_all">全部导入</string>
+    <string name="library_batch_import">批量导入</string>
     <string name="content_pack_import_result">已导入 %1$d 篇，跳过 %2$d 篇（重复或失败）</string>
     <string name="content_pack_view_entries">查看篇目</string>
     <string name="content_pack_collapse">收起</string>

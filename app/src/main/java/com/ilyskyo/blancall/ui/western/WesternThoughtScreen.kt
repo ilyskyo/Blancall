@@ -57,11 +57,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -69,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.activity.compose.BackHandler
@@ -82,13 +85,19 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.ContentFingerprint
+import com.ilyskyo.blancall.data.contentpack.ContentPackStore
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
+import com.ilyskyo.blancall.ui.settings.buildPackBatchItems
+import com.ilyskyo.blancall.ui.settings.importPackSelection
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.BatchImportItem
+import com.ilyskyo.blancall.ui.common.BatchImportSheet
 import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.PressTier
 import com.ilyskyo.blancall.ui.common.pressFeedback
@@ -103,9 +112,13 @@ import com.ilyskyo.blancall.ui.common.GlassMenuItem
 import com.ilyskyo.blancall.ui.common.pressClick
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 内置素材库（可扩展卡片页）。
@@ -124,6 +137,25 @@ fun WesternThoughtScreen(navController: NavController) {
     }
     // 仅展示已启用的内置素材库（设置 → 拓展功能 中勾选）
     val enabledLibraries by AppPrefs.builtInLibraryKeysFlow.collectAsState()
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val articleRepo = remember {
+        ArticleRepository.getInstance(context.filesDir.resolve("articles.json").absolutePath)
+    }
+    val packStore = remember { ContentPackStore.getInstance(context.filesDir) }
+    // 用户自己导入的内容包：与内置素材库并列展示
+    var packs by remember { mutableStateOf<List<ContentPackStore.PackMeta>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        packs = withContext(Dispatchers.IO) { packStore.listPacks() }
+    }
+    val packDateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+
+    // 内容包批量导入面板状态
+    var batchPack by remember { mutableStateOf<ContentPackStore.PackMeta?>(null) }
+    var batchItems by remember { mutableStateOf<List<BatchImportItem>>(emptyList()) }
+    var batchImporting by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -153,9 +185,89 @@ fun WesternThoughtScreen(navController: NavController) {
             modifier = Modifier.fillMaxSize().nestedScroll(navBarScrollConn)
         ) {
             items(BUILT_IN_LIBRARIES.filter { it.id in enabledLibraries }) { lib ->
-                LibraryCard(lib = lib) { navController.navigate("philo_content/${lib.id}") }
+                LibraryCard(
+                    title = lib.title,
+                    subtitle = lib.subtitle,
+                    meta = lib.metaLine.ifBlank { stringResource(com.ilyskyo.blancall.R.string.western_selected_content) },
+                    accent = Color(lib.accentColor),
+                    icon = AppIconKind.Library,
+                    onClick = { navController.navigate("philo_content/${lib.id}") }
+                )
+            }
+            if (packs.isNotEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(com.ilyskyo.blancall.R.string.content_pack_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(start = 4.dp, top = 10.dp, bottom = 0.dp)
+                    )
+                }
+                items(packs, key = { "pack_${it.id}" }) { pack ->
+                    LibraryCard(
+                        title = pack.name,
+                        subtitle = stringResource(
+                            com.ilyskyo.blancall.R.string.content_pack_meta,
+                            pack.entries.size,
+                            packDateFormat.format(Date(pack.importedAt))
+                        ),
+                        meta = stringResource(com.ilyskyo.blancall.R.string.content_pack_title),
+                        accent = Color(0xFF3E6B57),
+                        icon = AppIconKind.Articles,
+                        onClick = { navController.navigate("content_packs") },
+                        trailing = {
+                            BatchImportPill(
+                                text = stringResource(com.ilyskyo.blancall.R.string.library_batch_import),
+                                accent = Color(0xFF3E6B57),
+                            ) {
+                                scope.launch {
+                                    val items = withContext(Dispatchers.IO) {
+                                        buildPackBatchItems(packStore, articleRepo, pack)
+                                    }
+                                    batchItems = items
+                                    batchPack = pack
+                                }
+                            }
+                        }
+                    )
+                }
             }
         }
+    }
+
+    AnimatedOverlayPresence(target = batchPack) { pack ->
+        BatchImportSheet(
+            title = stringResource(com.ilyskyo.blancall.R.string.library_batch_import),
+            subtitle = pack.name,
+            items = batchItems,
+            importing = batchImporting,
+            onDismissRequest = { if (!batchImporting) batchPack = null },
+            onConfirm = { keys ->
+                batchImporting = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        importPackSelection(
+                            articleRepo,
+                            packStore,
+                            pack,
+                            keys.mapNotNull { it.toIntOrNull() }.toSet()
+                        )
+                    }
+                    batchImporting = false
+                    batchPack = null
+                    Toast.makeText(
+                        context,
+                        context.getString(
+                            com.ilyskyo.blancall.R.string.content_pack_import_result,
+                            result.first,
+                            result.second
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        )
     }
 }
 
@@ -169,11 +281,16 @@ fun WesternThoughtScreen(navController: NavController) {
  */
 @Composable
 private fun LibraryCard(
-    lib: BuiltInLibrary,
-    onClick: () -> Unit
+    title: String,
+    subtitle: String,
+    meta: String,
+    accent: Color,
+    icon: AppIconKind,
+    onClick: () -> Unit,
+    // 卡片右侧附加操作（如用户内容包的「批量导入」胶囊）；为 null 时只有 chevron
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val isDark = isBlancallDark()
-    val accent = Color(lib.accentColor)
 
     // 毛玻璃底（与顶栏 / 菜单 0.72 一致）
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
@@ -243,7 +360,7 @@ private fun LibraryCard(
                 contentAlignment = Alignment.Center
             ) {
                 AppIcon(
-                    kind = AppIconKind.Library,
+                    kind = icon,
                     tint = accent,
                     modifier = Modifier.size(28.dp)
                 )
@@ -259,7 +376,7 @@ private fun LibraryCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = lib.title,
+                    text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -267,7 +384,7 @@ private fun LibraryCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = lib.subtitle,
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -275,7 +392,6 @@ private fun LibraryCard(
                     lineHeight = 16.sp
                 )
                 // meta 行
-                val meta = lib.metaLine.ifBlank { stringResource(com.ilyskyo.blancall.R.string.western_selected_content) }
                 Text(
                     text = meta,
                     style = MaterialTheme.typography.labelSmall,
@@ -284,6 +400,11 @@ private fun LibraryCard(
                     overflow = TextOverflow.Ellipsis,
                     letterSpacing = 0.4.sp
                 )
+            }
+
+            if (trailing != null) {
+                Spacer(Modifier.width(8.dp))
+                trailing()
             }
 
             Spacer(Modifier.width(6.dp))
@@ -297,6 +418,28 @@ private fun LibraryCard(
                     .padding(end = 14.dp)
             )
         }
+    }
+}
+
+/** 卡片右侧的小胶囊操作（用户内容包的「批量导入」入口）。 */
+@Composable
+private fun BatchImportPill(
+    text: String,
+    accent: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.pressClick { onClick() },
+        shape = RoundedCornerShape(10.dp),
+        color = accent.copy(alpha = 0.12f),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+            color = accent,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        )
     }
 }
 
@@ -324,6 +467,43 @@ fun LibraryContentPage(
     var webView by remember { mutableStateOf<WebView?>(null) }
     // 组合层取 WebView 背景色（factory 非 Composable，不能直接读 MaterialTheme）
     val webViewBg = MaterialTheme.colorScheme.background.toArgb()
+
+    // 高考库首页的 HTML 自带米黄底。把当前主题色（浅色/深色）通过 URL 参数传进页面，
+    // 页面在解析阶段就写入样式，既不出现米黄底，深色模式下也不会先闪一帧浅色。
+    // 链接保留该库原本的棕色调（深色模式下提亮，保证黑底可读）。
+    val libAccent = Color(lib.accentColor)
+    val gaokaoLinkColor = if (isBlancallDark()) lerp(libAccent, Color.White, 0.45f) else libAccent
+    val scheme = MaterialTheme.colorScheme
+    val gaokaoTheme = remember(
+        lib.id,
+        scheme.background,
+        scheme.onBackground,
+        scheme.outlineVariant,
+        gaokaoLinkColor,
+    ) {
+        if (lib.id != "gaokao") {
+            null
+        } else {
+            GaokaoPageTheme(
+                bg = scheme.background.toCssHex(),
+                fg = scheme.onBackground.toCssHex(),
+                line = scheme.outlineVariant.toCssHex(),
+                accent = gaokaoLinkColor.toCssHex(),
+            )
+        }
+    }
+    // 客户端回调里要读到最新主题（WebViewClient 只创建一次，不能捕获旧值）
+    val gaokaoThemeState = rememberUpdatedState(gaokaoTheme)
+    val pageUrl = remember(lib.assetPath, gaokaoTheme) {
+        "file:///android_asset/${lib.assetPath}" + (gaokaoTheme?.let { "?${it.query}" } ?: "")
+    }
+
+    // 批量导入面板（高考库首页：60 篇可选）
+    var batchItems by remember { mutableStateOf<List<BatchImportItem>?>(null) }
+    var batchImporting by remember { mutableStateOf(false) }
+    val articleRepo = remember {
+        ArticleRepository.getInstance(context.filesDir.resolve("articles.json").absolutePath)
+    }
 
     // 非官方第三方素材免责提示：每个库首次进入弹一次（gaokao / western 各自记忆）
     var showDisclaimer by remember { mutableStateOf(
@@ -368,7 +548,7 @@ fun LibraryContentPage(
 
     val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     val scope = rememberCoroutineScope()
-    val accent = Color(lib.accentColor)
+    val accent = libAccent
 
     val onBack: () -> Unit = {
         val wv = webView
@@ -566,9 +746,29 @@ fun LibraryContentPage(
                             }
                         )
                         // （练习当前页的功能已并入顶栏「练习 · 第X节」按钮，菜单不再重复放，避免同一功能多入口）
+                    } else if (lib.id == "gaokao") {
+                        // 高考库首页：直接提供批量导入（全选 / 单独选 / 多选）到背诵列表
+                        GlassMenuItem(
+                            leadingIcon = {
+                                AppIcon(
+                                    kind = AppIconKind.Check,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.library_batch_import), fontWeight = FontWeight.Medium) },
+                            onClick = {
+                                showMenu = false
+                                scope.launch {
+                                    val items = withContext(Dispatchers.IO) {
+                                        buildGaokaoBatchItems(context, articleRepo)
+                                    }
+                                    if (items.isNotEmpty()) batchItems = items
+                                }
+                            }
+                        )
                     } else {
-                        // index / concept-map 页提示：按库类型给对应的引导文案
-                        val guideText = if (lib.id == "gaokao") stringResource(com.ilyskyo.blancall.R.string.western_enter_article) else stringResource(com.ilyskyo.blancall.R.string.western_enter_thinker)
+                        // index / concept-map 页提示（西方思想库仍保留引导文案）
                         GlassMenuItem(
                             leadingIcon = {
                                 AppIcon(
@@ -579,7 +779,7 @@ fun LibraryContentPage(
                             },
                             label = {
                                 Text(
-                                    guideText,
+                                    stringResource(com.ilyskyo.blancall.R.string.western_enter_thinker),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
@@ -673,6 +873,11 @@ fun LibraryContentPage(
                                         "})()",
                                     null
                                 )
+                                // 高考库首页：把主题样式再写一遍（URL 参数在解析期已注入，
+                                // 这里兜底站点内部重新加载 / 主题切换后的旧页面）
+                                if (view != null) {
+                                    gaokaoThemeState.value?.let { applyGaokaoThemeCss(view, it.css) }
+                                }
                                 // 只有在「同一个页面」重新加载时才恢复；站内跳转保持新页面自己的位置
                                 if (savedScrollY > 0 && url == savedScrollUrl) {
                                     view?.scrollTo(0, savedScrollY)
@@ -690,10 +895,12 @@ fun LibraryContentPage(
                                 }
                             }
                         }
-                        loadUrl("file:///android_asset/${lib.assetPath}")
+                        // 高考库首页带主题参数（bg/fg/line/accent），页面解析阶段即生效
+                        loadUrl(pageUrl)
                     }.also { webView = it }
                 },
-                update = {},
+                // 主题切换（浅色 / 深色 / 主题色）时同步 WebView 底色与页面样式
+                update = { wv -> wv.setBackgroundColor(webViewBg) },
                 onRelease = { wv ->
                     // 离开素材库页时释放 WebView 的原生资源（渲染进程、历史、缓存）。
                     // 旧实现只创建不销毁：反复进出素材库会持续累积 native 内存，长期可能 OOM。
@@ -706,6 +913,44 @@ fun LibraryContentPage(
 
             // 二级菜单已移除：下载 PDF / 全文导入背诵列表 直接在一级菜单执行
         }
+    }
+
+    // 主题切换（如跟随系统日夜变化、切换主题色）时同步页面配色；
+    // URL 参数只在首次加载时生效，已打开的页面需要这条实时注入。
+    LaunchedEffect(webView, gaokaoTheme) {
+        val wv = webView ?: return@LaunchedEffect
+        val theme = gaokaoTheme ?: return@LaunchedEffect
+        applyGaokaoThemeCss(wv, theme.css)
+    }
+
+    // 高考库首页：批量导入面板（全选 / 单独选 / 多选；已导入条目灰色锁定）
+    AnimatedOverlayPresence(target = batchItems) { items ->
+        BatchImportSheet(
+            title = stringResource(com.ilyskyo.blancall.R.string.library_batch_import),
+            subtitle = lib.title,
+            items = items,
+            importing = batchImporting,
+            onDismissRequest = { if (!batchImporting) batchItems = null },
+            onConfirm = { keys ->
+                batchImporting = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        importGaokaoSelection(context, articleRepo, keys)
+                    }
+                    batchImporting = false
+                    batchItems = null
+                    Toast.makeText(
+                        context,
+                        resources.getString(
+                            com.ilyskyo.blancall.R.string.content_pack_import_result,
+                            result.first,
+                            result.second
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        )
     }
 
     // 顶栏「练习」：先弹出练习模式选择选项卡，选定后再导入并进入对应练习
@@ -864,6 +1109,93 @@ private fun hasChineseContent(s: String): Boolean {
     val cnCount = s.count { c -> c.code in 0x4E00..0x9FFF }
     if (cnCount < 6) return false
     return true
+}
+
+// ───────────────────────── 高考库首页：主题配色 / 批量导入 ─────────────────────────
+
+private const val GAOKAO_PIECE_COUNT = 60
+
+/** 高考库首页的主题配色（十六进制不带 #，便于拼 URL 参数）。 */
+private data class GaokaoPageTheme(
+    val bg: String,
+    val fg: String,
+    val line: String,
+    val accent: String,
+) {
+    val query: String get() = "bg=$bg&fg=$fg&line=$line&accent=$accent"
+    val css: String get() = "html,body{background-color:#$bg !important;color:#$fg !important;}" +
+        "li{border-bottom-color:#$line !important;}a{color:#$accent !important;}"
+}
+
+private fun Color.toCssHex(): String = "%06X".format(0xFFFFFF and toArgb())
+
+/** 把主题样式写入当前文档（URL 参数只在首次加载时生效，这里负责实时主题切换与兜底）。 */
+private fun applyGaokaoThemeCss(view: WebView, css: String) {
+    val js = "(function(){var s=document.getElementById('blancall-theme');" +
+        "if(!s){s=document.createElement('style');s.id='blancall-theme';document.head.appendChild(s);}" +
+        "s.textContent='$css';})()"
+    view.evaluateJavascript(js, null)
+}
+
+/**
+ * 构建高考库首页的批量导入候选项。
+ * 已存在于背诵列表的篇目（按正文 MD5 判定）标记为已导入，面板里显示灰色锁定勾选。
+ */
+private suspend fun buildGaokaoBatchItems(
+    context: Context,
+    repo: ArticleRepository,
+): List<BatchImportItem> {
+    val existingHashes = runCatching {
+        repo.awaitLoaded()
+        repo.allArticles.first().mapTo(HashSet()) { ContentFingerprint.md5Hex(it.content) }
+    }.getOrElse { HashSet() }
+    return (1..GAOKAO_PIECE_COUNT).mapNotNull { n ->
+        val txt = readAssetTxt(context, "gaokao/p$n.txt") ?: return@mapNotNull null
+        BatchImportItem(
+            key = "p$n",
+            title = txt.first.ifBlank { "p$n" },
+            subtitle = txt.second,
+            imported = ContentFingerprint.md5Hex(txt.third) in existingHashes,
+        )
+    }
+}
+
+/** 导入所选高考篇目到背诵列表；重复内容跳过。返回（导入数, 跳过数）。 */
+private suspend fun importGaokaoSelection(
+    context: Context,
+    repo: ArticleRepository,
+    keys: Set<String>,
+): Pair<Int, Int> {
+    val existingHashes = runCatching {
+        repo.awaitLoaded()
+        repo.allArticles.first().mapTo(HashSet()) { ContentFingerprint.md5Hex(it.content) }
+    }.getOrElse { HashSet() }
+    var imported = 0
+    var skipped = 0
+    keys.mapNotNull { it.removePrefix("p").toIntOrNull() }
+        .filter { it in 1..GAOKAO_PIECE_COUNT }
+        .distinct()
+        .sorted()
+        .forEach { n ->
+            val txt = readAssetTxt(context, "gaokao/p$n.txt")
+            if (txt == null) {
+                skipped++
+            } else if (!existingHashes.add(ContentFingerprint.md5Hex(txt.third))) {
+                skipped++
+            } else {
+                val ok = runCatching {
+                    repo.insert(
+                        Article(
+                            title = txt.first.ifBlank { "p$n" },
+                            content = txt.third,
+                            author = txt.second,
+                        )
+                    )
+                }.isSuccess
+                if (ok) imported++ else skipped++
+            }
+        }
+    return imported to skipped
 }
 
 /**

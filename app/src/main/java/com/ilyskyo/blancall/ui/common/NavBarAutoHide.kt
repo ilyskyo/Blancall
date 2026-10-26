@@ -42,11 +42,13 @@ import kotlinx.coroutines.launch
  * 调用方均为组合副作用（主线程），无需额外同步。
  *
  * ## 滚动驱动（页面不再为导航栏预留底部留白）
- * 页面挂上 [rememberAutoHideNavBarOnScroll] 后按「滑动中收起、停止即恢复、停在底部保持收起」：
- * - **滑动中**：收起（滚动内容不被悬浮底栏遮挡）；
- * - **滑动停止**：自动恢复显示（去抖无新滚动事件即视为停止）；
+ * 页面挂上 [rememberAutoHideNavBarOnScroll] 后按**滚动方向**决定显隐：
+ * - **向下滚动**（手指上滑，往页面底部方向看后续内容）：收起（内容不被悬浮底栏遮挡）；
+ * - **向上滚动**（手指下滑，从页面底部滑往页面顶部、回看更早内容）：**不收起** ——
+ *   已收起时立即滑回显示（见 [isScrollingTowardTop]）；
+ * - **滑动停止**：恢复显示（去抖无新滚动事件即视为停止）；
  * - **滑到底部**：保持收起——停在底部时也不恢复（最后一段内容天然不被遮挡）；
- *   向上回滚离开底部后停止 → 恢复；
+ *   向上回滚离开底部后恢复；
  * - **内容不足以滚动**：不触发收起（滑动不产生滚动消费的页面——如「我的文章」文章很少时——
  *   不得把上滑误判为「到底」而把底栏收住不放；见 [isScrollAtEnd]）。
  * 因此滚动容器无需 90–140dp 的「避让留白」。
@@ -61,6 +63,15 @@ object NavBarAutoHide {
 
     /** 滚动驱动自动收起（[rememberAutoHideNavBarOnScroll] 内部使用） */
     const val KEY_SCROLL = "scroll"
+
+    /**
+     * 拉/推蓄力手势进行中（数据页下拉进任务流、任务流底部上拉返回）。
+     *
+     * 任务流的「上拉返回」圆环就画在屏幕底部，正好是悬浮底栏的位置。
+     * 手势期间滚动事件被蓄力连接吃掉，滚动键可能误判为「停止」并在 350ms 后把底栏放出来，
+     * 于是圆环被盖住。这个键在手势期间独立按住底栏，与滚动键互不干扰。
+     */
+    const val KEY_PULL_GESTURE = "pull_gesture"
 
     private val activeKeys = mutableSetOf<String>()
 
@@ -103,11 +114,13 @@ fun AutoHideNavBarOnFlag(key: String, active: Boolean) {
 }
 
 /**
- * 滚动驱动的底栏自动收起（用户规则）：
- * - **滑动中**：收起（内容滚动时不被悬浮底栏遮挡）；
+ * 滚动驱动的底栏自动收起（用户规则：**按方向**决定，不再「只要滚动就收起」）：
+ * - **向下滚动**（手指上滑，往页面底部看后续内容）：收起（内容滚动时不被悬浮底栏遮挡）；
+ * - **向上滚动**（手指下滑，从页面底部滑往页面顶部、回看更早内容）：不收起 ——
+ *   已收起则立即滑回显示；
  * - **滑动停止**：自动恢复显示（去抖 [RESTORE_DELAY_MS] 无新滚动事件即视为停止）；
  * - **滑到底部**：保持收起——停在底部时也不恢复（最后一段内容不被遮挡）；
- *   向上回滚离开底部后停止 → 恢复。
+ *   向上回滚离开底部后恢复。
  *
  * 悬挂到页面的滚动容器（LazyColumn / LazyVerticalGrid / verticalScroll 所在 Modifier 链）
  * 即可；页面销毁时自动释放滚动键，不会把底栏永久藏住（此前的「收起后不再出现」即由此
@@ -142,12 +155,18 @@ fun rememberAutoHideNavBarOnScroll(): NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val dy = available.y
                 if (dy != 0f) {
-                    // 滑动中：收起；向上回滚（看更早内容）= 已离开「停在底部」语义
-                    if (dy > 2f) atEnd = false
-                    // 仅「可滚动页面」驱动收起：内容不足、完全不可滚的页面滑动不产生任何
-                    // 滚动消费，也不应把悬浮底栏收起（真机反馈：文章少时上滑被误判
-                    //「到底」、底栏保持收起，需反向下滑才恢复）
-                    if (scrollable) {
+                    if (isScrollingTowardTop(dy)) {
+                        // 向上滚动（从页面底部滑往页面顶部 = 回看更早内容）：导航栏**不收起**。
+                        // 已在收起态（或收起动画中）也立刻滑回；顺带解除「停在底部保持收起」
+                        // ——用户已经离开底部，不该再按底部的规则藏栏。
+                        atEnd = false
+                        restoreJob?.cancel()
+                        NavBarAutoHide.release(NavBarAutoHide.KEY_SCROLL)
+                    } else if (scrollable) {
+                        // 向下滚动（继续往后看）：收起让位。
+                        // 仅「可滚动页面」驱动收起：内容不足、完全不可滚的页面滑动不产生任何
+                        // 滚动消费，也不应把悬浮底栏收起（真机反馈：文章少时上滑被误判
+                        //「到底」、底栏保持收起，需反向下滑才恢复）
                         NavBarAutoHide.request(NavBarAutoHide.KEY_SCROLL)
                         scheduleRestore()
                     }
@@ -160,7 +179,7 @@ fun rememberAutoHideNavBarOnScroll(): NestedScrollConnection {
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
-                // 真正消费了滚动 ⇒ 页面可滚动（此后进入正常「滑动中收起」规则）
+                // 真正消费了滚动 ⇒ 页面可滚动（此后进入正常「按方向收起 / 恢复」规则）
                 if (hasScrollConsumed(consumed.y)) scrollable = true
                 // 可滚页面仍在向上滑却滚不动 ⇒ 到达底部；不可滚页面不得误判
                 if (isScrollAtEnd(scrollable, available.y)) atEnd = true
@@ -172,6 +191,15 @@ fun rememberAutoHideNavBarOnScroll(): NestedScrollConnection {
 
 /** 本帧滚动是否证明页面可滚动（有真实消费；含 fling 惯性帧）。 */
 internal fun hasScrollConsumed(consumedY: Float): Boolean = consumedY != 0f
+
+/**
+ * 滚动方向判定：本帧是否「向上滚动」——即用户说的**从页面底部滑往页面顶部**、回看更早内容。
+ *
+ * 符号约定（回归锚点，别改反）：嵌套滚动增量与手指位移同向，手指向下滑（回看前面）为正、
+ * 手指向上滑（看后面）为负。底栏在该方向**不收起**：回看时导航栏必须可点，否则用户想切
+ * tab 得先反向滑一段（「只要滚动就收起」的老问题）。
+ */
+internal fun isScrollingTowardTop(availableY: Float): Boolean = availableY > 0f
 
 /**
  * 「到达滚动底部」判定（回归锚点 —— 「内容不足的页面滑一下、底栏保持收起」真机 bug）：

@@ -139,6 +139,25 @@ class LocaleParityGuardTest {
         assertTrue("繁体资源里混着简体字形：\n" + offenders.joinToString("\n"), offenders.isEmpty())
     }
 
+    /**
+     * 默认目录里不许出现繁体字形 —— 与上一条互为镜像。
+     *
+     * 为什么需要：「每次复习的實際間隔」这种半繁半简不会让句子读不通，键集齐全、
+     * 占位符合法，编译与既有守卫全都放行，只有本机切成简体的人才会撞见。
+     * 判据用同一张 S2T 表的反向映射（繁体字 → 简体正字）。
+     */
+    @Test
+    fun 默认目录不许混进繁体字形() {
+        val offenders = keysOf(defaultFile)
+            .filter { entry -> entry.value.any { it in T2S } }
+            .map { (k, v) -> "$k → " + v.filter { it in T2S }.toSet().joinToString(",") { "$it(应作 ${T2S.getValue(it)})" } }
+            .sorted()
+        assertTrue(
+            "默认（简体中文）资源里混着繁体字形，简体界面会半繁半简：\n" + offenders.joinToString("\n"),
+            offenders.isEmpty()
+        )
+    }
+
     private fun declaredLocales(): Set<String> {
         val cfg = File("src/main/res/xml/locales_config.xml")
         assertTrue("manifest 挂了 android:localeConfig，但找不到 ${cfg.absolutePath}", cfg.isFile)
@@ -407,6 +426,75 @@ class LocaleParityGuardTest {
         )
     }
 
+    /**
+     * 半截位置参数（`%1` / `%2` / `%1$`）必须判红。
+     *
+     * 为什么单独立一条：[dummyArgs] 靠 [PH_FORMAT] 找**合法**格式项，找不到就认定「这条不用
+     * 格式化」直接跳过。`共 %1 处` 恰好落在两条判据之间的缝里 —— 不是合法格式项（所以不校验），
+     * 又确实带了 `%`（所以 `getString(id, n)` 运行时照样走 `String.format`）⇒ 一渲染就崩。
+     * 2026-10-25 的 7.5.2 正是这么闪退的：`notebook_entry_count`、`reader_practice_section_spans`、
+     * `reason_lapsed/long_gap/overdue/stable` 六条 × 六种语言全是这个形状，崩在
+     * `UnknownFormatConversionException: Conversion = ' '`（错题本、阅读页、今日计划三处都点得出来）。
+     *
+     * 只判「`%` 紧跟数字」这一形状，字面百分号（`90%` 后面没有数字）不动 —— 那类文案只做
+     * `stringResource(id)` 单参调用，不经过格式化，误判成红反而会逼人写成 `90%%` 显示成两个百分号。
+     */
+    @Test
+    fun 半截位置参数必须判红() {
+        val files = listOf(defaultFile) + localeDirs.map { File(it, "strings.xml") }
+        val problems = mutableListOf<String>()
+        var scanned = 0
+        for (file in files) {
+            val dir = file.parentFile?.name ?: continue
+            for ((key, value) in keysOf(file)) {
+                scanned++
+                halfPositional(value).forEach { bad ->
+                    problems += "$dir/$key 有半截位置参数 `$bad`（要写成 %1\$d / %1\$s）：$value"
+                }
+            }
+            for ((key, items) in pluralsOf(file)) {
+                for ((quantity, value) in items) {
+                    scanned++
+                    halfPositional(value).forEach { bad ->
+                        problems += "$dir/$key[$quantity] 有半截位置参数 `$bad`：$value"
+                    }
+                }
+            }
+        }
+        assertTrue("一条资源都没扫到 —— 守卫等于没跑", scanned >= MIN_KEYS)
+        assertTrue(
+            "这些资源一带参数就抛 UnknownFormatConversionException：\n" + problems.joinToString("\n"),
+            problems.isEmpty()
+        )
+        // 自证：坏形状必须报，修好之后必须过，字面百分号不许误报
+        assertTrue("`共 %1 处` 必须判红", halfPositional("共 %1 处").isNotEmpty())
+        assertTrue("`Всего: %1` 必须判红", halfPositional("Всего: %1").isNotEmpty())
+        assertTrue("`共 %1\$ 处` 必须判红", halfPositional("共 %1\$ 处").isNotEmpty())
+        assertTrue("`共 %1\$d 处` 必须通过", halfPositional("共 %1\$d 处").isEmpty())
+        assertTrue("`Retention 90%` 不许误报", halfPositional("Retention 90%").isEmpty())
+        assertTrue("`%%` 与 `%n` 不许误报", halfPositional("100%%%n").isEmpty())
+    }
+
+    /**
+     * 找「`%` 紧跟数字、却不是完整格式项」的片段。
+     * 只管这一形状：串尾与字面百分号由 [lonePercentOffsets] 和 [formatFailure] 两条判据负责。
+     */
+    private fun halfPositional(value: String): List<String> {
+        val out = mutableListOf<String>()
+        var i = 0
+        while (i < value.length) {
+            if (value[i] != '%') { i++; continue }
+            val m = PH_FORMAT.find(value, i)
+            if (m != null && m.range.first == i) { i = m.range.last + 1; continue }
+            val next = value.getOrNull(i + 1)
+            if (next != null && next.isDigit()) {
+                out += value.substring(i, minOf(value.length, i + 3))
+            }
+            i++
+        }
+        return out
+    }
+
     /** 按值里的占位符造一组假实参；值里没有占位符（含只有字面 `%` 的文案）时返回 null。 */
     private fun dummyArgs(value: String): Array<Any?>? {
         var maxIndex = 0
@@ -639,6 +727,9 @@ class LocaleParityGuardTest {
             鲁魯 鲜鮮 鸿鴻 写寫 吗嗎 价價 众眾
         """.trimIndent()
         val S2T: Map<Char, String> = S2T_PAIRS.split(' ').filter { it.length == 2 }.associate { it[0] to it[1].toString() }
+
+        /** 反向映射：繁体字形 → 简体正字（S2T_PAIRS 里一对一，不会一繁对多简）。 */
+        val T2S: Map<Char, String> = S2T_PAIRS.split(' ').filter { it.length == 2 }.associate { it[1] to it[0].toString() }
 
         const val MIN_KEYS = 4
         const val MIN_PLURALS = 8

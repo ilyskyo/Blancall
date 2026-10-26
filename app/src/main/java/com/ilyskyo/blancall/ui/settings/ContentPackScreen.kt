@@ -53,7 +53,10 @@ import com.ilyskyo.blancall.data.contentpack.ContentPackStore
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.ui.common.AmbientBackground
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.BackButton
+import com.ilyskyo.blancall.ui.common.BatchImportItem
+import com.ilyskyo.blancall.ui.common.BatchImportSheet
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
@@ -83,8 +86,11 @@ fun ContentPackScreen(navController: NavController) {
     }
     var packs by remember { mutableStateOf<List<ContentPackStore.PackMeta>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
-    var importingPackId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<ContentPackStore.Reason?>(null) }
+    // 批量导入面板：当前选中的内容包 / 候选项 / 导入中
+    var batchPack by remember { mutableStateOf<ContentPackStore.PackMeta?>(null) }
+    var batchItems by remember { mutableStateOf<List<BatchImportItem>>(emptyList()) }
+    var batchImporting by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<ContentPackStore.PackMeta?>(null) }
     var expanded by remember { mutableStateOf<Set<String>>(emptySet()) }
     var viewing by remember { mutableStateOf<Pair<ContentPackStore.PackMeta, Int>?>(null) }
@@ -194,23 +200,7 @@ fun ContentPackScreen(navController: NavController) {
                 )
             }
             Spacer(Modifier.height(12.dp))
-            if (packs.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            stringResource(R.string.content_pack_empty),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            stringResource(R.string.content_pack_empty_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
+            if (packs.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().nestedScroll(navBarConn),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -252,31 +242,18 @@ fun ContentPackScreen(navController: NavController) {
                                     GlassButton(
                                         onClick = {
                                             scope.launch {
-                                                importingPackId = pack.id
-                                                val result = withContext(Dispatchers.IO) {
-                                                    importPack(articleRepo, store, pack)
+                                                val items = withContext(Dispatchers.IO) {
+                                                    buildPackBatchItems(store, articleRepo, pack)
                                                 }
-                                                importingPackId = null
-                                                Toast.makeText(
-                                                    context,
-                                                    context.getString(
-                                                        R.string.content_pack_import_result,
-                                                        result.first,
-                                                        result.second
-                                                    ),
-                                                    Toast.LENGTH_LONG
-                                                ).show()
+                                                batchItems = items
+                                                batchPack = pack
                                             }
                                         },
-                                        enabled = importingPackId == null,
+                                        enabled = !batchImporting,
                                         modifier = Modifier.height(34.dp)
                                     ) {
                                         Text(
-                                            if (importingPackId == pack.id) {
-                                                stringResource(R.string.content_pack_importing)
-                                            } else {
-                                                stringResource(R.string.content_pack_import_all)
-                                            },
+                                            stringResource(R.string.library_batch_import),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
@@ -348,6 +325,58 @@ fun ContentPackScreen(navController: NavController) {
                 }
             }
         }
+        if (packs.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        stringResource(R.string.content_pack_empty),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.content_pack_empty_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+
+    // 批量导入面板：可全选 / 单独选 / 多选；已导入篇目灰色锁定
+    AnimatedOverlayPresence(target = batchPack) { pack ->
+        BatchImportSheet(
+            title = stringResource(R.string.library_batch_import),
+            subtitle = pack.name,
+            items = batchItems,
+            importing = batchImporting,
+            onDismissRequest = { if (!batchImporting) batchPack = null },
+            onConfirm = { keys ->
+                batchImporting = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        importPackSelection(
+                            articleRepo,
+                            store,
+                            pack,
+                            keys.mapNotNull { it.toIntOrNull() }.toSet()
+                        )
+                    }
+                    batchImporting = false
+                    batchPack = null
+                    Toast.makeText(
+                        context,
+                        context.getString(
+                            R.string.content_pack_import_result,
+                            result.first,
+                            result.second
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        )
     }
 
     deleteTarget?.let { target ->
@@ -407,27 +436,58 @@ fun ContentPackScreen(navController: NavController) {
 
 private const val PREVIEW_COUNT = 10
 
-private suspend fun importPack(
+/**
+ * 构建内容包的批量导入候选项。
+ * 已存在相同正文的文章（按 MD5 判定）标记为已导入，面板里显示灰色锁定勾选。
+ *
+ * internal：素材库首页的用户内容包卡片也复用它（两处入口保持一致）。
+ */
+internal suspend fun buildPackBatchItems(
+    store: ContentPackStore,
+    repo: ArticleRepository,
+    pack: ContentPackStore.PackMeta,
+): List<BatchImportItem> {
+    val existingHashes = runCatching {
+        repo.awaitLoaded()
+        repo.allArticles.first().mapTo(HashSet()) { ContentFingerprint.md5Hex(it.content) }
+    }.getOrElse { HashSet() }
+    return pack.entries.mapIndexedNotNull { index, meta ->
+        val body = store.readEntry(pack.id, index) ?: return@mapIndexedNotNull null
+        BatchImportItem(
+            key = index.toString(),
+            title = meta.title,
+            subtitle = meta.author,
+            imported = ContentFingerprint.md5Hex(body) in existingHashes,
+        )
+    }
+}
+
+/** 按篇目索引导入所选项；重复内容跳过。返回（导入数, 跳过数）。 */
+internal suspend fun importPackSelection(
     repo: ArticleRepository,
     store: ContentPackStore,
     pack: ContentPackStore.PackMeta,
+    indices: Set<Int>,
 ): Pair<Int, Int> {
     val existingHashes = runCatching {
         repo.awaitLoaded()
-        repo.allArticles.first().map { ContentFingerprint.md5Hex(it.content) }.toHashSet()
+        repo.allArticles.first().mapTo(HashSet()) { ContentFingerprint.md5Hex(it.content) }
     }.getOrElse { HashSet() }
     var imported = 0
     var skipped = 0
-    pack.entries.forEachIndexed { index, meta ->
-        val body = store.readEntry(pack.id, index) ?: return@forEachIndexed
-        if (!existingHashes.add(ContentFingerprint.md5Hex(body))) {
+    indices.sorted().forEach { index ->
+        val meta = pack.entries.getOrNull(index)
+        val body = store.readEntry(pack.id, index)
+        if (meta == null || body == null) {
             skipped++
-            return@forEachIndexed
+        } else if (!existingHashes.add(ContentFingerprint.md5Hex(body))) {
+            skipped++
+        } else {
+            val ok = runCatching {
+                repo.insert(Article(title = meta.title, content = body, author = meta.author))
+            }.isSuccess
+            if (ok) imported++ else skipped++
         }
-        val ok = runCatching {
-            repo.insert(Article(title = meta.title, content = body, author = meta.author))
-        }.isSuccess
-        if (ok) imported++ else skipped++
     }
     return imported to skipped
 }

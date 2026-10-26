@@ -3,10 +3,10 @@
 
 package com.ilyskyo.blancall.ui.common
 
+import android.animation.ValueAnimator
 import android.os.Build
-import android.widget.FrameLayout
+import android.os.PowerManager
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,7 +16,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,85 +27,76 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
-import com.qmdeve.liquidglass.widget.LiquidGlassView
-import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.roundToInt
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.emptyBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
 import kotlin.math.abs
-import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-// ── 液态玻璃导航栏参数 ──
-// 滑块 blur 12 / 色散 0：中性白玻璃，色散完全关闭——滑块边缘不产生任何绿/黄/紫色差光晕。
-// 液态质感由 refractionHeight/refractionOffset（折射形变）提供，不靠色散；色散是绿黄圈的根源，
-// 与背后页面内容无关（不同页面"看似有无色散"只是对比度差异，关掉即全局一致无彩边）──
-private const val LgBarBlur = 6f
-private const val LgBarDispersion = 0.5f
-
-private const val LgSliderBlur = 12f
-private const val LgSliderDispersion = 0f
-
-/**
- * 液态玻璃底部导航栏（Tab 栏风格，真机真液态）：
- *
- * 架构（与阅读模式完全同构）：
- * - AppNavigation 维护一个 **专用 FrameLayout 页面容器**（pageHost），挂 NavHost；
- *   BottomNavBar 拿到 pageHost 引用。
- * - 整条 LiquidGlassView 和滑块 LiquidGlassView 都是 BottomNavBar 的子 View，
- *   它们的 **父 ViewGroup** = Activity 根 layout = pageHost 的父 layout —— 因此
- *   `bind(pageHost)` 拿到的页面像素就跟玻璃同级（无自我反馈循环）。
- * - 玻璃参数：bar blur 6 + dispersion 0.5；slider blur 12 + dispersion 0（slider 关闭色散，仅保留折射形变）。
- *
- * 布局策略：
- * - BoxWithConstraints 算 tabW = 玻璃条宽 / tab 数
- * - 玻璃条 = AndroidView(LiquidGlassView) fillMaxSize（z 最低）
- * - 滑块 = Box(size+absoluteOffset) 包 AndroidView(LiquidGlassView) + 描边/高光
- *   滑块 z 位于玻璃条之上，但与 tab 内容 Row 互不干扰（滑块仅占 48dp 居中）
- * - tab Row = 顶层 Row，z 最高
- *
- * 全部不用 Modifier.layout 自定义 measure，避免与 View 生命周期竞速。
- */
+// ── 底栏几何（唯一真源）──
+private val BarHeight = 64.dp
+private val BarHorizontalMargin = 14.dp
+private val BarBottomMargin = 14.dp
+private val IndicatorInset = 4.dp
+private val BarGlassBlur = 8.dp
+private val BarGlassLens = 24.dp
+private val IndicatorLensX = 10.dp
+private val IndicatorLensY = 14.dp
+private val PanelMaxOffset = 4.dp
 
 /**
  * 导航项定义（底栏与侧栏共用）：
@@ -123,16 +116,8 @@ private fun navTabsFor(showLibraryTab: Boolean): List<Pair<Int, AppIconKind>> =
 /**
  * 大屏侧边导航栏（Tablet / 折叠屏展开 / 横屏，Material 3 NavigationRail 规范）。
  *
- * **为什么横屏要用侧栏**：底部导航栏在横屏下有三个硬伤 ——
- * ① 高度本就紧张（横屏可用高度常低于 500dp），一条 64dp 的底栏再切掉一块；
- * ② 手指在横屏握持时离底部更远，横向滑动比纵向点击更贴近拇指活动区；
- * ③ 平板横屏宽高比接近 3:2，竖向空间是最稀缺资源，横向空间反而富余。
- * Material 3 规范因此规定：宽度 ≥ 600dp 用 NavigationRail，≥ 840dp 可上持久抽屉。
- *
- * 视觉上沿用同一套液态玻璃：竖向 76dp 宽玻璃条 + 半透明胶囊指示器，
- * 与底栏保持一致的材质语言（不引入第二套设计）。
- *
- * @param host 液态玻璃折射采样源（页面容器），与 [BottomNavBar] 同款。
+ * 本次只把它的玻璃源迁到 Compose `drawBackdrop`（与底栏共用 [Backdrop]），
+ * 布局、选中动画与手势保持原样；垂直方向的拖动物理不在本次底栏改造范围内。
  */
 @Composable
 fun NavRail(
@@ -140,7 +125,7 @@ fun NavRail(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     showLibraryTab: Boolean = false,
-    host: FrameLayout? = null
+    backdrop: Backdrop = emptyBackdrop(),
 ) {
     val tabs = navTabsFor(showLibraryTab)
     val isDark = isBlancallDark()
@@ -149,76 +134,41 @@ fun NavRail(
     val density = LocalDensity.current
 
     val navGlass by AppPrefs.navLiquidGlassFlow.collectAsState()
-    // 玻璃强度是 alpha，按词表走 tween：默认 spring 会越过 1f/0f，
-    // 越界虽被绘制端夹住，但视觉上会在「关」的那一刻先暗一下再消失。
+    val glassActive = navGlass && navGlassSupported()
     val railGlassAlpha by animateFloatAsState(
-        if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "railGlassAlpha")
-
-    // 与底栏同一件事：alpha 归零不等于不绘制，采样源仍每帧整栏重录。淡出走完后把宿主置
-    // INVISIBLE，由 LiquidGlassimpl.record 的可见性短路挡掉（见收录改动⑥）。不能移出组合树。
-    var railGlassShown by remember { mutableStateOf(navGlass) }
-    LaunchedEffect(navGlass) {
-        if (navGlass) {
-            railGlassShown = true
-        } else {
-            delay((MotionFade.enter + 60).toLong())
-            if (!navGlass) railGlassShown = false
-        }
-    }
-    // 同底栏：update 里读不到状态订阅，必须先在组合期读出来
-    val railGlassVisible = railGlassShown
+        if (glassActive) 1f else 0f,
+        MotionFade.alpha(MotionFade.enter),
+        label = "railGlassAlpha",
+    )
 
     val railWidthDp = NavRailWidth
     val railCornerDp = 28.dp
     val railCornerPx = with(density) { railCornerDp.toPx() }
     val railShape = RoundedCornerShape(railCornerDp)
+    val indicatorShape = RoundedCornerShape(29.dp)
+    val railBackdrop = rememberLayerBackdrop()
+    val indicatorBackdrop = rememberCombinedBackdrop(backdrop, railBackdrop)
 
-    val railGlassRef = remember { AtomicReference<LiquidGlassView?>(null) }
-    // 选中项指示器的玻璃胶囊（与底栏滑块同款）：侧栏「像波态玻璃」的一半质感来自它。
-    // ⚠️ 必须**常驻不随选中态移出组合树**（LiquidGlassView 在 detach 态会崩），
-    // 因此它不写在 tab 的 Box 里，而是独立一层、用 offset 跟随选中项。
-    val railSelGlassRef = remember { AtomicReference<LiquidGlassView?>(null) }
-
-    // 切 tab 时的玻璃过渡：页面重绘首帧的采样可能拿到「空帧」——玻璃显示兜底白、
-    // 下一帧才恢复取色（真机反馈：「点滑块取色突然变白、跳一下再取色」；数据页因
-    // 内容入场较缓本就没有白闪）。用一次 70ms 淡出 + 200ms 淡回把硬跳变成柔和过渡，
-    // 对数据页是无损叠加（不会改坏它现在的表现）。
-    val switchFade = remember { Animatable(1f) }
-    var lastTabForFade by remember { mutableIntStateOf(currentTab) }
-    LaunchedEffect(currentTab) {
-        if (currentTab != lastTabForFade) {
-            lastTabForFade = currentTab
-            switchFade.animateTo(0.6f, MotionFade.number(MotionFade.switchDip))
-            switchFade.animateTo(1f, MotionFade.number(MotionFade.enter))
-        }
-    }
+    val railTint = if (isDark) Color.Black.copy(alpha = 0.42f)
+    else MaterialTheme.colorScheme.background.copy(alpha = 0.42f)
+    val fallbackTint = if (isDark) Color.Black.copy(alpha = 0.92f)
+    else Color.White.copy(alpha = 0.86f)
+    val borderColor = if (isDark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f)
+    val indicatorTint = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.10f)
 
     // 选中位置动画（单位 = 导航项索引）：玻璃胶囊 offset 与「滑动切换」手势共用同一实例。
-    // 与底栏滑块同款交互：按住上下拖动 ⇒ 胶囊跟手；松手吸附到最近项并切换页面。
-    val railSelAnim = remember(tabs.size) { Animatable(currentTab.toFloat()) }
-    val railScope = androidx.compose.runtime.rememberCoroutineScope()
-    // 回调兜 Fresh：pointerInput 块内直接捕获的实例会冻结在协程启动时（与 HomeCardCanvas 同款
-    // 陷阱），经 rememberUpdatedState 保证手势始终调用最新实现。
-    val onSelectLatest by rememberUpdatedState(onSelect)
-    LaunchedEffect(currentTab) {
-        railSelAnim.animateTo(
-            currentTab.coerceIn(0, (tabs.size - 1)).toFloat(),
-            Motion.sliderIndex()
-        )
+    val railSelAnim = remember(tabs.size) {
+        Animatable(currentTab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0)).toFloat())
     }
-
-    // 同为「玻璃 View 创建竞速」：等就绪再 bind，与底栏一致
-    LaunchedEffect(host) {
-        val target = host ?: return@LaunchedEffect
-        repeat(400) {
-            val rail = railGlassRef.get()
-            val sel = railSelGlassRef.get()
-            if (rail != null && sel != null) {
-                rail.bind(target)
-                sel.bind(target)
-                return@LaunchedEffect
-            }
-            delay(16)
+    val railScope = rememberCoroutineScope()
+    // 回调兜 Fresh：pointerInput 块内直接捕获的实例会冻结在协程启动时。
+    val onSelectLatest by rememberUpdatedState(onSelect)
+    LaunchedEffect(currentTab, tabs.size) {
+        if (currentTab >= 0) {
+            railSelAnim.animateTo(
+                currentTab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0)).toFloat(),
+                Motion.sliderIndex(),
+            )
         }
     }
 
@@ -234,70 +184,45 @@ fun NavRail(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            // ① 玻璃底
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                AndroidView(
-                    factory = { ctx ->
-                        LiquidGlassView(ctx).apply {
-                            setBackgroundColor(
-                                // 兜底白降到 150：让下方页面底色透出来（「向下取色」观感）；
-                                // 205 时在纯色页上几乎呈实心白，用户反馈「没有向下取色」
-                                if (isDark) android.graphics.Color.argb(170, 26, 26, 26)
-                                else android.graphics.Color.argb(150, 255, 255, 255)
-                            )
-                            setCornerRadius(railCornerPx)
-                            // 折射形变加强（20/70 → 32/85）：侧栏背景层次弱（氛围底），
-                            // 更强的边缘形变才能看出「液态」（真机反馈「不液态」）。
-                            setRefractionHeight(with(density) { 32.dp.toPx() })
-                            setRefractionOffset(with(density) { 85.dp.toPx() })
-                            setBlurRadius(LgBarBlur)
-                            // 侧栏关闭色散（真机反馈「不要什么色散」）：去掉彩边，只留折射形变
-                            setDispersion(0f)
-                            if (isDark) {
-                                setTintColorRed(0f); setTintColorGreen(0f); setTintColorBlue(0f)
-                                setTintAlpha(0.25f)
-                            } else {
-                                setTintColorRed(1f); setTintColorGreen(1f); setTintColorBlue(1f)
-                                setTintAlpha(0.12f)
-                            }
-                            setDraggableEnabled(false)
-                            setElasticEnabled(false)
-                            setTouchEffectEnabled(false)
-                            railGlassRef.set(this)
-                        }
-                    },
-                    update = { view ->
-                        view.visibility = if (railGlassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
-                        // 系统夜间模式在页面存活时切换：update 是唯一会重跑的入口
-                        view.applyGlassThemeBackground(isDark, 170)
-                        view.applyGlassThemeTint(isDark, darkTintIsBlack = true, darkTintAlpha = 0.25f, lightTintAlpha = 0.12f)
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(0f)
-                        .graphicsLayer { alpha = railGlassAlpha * switchFade.value }
-                        // 阴影已移除：切换 tab 时阴影渲染节点重建会「闪一下」（真机反馈）
-                        .clip(railShape)
-                )
-                if (!navGlass) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .zIndex(0.05f)
-                            .clip(railShape)
-                            .background(if (isDark) Color(0xE61A1A1A) else Color(0xC8FFFFFF))
+            // ── ① 兜底底色：玻璃未就绪 / 关闭玻璃时可见，也保证阴影有实体可投 ──
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .shadow(
+                        14.dp,
+                        railShape,
+                        ambientColor = Color.Black.copy(alpha = 0.16f),
+                        spotColor = Color.Black.copy(alpha = 0.20f),
                     )
-                }
-            } else {
+                    .clip(railShape)
+                    .background(
+                        if (glassActive) fallbackTint.copy(alpha = 0.20f) else fallbackTint
+                    )
+            )
+
+            // ── ② 真液态玻璃（API 31+）：vibrancy + blur + 侧栏专用的轻折射 ──
+            if (glassActive) {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .clip(railShape)
-                        .background(if (isDark) Color(0xE61A1A1A) else Color(0xC8FFFFFF))
+                        .graphicsLayer { alpha = railGlassAlpha }
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { railShape },
+                            effects = {
+                                navVibrancy()
+                                blur(BarGlassBlur.toPx())
+                                lens(16.dp.toPx(), 16.dp.toPx())
+                            },
+                            highlight = { Highlight.Default },
+                            shadow = null,
+                            onDrawSurface = { drawRect(railTint) },
+                            exportedBackdrop = railBackdrop,
+                        )
                 )
             }
 
-            // ② 1dp 描边饰面（与底栏同款）
+            // ── ③ 1dp 描边饰面 ──
             Box(
                 Modifier
                     .fillMaxSize()
@@ -305,86 +230,75 @@ fun NavRail(
                     .clip(railShape)
                     .drawBehind {
                         drawRoundRect(
-                            color = if (isDark) Color(0x59FFFFFF) else Color(0xE0FFFFFF),
+                            color = borderColor,
                             size = size,
                             cornerRadius = CornerRadius(railCornerPx, railCornerPx),
-                            style = Stroke(width = 1.dp.toPx())
+                            style = Stroke(width = 1.dp.toPx()),
                         )
                     }
             )
 
-            // ②.5 选中项波态玻璃胶囊（常驻层，offset 跟随选中项；底栏滑块同款参数）。
-            // 导航项步进 64dp；胶囊高 58dp / 上缩 3dp 与项内 padding 对齐。
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // 结构对齐底栏滑块：阴影 + 玻璃 + 白描边。
-                // ⚠️ 描边与阴影不可省：纯白背景页（如统计页）上，白玻璃本体与背景同色
-                // 会「隐身」（真机反馈「滑块没了」）；底栏滑块正是靠这两层在任何页面可见。
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp)
-                        // 位置由 railSelAnim 驱动（切换吸附与拖动跟手共用同一动画实例）；
-                        // 读值放在 offset lambda（布局阶段）：滑动动画不触发侧栏每帧重组
-                        .offset {
-                            IntOffset(0, (64.dp.toPx() * railSelAnim.value + 3.dp.toPx()).roundToInt())
-                        }
-                        .zIndex(1f)
-                ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            LiquidGlassView(ctx).apply {
-                                setBackgroundColor(
-                                    if (isDark) android.graphics.Color.argb(150, 26, 26, 26)
-                                    else android.graphics.Color.argb(150, 255, 255, 255)
-                                )
-                                setCornerRadius(with(density) { 29.dp.toPx() })
-                                setRefractionHeight(with(density) { 20.dp.toPx() })
-                                setRefractionOffset(with(density) { 70.dp.toPx() })
-                                setBlurRadius(LgSliderBlur)
-                                setDispersion(LgSliderDispersion)
-                                setTintColorRed(1f); setTintColorGreen(1f); setTintColorBlue(1f)
-                                setTintAlpha(if (isDark) 0.14f else 0.10f)
-                                setDraggableEnabled(false)
-                                setElasticEnabled(false)
-                                setTouchEffectEnabled(false)
-                                railSelGlassRef.set(this)
-                            }
-                        },
-                        update = { view ->
-                            view.visibility = if (railGlassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
-                            view.applyGlassThemeBackground(isDark, 150)
-                            view.applyGlassThemeTint(isDark, darkTintIsBlack = false, darkTintAlpha = 0.14f, lightTintAlpha = 0.10f)
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer { alpha = railGlassAlpha * switchFade.value }
-                            // 阴影已移除：换页时胶囊阴影闪烁（真机反馈）
-                            .clip(RoundedCornerShape(50))
-                    )
-                    // 白色描边（与底栏滑块同款）：白玻璃在白底页上的「可见性底线」
+            // ── ④ 选中项玻璃胶囊（常驻层，offset 跟随选中项）──
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp)
+                    .offset {
+                        IntOffset(0, (64.dp.toPx() * railSelAnim.value + 3.dp.toPx()).roundToInt())
+                    }
+                    .zIndex(1f)
+            ) {
+                if (glassActive) {
                     Box(
                         Modifier
                             .matchParentSize()
-                            .clip(RoundedCornerShape(50))
-                            .drawBehind {
-                                drawRoundRect(
-                                    color = if (isDark) Color(0xB3FFFFFF) else Color(0xE6FFFFFF),
-                                    size = size,
-                                    cornerRadius = CornerRadius(29.dp.toPx(), 29.dp.toPx()),
-                                    style = Stroke(width = 1.5.dp.toPx())
-                                )
-                            }
+                            .drawBackdrop(
+                                backdrop = indicatorBackdrop,
+                                shape = { indicatorShape },
+                                effects = {
+                                    lens(10.dp.toPx(), 14.dp.toPx(), chromaticAberration = true)
+                                },
+                                highlight = { Highlight.Default },
+                                shadow = {
+                                    Shadow.Default.copy(
+                                        radius = 12.dp,
+                                        offset = DpOffset(0.dp, 4.dp),
+                                        alpha = 0.25f,
+                                    )
+                                },
+                                onDrawSurface = { drawRect(indicatorTint) },
+                            )
+                    )
+                } else {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .clip(indicatorShape)
+                            .background(accent.copy(alpha = if (isDark) 0.35f else 0.24f))
                     )
                 }
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .clip(indicatorShape)
+                        .drawBehind {
+                            drawRoundRect(
+                                color = if (isDark) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.80f),
+                                size = size,
+                                cornerRadius = CornerRadius(29.dp.toPx(), 29.dp.toPx()),
+                                style = Stroke(width = 1.5.dp.toPx()),
+                            )
+                        }
+                )
             }
 
-            // ③ 导航项（竖向排布，选中项带胶囊指示器）
+            // ── ⑤ 导航项（竖向排布，选中项带胶囊指示器）──
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .zIndex(2f),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top,
             ) {
                 tabs.forEachIndexed { index, (labelId, kind) ->
                     val label = stringResource(labelId)
@@ -398,9 +312,6 @@ fun NavRail(
                             .height(64.dp)
                             .padding(vertical = 3.dp)
                             .clip(RoundedCornerShape(50))
-                            // 与底栏同一套语义：Role.Tab + Selected 让读屏知道「这是导航」
-                            // 与「当前在哪」；clickable 同时提供指针与无障碍激活，触感只在这里
-                            // 触发一次（pressFeedback 不重复挂 hapticTier）。
                             .pressFeedback(src, PressTier.Container)
                             .clickable(
                                 interactionSource = src,
@@ -413,11 +324,11 @@ fun NavRail(
                             .semantics {
                                 this[SemanticsProperties.Selected] = selected
                             },
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
                         ) {
                             AppIcon(kind = kind, tint = tint, modifier = Modifier.size(22.dp))
                             Spacer(Modifier.size(3.dp))
@@ -426,18 +337,16 @@ fun NavRail(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                                 color = tint,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 }
             }
 
-            // ④ 手势层（与底栏滑块同构；真机补遗：侧栏此前只能点击、没有滑动换页）：
-            //   Initial pass 消费事件 —— 轻点 ⇒ 切换到该项；按住上下滑动 ⇒ 胶囊跟手，
-            //   松手按抬手位置整格吸附并切换（判定与底栏同款）。zIndex 3 置顶，与底栏
-            //   一致地阻断事件泄漏。⚠️ 块内禁止直接捕获 currentTab 做判定——pointerInput
-            //   key 不变时闭包冻结为首次组合旧值；提交一律无条件走幂等 navigateToTab。
+            // ── ⑥ 手势层（保持原侧栏行为：整栏点击 + 上下拖动换页）──
+            // 与底栏一样，pointerInput 里禁止直接捕获 currentTab；提交走幂等 onSelectLatest。
             Box(
                 Modifier
                     .fillMaxSize()
@@ -446,7 +355,7 @@ fun NavRail(
                         awaitEachGesture {
                             val down = awaitFirstDown(
                                 requireUnconsumed = false,
-                                pass = PointerEventPass.Initial
+                                pass = PointerEventPass.Initial,
                             )
                             down.consume()
                             val unitPx = 64.dp.toPx()
@@ -456,25 +365,13 @@ fun NavRail(
                                 val change = awaitPointerEvent(PointerEventPass.Initial)
                                     .changes.firstOrNull { it.id == down.id } ?: break
                                 if (!change.pressed) {
-                                    // 与底栏（BottomNavBar）同款抬手判定：目标按「按下位置/抬起位置」
-                                    // 整格(floor)决定，无条件提交——navigateToTab 幂等（同页安全），
-                                    // 由 AppNavigation.selectTab 保证。**不读 currentTab**：本块 key 为
-                                    // tabs.size（不随切页重启），闭包内直接捕获的 currentTab 会冻结为
-                                    // 首次组合的旧值，守卫 `!= currentTab` 会把「点回首页」永久拦掉
-                                    // （真机反馈：横屏侧栏点首页无效）。也不用 railSelAnim.roundToInt()
-                                    // 反推松手目标（轻点微抖会被 round 回原位、静默吞掉点击）。
-                                    // 拖回原格 ⇒ startTab==endTab ⇒ 提交原 tab（幂等无感）+ 胶囊弹回，
-                                    // 「拖回原位只弹回不切换」语义保留。
                                     val startTab = (down.position.y / unitPx)
                                         .toInt().coerceIn(0, tabs.size - 1)
                                     val endTab = (change.position.y / unitPx)
                                         .toInt().coerceIn(0, tabs.size - 1)
                                     val targetTab = if (startTab == endTab) startTab else endTab
                                     railScope.launch {
-                                        railSelAnim.animateTo(
-                                            targetTab.toFloat(),
-                                            Motion.sliderIndex()
-                                        )
+                                        railSelAnim.animateTo(targetTab.toFloat(), Motion.sliderIndex())
                                     }
                                     onSelectLatest(targetTab)
                                     change.consume()
@@ -488,7 +385,6 @@ fun NavRail(
                                     change.consume()
                                     val t = (base + dy / unitPx)
                                         .coerceIn(0f, (tabs.size - 1).toFloat())
-                                    // 受限作用域不能直接调外部挂起函数，经 scope 调度（开销极小）
                                     railScope.launch { railSelAnim.snapTo(t) }
                                 }
                             }
@@ -499,105 +395,62 @@ fun NavRail(
     }
 }
 
+/**
+ * 液态玻璃底部导航栏（酷安 16.6.5 / Kyant0 Backdrop 物理版）。
+ *
+ * 结构（从上到下 / 从后到前）：
+ * - 页面内容由 AppNavigation 的 `Modifier.layerBackdrop(pageBackdrop)` 录进 GraphicsLayer；
+ * - 底栏玻璃 `drawBackdrop(pageBackdrop)` 只重录栏区，折射真实页面；
+ * - 选中指示器 `drawBackdrop(combined(pageBackdrop, barBackdrop))` 折射「页面 + 底栏玻璃」；
+ * - tab 文字/图标永远在最上层，**不参与**玻璃缩放，避免被拉糊；
+ * - 整栏最多 4dp 横向位移、指示器双弹簧、速度拉伸全部由 [NavLiquidPhysics] 提供，
+ *   值只在 graphicsLayer / draw / effects lambda 中读取，拖动期间不重组。
+ */
 @Composable
 fun BottomNavBar(
     currentTab: Int,
     onSelect: (Int) -> Unit,
     showLibraryTab: Boolean = false,
-    host: FrameLayout? = null
+    backdrop: Backdrop = emptyBackdrop(),
 ) {
     val tabs = navTabsFor(showLibraryTab)
-    val tabCount = tabs.size
-    // 手势层经 rememberUpdatedState 始终调用最新 onSelect（与 NavRail 同款陷阱防护）：
-    // pointerInput(tabCount) 的闭包只创建一次，直接捕获 onSelect 会冻结为首次实现 ——
-    // AppNavigation.selectTab 读取的 currentTab 也会随之冻结，使「点击当前 tab 直接忽略」
-    // 的判定误拦（历史真机坑：点回首页永久失效）。
-    val onSelectLatest by rememberUpdatedState(onSelect)
+    val tabCount = tabs.size.coerceAtLeast(1)
+    val safeTab = currentTab.coerceIn(0, tabCount - 1)
     val isDark = isBlancallDark()
     val accent = MaterialTheme.colorScheme.primary
     val subTint = MaterialTheme.colorScheme.onSurfaceVariant
     val density = LocalDensity.current
 
-    // 液态玻璃开关（设置-外观）：关闭后玻璃层 alpha 渐隐、回退纯色底。
-    // LiquidGlassView 是 AndroidView，不能按条件移出组合树（detach 态 PreDraw 会崩），
-    // 因此节点常驻、只动 alpha。
     val navGlass by AppPrefs.navLiquidGlassFlow.collectAsState()
-    val barGlassAlpha by animateFloatAsState(
-        if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "barGlassAlpha")
-    val sliderGlassAlpha by animateFloatAsState(
-        if (navGlass) 1f else 0f, MotionFade.alpha(MotionFade.enter), label = "sliderGlassAlpha")
-
-    // alpha 归零的 View 仍然是 shown 状态，玻璃照旧每帧把整屏采样源重录两遍（底栏 + 滑块各
-    // 一颗，见 LiquidGlassimpl.record 收录改动⑥）。淡出走完之后把宿主 View 置 INVISIBLE 才挡得住，
-    // 但绝不能移出组合树 —— detach 态的 PreDraw 回调会崩（本文件多处注释记录过这个真机坑）。
-    // 等满 enter 时长再遮，是为了不砍掉那 180ms 的渐隐观感。
-    var glassShown by remember { mutableStateOf(navGlass) }
-    LaunchedEffect(navGlass) {
-        if (navGlass) {
-            glassShown = true
-        } else {
-            delay((MotionFade.enter + 60).toLong())
-            if (!navGlass) glassShown = false   // 这段时间里又被打开，就不许遮下去
-        }
+    val glassActive = navGlass && navGlassSupported()
+    val reducedMotion = rememberReducedMotion()
+    val powerSave = rememberPowerSave()
+    val physics = remember(tabCount, reducedMotion) {
+        NavLiquidPhysics(safeTab, tabCount, reducedMotion)
     }
-    // 必须在组合期先把状态读出来：AndroidView 的 update 不是 composable 作用域，只在
-    // update 里读 state 不会订阅重组，翻转就永远走不到那行赋值（改在这里，别挪回 update）。
-    val glassVisible = glassShown
+    val onSelectLatest by rememberUpdatedState(onSelect)
+    val currentTabLatest by rememberUpdatedState(safeTab)
+    val tabHaptic = rememberHaptic(HapticTier.Toggle)
 
-    val barHeightDp = 64.dp
-    val barCornerDp = 28.dp
-    val barCornerPx = with(density) { barCornerDp.toPx() }
-    val sliderHPx = with(density) { 48.dp.toPx() }
-    val sliderHPxHalf = sliderHPx / 2f
-    val barHpadPx = with(density) { 10.dp.toPx() }
-    // 折射采样参数按库 Demo 默认（H 20dp / 偏移 70dp）
-    val barRefractHpx = with(density) { 20.dp.toPx() }
-    val barRefractOffPx = with(density) { 70.dp.toPx() }
-    val sliderRefractHpx = with(density) { 20.dp.toPx() }
-    val sliderRefractOffPx = with(density) { 70.dp.toPx() }
-    val barShape = RoundedCornerShape(barCornerDp)
-    val sliderShape = RoundedCornerShape(50)
+    val barShape = RoundedCornerShape(50)
+    val indicatorShape = RoundedCornerShape(50)
+    val barBackdrop = rememberLayerBackdrop()
+    val indicatorBackdrop = rememberCombinedBackdrop(backdrop, barBackdrop)
 
-    val barGlassRef = remember { AtomicReference<LiquidGlassView?>(null) }
-    val sliderGlassRef = remember { AtomicReference<LiquidGlassView?>(null) }
+    val barTint = if (isDark) Color.Black.copy(alpha = 0.42f)
+    else MaterialTheme.colorScheme.background.copy(alpha = 0.42f)
+    val fallbackTint = if (isDark) Color.Black.copy(alpha = 0.92f)
+    else Color.White.copy(alpha = 0.86f)
+    val borderColor = if (isDark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f)
+    val indicatorBorder = if (isDark) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.80f)
+    val indicatorBase = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.10f)
 
-    // 滑块动画实例：不随 currentTab 重建（否则每次切页都重置到新位置、无滑动动画）。
-    // 仅 tabCount 变化（如素材库开关）时重建。
-    val sliderAnim = remember(tabCount) {
-        Animatable(
-            initialValue = currentTab.toFloat().coerceIn(0f, (tabCount - 1).toFloat())
-        )
-    }
-    var sliderPressed by remember { mutableStateOf(false) }
-    // 按下改成**缩小**：改造前是 1.15× 放大，而「选中」态本身也用放大表达 ——
-    // 同一个视觉承担两种语义，快速连点时会分不清是「按下了」还是「切过去了」。
-    // 缩放走统一按压谱（Motion.press），幅度取 Motion.Scale.slider。
-    val sliderScale by animateFloatAsState(
-        targetValue = if (sliderPressed) Motion.Scale.slider else 1f,
-        animationSpec = Motion.press(),
-        label = "sliderScale"
-    )
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // 手指高光位置（栏内容区坐标）；只在 draw 里读取。
+    var highlightCenter by remember { mutableStateOf<Offset?>(null) }
 
+    NavLiquidFrameLoop(physics)
     LaunchedEffect(currentTab, tabCount) {
-        sliderAnim.animateTo(
-            currentTab.toFloat().coerceIn(0f, (tabCount - 1).toFloat()),
-            Motion.sliderIndex()
-        )
-    }
-    // host/玻璃 View 创建竞速：等两颗玻璃都创建完再 bind
-    LaunchedEffect(host) {
-        val target = host ?: return@LaunchedEffect
-        repeat(400) {
-            val bar = barGlassRef.get()
-            val sli = sliderGlassRef.get()
-            if (bar != null && sli != null) {
-                bar.bind(target)
-                sli.bind(target)
-                return@LaunchedEffect
-            }
-            delay(16)
-        }
+        if (currentTab >= 0) physics.animateToTab(currentTab)
     }
 
     Column(
@@ -608,365 +461,375 @@ fun BottomNavBar(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp)
-                .padding(bottom = 14.dp)
-                .height(barHeightDp)
+                .padding(horizontal = BarHorizontalMargin)
+                .padding(bottom = BarBottomMargin)
+                .height(BarHeight)
         ) {
-            // BoxWithConstraints 的 constraints 已扣除外层 padding：maxWidth 即内容区宽度，
-            // 无需再减水平 padding（再减会导致 tabW 偏小 → 滑块偏左、点击区算偏右）。
-            // tab 均分、滑块定位与点击区计算统一基于此宽度，三者天然一致。
             val barW = constraints.maxWidth.toFloat()
-            val barH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
             val tabW = barW / tabCount
+            val blurPx = with(density) { (if (powerSave) 4.dp else BarGlassBlur).toPx() }
+            val lensPx = with(density) { (if (powerSave) 16.dp else BarGlassLens).toPx() }
+            val indicatorLensXPx = with(density) { IndicatorLensX.toPx() }
+            val indicatorLensYPx = with(density) { IndicatorLensY.toPx() }
 
-            // ── 手势层（统一处理 tap 与拖动切换）──
-            // 悬浮玻璃导航栏下层是 NavHost 页面容器：若点击下放给 tab clickable，
-            // 页面内元素（列表/卡片）会先消费 up 导致 tap 失效。
-            // 因此全部交互在此完成，并在 Initial pass 消费事件、阻断泄漏到下层页面。
-            // 滑块落格 = 「换了一格」→ Toggle 档。
-            // 改造前这里用 Compose 的 LocalHapticFeedback + TextHandleMove，正是 Haptics.kt
-            // 当初否掉的那条路：语义类型只给词汇、不给力度，定制 ROM 上会被弱化到几乎无感，
-            // 于是同一个 app 里两套触觉栈并存、响不响全看系统心情。
-            val tabHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Toggle))
+            SideEffect {
+                physics.updateMetrics(
+                    barWidthPx = barW,
+                    tabWidthPx = tabW,
+                    maxPanelOffsetPx = with(density) { PanelMaxOffset.toPx() },
+                )
+            }
+
+            // 整栏最多 4dp 的横向位移：读值在 graphicsLayer 的 lambda 里，不触发重组
             Box(
                 Modifier
                     .fillMaxSize()
-                    .zIndex(3f)
-                    .pointerInput(tabCount) {
-                        awaitEachGesture {
-                            // Initial pass 最先收到事件：立即消费 down，下层页面收不到未消费事件
-                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                            down.consume()
-                            sliderPressed = true
-                            // 整段跟踪包在 try/finally 里：`?: break` 是**非抬起**出口
-                            // —— 指针被别的手势接管（或本次手势被取消）时从这里离开，
-                            // 而改造前只有抬起那条路会复位 sliderPressed。于是滑块会
-                            // 冻结在按压态的放大倍数上直到下一次触摸，读起来像卡住了。
-                            try {
-                                var tracking = false
-                                val startX = down.position.x
-                                var lastX = startX
-                                while (true) {
-                                    val change = awaitPointerEvent(PointerEventPass.Initial)
-                                        .changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) {
-                                        // 抬起：tab 归属按「按下位置」向下取整判定——roundToInt 在 tab 中心处
-                                        // 产生半格偏移（点第 2 个 tab 会算成第 3 个）；手指微动不跨 tab 时
-                                        // 也按按下位置，避免误入拖动吸附导致点击无响应。
-                                        val startTab = (startX / tabW).toInt().coerceIn(0, tabCount - 1)
-                                        val endTab = (change.position.x / tabW).toInt().coerceIn(0, tabCount - 1)
-                                        val targetTab = if (startTab == endTab) startTab else endTab
-                                        scope.launch {
-                                            sliderAnim.animateTo(
-                                                targetTab.toFloat(),
-                                                Motion.sliderIndex()
-                                            )
-                                        }
-                                        onSelectLatest(targetTab)
-                                        tabHaptic()
-                                        change.consume()
-                                        break
-                                    }
-                                    if (!tracking && abs(change.position.x - startX) > viewConfiguration.touchSlop) {
-                                        tracking = true
-                                        lastX = change.position.x
-                                    }
-                                    if (tracking) {
-                                        change.consume()
-                                        val dx = change.position.x - lastX
-                                        lastX = change.position.x
-                                        val t = (sliderAnim.value + dx / tabW).coerceIn(0f, (tabCount - 1).toFloat())
-                                        // 受限作用域不能直接调外部挂起函数，经 scope 调度（开销极小）
-                                        scope.launch { sliderAnim.snapTo(t) }
-                                    }
-                                }
-                            } finally {
-                                // 无论抬起、跳出还是被取消，按压态都必须放行
-                                sliderPressed = false
-                            }
-                        }
-                    }
-            )
-
-            val sliderWPx = (tabW - barHpadPx * 2f).coerceAtLeast(1f)
-            val sliderWDp = with(density) { sliderWPx.toDp() }
-            // 滑块 x 的计算移入 offset lambda（布局阶段）：读 Animatable.value 不再
-            // 触发整栏每帧重组——真机反馈「竖屏导航栏卡卡的」的主因。
-            val sliderOffsetY = (barH - sliderHPx) / 2f
-            val sliderShapePx = sliderHPxHalf
-
-            // ── ① 玻璃条（fillMaxSize；bind host 折射真实页面）──
-            // 注意：必须用 fillMaxSize（内容区）而非 matchParentSize（父总尺寸含 padding），
-            // 否则玻璃条/手势层从屏幕左缘起算，与 tab/滑块的内容区坐标错位 14dp。
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                AndroidView(
-                    factory = { ctx ->
-                        LiquidGlassView(ctx).apply {
-                            // bind 前兜底背景：液态层未采样前给玻璃条底色，
-                            // 避免首帧只剩白色高光辉光块（两个分离白块）
-                            setBackgroundColor(
-                                if (isDark) android.graphics.Color.argb(230, 26, 26, 26)
-                                else android.graphics.Color.argb(230, 255, 255, 255)
-                            )
-                            setCornerRadius(barCornerPx)
-                            setRefractionHeight(barRefractHpx)
-                            setRefractionOffset(barRefractOffPx)
-                            setBlurRadius(LgBarBlur)
-                            setDispersion(LgBarDispersion)
-                            if (isDark) {
-                                setTintColorRed(0f); setTintColorGreen(0f); setTintColorBlue(0f)
-                                setTintAlpha(0.25f)
-                            } else {
-                                setTintColorRed(1f); setTintColorGreen(1f); setTintColorBlue(1f)
-                                setTintAlpha(0.12f)
-                            }
-                            setDraggableEnabled(false)
-                            setElasticEnabled(false)
-                            setTouchEffectEnabled(false)
-                            barGlassRef.set(this)
-                        }
-                    },
-                    update = { view ->
-                        view.visibility = if (glassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
-                        view.applyGlassThemeBackground(isDark, 230)
-                        view.applyGlassThemeTint(isDark, darkTintIsBlack = true, darkTintAlpha = 0.25f, lightTintAlpha = 0.12f)
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(0f)
-                        .graphicsLayer { alpha = barGlassAlpha }
-                        .shadow(
-                            elevation = 14.dp,
-                            shape = barShape,
-                            ambientColor = Color.Black.copy(alpha = 0.18f),
-                            spotColor = Color.Black.copy(alpha = 0.24f),
-                            clip = false
-                        )
-                        .clip(barShape)
-                )
-
-                // 液态玻璃关闭时的纯色底回退（与 API<33 分支同款样式）
-                if (!navGlass) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .zIndex(0.05f)
-                            .shadow(
-                                14.dp, barShape,
-                                ambientColor = Color.Black.copy(alpha = 0.20f),
-                                spotColor = Color.Black.copy(alpha = 0.26f)
-                            )
-                            .clip(barShape)
-                            .background(if (isDark) Color(0xE61A1A1A) else Color(0xC8FFFFFF))
-                    )
-                }
-            } else {
+                    .graphicsLayer { translationX = physics.panelOffsetPx }
+            ) {
+                // ── 栏体（阴影 + 裁切）：指示器在它外面，允许按压缩放越出栏边 ──
                 Box(
                     Modifier
-                        .fillMaxSize()
+                        .matchParentSize()
                         .shadow(
-                            14.dp, barShape,
+                            14.dp,
+                            barShape,
                             ambientColor = Color.Black.copy(alpha = 0.20f),
-                            spotColor = Color.Black.copy(alpha = 0.26f)
+                            spotColor = Color.Black.copy(alpha = 0.26f),
                         )
                         .clip(barShape)
-                        .background(if (isDark) Color(0xE61A1A1A) else Color(0xC8FFFFFF))
-                )
-            }
-
-            // ── ② 玻璃条饰面：1dp 描边（顶部高光渐变已移除，纯玻璃质感）──
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .zIndex(0.1f)
-                    .clip(barShape)
-                    .drawBehind {
-                        drawRoundRect(
-                            color = if (isDark) Color(0x59FFFFFF) else Color(0xE0FFFFFF),
-                            size = size,
-                            cornerRadius = CornerRadius(barCornerPx, barCornerPx),
-                            style = Stroke(width = 1.dp.toPx())
-                        )
-                    }
-            )
-
-            // ── ③ tab 内容（z 最高层：图标+文字显示在滑块之上；点击由手势层统一处理）──
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier.fillMaxSize().zIndex(2f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                tabs.forEachIndexed { index, (labelId, kind) ->
-                    val label = stringResource(labelId)
-                    val selected = index == currentTab
-                    // 选中项用主题色（浮在浅色玻璃滑块上对比清晰，参考新一代系统风格）
-                    val tint = if (selected) accent else subTint
-                    Box(
-                        modifier = Modifier
-                            .width(with(density) { tabW.toDp() })
-                            .fillMaxHeight()
-                            // 底栏的点击原本只由栏级 pointerInput 承担，于是四个 tab 在无障碍
-                            // 树里没有任何动作，TalkBack 到不了主导航。这里照侧栏那份房规给每一项
-                            // 自己挂 clickable（同一处写法见 NavRail 的 tabs 循环）：语义合并会把
-                            // 图标下的文字带进节点名，indication=null 保持「无涟漪」。
-                            // ⚠️ 子级会先消费 up 事件，栏级手势里的「点同一项收起」是否还触发
-                            // 属于本次改动的回归范围：改这里必须连那条一起在真机上验一遍。
-                            // 底栏的点击原本只由栏级 pointerInput 承担（它跑在
-                            // PointerEventPass.Initial 上并立刻 consume(down)，是全 app 对
-                            // 「导航栏点击归手势层统一处理」这条约定的落点）。所以这里
-                            // **不能**给子项挂 .clickable：那会让子级再走一遍 onSelect，
-                            // 与栏级的 onSelectLatest + tabHaptic 双触发。
-                            // 无障碍要的动作与状态用纯语义提供：只加 ACTION_CLICK，不碰指针。
-                            // 名字**不再显式挂** ContentDescription —— 节点子树里那颗 Text 就是
-                            // 唯一名称来源，再挂一份会让读屏念成「首页 首页」。实测：未选中的
-                            // tab 报 clickable，选中的那个报 selected（已选中无需再被点），都对。
-                            .semantics(mergeDescendants = true) {
-                                this[SemanticsProperties.Selected] = selected
-                                this[SemanticsProperties.Role] = Role.Tab
-                                onClick(label = null) {
-                                    tabHaptic()
-                                    onSelect(index)
-                                    true
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
-                        ) {
-                            AppIcon(kind = kind, tint = tint, modifier = Modifier.size(22.dp))
-                            Spacer(Modifier.size(3.dp))
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                color = tint
-                            )
-                        }
-                    }
-                }
-            }
-
-            // ── ④ 滑块（中性浅色液态玻璃胶囊，作为“选中 tab”的背景高亮；
-            //       zIndex 1f 位于 tab Row(2f) 之下，因此主题色图标显示在滑块之上）──
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                Box(
-                    modifier = Modifier
-                        .size(width = sliderWDp, height = 48.dp)
-                        .offset {
-                            // 读值放在 lambda（布局阶段执行）：拖动/吸附动画不再触发每帧重组
-                            val x = (sliderAnim.value * tabW + (tabW - sliderWPx) / 2f)
-                                .coerceIn(0f, barW - sliderWPx)
-                            IntOffset(x.roundToInt(), sliderOffsetY.roundToInt())
-                        }
-                        .zIndex(1f)
-                        .graphicsLayer {
-                            scaleX = sliderScale
-                            scaleY = sliderScale
-                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
-                        }
                 ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            LiquidGlassView(ctx).apply {
-                                // bind 前兜底背景：液态层未就绪时显示玻璃底色，避免首帧白色辉光块
-                                setBackgroundColor(
-                                    if (isDark) android.graphics.Color.argb(190, 26, 26, 26)
-                                    else android.graphics.Color.argb(190, 255, 255, 255)
-                                )
-                                setCornerRadius(sliderHPxHalf)
-                                setRefractionHeight(sliderRefractHpx)
-                                setRefractionOffset(sliderRefractOffPx)
-                                setBlurRadius(LgSliderBlur)
-                                setDispersion(LgSliderDispersion)
-                                // 中性白透明玻璃：低染色、色散=0（消除绿黄彩边）；液态边缘由 refractionHeight/Offset 折射形变提供
-                                setTintColorRed(1f)
-                                setTintColorGreen(1f)
-                                setTintColorBlue(1f)
-                                setTintAlpha(if (isDark) 0.14f else 0.10f)
-                                setDraggableEnabled(false)
-                                setElasticEnabled(false)
-                                setTouchEffectEnabled(false)
-                                sliderGlassRef.set(this)
-                            }
-                        },
-                        update = { view ->
-                            view.visibility = if (glassVisible) android.view.View.VISIBLE else android.view.View.INVISIBLE
-                            view.applyGlassThemeBackground(isDark, 190)
-                            view.applyGlassThemeTint(isDark, darkTintIsBlack = false, darkTintAlpha = 0.14f, lightTintAlpha = 0.10f)
-                        },
-                        modifier = Modifier
-                            .size(width = sliderWDp, height = 48.dp)
-                            .graphicsLayer { alpha = sliderGlassAlpha }
-                            .shadow(
-                            elevation = 8.dp,
-                            shape = sliderShape,
-                            ambientColor = Color.Black.copy(alpha = 0.12f),
-                            spotColor = Color.Black.copy(alpha = 0.18f),
-                            clip = false
-                        )
-                            .clip(sliderShape)
+                    // 兜底底色：玻璃未就绪/关闭时可见，也让阴影有实体
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .background(
+                                if (glassActive) fallbackTint.copy(alpha = 0.18f) else fallbackTint
+                            )
                     )
-                    // 液态玻璃关闭时：主题色纯色底（与 API<33 分支同款）
-                    if (!navGlass) {
+
+                    if (glassActive) {
                         Box(
                             Modifier
                                 .matchParentSize()
-                                .clip(sliderShape)
-                                .background(accent.copy(alpha = if (isDark) 0.35f else 0.28f))
+                                .drawBackdrop(
+                                    backdrop = backdrop,
+                                    shape = { barShape },
+                                    effects = {
+                                        navVibrancy()
+                                        blur(blurPx)
+                                        lens(lensPx, lensPx)
+                                    },
+                                    // 栏体不叠随手指变化的高光；指示器才有按压高光
+                                    highlight = null,
+                                    shadow = null,
+                                    onDrawSurface = { drawRect(barTint) },
+                                    exportedBackdrop = barBackdrop,
+                                )
                         )
                     }
-                    // 滑块饰面：白色描边（顶部高光渐变已移除，立体液晶感靠液态玻璃本身）
+
+                    // 1dp 描边
                     Box(
                         Modifier
-                            .size(width = sliderWDp, height = 48.dp)
-                            .clip(sliderShape)
+                            .fillMaxSize()
+                            .clip(barShape)
                             .drawBehind {
                                 drawRoundRect(
-                                    color = if (isDark) Color(0xB3FFFFFF) else Color(0xE6FFFFFF),
+                                    color = borderColor,
                                     size = size,
-                                    cornerRadius = CornerRadius(sliderShapePx, sliderShapePx),
-                                    style = Stroke(width = 1.5.dp.toPx())
+                                    cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
+                                    style = Stroke(width = 1.dp.toPx()),
                                 )
                             }
                     )
                 }
-            } else {
+
+                // ── 选中指示器玻璃（可越出栏边）──
                 Box(
-                    modifier = Modifier
-                        .size(width = sliderWDp, height = 48.dp)
-                        .offset {
-                            // 读值放在 lambda（布局阶段执行）：拖动/吸附动画不再触发每帧重组
-                            val x = (sliderAnim.value * tabW + (tabW - sliderWPx) / 2f)
-                                .coerceIn(0f, barW - sliderWPx)
-                            IntOffset(x.roundToInt(), sliderOffsetY.roundToInt())
-                        }
+                    Modifier
+                        .width(with(density) { tabW.toDp() })
+                        .fillMaxHeight()
+                        .graphicsLayer { translationX = physics.position * tabW }
                         .zIndex(1f)
-                        .graphicsLayer {
-                            scaleX = sliderScale
-                            scaleY = sliderScale
-                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
-                        }
                 ) {
                     Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = IndicatorInset, vertical = 4.dp)
+                    ) {
+                        if (glassActive) {
+                            Box(
+                                Modifier
+                                    .matchParentSize()
+                                    .drawBackdrop(
+                                        backdrop = indicatorBackdrop,
+                                        shape = { indicatorShape },
+                                        effects = {
+                                            val p = physics.pressProgress
+                                            lens(
+                                                indicatorLensXPx * p,
+                                                indicatorLensYPx * p,
+                                                chromaticAberration = true,
+                                            )
+                                        },
+                                        highlight = {
+                                            Highlight.Default.copy(alpha = physics.pressProgress)
+                                        },
+                                        shadow = {
+                                            // 静止时也留一点投影，白底上仍能看见胶囊；
+                                            // 半径压到 12dp，避免按压缩放时出现一团灰雾
+                                            Shadow.Default.copy(
+                                                radius = 12.dp,
+                                                offset = DpOffset(0.dp, 4.dp),
+                                                alpha = 0.18f + 0.50f * physics.pressProgress,
+                                            )
+                                        },
+                                        innerShadow = {
+                                            InnerShadow(
+                                                radius = 8.dp * physics.pressProgress,
+                                                alpha = physics.pressProgress,
+                                            )
+                                        },
+                                        layerBlock = {
+                                            scaleX = physics.visualScaleX
+                                            scaleY = physics.visualScaleY
+                                        },
+                                        onDrawSurface = {
+                                            val p = physics.pressProgress
+                                            drawRect(indicatorBase, alpha = 1f - p)
+                                            drawRect(Color.Black.copy(alpha = 0.03f * p))
+                                        },
+                                    )
+                            )
+                        } else {
+                            Box(
+                                Modifier
+                                    .matchParentSize()
+                                    .clip(indicatorShape)
+                                    .background(accent.copy(alpha = if (isDark) 0.35f else 0.24f))
+                            )
+                        }
+                        Box(
                             Modifier
-                                .size(width = sliderWDp, height = 48.dp)
-                                .shadow(8.dp, sliderShape,
-                                    ambientColor = Color.Black.copy(alpha = 0.12f),
-                                    spotColor = Color.Black.copy(alpha = 0.18f))
-                                .clip(sliderShape)
-                                .background(accent.copy(alpha = if (isDark) 0.35f else 0.28f))
+                                .matchParentSize()
+                                .clip(indicatorShape)
                                 .drawBehind {
                                     drawRoundRect(
-                                        color = if (isDark) Color(0x99FFFFFF) else Color(0xCCFFFFFF),
+                                        color = indicatorBorder,
                                         size = size,
-                                        cornerRadius = CornerRadius(sliderShapePx, sliderShapePx),
-                                        style = Stroke(width = 1.dp.toPx())
+                                        cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
+                                        style = Stroke(width = 1.5.dp.toPx()),
                                     )
                                 }
                         )
+                    }
+                }
+
+                // ── 跟随手指的径向高光（叠加在最上层玻璃之上、图标之下）──
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(barShape)
+                        .zIndex(1.5f)
+                        .drawWithContent {
+                            val p = physics.pressProgress
+                            val center = highlightCenter
+                            if (p > 0.01f && center != null) {
+                                drawRect(
+                                    Color.White.copy(alpha = 0.06f * p),
+                                    blendMode = BlendMode.Plus,
+                                )
+                                val radius = size.height * 1.6f
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            Color.White.copy(alpha = 0.16f * p),
+                                            Color.Transparent,
+                                        ),
+                                        center = center,
+                                        radius = radius,
+                                    ),
+                                    radius = radius,
+                                    center = center,
+                                    blendMode = BlendMode.Plus,
+                                )
+                            }
+                        }
+                )
+
+                // ── tab 内容：图标 / 文字永远在玻璃之上，不参与缩放 ──
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(2f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    tabs.forEachIndexed { index, (labelId, kind) ->
+                        val label = stringResource(labelId)
+                        val selected = index == currentTab
+                        val tint = if (selected) accent else subTint
+                        val src = remember { MutableInteractionSource() }
+                        Box(
+                            modifier = Modifier
+                                .width(with(density) { tabW.toDp() })
+                                .fillMaxHeight()
+                                // 触摸由整栏手势层统一处理；clickable 只负责无障碍动作与名称
+                                .clickable(
+                                    interactionSource = src,
+                                    indication = null,
+                                    role = Role.Tab,
+                                ) {
+                                    tabHaptic()
+                                    onSelect(index)
+                                }
+                                .semantics(mergeDescendants = true) {
+                                    this[SemanticsProperties.Selected] = selected
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                            ) {
+                                AppIcon(kind = kind, tint = tint, modifier = Modifier.size(22.dp))
+                                Spacer(Modifier.size(3.dp))
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = tint,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ── 统一手势层：点击切 tab + 水平拖动切格；垂直方向只取消、不提交 ──
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .zIndex(3f)
+                        .pointerInput(tabCount, tabW) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial,
+                                )
+                                val startX = down.position.x
+                                val startY = down.position.y
+                                val startTab = (startX / tabW).toInt().coerceIn(0, tabCount - 1)
+                                physics.press()
+                                highlightCenter = Offset(startX, startY)
+
+                                var dragging = false
+                                var vertical = false
+                                var committed = false
+                                try {
+                                    var lastX = startX
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull { it.id == down.id }
+                                            ?: break
+                                        val dxTotal = change.position.x - startX
+                                        val dyTotal = change.position.y - startY
+
+                                        if (!dragging && !vertical) {
+                                            if (abs(dyTotal) > viewConfiguration.touchSlop &&
+                                                abs(dyTotal) > abs(dxTotal)
+                                            ) {
+                                                // 垂直滚动：立刻放行按键态，等待抬手，不提交切页
+                                                vertical = true
+                                                committed = true
+                                                physics.cancel(currentTabLatest)
+                                                highlightCenter = null
+                                            } else if (abs(dxTotal) > viewConfiguration.touchSlop) {
+                                                dragging = true
+                                                lastX = change.position.x
+                                            }
+                                        }
+
+                                        if (vertical) {
+                                            if (!change.pressed) break
+                                            continue
+                                        }
+
+                                        if (dragging) {
+                                            change.consume()
+                                            val dx = change.position.x - lastX
+                                            lastX = change.position.x
+                                            physics.drag(dx, change.uptimeMillis)
+                                            highlightCenter = Offset(change.position.x, change.position.y)
+                                        }
+
+                                        if (!change.pressed) {
+                                            val target = physics.release()
+                                            committed = true
+                                            if (dragging) {
+                                                if (target != currentTabLatest) {
+                                                    tabHaptic()
+                                                    onSelectLatest(target)
+                                                }
+                                            } else {
+                                                // 轻点：按松手前所在的 tab 提交（手势层盖住了 tab 的点击）
+                                                tabHaptic()
+                                                if (startTab != currentTabLatest) {
+                                                    onSelectLatest(startTab)
+                                                }
+                                            }
+                                            change.consume()
+                                            break
+                                        }
+                                    }
+                                } finally {
+                                    if (!committed) {
+                                        physics.cancel(currentTabLatest)
+                                    }
+                                    highlightCenter = null
+                                }
+                            }
+                        }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * `NavLiquidPhysics` 的帧驱动：只在有弹簧运动时跑 `withFrameNanos`，
+ * 静止后自动退出，不常驻空转。
+ */
+@Composable
+private fun NavLiquidFrameLoop(physics: NavLiquidPhysics) {
+    LaunchedEffect(physics) {
+        while (true) {
+            physics.wakeSignal.receive()
+            var lastNs = 0L
+            while (physics.isActive) {
+                withFrameNanos { now ->
+                    if (lastNs != 0L) {
+                        physics.step(
+                            dtSeconds = (now - lastNs) / 1_000_000_000f,
+                            nowMs = now / 1_000_000L,
+                        )
+                    }
+                    lastNs = now
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun rememberReducedMotion(): Boolean = remember {
+    !ValueAnimator.areAnimatorsEnabled()
+}
+
+@Composable
+private fun rememberPowerSave(): Boolean {
+    val context = LocalContext.current
+    return remember(context) {
+        context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
     }
 }

@@ -166,7 +166,6 @@
     <string name="import_backup_warning">バックアップファイルで現在の記事ライブラリと練習進捗を丸ごと置き換えます。既存の学習データは上書きされ、元に戻せません。取り込み後、反映のためアプリを一度再起動する必要があります。</string>
     <string name="minutes_unit">%1$d 分</string>
     <string name="reminder_on_at">オン · %1$s</string>
-    <string name="donation_ask">よろしければ、QR コードから支援をお願いします 🥹</string>
     <string name="reminder_enable">リマインダーをオン</string>
     <string name="notification_permission_required">リマインダーには通知の許可が必要です。システム設定で許可してからアプリに戻ってください。</string>
     <string name="reminder_time">通知時刻</string>
@@ -183,8 +182,12 @@
     <string name="preset_9pm">夜 9:00</string>
     <string name="edit_home_subtitle">ホームサブタイトルを編集</string>
     <string name="custom_subtitle">サブタイトルをカスタム</string>
-    <string name="donation_title">支援コーナー · このアプリは完全無料</string>
-    <string name="donation_motive">少額でも、更新を続ける原動力になります</string>
+    <string name="donation_heading">Blancall を支援</string>
+    <string name="donation_statement">Blancall は完全無料で、すべての機能をお使いいただけます。</string>
+    <string name="donation_invite">本当に役に立ったと感じたら、チップを歓迎します。</string>
+    <string name="donation_nudge_prefix">よろしければ、</string>
+    <string name="donation_nudge_link">ここからチップを送る</string>
+    <string name="donation_never">今後表示しない</string>
     <string name="donation_qr">支援用 QR コード</string>
     <string name="donation_hide">このセクションを非表示</string>
     <string name="donation_hide_hint">今回の起動中のみ非表示になります。次回アプリを開くと再び表示されます</string>
@@ -308,6 +311,8 @@
     <string name="sentence_cloze_toggle">穴埋め想起</string>
     <string name="sentence_cloze_on_desc">頭文字から全文を想起</string>
     <string name="sentence_cloze_off_desc">全文をそのまま表示</string>
+    <string name="sentence_cloze_new_toggle">初めての文も穴埋めにする</string>
+    <string name="sentence_cloze_new_desc">新しい文は穴埋めから始まり、「答えを表示」で全文を表示</string>
     <string name="no_tags_create_hint">タグがありません。「設定 → 記事タグ」で作成できます</string>
     <string name="import_text_title">テキスト取り込み</string>
     <string name="paste_text">テキストを貼り付け</string>
@@ -788,7 +793,7 @@
     <plurals name="scope_note_cross_article">
         <item quantity="other">文章をまたぐ練習 %1$d 回を含む（記事別統計には不算）</item>
     </plurals>
-         文案一律在这里 —— 写进 .kt 就会在六语界面上露出简体，而 res 目录守卫查不到那种泄漏 -->
+    <!-- 记忆热力图的色带档位名与「估算」标：数据层只给稳定的 ASCII 键，文案一律在这里 —— 写进 .kt 就会在六语界面上露出简体，而 res 目录守卫查不到那种泄漏 -->
     <string name="heat_band_weak">弱い</string>
     <string name="heat_band_hard">やや難しい</string>
     <string name="heat_band_mid">普通</string>
@@ -1079,8 +1084,6 @@
     <string name="flow_detail_lapses">忘却</string>
     <string name="flow_pause_all_confirm_title">すべてのタスクを一時停止しますか？</string>
     <string name="flow_pause_all_confirm_body">計画中の記事は復習待ちとリマインダーから外れ、文カードも抽出されなくなります。いつでもここから再開できます。</string>
-    <string name="flow_pull_hint">下に引いて学習タスクフローを開く</string>
-    <string name="flow_pull_hint_due">下に引いて学習タスクフローを開く · %1$d 件が復習待ち</string>
     <string name="flow_pull_action">学習タスクフローを開く</string>
     <plurals name="flow_days_later">
         <item quantity="other">%1$d 日後</item>
@@ -1581,6 +1584,10 @@
     <string name="help_168">設定で「ウェブ検索」を有効にし Tavily Key を入力すると、質問時に自動でウェブ検索して検証し、AI は権威ある情報を優先して回答します（暗記内容や試験範囲の確認に役立ちます）。未設定の場合、AI は記事と自身の知識だけで回答します。</string>
     <string name="help_169">プライバシーと安全</string>
     <string name="help_170">API Key はシステムで暗号化され本機にのみ保存され、アップロードされません。注意：会話時、記事内容と学習データは設定した API サービスへ送信されます。「AI 機能を有効化」をオフにすると、すべての AI 入口が表示されなくなります。</string>
+    <!-- ── 学习任务流手势：可见提示已移除，说明只留在本页（help_171+）── -->
+    <string name="help_171">データ · 学習タスクフロー</string>
+    <string name="help_172">「データ」ページで一番上までスクロールし、さらに下へ引き続けます。リングが満杯になり振動したら指を離すと、学習タスクフローが開きます（計画中の記事を時間順に並べたもの）。</string>
+    <string name="help_173">タスクフローでは各記事を一時停止・再開・次回の復習日の変更ができます。一番下までスクロールして上へ引くか、左上の戻るでデータページに戻ります。</string>
     <string name="sentence_status_first">初回記憶</string>
     <string name="sentence_status_recorded_next">記録済み · 次回は %1$d 日後</string>
     <string name="sentence_status_due_last">要復習 · 前回は %1$d 日前</string>
@@ -1624,19 +1631,19 @@
     <string name="rating_hard">苦手</string>
     <string name="rating_good">覚えた</string>
     <string name="rating_easy">簡単</string>
-    <string name="notebook_entry_count">%1 件</string>
+    <string name="notebook_entry_count">%1$d 件</string>
     <string name="reader_practice_section_cd">この段落を練習</string>
     <string name="reader_practice_section_title">この段落を穴埋めにする</string>
     <string name="reader_practice_section_hint">マスクで思い出した段落を選ぶと、その段落だけを練習します。</string>
     <string name="reader_practice_section_empty">変換できるマスク段落がありません。</string>
-    <string name="reader_practice_section_spans">%1 か所をマスク</string>
+    <string name="reader_practice_section_spans">%1$d か所をマスク</string>
     <string name="reader_practice_section_name">マスクから穴埋め</string>
     <string name="reader_practice_section_failed">この段落には練習できる空所がありません。</string>
     <string name="reason_first">初回の復習</string>
-    <string name="reason_lapsed">%1 回忘れています</string>
-    <string name="reason_long_gap">前回から %1 日</string>
-    <string name="reason_overdue">%1 日超過</string>
-    <string name="reason_stable">%1 回安定しています</string>
+    <string name="reason_lapsed">%1$d 回忘れています</string>
+    <string name="reason_long_gap">前回から %1$d 日</string>
+    <string name="reason_overdue">%1$d 日超過</string>
+    <string name="reason_stable">%1$d 回安定しています</string>
     <string name="reason_scheduled">予定どおり復習期日</string>
     <string name="today_plan_title">今日の計画</string>
     <string name="today_plan_exam_days">試験まで %1$d 日</string>
@@ -1699,6 +1706,7 @@
     <string name="content_pack_delete_title">コンテンツパックを削除</string>
     <string name="content_pack_delete_body">「%1$s」を削除しても、取り込み済みの記事は残ります。</string>
     <string name="content_pack_import_all">すべて取り込む</string>
+    <string name="library_batch_import">一括取り込み</string>
     <string name="content_pack_import_result">%1$d 件を取り込み、%2$d 件をスキップしました（重複または失敗）。</string>
     <string name="content_pack_view_entries">篇目を見る</string>
     <string name="content_pack_collapse">閉じる</string>

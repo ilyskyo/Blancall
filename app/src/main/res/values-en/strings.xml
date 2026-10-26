@@ -174,7 +174,6 @@
     <string name="import_backup_warning">This replaces your entire article library and practice progress with the backup file. Your current study data will be overwritten and this cannot be undone. The app needs to restart once the import finishes.</string>
     <string name="minutes_unit">%1$d min</string>
     <string name="reminder_on_at">On · %1$s</string>
-    <string name="donation_ask">If it works for you, scan the code to keep this project going 🥹</string>
     <string name="reminder_enable">Enable reminder</string>
     <string name="notification_permission_required">Reminders need notification permission. Please enable it in system settings, then return to the app.</string>
     <string name="reminder_time">Reminder time</string>
@@ -191,8 +190,12 @@
     <string name="preset_9pm">9:00 PM</string>
     <string name="edit_home_subtitle">Edit home subtitle</string>
     <string name="custom_subtitle">Custom subtitle</string>
-    <string name="donation_title">Appreciation · This app is completely free</string>
-    <string name="donation_motive">Every little bit helps keep the updates coming</string>
+    <string name="donation_heading">Support Blancall</string>
+    <string name="donation_statement">Blancall is free. Every feature is available to you.</string>
+    <string name="donation_invite">If it has genuinely helped you, a tip is welcome.</string>
+    <string name="donation_nudge_prefix">If you\'d like,\u0020</string>
+    <string name="donation_nudge_link">tap here to tip</string>
+    <string name="donation_never">Don\'t show again</string>
     <string name="donation_qr">Donation QR code</string>
     <string name="donation_hide">Hide this section</string>
     <string name="donation_hide_hint">Hidden for this session only — it will return next time you open the app</string>
@@ -319,6 +322,8 @@
     <string name="sentence_cloze_toggle">Cloze recall</string>
     <string name="sentence_cloze_on_desc">Recall from the first character</string>
     <string name="sentence_cloze_off_desc">Show the full sentence</string>
+    <string name="sentence_cloze_new_toggle">Mask new sentences too</string>
+    <string name="sentence_cloze_new_desc">New sentences start masked - tap Show answer to read them</string>
     <string name="no_tags_create_hint">No tags yet — create them in Settings → Article tags</string>
     <string name="import_text_title">Import text</string>
     <string name="paste_text">Paste text</string>
@@ -1136,8 +1141,6 @@
     <string name="flow_detail_lapses">Lapses</string>
     <string name="flow_pause_all_confirm_title">Pause all tasks?</string>
     <string name="flow_pause_all_confirm_body">Every article in your plan will leave due reviews and reminders, and sentence cards from them will stop being drawn. You can resume here anytime.</string>
-    <string name="flow_pull_hint">Pull down to open study flow</string>
-    <string name="flow_pull_hint_due">Pull down to open study flow · %1$d due</string>
     <string name="flow_pull_action">Open study flow</string>
     <plurals name="flow_days_later">
         <item quantity="one">In %1$d day</item>
@@ -1642,6 +1645,10 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="help_168">After enabling Web search in settings and entering a Tavily key, questions trigger an automatic web search for verification and AI prioritises authoritative results (useful for checking recitation content and exam points). Without it, AI answers only from the article and its own knowledge.</string>
     <string name="help_169">Privacy and security</string>
     <string name="help_170">API keys are encrypted by the system and stored only on this device; they are never uploaded. Note: during a chat, article content and study data are sent to the API service you configured. After disabling AI, all AI entry points are hidden.</string>
+    <!-- ── 学习任务流手势：可见提示已移除，说明只留在本页（help_171+）── -->
+    <string name="help_171">Data · study flow</string>
+    <string name="help_172">On the Data page, scroll to the very top and keep pulling down; when the ring is full and the phone buzzes, let go to open the study flow, the planned articles laid out in time order.</string>
+    <string name="help_173">In the study flow you can pause, resume or reschedule each article; scroll to the bottom and pull up, or tap back at the top left, to return to the Data page.</string>
     <string name="sentence_status_first">First memory</string>
     <string name="sentence_status_recorded_next">Recorded · next in %1$d day(s)</string>
     <string name="sentence_status_due_last">Due · last reviewed %1$d day(s) ago</string>
@@ -1685,19 +1692,19 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="rating_hard">Hard</string>
     <string name="rating_good">Good</string>
     <string name="rating_easy">Easy</string>
-    <string name="notebook_entry_count">%1 item(s)</string>
+    <string name="notebook_entry_count">%1$d item(s)</string>
     <string name="reader_practice_section_cd">Practice this passage</string>
     <string name="reader_practice_section_title">Turn this passage into a cloze</string>
     <string name="reader_practice_section_hint">Choose a passage you just recalled behind masks; only it will be practiced.</string>
     <string name="reader_practice_section_empty">No masked passage can be converted right now.</string>
-    <string name="reader_practice_section_spans">%1 masked part(s)</string>
+    <string name="reader_practice_section_spans">%1$d masked part(s)</string>
     <string name="reader_practice_section_name">Recall-to-cloze</string>
     <string name="reader_practice_section_failed">This passage has no practisable blanks.</string>
     <string name="reason_first">First review</string>
-    <string name="reason_lapsed">Forgotten %1 times</string>
-    <string name="reason_long_gap">%1 days since last review</string>
-    <string name="reason_overdue">%1 days overdue</string>
-    <string name="reason_stable">Steady for %1 reviews</string>
+    <string name="reason_lapsed">Times forgotten: %1$d</string>
+    <string name="reason_long_gap">Days since last review: %1$d</string>
+    <string name="reason_overdue">Days overdue: %1$d</string>
+    <string name="reason_stable">Reviews while stable: %1$d</string>
     <string name="reason_scheduled">Due as scheduled</string>
     <string name="today_plan_title">Today\'s plan</string>
     <string name="today_plan_exam_days">Days to exam: %1$d</string>
@@ -1760,6 +1767,7 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="content_pack_delete_title">Delete content pack</string>
     <string name="content_pack_delete_body">Deleting “%1$s” does not remove articles already imported from it.</string>
     <string name="content_pack_import_all">Import all</string>
+    <string name="library_batch_import">Batch import</string>
     <string name="content_pack_import_result">Imported %1$d, skipped %2$d (duplicates or failures).</string>
     <string name="content_pack_view_entries">View entries</string>
     <string name="content_pack_collapse">Collapse</string>

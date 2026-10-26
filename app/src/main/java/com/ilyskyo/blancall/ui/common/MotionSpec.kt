@@ -140,6 +140,18 @@ object Motion {
         else spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
 
     /**
+     * 句卡**点按评级后的离场**。
+     *
+     * 与手势飞离（[cardFly]）分开：手势是「甩出去」，卡跟着手指走、速度由手指给，
+     * 需要一个看得见的过程；点按是「确认，下一张」，用户会连点，离场必须在两次点击之间
+     * 基本走完 —— StiffnessMedium(1500f) 收敛约 120ms，比手势那份快一档以上。
+     * 用同一个时长会让第二下点击撞上还在飞的卡（旧版就是被它吞掉的）。
+     */
+    fun cardTapExit(): FiniteAnimationSpec<Float> =
+        if (reduced) snap()
+        else spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+
+    /**
      * 句卡**回弹**（没达到提交条件，卡片回到原位）。
      *
      * 允许一点过冲：像松开的橡皮筋。同样由调用点传入初速度，

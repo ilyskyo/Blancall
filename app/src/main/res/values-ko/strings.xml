@@ -166,7 +166,6 @@
     <string name="import_backup_warning">백업 파일로 현재 글 목록과 연습 진행도를 통째로 바꿉니다. 기존 학습 데이터는 덮어써지고 되돌릴 수 없습니다. 가져온 뒤 반영하려면 앱을 한 번 다시 시작해야 합니다.</string>
     <string name="minutes_unit">%1$d 분</string>
     <string name="reminder_on_at">켜짐 · %1$s</string>
-    <string name="donation_ask">가능하다면 QR 코드로 후원을 부탁드려요 🥹</string>
     <string name="reminder_enable">알림 켜기</string>
     <string name="notification_permission_required">알림 기능을 사용하려면 알림 권한이 필요합니다. 시스템 설정에서 권한을 허용한 뒤 앱으로 돌아와 주세요.</string>
     <string name="reminder_time">알림 시각</string>
@@ -183,8 +182,12 @@
     <string name="preset_9pm">저녁 9:00</string>
     <string name="edit_home_subtitle">홈 부제 편집</string>
     <string name="custom_subtitle">부제 사용자 지정</string>
-    <string name="donation_title">후원 · 이 앱은 완전히 무료입니다</string>
-    <string name="donation_motive">한 푼이라도 업데이트를 계속할 힘이 됩니다</string>
+    <string name="donation_heading">Blancall 후원</string>
+    <string name="donation_statement">Blancall은 완전 무료이며, 모든 기능을 사용할 수 있습니다.</string>
+    <string name="donation_invite">정말 도움이 되었다면 후원을 환영합니다.</string>
+    <string name="donation_nudge_prefix">원하시면\u0020</string>
+    <string name="donation_nudge_link">여기에서 후원하기</string>
+    <string name="donation_never">다시 표시하지 않음</string>
     <string name="donation_qr">후원 QR 코드</string>
     <string name="donation_hide">이 영역 숨기기</string>
     <string name="donation_hide_hint">이번 실행 동안만 숨겨집니다. 앱을 다시 열면 표시됩니다</string>
@@ -308,6 +311,8 @@
     <string name="sentence_cloze_toggle">빈칸 회상</string>
     <string name="sentence_cloze_on_desc">첫 글자로 문장 전체 떠올리기</string>
     <string name="sentence_cloze_off_desc">문장 전체 바로 표시</string>
+    <string name="sentence_cloze_new_toggle">처음 보는 문장도 가리기</string>
+    <string name="sentence_cloze_new_desc">새 문장은 가림 상태로 시작하며, \'정답 보기\'로 전체를 봅니다</string>
     <string name="no_tags_create_hint">태그가 없습니다. 「설정 → 글 태그」에서 만들 수 있습니다</string>
     <string name="import_text_title">텍스트 가져오기</string>
     <string name="paste_text">텍스트 붙여넣기</string>
@@ -788,7 +793,7 @@
     <plurals name="scope_note_cross_article">
         <item quantity="other">기사 무관 연습 %1$d회 포함(개별 기사 통계에는 미포함)</item>
     </plurals>
-         文案一律在这里 —— 写进 .kt 就会在六语界面上露出简体，而 res 目录守卫查不到那种泄漏 -->
+    <!-- 记忆热力图的色带档位名与「估算」标：数据层只给稳定的 ASCII 键，文案一律在这里 —— 写进 .kt 就会在六语界面上露出简体，而 res 目录守卫查不到那种泄漏 -->
     <string name="heat_band_weak">약함</string>
     <string name="heat_band_hard">다소 어려움</string>
     <string name="heat_band_mid">보통</string>
@@ -1079,8 +1084,6 @@
     <string name="flow_detail_lapses">망각</string>
     <string name="flow_pause_all_confirm_title">모든 작업을 일시중지할까요?</string>
     <string name="flow_pause_all_confirm_body">계획 중인 모든 글이 복습 예정과 알림에서 빠지고, 문장 카드도 더 이상 추출되지 않습니다. 언제든 여기서 재개할 수 있습니다.</string>
-    <string name="flow_pull_hint">아래로 당겨 학습 작업 흐름 열기</string>
-    <string name="flow_pull_hint_due">아래로 당겨 학습 작업 흐름 열기 · %1$d개 복습 예정</string>
     <string name="flow_pull_action">학습 작업 흐름 열기</string>
     <plurals name="flow_days_later">
         <item quantity="other">%1$d일 후</item>
@@ -1581,6 +1584,10 @@
     <string name="help_168">설정에서 "웹 검색"을 켜고 Tavily Key를 입력하면 질문 시 자동으로 웹 검색해 검증하고 AI가 권위 있는 정보를 우선 참고합니다(암기 내용과 시험 범위 확인에 유용). 설정하지 않으면 AI는 글과 자체 지식만으로 답합니다.</string>
     <string name="help_169">개인정보 및 보안</string>
     <string name="help_170">API Key는 시스템에서 암호화되어 기기에만 저장되며 업로드되지 않습니다. 참고: 대화 시 글 내용과 학습 데이터가 설정한 API 서비스로 전송됩니다. "AI 기능 사용"을 끄면 모든 AI 진입점이 숨겨집니다.</string>
+    <!-- ── 学习任务流手势：可见提示已移除，说明只留在本页（help_171+）── -->
+    <string name="help_171">데이터 · 학습 작업 흐름</string>
+    <string name="help_172">"데이터" 페이지에서 맨 위까지 스크롤한 뒤 계속 아래로 당깁니다. 원이 가득 차고 진동이 오면 손을 떼면 학습 작업 흐름이 열립니다(계획 중인 글을 시간순으로 정렬).</string>
+    <string name="help_173">작업 흐름에서는 각 글을 일시중지·재개·다음 복습일 변경할 수 있습니다. 맨 아래까지 스크롤한 뒤 위로 당기거나 왼쪽 위 뒤로 가기를 누르면 데이터 페이지로 돌아갑니다.</string>
     <string name="sentence_status_first">첫 기억</string>
     <string name="sentence_status_recorded_next">기록됨 · 다음은 %1$d일 후</string>
     <string name="sentence_status_due_last">복습 필요 · 지난번 %1$d일 전</string>
@@ -1624,19 +1631,19 @@
     <string name="rating_hard">어려움</string>
     <string name="rating_good">기억함</string>
     <string name="rating_easy">쉬움</string>
-    <string name="notebook_entry_count">%1개</string>
+    <string name="notebook_entry_count">%1$d개</string>
     <string name="reader_practice_section_cd">이 단락 연습</string>
     <string name="reader_practice_section_title">이 단락을 빈칸으로 만들기</string>
     <string name="reader_practice_section_hint">방금 가리고 떠올린 단락을 선택하면 그 단락만 연습합니다.</string>
     <string name="reader_practice_section_empty">변환할 가림 단락이 없습니다.</string>
-    <string name="reader_practice_section_spans">%1곳 가림</string>
+    <string name="reader_practice_section_spans">%1$d곳 가림</string>
     <string name="reader_practice_section_name">가림에서 빈칸으로</string>
     <string name="reader_practice_section_failed">이 단락에는 연습할 빈칸이 없습니다.</string>
     <string name="reason_first">첫 복습</string>
-    <string name="reason_lapsed">%1번 잊었습니다</string>
-    <string name="reason_long_gap">지난 복습에서 %1일 지남</string>
-    <string name="reason_overdue">%1일 지연</string>
-    <string name="reason_stable">%1번 안정적</string>
+    <string name="reason_lapsed">%1$d번 잊었습니다</string>
+    <string name="reason_long_gap">지난 복습에서 %1$d일 지남</string>
+    <string name="reason_overdue">%1$d일 지연</string>
+    <string name="reason_stable">%1$d번 안정적</string>
     <string name="reason_scheduled">예정대로 복습 시기</string>
     <string name="today_plan_title">오늘의 계획</string>
     <string name="today_plan_exam_days">시험까지 %1$d일</string>
@@ -1699,6 +1706,7 @@
     <string name="content_pack_delete_title">콘텐츠 팩 삭제</string>
     <string name="content_pack_delete_body">“%1$s”을(를) 삭제해도 이미 가져온 글은 남습니다.</string>
     <string name="content_pack_import_all">모두 가져오기</string>
+    <string name="library_batch_import">일괄 가져오기</string>
     <string name="content_pack_import_result">%1$d개를 가져오고 %2$d개를 건너뛰었습니다(중복 또는 실패).</string>
     <string name="content_pack_view_entries">글 목록 보기</string>
     <string name="content_pack_collapse">접기</string>

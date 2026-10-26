@@ -20,6 +20,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -54,15 +56,19 @@ import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +84,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -107,6 +116,15 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * 语言名必须按该语言自身的字形渲染：CJK 统一码的字形随文字语言变体走，
+ * 日文界面下「繁體中文」若跟着界面语言排版，繁/體 会落成日文字形。
+ * 「跟随系统」不是语言名、而是随界面本地化的文案，保持继承界面语言。
+ */
+private fun localeNameStyle(choice: AppLocale, base: TextStyle): TextStyle =
+    if (choice == AppLocale.FollowSystem) base
+    else base.copy(localeList = LocaleList(choice.tag))
 
 @Composable
 fun SettingsScreen(navController: NavController) {
@@ -297,15 +315,17 @@ fun SettingsScreen(navController: NavController) {
                         selected = themeMode == ThemeMode.LIGHT,
                         onClick = { ThemeManager.setThemeMode(ThemeMode.LIGHT) }
                     )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    OptionDivider(
+                        faded = themeMode == ThemeMode.LIGHT || themeMode == ThemeMode.DARK
+                    )
                     OptionRow(
                         label = stringResource(com.ilyskyo.blancall.R.string.theme_dark),
                         selected = themeMode == ThemeMode.DARK,
                         onClick = { ThemeManager.setThemeMode(ThemeMode.DARK) }
                     )
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    OptionDivider(
+                        faded = themeMode == ThemeMode.DARK || themeMode == ThemeMode.SYSTEM
+                    )
                     OptionRow(
                         label = stringResource(com.ilyskyo.blancall.R.string.theme_system),
                         selected = themeMode == ThemeMode.SYSTEM,
@@ -323,6 +343,14 @@ fun SettingsScreen(navController: NavController) {
                     // 点这一行就地弹出选项卡，选完立刻收起。
                     val localeContext = LocalContext.current
                     val currentLocale = AppLocale.current(localeContext)
+                    // 语言字形是标题的「第五个字」：尺寸与间隙都按 sp 换算，
+                    // 跟随系统字号一起缩放，否则大字号下会缩成一个小点。
+                    val localeDensity = LocalDensity.current
+                    val languageGlyphSize = with(localeDensity) { 18.sp.toDp() }
+                    val languageGlyphWidth = languageGlyphSize * 28f / 24f
+                    val languageGlyphGap = with(localeDensity) { 1.5.sp.toDp() }
+                    // 字形视框中「文」的墨迹重心偏高约 0.8sp，与汉字正文视觉居中对齐时微微下沉
+                    val languageGlyphDrop = with(localeDensity) { 0.8.sp.toDp() }
                     var showLocaleMenu by remember { mutableStateOf(false) }
                     val localeLabel: @Composable (AppLocale) -> String = { choice: AppLocale ->
                         if (choice == AppLocale.FollowSystem)
@@ -340,17 +368,31 @@ fun SettingsScreen(navController: NavController) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(stringResource(com.ilyskyo.blancall.R.string.ui_language),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface)
+                                    // 「文A」字形紧跟标题，当成第五个字：认语言入口靠图形不靠汉字，
+                                    // 换成看不懂的语言时也能一眼找到这一行。
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(stringResource(com.ilyskyo.blancall.R.string.ui_language),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                        Spacer(Modifier.width(languageGlyphGap))
+                                        AppIcon(
+                                            kind = AppIconKind.Language,
+                                            modifier = Modifier
+                                                .height(languageGlyphSize)
+                                                .width(languageGlyphWidth)
+                                                .offset(y = languageGlyphDrop),
+                                            tint = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                     Spacer(Modifier.height(2.dp))
                                     Text(stringResource(com.ilyskyo.blancall.R.string.ui_language_desc),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 16.dp))
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(localeLabel(currentLocale),
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = localeNameStyle(currentLocale, MaterialTheme.typography.labelMedium),
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.primary)
                                 }
@@ -370,7 +412,7 @@ fun SettingsScreen(navController: NavController) {
                                     },
                                     label = {
                                         Text(localeLabel(choice),
-                                            style = MaterialTheme.typography.bodyMedium,
+                                            style = localeNameStyle(choice, MaterialTheme.typography.bodyMedium),
                                             color = if (picked) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.onSurface)
                                     },
@@ -398,7 +440,8 @@ fun SettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.onSurface)
                             Text(stringResource(com.ilyskyo.blancall.R.string.beige_background_desc),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
                         }
                         GlassSwitch(
                             checked = lightBeige,
@@ -420,7 +463,8 @@ fun SettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.onSurface)
                             Text(stringResource(com.ilyskyo.blancall.R.string.nav_glass_desc),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
                         }
                         GlassSwitch(
                             checked = navGlass,
@@ -457,7 +501,8 @@ fun SettingsScreen(navController: NavController) {
                                     Spacer(Modifier.height(2.dp))
                                     Text(stringResource(com.ilyskyo.blancall.R.string.haptic_strength_desc),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 16.dp))
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(stringResource(hapticLabelRes),
@@ -512,7 +557,8 @@ fun SettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.onSurface)
                             Text(stringResource(com.ilyskyo.blancall.R.string.home_subtitle_desc),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
                         }
                         Text(stringResource(com.ilyskyo.blancall.R.string.edit), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary)
@@ -538,7 +584,7 @@ fun SettingsScreen(navController: NavController) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // 根据系统深色模式选择 primaryDark/primaryLight，保证深色下对比度
@@ -929,8 +975,9 @@ fun SettingsScreen(navController: NavController) {
                             onClick = { AppPrefs.reviewTemplateId = template.id }
                         )
                         if (idx < templates.size - 1) {
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                            OptionDivider(
+                                faded = isSelected || templates[idx + 1].id == templateId
+                            )
                         }
                     }
                 }
@@ -1111,13 +1158,15 @@ fun SettingsScreen(navController: NavController) {
                                     stringResource(com.ilyskyo.blancall.R.string.data_records_size_value,
                                         formatFileSize(size)),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(end = 16.dp)
                                 )
                                 if (size >= RECORDS_SIZE_BUDGET_BYTES) {
                                     Spacer(Modifier.height(2.dp))
                                     Text(stringResource(com.ilyskyo.blancall.R.string.data_records_size_warn),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.tertiary)
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        modifier = Modifier.padding(end = 16.dp))
                                 }
                             }
                             // 归档出口（审计 2.2-15）：只在记录多到能归档时才做动作；
@@ -1161,7 +1210,8 @@ fun SettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.onSurface)
                             Text(stringResource(com.ilyskyo.blancall.R.string.export_backup_desc),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
                         }
                         TextButton(onClick = {
                             val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
@@ -1184,7 +1234,8 @@ fun SettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.onSurface)
                             Text(stringResource(com.ilyskyo.blancall.R.string.import_backup_desc),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
                         }
                         TextButton(onClick = {
                             // 放开 MIME 过滤：部分文件管理器返回的备份类型不固定，
@@ -1261,7 +1312,8 @@ fun SettingsScreen(navController: NavController) {
                         Text(
                             stringResource(com.ilyskyo.blancall.R.string.content_pack_settings_desc),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 16.dp)
                         )
                     }
                     GlassButton(
@@ -1269,7 +1321,7 @@ fun SettingsScreen(navController: NavController) {
                         modifier = Modifier.height(34.dp)
                     ) {
                         Text(
-                            stringResource(com.ilyskyo.blancall.R.string.open),
+                            stringResource(com.ilyskyo.blancall.R.string.import_action),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -1290,7 +1342,8 @@ fun SettingsScreen(navController: NavController) {
                         Text(
                             stringResource(com.ilyskyo.blancall.R.string.interchange_settings_desc),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 16.dp)
                         )
                     }
                     GlassButton(
@@ -1346,7 +1399,7 @@ fun SettingsScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_title), style = MaterialTheme.typography.titleSmall,
+                    Text(stringResource(com.ilyskyo.blancall.R.string.donation_heading), style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary)
                     // 圆圈按钮：右边缘与下方卡片的右边框对齐，提示这一行可以点
@@ -1410,28 +1463,37 @@ fun SettingsScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
+                    val qrSide = if (LocalIsLargeScreen) 200.dp else 168.dp
                     Column(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        modifier = Modifier.padding(20.dp).fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_ask),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_statement),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center)
-                        Spacer(Modifier.height(4.dp))
-                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_motive),
+                        Spacer(Modifier.height(6.dp))
+                        Text(stringResource(com.ilyskyo.blancall.R.string.donation_invite),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                             textAlign = TextAlign.Center)
-                        Spacer(Modifier.height(12.dp))
-                        Image(
-                            painter = painterResource(id = R.drawable.appreciation_qr),
-                            contentDescription = stringResource(com.ilyskyo.blancall.R.string.donation_qr),
+                        Spacer(Modifier.height(16.dp))
+                        // 二维码必须「白底黑码」才能被相机识别：这里的 Color.White 是刚性要求，
+                        // 不要换成 colorScheme.surface 或半透明白，深色模式下会掉对比度导致扫不出。
+                        // clip 必须写在 background 之前，否则圆角不生效（background(shape) 只画底、不裁内容）。
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth(0.6f)
-                                .aspectRatio(1f),
-                            contentScale = ContentScale.Fit
-                        )
+                                .size(qrSide)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.appreciation_qr_card),
+                                contentDescription = stringResource(com.ilyskyo.blancall.R.string.donation_qr),
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
                     }
                 }
             }
@@ -1698,6 +1760,23 @@ private val hapticLevelChoices = listOf(
     "off" to com.ilyskyo.blancall.R.string.haptic_off,
 )
 
+/**
+ * 单选项行。
+ *
+ * 选中态不是「整行铺底的矩形」，而是一块**内缩的圆角高亮**：
+ * 距卡片左右各 8dp（卡片自身的 4dp 内边距 + 本行的 4dp）、
+ * 上下各 6dp（卡片 4dp + 本行 2dp），圆角 10dp。
+ * 旧实现直接吃 [Surface] 默认的 RectangleShape，直角块一路顶到卡片描边，
+ * 又比分隔线（左右各内缩 16dp）宽出一截，看着像一块贴错位置的色块。
+ *
+ * 三个容易踩的点：
+ * - 行内水平 padding 由 16dp 收到 12dp，正好抵消行级的 4dp 缩进 ——
+ *   文字左缘仍与卡片里其它行（界面语言、开关行都是 20dp）严格对齐。
+ * - 右侧勾图钉**常驻 20dp 占位**，只用透明度/缩放表达选中：否则勾出现时
+ *   会把 weight(1f) 的文字区挤窄，description 的换行点一变、行高就跳。
+ * - 未选中底色用 Transparent 而非 surface：GlassCard 的底本来就与 surface 同色，
+ *   铺一层不透明色只会在圆角处多出一圈色差。
+ */
 @Composable
 private fun OptionRow(
     label: String,
@@ -1705,38 +1784,79 @@ private fun OptionRow(
     onClick: () -> Unit,
     description: String? = null
 ) {
+    // 深色底更吃颜色，选中块的浓度要比浅色高一档才看得出边界
+    val highlight = MaterialTheme.colorScheme.primary.copy(
+        alpha = if (isBlancallDark()) 0.18f else 0.10f
+    )
+    // 选中块与勾图共用同一条淡入时长：两者是同一个动作（「这一项现在是选中的」），
+    // 色块硬切、勾渐显会让它们读起来像两个事件。
+    val rowColor by animateColorAsState(
+        targetValue = if (selected) highlight else Color.Transparent,
+        animationSpec = MotionFade.color(MotionFade.enter),
+        label = "optionHighlight"
+    )
+    val checkPresence by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = MotionFade.alpha(MotionFade.enter),
+        label = "optionCheck"
+    )
     Surface(
         onClick = onClick,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        else MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth()
+        color = rowColor,
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .fillMaxWidth()
     ) {
         Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+            Modifier.padding(horizontal = 12.dp, vertical = 12.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.bodyLarge,
-                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                    color = if (selected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface)
                 if (description != null) {
                     Spacer(Modifier.height(2.dp))
                     Text(description,
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                         else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (selected) {
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
                 AppIcon(
                     kind = AppIconKind.Check,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier
+                        .size(20.dp)
+                        .alpha(checkPresence)
+                        .scale(0.82f + 0.18f * checkPresence)
                 )
             }
         }
     }
+}
+
+/**
+ * 选项之间的细分隔线。[faded] 为真时淡出但保留 1dp 占位（不参与布局变化）。
+ *
+ * 选中块自己有完整的圆角边界，线压在上头会显得脏；同时它比线宽 8dp，
+ * 两者并存时右端会露出「线在块里断掉」的错觉。所以选中项上下相邻的线一律淡出。
+ */
+@Composable
+private fun OptionDivider(faded: Boolean) {
+    val lineAlpha by animateFloatAsState(
+        targetValue = if (faded) 0f else 0.3f,
+        animationSpec = MotionFade.alpha(MotionFade.enter),
+        label = "optionDivider"
+    )
+    HorizontalDivider(
+        Modifier.padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = lineAlpha)
+    )
 }
 
 // ========== 学习提醒设置卡片 ==========

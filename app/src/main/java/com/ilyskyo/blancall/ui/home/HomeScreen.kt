@@ -105,6 +105,7 @@ import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.DonationInviteRow
 import com.ilyskyo.blancall.ui.common.CoachMark
 import com.ilyskyo.blancall.ui.common.rememberCoachAnchor
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
@@ -169,6 +170,11 @@ fun HomeScreen(
 
     // ── 首页滚动手势（无顶栏）：下拉揭示品牌区 ──
     val homeScrollState = rememberScrollState()
+    // 双指 = 滚动页面：这里维护「全屏当前按下的手指数」，供 HomeCardCanvas 的卡片手势读取。
+    // Compose 的指针事件只派发给该指针命中的节点链 —— 第二根手指若落在另一张卡上，
+    // 正在被按住的那张卡根本收不到它，只有宿主在祖先节点上统一统计才能保证「双指绝不拖卡」。
+    // 放在 Initial pass 更新：祖先先于卡片执行，卡片在 Main pass 读到的就是本帧准确值。
+    val homePointerCount = remember { HomePointerCountState() }
     // 下拉位移（px）：滚到顶再继续下拉 → 内容整体**跟手**下移，顶部露出空白区显示
     // 「Blancall + 副标题」；**松手立即回弹**（松手后的惯性帧不再跟手，见 onPreScroll）。
     // Animatable：拖动 snapTo 跟手、松手 animateTo 回弹。
@@ -682,6 +688,16 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 双指统计：Initial pass **只观察不消费**，先于所有卡片刷新全局手指数。
+                    // 没有它，第二根手指落在别的卡上时，当前卡的手势协程会误判为单指拖动。
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val e = awaitPointerEvent(PointerEventPass.Initial)
+                                homePointerCount.pressedPointers = e.changes.count { it.pressed }
+                            }
+                        }
+                    }
                     // 松手兜底：嵌套滚动在「无速度慢松手」时不会派发 fling 阶段回调，
                     // 仅靠 onPreFling 复位会漏（真机：下拉后卡在露出态）——
                     // 这里在 Final pass **仅观察、不消费**：任何指针全部抬起/手势取消
@@ -750,7 +766,9 @@ fun HomeScreen(
                 },
                 onExamEpochDayChange = { ReminderPrefs.examEpochDay = it },
             )
-            Spacer(Modifier.height(18.dp))
+            // 与下方卡片画布的间距 = 卡片与卡片的视觉间距（画布横向卡距 12dp）：
+            // 7dp + 首行卡片槽位的纵向内缩 5dp（HomeCardCanvas.SLOT_INSET）= 12dp。
+            Spacer(Modifier.height(7.dp))
 
             // 两条指引各指各的真实目标：非编辑态指第一张卡片、编辑态指「＋」按钮。
             // 二者按 editMode 互斥，不会同屏叠两个弹层。
@@ -779,6 +797,7 @@ fun HomeScreen(
             val hcGridWidth = if (maxWidth.value.isFinite()) maxWidth.value else 0f
             HomeCardCanvas(
                 columns = homeGridColumns(hcGridWidth),
+                pointerCount = homePointerCount,
                 firstCardAnchor = firstCardAnchor,
                 addButtonAnchor = addCardAnchor,
                 cards = homeCards,
@@ -1809,6 +1828,12 @@ private fun StatsPopupCard(
             ) {
                 Text(stringResource(com.ilyskyo.blancall.R.string.view_details), style = MaterialTheme.typography.labelLarge)
             }
+            // 练习后弹层的赞赏入口（形态与门控见 ui/common/DonationInvite.kt）。
+            // 本卡外层 GlassCard 带整卡 onClick（点卡进详情），这个入口自己带 clickable，
+            // 命中测试优先内层 —— 点它是开赞赏弹层，不会误进详情。
+            // 已知代价：本弹层 6 秒自动收起，这一行能停留的时间很短；闸门一周才放行一次，
+            // 所以三处位置里它命中率最低，属于「顺便」而不是主力。
+            DonationInviteRow(slot = "home_popup", modifier = Modifier.padding(end = 6.dp))
         }
     }
 }

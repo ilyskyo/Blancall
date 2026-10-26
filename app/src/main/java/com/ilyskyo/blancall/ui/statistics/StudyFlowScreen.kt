@@ -6,6 +6,7 @@ package com.ilyskyo.blancall.ui.statistics
 import android.text.format.DateFormat
 import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
@@ -46,29 +48,39 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.ilyskyo.blancall.R
@@ -93,21 +105,29 @@ import com.ilyskyo.blancall.ui.common.GaugeProgress
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.common.AutoHideNavBarOnFlag
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.MemoryDecayChart
+import com.ilyskyo.blancall.ui.common.NavBarAutoHide
 import com.ilyskyo.blancall.ui.common.MistakeBar
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
+import com.ilyskyo.blancall.ui.common.PullReleaseDirection
+import com.ilyskyo.blancall.ui.common.PullReleaseIndicator
 import com.ilyskyo.blancall.ui.common.StatItem
 import com.ilyskyo.blancall.ui.common.animateListItem
 import com.ilyskyo.blancall.ui.common.heroElement
 import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
 import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.pressClick
+import com.ilyskyo.blancall.ui.common.pullReleaseLatched
+import com.ilyskyo.blancall.ui.common.pullReleaseReached
+import com.ilyskyo.blancall.ui.common.pullReleaseTravel
 import com.ilyskyo.blancall.ui.common.HapticTier
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -118,6 +138,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 学习任务流：把「FSRS 正在计划中的文章」铺成一条按时间推进的时间线。
@@ -131,6 +152,27 @@ import java.util.Locale
  * 数据全部来自 FsrsStateStore 的 revision 快照，所以从本页改完再回首页/列表/统计页，
  * 那三处不会仍挂着「待复习」。
  */
+/**
+ * 滑到底再上拉多远算「满格」：抬手即返回上一页（1:1 跟手，不含阻尼）。
+ * 与首页下拉进入学习任务流的阈值同量级，两个方向的手感一致。
+ */
+private val FLOW_EXIT_PULL_THRESHOLD = 88.dp
+
+/**
+ * 满格后「回退多少才算撤回」的容差（与进入方向同一套语义）。
+ * 抬手时手指的回带不该把「已画满」判成「没拉满」。
+ */
+private val FLOW_EXIT_PULL_CANCEL_SLACK = 12.dp
+
+/**
+ * 满格后的阻尼余量：再多推也只移动这么点，手感是「到顶了、推不动」。
+ * 留得很小，是为了让手往回退一点点就能看见圈环倒转（撤回必须立刻有反馈）。
+ */
+private val FLOW_EXIT_PULL_OVERSHOOT = 8.dp
+
+/** 满格后继续上拉的阻尼系数（1 = 跟手，0 = 完全推不动）。 */
+private const val FLOW_EXIT_PULL_OVERSHOOT_RATIO = 0.08f
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StudyFlowScreen(navController: NavController) {
@@ -231,6 +273,144 @@ fun StudyFlowScreen(navController: NavController) {
     val planId by AppPrefs.reviewTemplateFlow.collectAsState()
     val navBarConn = rememberAutoHideNavBarOnScroll()
 
+    // ── 滑到底再上拉：退出任务流 ──
+    // 与首页「下拉进任务流」完全对称的一套手感：滑到底后继续上拉，圆环随位移填充。
+    // **手指不松开就不会退出** —— 拉满只给一次 Threshold 触感，抬手那一刻才判定：
+    // 拉满 → 返回上一页；没拉满 → 回弹归零。
+    // 中途往回退（哪怕已经转满），圆环跟着倒转，始终留得出撤回空间。
+    val flowListState = rememberLazyListState()
+    // 与「下拉进任务流」同一套真值纪律：位移同步写入 exitPullPx，Animatable 只驱动回弹。
+    val exitPullPx = remember { mutableFloatStateOf(0f) }
+    val exitPullOffset = remember { Animatable(0f) }
+    var exitPullRecoilJob by remember { mutableStateOf<Job?>(null) }
+    val exitPullScope = rememberCoroutineScope()
+    val exitPullThresholdPx = with(LocalDensity.current) { FLOW_EXIT_PULL_THRESHOLD.toPx() }
+    val exitPullOvershootPx = with(LocalDensity.current) { FLOW_EXIT_PULL_OVERSHOOT.toPx() }
+    val exitPullCancelSlackPx = with(LocalDensity.current) { FLOW_EXIT_PULL_CANCEL_SLACK.toPx() }
+    val exitPullArmed = remember { AtomicBoolean(true) }
+    val exitPullReady = remember { AtomicBoolean(false) }
+    val exitPullNavigated = remember { AtomicBoolean(false) }
+    // 蓄力圆环就在屏幕底部，悬浮底栏会把它整个盖住。手势期间用独立键按住底栏：
+    // 滚动键会被蓄力连接「吃掉」滚动量、误判为停止并在 350ms 后放回底栏，这个键不会。
+    // derivedStateOf 只在「有没有拉起」翻转时触发重组，不跟每一帧位移。
+    val exitPullActive by remember { derivedStateOf { exitPullPx.floatValue > 0.5f } }
+    AutoHideNavBarOnFlag(NavBarAutoHide.KEY_PULL_GESTURE, exitPullActive)
+    // 触感强度在设置里改完要立刻生效，所以经 rememberUpdatedState 透传。
+    val exitPullHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Threshold))
+
+    /**
+     * 按「拉出增量」推进位移（正 = 继续上拉，负 = 手指往回收），返回位移变化量。
+     * 只改位移与触感，**绝不导航**：退出一律由 [releaseExitPull] 在抬手时决定。
+     */
+    fun advanceExitPull(delta: Float): Float {
+        val current = exitPullPx.floatValue
+        if (current <= 0f && delta < 0f) return 0f
+        // 从零重新上推 = 新一次手势：解除上一次的一次性返回锁
+        if (current <= 0.5f && delta > 0f) {
+            exitPullNavigated.set(false)
+            exitPullReady.set(false)
+        }
+        exitPullRecoilJob?.cancel()
+        exitPullRecoilJob = null
+        val next = pullReleaseTravel(
+            current = current,
+            delta = delta,
+            threshold = exitPullThresholdPx,
+            overshootMax = exitPullOvershootPx,
+            overshootRatio = FLOW_EXIT_PULL_OVERSHOOT_RATIO,
+        )
+        if (next != current) exitPullPx.floatValue = next
+        exitPullReady.set(
+            pullReleaseLatched(
+                wasLatched = exitPullReady.get(),
+                pullPx = next,
+                thresholdPx = exitPullThresholdPx,
+                cancelSlackPx = exitPullCancelSlackPx,
+            )
+        )
+        if (pullReleaseReached(next, exitPullThresholdPx)) {
+            if (exitPullArmed.compareAndSet(true, false)) exitPullHaptic()
+        } else {
+            // 退回阈值以内 ⇒ 下次再拉满还能再响一次
+            exitPullArmed.set(true)
+        }
+        return next - current
+    }
+
+    /** 没拉满（或已回退取消）：从当前位移回弹归零。 */
+    fun settleExitPull() {
+        val pull = exitPullPx.floatValue
+        if (pull <= 0.5f) return
+        exitPullRecoilJob?.cancel()
+        exitPullRecoilJob = exitPullScope.launch {
+            try {
+                exitPullOffset.snapTo(pull)
+                exitPullOffset.animateTo(0f, Motion.pullRecoil()) {
+                    exitPullPx.floatValue = value
+                }
+                exitPullReady.set(false)
+            } finally {
+                exitPullArmed.set(true)
+            }
+        }
+    }
+
+    /** 抬手判定：本次手势满过格就返回上一页，没满则回弹。拖动过程中永远不走到这里。 */
+    fun releaseExitPull() {
+        if (exitPullNavigated.get()) return
+        if (exitPullPx.floatValue <= 0.5f) return
+        if (exitPullReady.get()) {
+            if (exitPullNavigated.compareAndSet(false, true)) {
+                if (!navController.popBackStack()) {
+                    // 已经不在栈上（极端情况）：解锁并回弹，别把页面卡在满格
+                    exitPullNavigated.set(false)
+                    exitPullReady.set(false)
+                    settleExitPull()
+                }
+            }
+            return
+        }
+        settleExitPull()
+    }
+
+    val exitPullConnection = remember(flowListState, exitPullThresholdPx, exitPullOvershootPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // 松手后的惯性帧不参与蓄力：只有手指拖拽才算数
+                if (source != NestedScrollSource.Drag) return Offset.Zero
+                val dy = available.y
+                if (dy < 0f && !flowListState.canScrollForward) {
+                    // 已在底部还继续上拉：整段转成蓄力位移，不交给系统过度滚动光效
+                    advanceExitPull(-dy)
+                    return Offset(0f, dy)
+                }
+                if (dy > 0f && exitPullPx.floatValue > 0f) {
+                    // 手指往回收：先抵掉蓄力位移（圆环倒转），抵完剩下的才让列表往回滚
+                    val pulled = advanceExitPull(-dy)
+                    return Offset(0f, -pulled)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                // 本帧列表把位移吃到底后还剩的上拉余量，接到蓄力上：从列表中间一路推到底也连贯
+                if (source != NestedScrollSource.Drag) return Offset.Zero
+                if (available.y >= 0f || flowListState.canScrollForward) return Offset.Zero
+                advanceExitPull(-available.y)
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                releaseExitPull()
+                return Velocity.Zero
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -259,128 +439,155 @@ fun StudyFlowScreen(navController: NavController) {
                 )
             }
 
-            LazyColumn(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .nestedScroll(navBarConn)
-                    .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 120.dp)
+                    .clipToBounds()
+                    // 松手兜底：慢松手时嵌套滚动不会派发 fling 回调，这里在 Final pass
+                    // 仅观察、不消费：指针全抬起时做一次抬手判定。
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Final)
+                                if (event.changes.none { it.pressed }) releaseExitPull()
+                            }
+                        }
+                    }
             ) {
-                item(key = "flow_summary") {
-                    FlowSummaryCard(
-                        activeCount = activeCount,
-                        todayCount = todayCount,
-                        overdueCount = overdueCount,
-                        pausedCount = pausedCount,
-                        nextTitle = nextTask?.title,
-                        planId = planId,
-                    )
-                }
-                item(key = "flow_schedule") {
-                    FlowScheduleCard(
-                        planId = planId,
-                        expanded = scheduleExpanded,
-                        onToggleExpanded = {
-                            toggleHaptic()
-                            scheduleExpanded = !scheduleExpanded
-                        },
-                        dueCount = todayCount,
-                        pausedCount = pausedCount,
-                        activeCount = activeCount,
-                        actionNote = actionNote,
-                        onPlanChange = { id ->
-                            toggleHaptic()
-                            AppPrefs.reviewTemplateId = id
-                            note(resources.getString(R.string.flow_done_plan))
-                        },
-                        onPostponeDue = {
-                            haptic()
-                            val target = tomorrowStart(nowTick)
-                            val dueIds = tasks
-                                .filter { it.phase == StudyFlow.Phase.OVERDUE || it.phase == StudyFlow.Phase.TODAY }
-                                .map { it.articleId }
-                            writeThenNote(resources.getString(R.string.flow_done_postponed)) {
-                                dueIds.forEach { fsrsStore.rescheduleArticle(it, target, nowTick) }
-                            }
-                        },
-                        onResumeAll = {
-                            haptic()
-                            val ids = tasks.filter { it.phase == StudyFlow.Phase.PAUSED }.map { it.articleId }
-                            writeThenNote(resources.getString(R.string.flow_done_resumed_all)) {
-                                ids.forEach { fsrsStore.resumeArticle(it, nowTick) }
-                            }
-                        },
-                        onPauseAll = { showPauseAllConfirm = true },
-                    )
-                }
-                item(key = "flow_filters") {
-                    FlowFilterRow(
-                        filter = filter,
-                        allCount = tasks.size,
-                        dueCount = todayCount,
-                        pausedCount = pausedCount,
-                        onSelect = { filterName = it.name },
-                    )
-                }
-                if (rows.isEmpty()) {
-                    item(key = "flow_empty") {
-                        FlowEmptyState(
-                            hasAnyTask = tasks.isNotEmpty(),
-                            onGoArticles = { navController.navigate("list") },
+                // 指示器画在列表下层：内容跟手上移后，底部让出的空隙里露出来。
+                // 读到的是同步位移真值（绘相位），不会每帧重组整页。
+                PullReleaseIndicator(
+                    pullPx = { exitPullPx.floatValue },
+                    thresholdPx = exitPullThresholdPx,
+                    direction = PullReleaseDirection.Up,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+                LazyColumn(
+                    state = flowListState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { translationY = -exitPullPx.floatValue }
+                            .nestedScroll(exitPullConnection)
+                            .nestedScroll(navBarConn)
+                            .padding(horizontal = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)
+                    ) {
+                    item(key = "flow_summary") {
+                        FlowSummaryCard(
+                            activeCount = activeCount,
+                            todayCount = todayCount,
+                            overdueCount = overdueCount,
+                            pausedCount = pausedCount,
+                            nextTitle = nextTask?.title,
+                            planId = planId,
                         )
                     }
-                } else {
-                    if (filter != FlowFilter.PAUSED && tasks.any { it.phase != StudyFlow.Phase.PAUSED }) {
-                        item(key = "flow_now") { FlowNowMarker() }
-                    }
-                    items(
-                        items = rows,
-                        key = { row ->
-                            when (row) {
-                                is FlowRowItem.Header -> "h_${row.phase.name}"
-                                is FlowRowItem.Task -> "t_${row.task.articleId}"
-                            }
-                        },
-                        contentType = { row -> if (row is FlowRowItem.Header) "header" else "task" }
-                    ) { row ->
-                        when (row) {
-                            is FlowRowItem.Header -> {
-                                Box(modifier = animateListItem()) {
-                                    FlowGroupHeader(
-                                        phase = row.phase,
-                                        anchorDue = row.anchorDue,
-                                        count = rows.count { it is FlowRowItem.Task && it.task.phase == row.phase },
-                                    )
+                    item(key = "flow_schedule") {
+                        FlowScheduleCard(
+                            planId = planId,
+                            expanded = scheduleExpanded,
+                            onToggleExpanded = {
+                                toggleHaptic()
+                                scheduleExpanded = !scheduleExpanded
+                            },
+                            dueCount = todayCount,
+                            pausedCount = pausedCount,
+                            activeCount = activeCount,
+                            actionNote = actionNote,
+                            onPlanChange = { id ->
+                                toggleHaptic()
+                                AppPrefs.reviewTemplateId = id
+                                note(resources.getString(R.string.flow_done_plan))
+                            },
+                            onPostponeDue = {
+                                haptic()
+                                val target = tomorrowStart(nowTick)
+                                val dueIds = tasks
+                                    .filter { it.phase == StudyFlow.Phase.OVERDUE || it.phase == StudyFlow.Phase.TODAY }
+                                    .map { it.articleId }
+                                writeThenNote(resources.getString(R.string.flow_done_postponed)) {
+                                    dueIds.forEach { fsrsStore.rescheduleArticle(it, target, nowTick) }
                                 }
-                            }
-                            is FlowRowItem.Task -> {
-                                val task = row.task
-                                Box(modifier = animateListItem()) {
-                                    FlowTaskRow(
-                                        task = task,
-                                        now = nowTick,
-                                        onOpen = {
-                                            haptic()
-                                            navController.navigate("study_task/${task.articleId}")
-                                        },
-                                        onAdjust = {
-                                            haptic()
-                                            sheetTaskId = task.articleId
-                                        },
-                                        onTogglePause = { togglePause(task) },
-                                    )
+                            },
+                            onResumeAll = {
+                                haptic()
+                                val ids = tasks.filter { it.phase == StudyFlow.Phase.PAUSED }.map { it.articleId }
+                                writeThenNote(resources.getString(R.string.flow_done_resumed_all)) {
+                                    ids.forEach { fsrsStore.resumeArticle(it, nowTick) }
+                                }
+                            },
+                            onPauseAll = { showPauseAllConfirm = true },
+                        )
+                    }
+                    item(key = "flow_filters") {
+                        FlowFilterRow(
+                            filter = filter,
+                            allCount = tasks.size,
+                            dueCount = todayCount,
+                            pausedCount = pausedCount,
+                            onSelect = { filterName = it.name },
+                        )
+                    }
+                    if (rows.isEmpty()) {
+                        item(key = "flow_empty") {
+                            FlowEmptyState(
+                                hasAnyTask = tasks.isNotEmpty(),
+                                onGoArticles = { navController.navigate("list") },
+                            )
+                        }
+                    } else {
+                        if (filter != FlowFilter.PAUSED && tasks.any { it.phase != StudyFlow.Phase.PAUSED }) {
+                            item(key = "flow_now") { FlowNowMarker() }
+                        }
+                        items(
+                            items = rows,
+                            key = { row ->
+                                when (row) {
+                                    is FlowRowItem.Header -> "h_${row.phase.name}"
+                                    is FlowRowItem.Task -> "t_${row.task.articleId}"
+                                }
+                            },
+                            contentType = { row -> if (row is FlowRowItem.Header) "header" else "task" }
+                        ) { row ->
+                            when (row) {
+                                is FlowRowItem.Header -> {
+                                    Box(modifier = animateListItem()) {
+                                        FlowGroupHeader(
+                                            phase = row.phase,
+                                            anchorDue = row.anchorDue,
+                                            count = rows.count { it is FlowRowItem.Task && it.task.phase == row.phase },
+                                        )
+                                    }
+                                }
+                                is FlowRowItem.Task -> {
+                                    val task = row.task
+                                    Box(modifier = animateListItem()) {
+                                        FlowTaskRow(
+                                            task = task,
+                                            now = nowTick,
+                                            onOpen = {
+                                                haptic()
+                                                navController.navigate("study_task/${task.articleId}")
+                                            },
+                                            onAdjust = {
+                                                haptic()
+                                                sheetTaskId = task.articleId
+                                            },
+                                            onTogglePause = { togglePause(task) },
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                // 7 日预测放在时间线之后：本页主角是「现在要做哪一件」，
-                // 预测是回看全局的补充，不该把第一张任务卡挤出首屏。
-                if (tasks.isNotEmpty()) {
-                    item(key = "flow_forecast") {
-                        FlowForecastCard(forecast = forecast, now = nowTick)
+                    // 7 日预测放在时间线之后：本页主角是「现在要做哪一件」，
+                    // 预测是回看全局的补充，不该把第一张任务卡挤出首屏。
+                    if (tasks.isNotEmpty()) {
+                        item(key = "flow_forecast") {
+                            FlowForecastCard(forecast = forecast, now = nowTick)
+                        }
                     }
                 }
             }

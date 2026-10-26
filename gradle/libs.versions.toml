@@ -20,6 +20,8 @@ commonmark = "0.24.0"
 motionPrediction = "1.0.0"
 # 液态玻璃 vendored 源码里 LiquidTracker 的弹性动画用（原 AAR 的两个依赖之一）
 dynamicanimation = "1.1.0"
+# 底部导航栏液态玻璃（Kyant0 Backdrop，Compose 原生图层折射）
+backdrop = "1.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -48,6 +50,7 @@ androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidge
 commonmark = { group = "org.commonmark", name = "commonmark", version.ref = "commonmark" }
 androidx-input-motionprediction = { group = "androidx.input", name = "input-motionprediction", version.ref = "motionPrediction" }
 androidx-dynamicanimation = { group = "androidx.dynamicanimation", name = "dynamicanimation", version.ref = "dynamicanimation" }
+backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "backdrop" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

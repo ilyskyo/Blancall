@@ -34,13 +34,15 @@ Blancall 使用了以下第三方开源组件。本项目自身以 MIT 许可证
 ================================================================================
 2. AndroidLiquidGlass (Backdrop)
    - 项目：https://github.com/Kyant0/AndroidLiquidGlass
-   - 用途：本项目 LiquidBackdropCanvas 的「合成背景光斑」设计思路参考自该项目的
-            Backdrop / CanvasBackdrop 方案（仅思路借鉴，未复制其源代码）。
+   - 用途：底部导航栏的液态玻璃渲染（Compose LayerBackdrop + RuntimeShader 折射/模糊）
+           与指示器高光；同时为 LiquidBackdropCanvas 的「合成背景光斑」提供设计思路。
+   - 分发方式：以 Maven 依赖 io.github.kyant0:backdrop:1.0.0 引入（未复制其源码）；
+            双弹簧/速度形变的参数与分层结构参考其 Catalog 示例
+            （DampedDragAnimation / LiquidBottomTabs），本项目将其重写为 NavLiquidPhysics。
    - 许可证：Apache License 2.0
    - 版权：Copyright 2025 Kyant
-   - 核验情况：本项目未包含该库的任何源码，也未将其作为编译依赖（全仓库无 com.kyant 引用）；
-             LiquidBackdropCanvas 为本项目自研实现（Android FrameLayout + Canvas/RadialGradient），
-             与上游 CanvasBackdrop（Compose Backdrop 接口实现）实现路径不同，仅思路对应。
+   - NOTICE：上游仓库未包含 NOTICE 文件，无可保留项；本文件已保留 Apache-2.0 许可全文。
+   - 传递依赖：AndroidX Compose / Kotlin stdlib（均为 Apache License 2.0）。
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

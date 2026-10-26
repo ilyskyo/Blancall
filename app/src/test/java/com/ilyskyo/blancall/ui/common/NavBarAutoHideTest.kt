@@ -35,6 +35,23 @@ class NavBarAutoHideTest {
     }
 
     @Test
+    fun `蓄力手势键能压住底栏_滚动键提前释放也不会把圆环露出来`() {
+        // 回归：任务流底部上拉返回时，蓄力连接吃掉了滚动量，滚动键被误判为「停止」
+        // 并在 350ms 后释放 → 底栏滑出盖住圆环。手势键必须独立压住底栏。
+        try {
+            NavBarAutoHide.request(NavBarAutoHide.KEY_SCROLL)
+            NavBarAutoHide.request(NavBarAutoHide.KEY_PULL_GESTURE)
+            NavBarAutoHide.release(NavBarAutoHide.KEY_SCROLL)
+            assertTrue("手势未结束时底栏必须保持收起", NavBarAutoHide.hidden.value)
+            NavBarAutoHide.release(NavBarAutoHide.KEY_PULL_GESTURE)
+            assertFalse("手势结束后才恢复", NavBarAutoHide.hidden.value)
+        } finally {
+            NavBarAutoHide.release(NavBarAutoHide.KEY_SCROLL)
+            NavBarAutoHide.release(NavBarAutoHide.KEY_PULL_GESTURE)
+        }
+    }
+
+    @Test
     fun `幂等：重复请求同一键只算一次，释放即复位`() {
         val k = "test_key_idem"
         try {
@@ -106,5 +123,15 @@ class NavBarAutoHideTest {
         assertTrue(hasScrollConsumed(-5f))
         assertTrue(hasScrollConsumed(5f))
         assertFalse(hasScrollConsumed(0f))
+    }
+
+    @Test
+    fun `滚动方向：向上滚（从底部滑往顶部、回看）为正，向下滚为负`() {
+        // 回归锚点：改版前「只要滚动就收起」—— 回看时底栏也不见了，想切 tab 得反向下滑。
+        // 符号别改反：手指向下滑（回看更早内容）= 正；手指向上滑（看后续内容）= 负。
+        assertTrue("回看：底栏不收起", isScrollingTowardTop(12f))
+        assertTrue(isScrollingTowardTop(0.5f))
+        assertFalse("看后续：允许收起", isScrollingTowardTop(-12f))
+        assertFalse("零位移不构成方向", isScrollingTowardTop(0f))
     }
 }

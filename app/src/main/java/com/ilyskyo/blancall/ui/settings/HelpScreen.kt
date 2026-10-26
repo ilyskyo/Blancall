@@ -248,6 +248,11 @@ fun HelpScreen(navController: NavController) {
                         KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_084), stringResource(com.ilyskyo.blancall.R.string.help_085))
                         KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_086), stringResource(com.ilyskyo.blancall.R.string.help_087))
                         KeyValue(stringResource(com.ilyskyo.blancall.R.string.help_088), stringResource(com.ilyskyo.blancall.R.string.help_089))
+                        // 学习任务流是数据页上的手势入口：放在「查看学习数据」这一节，
+                        // 而不是塞进 7 节的「导入文章」与「全局通用」之间。
+                        SubTitle(stringResource(com.ilyskyo.blancall.R.string.help_171))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_172))
+                        Bullet(stringResource(com.ilyskyo.blancall.R.string.help_173))
                     }
                 )
 

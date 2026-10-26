@@ -1754,6 +1754,11 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 // 默写没有单空位可挂笔迹，错题回顾对这一模式仍只显示文字明细
                 saveWrongInk(saved)
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
+            // 累计一次「完成一次练习」：赞赏邀请的门槛依据（见 ui/common/DonationInvite.kt）。
+            // 计在真正的提交事件上而不是 UI 层 —— 评分卡是 LazyColumn 的 item，
+            // 在 UI 层用 rememberSaveable 防重复会把「重做同一篇再提交」也一起吃掉，
+            // 而 Blancall 的核心用法就是反复练同一篇，那样门槛会退化成「5 篇不同文章」。
+            AppPrefs.noteDonationCompletion()
             // 更新 FSRS 记忆状态（自适应调度）
             updateFsrsState(articleId, rating)
             // 反向默写完整提交后清除进度文件
@@ -1925,6 +1930,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 ) else null
                 saved?.let { saveWrongInk(it) }
             } catch (_: Exception) { /* 记录失败不影响主流程 */ }
+            // 累计一次「完成一次练习」：赞赏邀请的门槛依据（见 ui/common/DonationInvite.kt）。
+            // 只算真正评级完成的提交（graded）；部分提交不算一次练习。
+            // 计在这里而不是评分卡里：见 submitDictation 同一处的说明。
+            if (graded) AppPrefs.noteDonationCompletion()
             // 更新 FSRS 记忆状态（自适应调度）
             if (graded) updateFsrsState(articleId, rating)
             // 逐句也进 FSRS 闭环：整场练习塌成一个文章级评级时，调度器永远不知道**哪句**生疏

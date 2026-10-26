@@ -28,6 +28,7 @@ import com.ilyskyo.blancall.ui.common.LocalIsLargeScreen
 import com.ilyskyo.blancall.ui.common.TwoPaneMinHeightDp
 import com.ilyskyo.blancall.ui.common.TwoPaneMinWidthDp
 import com.ilyskyo.blancall.ui.common.suppressAsPalmMisTouch
+import com.ilyskyo.blancall.ui.common.DonationInviteRow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.Alignment
@@ -255,6 +256,9 @@ internal fun SentenceClozeContent(
                         item(key = "analysis") {
                             TrainingAnalysisCard(analysisLoading, analysis, analysisError, onRetryAnalysis)
                         }
+                        // 交卷后的赞赏入口：刚看到分数，注意力已经落在结果上，
+                        // 所以只放一行无强调的文字（形态与门控理由见 ui/common/DonationInvite.kt）。
+                        item(key = "donation_invite") { DonationInviteRow(slot = "score_card") }
                     }
                     itemsIndexed(result.sentences, key = { idx, _ -> "s_$idx" }) { sIdx, sentence ->
                         val sentenceBlanks = blanksBySentence[sIdx].orEmpty()

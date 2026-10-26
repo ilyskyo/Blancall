@@ -4,7 +4,6 @@
 package com.ilyskyo.blancall.ui.navigation
 
 import android.app.Activity
-import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -24,14 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,13 +36,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -60,6 +54,8 @@ import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.NavBarAutoHide
 import com.ilyskyo.blancall.ui.common.NavRail
 import com.ilyskyo.blancall.ui.common.NavRailWidth
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.ilyskyo.blancall.ui.common.HeroEntry
 import com.ilyskyo.blancall.ui.common.HeroTransitionHost
 import com.ilyskyo.blancall.ui.common.RevealNav
@@ -105,6 +101,8 @@ fun AppNavigation() {
     val navController = rememberNavController()
     // 内置素材库：启用任一库后底部导航栏追加「素材库」入口（支持多库扩展）
     val enabledLibraries by AppPrefs.builtInLibraryKeysFlow.collectAsState()
+    // 玻璃开关：关闭时页面不需要录屏给 drawBackdrop 采样
+    val navGlass by AppPrefs.navLiquidGlassFlow.collectAsState()
     // 当前路由（用于底部导航栏高亮）
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
@@ -252,6 +250,16 @@ fun AppNavigation() {
         )
     }
 
+    // 设置系父页的返回：下层页**不位移**，只淡回全亮。
+    //
+    // 只给 settings 用。它的子页（内容包 / 标签管理 / 数据互换 / 帮助 / AI 配置…）
+    // 返回时原来下层也跟着视差滑动 —— 两层一起动，且没有明暗过渡；留白大的页面
+    // （内容包空态）尤其明显。淡入参数与 revealPopEnter 同一条（MotionFade.enter），
+    // 同属「下层重新露出」这件事。
+    val popEnterFade: (AnimatedContentTransitionScope<*>.() -> EnterTransition) = {
+        fadeIn(MotionFade.alpha(MotionFade.enter))
+    }
+
     // 底部导航模式：根页面 tab 切换用极短渐隐（crossfade）。
     // 原本 EnterTransition.None 会让 AnimatedContent 在切换瞬间新旧两页同帧叠加残留（首页⇄我的文章时最易
     // 看出“Blancall”标题残影）；极短淡入淡出让旧页明确淡出、新页淡入，杜绝同帧残影且观感依旧利索。
@@ -270,17 +278,14 @@ fun AppNavigation() {
     // 滚动驱动收起见 rememberAutoHideNavBarOnScroll）
     val navBarAutoHidden by NavBarAutoHide.hidden.collectAsState()
 
-    // 页面容器引用必须先声明：NavRail 与底栏都要用它做玻璃折射采样源，
-    // 而它在下方 AndroidView 的 factory 里才被赋值（首次组合时仍为 null，
-    // 玻璃侧有「等 host 就绪再 bind」的轮询逻辑兜住）。
-    val outerRegistry = LocalSaveableStateRegistry.current
-    var pageHost by remember { mutableStateOf<FrameLayout?>(null) }
+    // 页面内容的采样层：整页录进一个 GraphicsLayer，底栏/侧栏用 drawBackdrop 采样。
+    // 不再需要专用 FrameLayout + 嵌套 ComposeView（那层只为旧 AndroidView 玻璃服务）。
+    val pageBackdrop = rememberLayerBackdrop()
+    // 只有「根 tab 页 + 玻璃开启」时才录整页：
+    // 子页（设置/阅读/练习/WebView）没有导航栏，不该为装饰效果持续采样。
+    val needsPageBackdrop = currentTab >= 0 && navGlass
 
-    // 侧栏让位宽度（跨 composition 桥接）：
-    // NavHost 运行在独立 ComposeView 组合里读不到外层状态，用 remember 的
-    // MutableState 实例作桥——AndroidView.update 每帧写入最新值，NavHost 的
-    // padding 读取它（railWidthState.value），旋转/进出全屏时实时更新。
-    val railWidthState = remember { mutableStateOf(0.dp) }
+    // 侧栏让位宽度：NavHost 与侧栏现在同处外层组合，直接读这个值即可。
     val railReserved = if (isLargeScreen && currentTab >= 0) NavRailWidth else 0.dp
 
     // 触点展开转场：把导航表面尺寸（window px）与大屏侧栏让位偏移同步给 RevealNav，
@@ -301,32 +306,17 @@ fun AppNavigation() {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-    // 页面容器：专用 FrameLayout（内含 ComposeView 渲染 NavHost），**铺满整个窗口**——
-    // 侧栏悬浮其上，采样区域（左缘 76dp 条）落在容器内（页面内容由 NavHost 的
-    // start padding 让位），玻璃方能折射到真实像素。
-    // 作为液态玻璃导航栏的采样源——玻璃悬浮其上、非其子视图，
-    // 因此能实时折射页面内容且不会形成折射自身的反馈循环
-    // （与阅读模式「玻璃 bind 正文容器」同一架构，两者均已真机验证）。
-    // 嵌套 ComposeView 组合没有默认 SaveableStateRegistry，透传外层以保证旋转后导航栈可恢复。
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        update = { railWidthState.value = railReserved },
-        factory = { ctx ->
-            FrameLayout(ctx).also { fl ->
-                pageHost = fl
-                fl.addView(
-                    ComposeView(ctx).apply {
-                        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-                        setContent {
-                            CompositionLocalProvider(LocalSaveableStateRegistry provides outerRegistry) {
-                            // 全窗背景层：给「侧栏让位区」（NavHost padding 之外）也铺上页面底色——
-                            // 侧栏玻璃按同坐标采样 pageHost，若无此层，让位区采样为透明/空
-                            // ⇒ 玻璃「不取色」（真机反馈：「没有向下取色」「我的文章页导航栏不取色」）。
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.background)
-                            ) {
+    // 页面内容直接进入外层组合；layerBackdrop 把整页录进 GraphicsLayer，
+    // 底栏/侧栏再以 drawBackdrop 采样，不再需要专用 FrameLayout + 嵌套 ComposeView。
+    // 全窗背景层同时给「侧栏让位区」铺底色，玻璃才有内容可折射。
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .then(
+                if (needsPageBackdrop) Modifier.layerBackdrop(pageBackdrop) else Modifier
+            )
+    ) {
                             // 侧栏让位区的「氛围底」：纯色上液态玻璃无内容可折射 = 不液态
                             // （真机反馈）。在让位条（左 76dp）铺柔和的色彩层次（竖向色阶
                             // + 两个色斑），为玻璃的折射形变提供可见纹理；屏幕上它只在
@@ -377,7 +367,7 @@ fun AppNavigation() {
                             HeroTransitionHost {
                             NavHost(
         // 大屏时给悬浮侧栏让位（内容整体右移 76dp；窄屏为 0 不加边距）
-        modifier = Modifier.padding(start = railWidthState.value),
+        modifier = Modifier.padding(start = railReserved),
         navController = navController,
         // 恒以 home 为导航栈底（四个根 tab 平级、无上下级）：首启引导页是
         // 压入 home 之上的子页（见上方 LaunchedEffect），完成后 popBackStack 归位。
@@ -642,7 +632,8 @@ fun AppNavigation() {
             enterTransition = enterSlide,
             exitTransition = exitSlide,
             popExitTransition = popExitSlide,
-            popEnterTransition = popEnterSlide
+            // 返回时下层（设置页）不位移、只淡入，见 popEnterFade 的说明
+            popEnterTransition = popEnterFade
         ) {
             SettingsScreen(navController)
         }
@@ -893,41 +884,26 @@ fun AppNavigation() {
             AiProfileEditScreen(navController, type = type, profileId = id)
         }
     } // close NavHost
+    } // close HeroTransitionHost
+    } // close 页面 Box（layerBackdrop 采样源）
 
-                            }    } // close Box（全窗背景层——侧栏让位区的取样像素来源）
-    } // close CompositionLocalProvider
-    } // close setContent（NavHost 渲染进页面容器）
-    } // close ComposeView.apply
-    ) // close fl.addView
-    } // close FrameLayout.also
-    } // close factory
-    ) // close AndroidView（页面容器，玻璃采样源）
-
-    // 侧边导航栏（仅大屏）：**悬浮**在页面容器之上（左缘）。
-    // ⚠️ 两条不可动摇的设计约束：
-    //  1) 必须悬浮而非并排：液态玻璃库按「屏幕同坐标」采样 bind 的容器——并排时侧栏
-    //     位置落在页面容器之外，采样越界 ⇒ 玻璃只剩兜底底色（真机：全屏/分屏「纯白」）。
-    //  2) 必须**声明在 AndroidView 之后**（绘制在上层）：侧栏与铺满全窗的页面容器重叠，
-    //     若声明在前会被容器盖住（真机回归：横屏「导航栏直接不显示」——全窗背景层
-    //     遮住了侧栏）。玻璃采样不受 z 序影响（库对 bound view 做离屏绘制，非屏幕抓取）。
+    // 侧边导航栏（仅大屏）：悬浮在页面内容之上（左缘）。
+    // 与底栏共用同一个 pageBackdrop，不再依赖 AndroidView 采样。
     if (isLargeScreen && currentTab >= 0) {
         NavRail(
             modifier = Modifier.align(Alignment.TopStart),
             currentTab = currentTab,
             onSelect = { selectTab(it) },
             showLibraryTab = enabledLibraries.isNotEmpty(),
-            host = pageHost
+            backdrop = pageBackdrop
         )
     }
 
         // ── 底部导航栏（仅窄屏；大屏由左侧 NavRail 承接） ──
-        // 悬浮于页面容器之上（Box z 上层），玻璃折射采样「页面实时内容」。
+        // 悬浮于页面内容之上（Box z 上层），玻璃通过 drawBackdrop 折射页面实时内容。
         // 进入/离开根 tab 页面时使用下滑+淡出动画（避免闪现消失）。
         // 大屏下 visible 恒为 false：AnimatedVisibility 会走完整下滑出场动画，
         // 因此旋转/折叠展开时是「底栏滑走、侧栏出现」的自然交接，而非硬切。
-        // ⚠️ 必须与页面容器**并列在 Box 里**，不能和 weight 子项同处 Row：
-        // 真机反馈——自由窗口（小窗）下底栏 fillMaxWidth 参与 Row 测量、
-        // 抢走全部宽度，页面容器被压成 0 宽 ⇒「只有导航栏、页面完全空白」。
         // navBarAutoHidden：页面请求临时收起（长按多选 / 首页编辑态 / 滚动前进）——
         // 走同一条下滑出场动画，退出状态自动滑回。
         AnimatedVisibility(
@@ -954,7 +930,7 @@ fun AppNavigation() {
                 currentTab = currentTab,
                 onSelect = { selectTab(it) },
                 showLibraryTab = enabledLibraries.isNotEmpty(),
-                host = pageHost
+                backdrop = pageBackdrop
             )
         }
     } // close Box

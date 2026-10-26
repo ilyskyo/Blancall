@@ -158,6 +158,8 @@ fun SentenceCardScreen(navController: NavController) {
     val cardAnchor = rememberCoachAnchor()
     // 挖空遮挡偏好（用户可关：关掉即整句直出，只做快速浏览）
     val clozeEnabled by AppPrefs.sentenceClozeEnabledFlow.collectAsState()
+    // 首次见到的句子是否也遮挡（默认关：新句先给全文认读）
+    val clozeNewEnabled by AppPrefs.sentenceClozeNewEnabledFlow.collectAsState()
     // 与现有数据对账：已删标签 / 已删文章的筛选 id 仅本次忽略
     val validSentenceFilter = remember(rawSentenceFilter, tagData) {
         rawSentenceFilter.filterTo(mutableSetOf()) { id -> tagData.tags.any { it.id == id } }
@@ -269,6 +271,14 @@ fun SentenceCardScreen(navController: NavController) {
     // 飞离那张卡所在的协程：下一次按下要能抢占它（见 onDragStart）
     var flyJob by remember { mutableStateOf<Job?>(null) }
 
+    // ── 点按评级的离场层（和拖动的 dragY 分开走）──
+    // 点按是「确认」：索引当场提交，飞走的是**旧卡的一份独立副本**（画在最上层）。
+    // 拖动的索引必须等动画播完才提交（否则按住就等于翻页），两条路径不能共用一份位移。
+    val exitOffset = remember { Animatable(0f) }
+    var exitItem by remember { mutableStateOf<DailySentenceCoordinator.QueueItem?>(null) }
+    /** 第几次点按离场：被下一次点击顶掉时，旧协程不许把新的离场层撤掉。 */
+    var exitToken by remember { mutableIntStateOf(0) }
+
     fun ratedToday(key: String): Boolean = isRatedToday(states[key], System.currentTimeMillis())
 
     /**
@@ -289,9 +299,10 @@ fun SentenceCardScreen(navController: NavController) {
      * 索引不动，用户可以立刻反向拖回 —— 这才是「可中断」。旧实现把提交放在 finally，
      * 于是刚按住就被判成翻页，手还按着底层已经换了一张。
      *
-     * 同一时刻只允许一个飞离动画。飞离期间评分按钮仍属于当前卡（currentIndex 尚未提交），
-     * 此时点评级会结算**当前这张**且不再触发第二次推进；旧实现把它排队到下一张，
-     * 用户会在没看清下一句时替它做了评价。
+     * 同一时刻只允许一个飞离动画。手势飞离途中点评级按钮仍是允许的：这时结算的
+     * 就是正在离场的那张（currentIndex 还没提交），评完立刻取消飞离并把索引交出去，
+     * 详见 [rate]。旧实现把它排队到下一张，用户会在没看清下一句时替它做了评价 ——
+     * 那条路已经整个删掉了。
      */
     fun advance(forward: Boolean, releaseVelocity: Float = 0f) {
         if (animating) return
@@ -320,13 +331,22 @@ fun SentenceCardScreen(navController: NavController) {
         }
     }
 
-    /** 三键评级：FSRS 更新 → 本地即时展示 → IO 落盘 → 自动前进 */
+    /**
+     * 三键评级：FSRS 更新 → 本地即时展示 → IO 落盘 → **当场前进**。
+     *
+     * 前进不等飞离动画。旧实现把推进锁在 `animating` 里，而 `cardFly()` 要 300ms 才收敛：
+     * 两次点击的间隔只要落在 160–300ms 就会有一半被吞，用户看到的是「点三次只翻两次」；
+     * 更糟的是吞掉的那一次并没有白点 —— `currentIndex` 尚未提交，评级被重复记在同一张卡上。
+     *
+     * 现在索引在点击这一帧就提交，飞走的是旧卡的**一份独立副本**（[exitItem]，画在最上层，
+     * 由 [exitOffset] 驱动）。于是下一张立刻成为按钮的主人：点几次就翻几张，
+     * 每一次评级都落在当时屏幕上那张卡上。
+     */
     fun rate(item: DailySentenceCoordinator.QueueItem, rating: FsrsEngine.Rating) {
-        // 飞行途中 currentIndex 仍指向正在离场的那张，按钮也还绑在它上面：
-        // 照常结算当前卡，但不再调用 advance()（一次飞离只推进一张）。
-        // 旧实现在这里把评分排队，等下一张露出后替它打分 —— 用户看不见那张卡，
-        // 却已经替它选了评级。
-        val alreadyFlying = animating
+        val items = queue ?: return
+        // 同一帧内的第二次点击可能还持有上一张的 lambda（重组还没跑）：那不是连点，
+        // 而是同一张卡的重复点击 —— 丢弃。不丢的话会在一张卡上连跳两格。
+        if (!acceptsTapOn(currentIndex, items.size, item.key, items.getOrNull(currentIndex)?.key)) return
         haptic()
         val ts = System.currentTimeMillis()
         val prevState = states[item.key] ?: FsrsEngine.CardState()
@@ -349,7 +369,32 @@ fun SentenceCardScreen(navController: NavController) {
                 com.ilyskyo.blancall.widget.BlancallWidgetRefresh.request(context)
             }
         }
-        if (!alreadyFlying) advance(forward = true)
+
+        // ── 当场前进 ──
+        // 手势飞离还没落地就点了按钮：先把那份位移收掉并解除输入锁。
+        // 不解除的话新卡会带着上一张的 dragY 入场（卡片从半空开始）。
+        if (animating) {
+            flyJob?.cancel()
+            flyToken++
+            animating = false
+            scope.launch { dragY.snapTo(0f) }
+        }
+        val leaving = items[currentIndex]
+        exitToken++
+        val myToken = exitToken
+        exitItem = leaving
+        currentIndex = advanceTargetIndex(currentIndex, forward = true, items.size)
+        scope.launch {
+            try {
+                // snapTo 会取消上一段离场（Animatable 的 mutator 互斥）；被取消那份的
+                // token 已过期，不会把这一份的离场层撤掉
+                exitOffset.snapTo(0f)
+                exitOffset.animateTo(-flyDistance, Motion.cardTapExit())
+                if (myToken == exitToken) exitItem = null
+            } catch (_: CancellationException) {
+                // 被下一次点击顶掉：离场层已经换人，这里什么都不做
+            }
+        }
     }
 
     Box(
@@ -476,6 +521,45 @@ fun SentenceCardScreen(navController: NavController) {
                                         checked = clozeEnabled,
                                         onCheckedChange = {
                                             AppPrefs.sentenceClozeEnabled = it
+                                            revealed = false
+                                        },
+                                    )
+                                },
+                            )
+                            // 「遮挡回忆」的子选项：首次见到的句子（没评过级的新句）是否也先挖空。
+                            // 默认关 —— 第一次认读先给全文；打开后新句也走正反面（点「显示答案」读全文）。
+                            // 总开关关掉时整行禁用：否则用户会以为「开了这个却毫无变化」，正是这个 bug 的由来。
+                            GlassMenuItem(
+                                enabled = clozeEnabled,
+                                onClick = {
+                                    AppPrefs.sentenceClozeNewEnabled = !clozeNewEnabled
+                                    revealed = false
+                                },
+                                label = {
+                                    Column {
+                                        Text(
+                                            stringResource(com.ilyskyo.blancall.R.string.sentence_cloze_new_toggle),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(
+                                                alpha = if (clozeEnabled) 1f else 0.38f,
+                                            ),
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            stringResource(com.ilyskyo.blancall.R.string.sentence_cloze_new_desc),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                alpha = if (clozeEnabled) 1f else 0.38f,
+                                            ),
+                                        )
+                                    }
+                                },
+                                trailing = {
+                                    GlassSwitch(
+                                        checked = clozeNewEnabled,
+                                        enabled = clozeEnabled,
+                                        onCheckedChange = {
+                                            AppPrefs.sentenceClozeNewEnabled = it
                                             revealed = false
                                         },
                                     )
@@ -611,10 +695,13 @@ fun SentenceCardScreen(navController: NavController) {
                         val currentHidesAnything = remember(current.text) {
                             SentenceCloze.hidesAnything(current.text)
                         }
+                        // 这道门只在「今天还没评」时立：评过 = 回看/改判，直接给整句。
+                        // 新句默认也直接给整句（第一次是输入）；`clozeNewEnabled` 打开后连新句也先挖空，
+                        // 走 Anki 的正反面（先看提示 → 显示答案 → 评级）。
                         val needsReveal = clozeEnabled &&
                             !ratedToday(current.key) &&
-                            (currentState?.reviewCount ?: 0) > 0 &&
-                            currentHidesAnything
+                            currentHidesAnything &&
+                            ((currentState?.reviewCount ?: 0) > 0 || clozeNewEnabled)
                         val showAnswer = !needsReveal || revealed
                         // ── 堆叠区：当前卡可拖拽；后两张卡缩放任后（华为堆叠形态） ──
                         Box(
@@ -649,6 +736,7 @@ fun SentenceCardScreen(navController: NavController) {
                                         // 若跟着顶层卡的 revealed 走，拖动过半就会把下一句的答案先漏出去。
                                         revealed = false,
                                         clozeEnabled = clozeEnabled,
+                                        clozeNewEnabled = clozeNewEnabled,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer {
@@ -671,6 +759,7 @@ fun SentenceCardScreen(navController: NavController) {
                                         // 若跟着顶层卡的 revealed 走，拖动过半就会把下一句的答案先漏出去。
                                         revealed = false,
                                         clozeEnabled = clozeEnabled,
+                                        clozeNewEnabled = clozeNewEnabled,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer {
@@ -693,6 +782,7 @@ fun SentenceCardScreen(navController: NavController) {
                                     tags = chipByArticle[current.articleId].orEmpty(),
                                     revealed = revealed,
                                     clozeEnabled = clozeEnabled,
+                                    clozeNewEnabled = clozeNewEnabled,
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .coachAnchor(cardAnchor)
@@ -803,6 +893,31 @@ fun SentenceCardScreen(navController: NavController) {
                                             }
                                         },
                                 )
+                                // 点按离场的旧卡：一份独立副本，画在最上层，由 exitOffset 往上带。
+                                // 它已经不在队列的位置上（currentIndex 已前进），只是刚评完那张的余影：
+                                // 没有手势、也不吃事件，动画走完即撤；连点时被下一张直接顶掉。
+                                // 底层那两张此刻已经按新索引重排，全被这张全尺寸副本盖住，看不见。
+                                exitItem?.let { leaving ->
+                                    SentenceCardFace(
+                                        item = leaving,
+                                        state = states[leaving.key],
+                                        now = now,
+                                        tags = chipByArticle[leaving.articleId].orEmpty(),
+                                        // 评级键只在揭晓后出现，能点到它就说明这张是答案面
+                                        revealed = true,
+                                        clozeEnabled = clozeEnabled,
+                                        clozeNewEnabled = clozeNewEnabled,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                translationY = exitOffset.value
+                                                rotationZ = exitOffset.value / 56f
+                                                alpha = 1f -
+                                                    (-exitOffset.value / flyDistance)
+                                                        .coerceIn(0f, 1f) * 0.35f
+                                            },
+                                    )
+                                }
                             }
                         }
 
@@ -812,7 +927,8 @@ fun SentenceCardScreen(navController: NavController) {
                         // 揭晓后：三键评级（左→右 忘记 / 不熟 / 记住了），每键显示该档预测的下次间隔。
                         // 所选评级回显：会话内最新选择优先，否则取持久化的上次评级；未评卡不高亮
                         // （避免预设误导）。点击即时选中与回看回显共用同一 selected 样式；
-                        // 按钮不再因「今日已评」禁用（支持改判），动画防连点由 rate() 内部 guard 兜底。
+                        // 按钮不因「今日已评」禁用（支持改判）；连点由 rate() 的「当场前进」支持，
+                        // 不需要任何防抖 —— 见该函数说明。
                         val selectedRating: FsrsEngine.Rating? =
                             if (ratedToday(current.key)) {
                                 resolveDisplayedRating(
@@ -1089,7 +1205,11 @@ private val SessionRatingsSaver = Saver<SnapshotStateMap<String, FsrsEngine.Rati
 )
 
 /**
- * 翻卡该落到第几张：只基于已提交的 index（飞离途中不提交，抢占时也不提交）。
+ * 翻卡该落到第几张：只基于**已经提交**的 index。
+ *
+ * 两种提交时机不同，别混：
+ * - 手势飞离：动画播完才提交，被手指抢占时也不提交（否则手还按着底层就换了一张）；
+ * - 点按评级：点击这一帧就提交，飞走的是旧卡的一份副本（否则连点会被 `animating` 吞掉）。
  *
  * 单独抽成纯函数是为了能被 JVM 测到 —— 竞态的后果全部体现在这个数上，
  * 而它发生在协程与动画之间，屏幕上看不出来（少一张卡只是「划得挺顺」）。
@@ -1097,3 +1217,20 @@ private val SessionRatingsSaver = Saver<SnapshotStateMap<String, FsrsEngine.Rati
  */
 internal fun advanceTargetIndex(current: Int, forward: Boolean, size: Int): Int =
     (current + if (forward) 1 else -1).coerceIn(0, size)
+
+/**
+ * 这次评级键点击该不该采纳（回归测试见 SentenceAdvanceTest）。
+ *
+ * 采纳条件只有一条：点的是**此刻**在 [currentIndex] 的那张卡。
+ *
+ * 连点天然满足 —— 每点一下索引当场前进（不等动画），按钮随即绑到下一张，
+ * 于是第二次点击结算的是第二张，而不是把第一张再评一遍。
+ * 不满足的只有一种情况：同一帧内的重复点击（重组还没跑，lambda 仍握着上一张），
+ * 那时必须丢弃，否则一张卡会被连翻两格，中间那张从没露过面。
+ */
+internal fun acceptsTapOn(
+    currentIndex: Int,
+    size: Int,
+    tappedKey: String,
+    currentKey: String?,
+): Boolean = currentIndex in 0 until size && currentKey == tappedKey

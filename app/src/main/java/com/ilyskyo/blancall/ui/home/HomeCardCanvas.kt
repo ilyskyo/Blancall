@@ -60,10 +60,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
@@ -95,10 +97,18 @@ import kotlin.math.floor
 /** 单位行高：卡片高度 = rowSpan * ROW_UNIT（同时是纵向网格节距） */
 private val ROW_UNIT = 92.dp
 
-/** 列间距（横向网格节距 = cellW + COLUMN_GAP） */
+/**
+ * 列间距（横向网格节距 = cellW + COLUMN_GAP）。
+ * 卡面左右不再内缩（见 [SLOT_INSET]），所以它就是相邻卡面的**实际视觉间距**。
+ * 满宽卡宽 = 列数 × cellW + (列数−1) × COLUMN_GAP = 画布宽度，与「今日计划」卡对齐。
+ */
 private val COLUMN_GAP = 12.dp
 
-/** 槽位内缩，给相邻卡片留出视觉间隙 */
+/**
+ * 槽位**纵向**内缩，给上下相邻卡片留出视觉间隙 / 拖动抬起余量。
+ * 只作用于纵向：左右不内缩，满宽卡（colSpan = 列数）的左右边缘才能与「今日计划」卡
+ * 完全对齐（改造前左右各缩 5dp，满宽卡比「今日计划」窄 10dp）。
+ */
 private val SLOT_INSET = 5.dp
 
 /** 编辑态控件的触摸热区（≥32dp，图形本身更小） */
@@ -106,19 +116,26 @@ private val CONTROL_HIT = 32.dp
 
 /**
  * 编辑态控件的**视觉**白圆直径（比热区小）。
- * 关键约束：相邻两张卡的同侧控件圆心距 = 卡面实际间距 22dp + 两侧各内缩 10dp = 42dp，
- * 42dp > 26dp + 两侧阴影 —— 任何相邻关系（横排 / 竖排 / 对角）下圆钮都不会相碰。
+ * 关键约束：相邻两张卡的同侧控件圆心距 = 卡面间距 + 两侧各 8dp（圆心距卡面 8dp）：
+ * 横向 = 12dp + 16dp = 28dp，纵向 = 10dp + 16dp = 26dp，都不小于 26dp 视觉直径 ——
+ * 任何相邻关系（横排 / 竖排 / 对角）下圆钮都不会相交。
  */
 private val CONTROL_VISUAL = 26.dp
 
 /**
- * 编辑态控件圆心相对卡片角的内缩量：圆心落在**卡片槽位内 11dp** 处
- * （= CONTROL_HIT/2 − CONTROL_INSET）。
- * 槽位比卡面大 SLOT_INSET（5dp），即圆心距**卡面**约 6dp，
- * 圆钮向卡外伸出的量降到最小 —— 相邻卡片的行间隙只有 10dp，
+ * 编辑态控件圆心相对**卡角**的纵向外扩量：控件热区 32dp 居中放 26dp 图形，
+ * 向卡角外偏移 3dp 后圆心距卡面 8dp（卡面上/下边距槽位边缘 [SLOT_INSET] = 5dp，13 − 5 = 8），
+ * 圆钮「骑」在卡角上而不外凸过多 —— 相邻卡片的行间隙只有 10dp，
  * 控件伸得太多会与邻卡的控件相互贴住（用户反馈「还是略有遮挡」）。
  */
 private val CONTROL_INSET = 3.dp
+
+/**
+ * 编辑态控件圆心的**横向**外扩量：卡面左右与槽位齐平（不再内缩 [SLOT_INSET]），
+ * 因此要比纵向多外扩一个 [SLOT_INSET]，圆心才同样距卡面 8dp ——
+ * 否则圆钮会整体偏进卡内 5dp，看起来「还停在旧卡边缘的位置」（用户反馈）。
+ */
+private val CONTROL_INSET_X = CONTROL_INSET + SLOT_INSET
 
 /** 拉伸手柄的触摸热区 */
 private val HANDLE_HIT = 40.dp
@@ -437,31 +454,169 @@ internal fun resolvePinnedDrop(
 // ---------------------------------------------------------------------------
 
 /**
- * 归一化拖动：先越过 touch slop 才「接管」手势（此前不消费事件，父级滚动 / 子级点击
- * 仍有机会处理），接管后每帧回调位移增量，抬手或指针抬起时收尾。
+ * 首页共享的「当前按在屏幕上的手指数」。
+ *
+ * 为什么必须跨级共享：Compose 的指针事件只派发给**该指针命中的节点链**，
+ * 第二根手指若落在另一张卡（或画布空白）上，当前卡的手势协程根本看不到它。
+ * 用户的要求是「双指一律等于滚动页面」，所以每张卡都必须知道全局手指数。
+ *
+ * 用普通 var 而不是 Compose State：它只在手势协程里读写，不参与组合，
+ * 每次触屏都触发重组反而会把整页拖慢。
+ */
+class HomePointerCountState {
+    var pressedPointers: Int = 0
+}
+
+/**
+ * 「滚动页面」的速度门限（dp/s，竖直分量）。
+ *
+ * 依据：
+ * - Android 的 `ViewConfiguration` 里 fling 最低速度只有 50dp/s，那只是「算不算惯性」，
+ *   远低于「用户想翻页」的意图；
+ * - 实测/常见量级：缓慢翻页 300–800dp/s，真正甩动一次 1000–4000dp/s；
+ *   按住卡片再挪动则多在 200–600dp/s（拿起是「按住 → 移动」，不是甩）；
+ * - 取 900dp/s：比典型拖拽高一档、比典型甩动低一档，两边都留余量。
+ */
+private const val SCROLL_FLICK_DP_PER_SEC = 900f
+
+/** 起手窗口：按下后这么短时间内就越过 slop，是「甩」而不是「按住再拿」 */
+private const val SCROLL_ONSET_MS = 90L
+
+/** 起手窗口内的速度门限（dp/s）：比持续甩动低一档，起手即走几乎只可能是滚动 */
+private const val SCROLL_ONSET_DP_PER_SEC = 700f
+
+/** 起手窗口内单步就跨过这个倍数的 slop：只有甩动才会一步走这么远 */
+private const val SCROLL_JUMP_SLOP_FACTOR = 3f
+
+/** 位移跳变的观察窗口（ms）：超过这个时间才走远，是慢慢拖，不是甩 */
+private const val SCROLL_JUMP_MS = 160L
+
+/** 单帧位移门限（相对 slop 的倍数）：一帧跨过 2 倍 slop 只可能是甩 */
+private const val SCROLL_STEP_SLOP_FACTOR = 2f
+
+/** 「竖直占优」：纵向分量至少是横向的 1.15 倍（首页只能纵向滚动） */
+private const val SCROLL_VERTICAL_DOMINANCE = 1.15f
+
+/**
+ * 单指在越过 touch slop 那一刻的意图判定：`true` = 用户在滚动页面，卡片不应接管。
+ *
+ * 四条并列条件（任一成立即滚动），都建立在「首页只能纵向滚动」上：
+ * 1. **速度**：竖直分量 ≥ [SCROLL_FLICK_DP_PER_SEC] —— 典型甩动；
+ * 2. **起手速度**：[SCROLL_ONSET_MS] 内越过 slop 且竖直速度 ≥ [SCROLL_ONSET_DP_PER_SEC]
+ *    —— 没有「按住再拿」的停顿；
+ * 3. **位移范围**：[SCROLL_JUMP_MS] 内已累计 ≥ [SCROLL_JUMP_SLOP_FACTOR] 倍 slop
+ *    —— 一步跨过（约 24dp），只有甩动会这样起手；
+ * 4. **单帧位移**：越过 slop 的这一帧本身 ≥ [SCROLL_STEP_SLOP_FACTOR] 倍 slop
+ *    —— 兜住「先停住、再甩」：停顿时速度采样只剩一个样本（算出来是 0），
+ *    但一帧内走这么远，只可能是甩动。
+ *
+ * 为什么不是纯距离：慢拖 8dp 也会越过 slop，但那是小心地拿起卡片；
+ * 为什么不是纯速度：低采样率屏幕会把缓慢拖动的瞬时速度算高，位移跳变可以兜底；
+ * 为什么要求竖直占优：横向 / 斜向移动只可能是换列或拉伸，页面不会横向滚动。
+ *
+ * @param accumulated 越过 slop 时的累计位移（px）
+ * @param lastStep 越过 slop 这一帧的位移（px）
+ * @param velocity 越过 slop 时的速度（px/s）
+ * @param elapsedMs 从按下列越过 slop 的时间（ms）
+ * @param touchSlopPx 系统 touch slop（px）
+ * @param density 屏幕密度（px/dp）
+ */
+internal fun isScrollIntent(
+    accumulated: Offset,
+    lastStep: Offset,
+    velocity: Offset,
+    elapsedMs: Long,
+    touchSlopPx: Float,
+    density: Float
+): Boolean {
+    if (density <= 0f || touchSlopPx <= 0f) return false
+    val dx = abs(accumulated.x)
+    val dy = abs(accumulated.y)
+    if (dy <= dx * SCROLL_VERTICAL_DOMINANCE) return false
+    val verticalSpeedDpPerSec = abs(velocity.y) / density
+    if (verticalSpeedDpPerSec >= SCROLL_FLICK_DP_PER_SEC) return true
+    if (elapsedMs <= SCROLL_ONSET_MS && verticalSpeedDpPerSec >= SCROLL_ONSET_DP_PER_SEC) return true
+    if (
+        elapsedMs <= SCROLL_JUMP_MS &&
+        accumulated.getDistance() >= touchSlopPx * SCROLL_JUMP_SLOP_FACTOR
+    ) {
+        return true
+    }
+    val stepDx = abs(lastStep.x)
+    val stepDy = abs(lastStep.y)
+    return stepDy > stepDx * SCROLL_VERTICAL_DOMINANCE &&
+        lastStep.getDistance() >= touchSlopPx * SCROLL_STEP_SLOP_FACTOR
+}
+
+/**
+ * 本次事件是否属于多指手势：本节点自己的 changes，加上宿主维护的全局手指数。
+ *
+ * 只看本节点不够 —— 第二根手指落在别的卡上时，本节点收不到它的 change。
+ */
+private fun isMultiPointer(event: PointerEvent, shared: HomePointerCountState?): Boolean =
+    (shared?.pressedPointers ?: 0) > 1 || event.changes.count { it.pressed } > 1
+
+/**
+ * 归一化拖动：先越过 touch slop、且判定为「拿起」意图后才「接管」手势
+ * （此前不消费事件，父级滚动 / 子级点击仍有机会处理），接管后每帧回调位移增量，
+ * 抬手或指针抬起时收尾。
+ *
+ * **双指一律不接管**：启动时就是双指、或拖动途中第二根手指落下，都直接放弃本次卡片交互
+ * （[onCancel]，不落位不写回），事件全部留给父级滚动 —— 用户明确要求「双指默认就是滚动页面」。
  *
  * 之所以不用 `detectDragGestures`：这里需要在**未越过 slop 前完全不消费事件**，
- * 让未编辑态的滚动与子元素点击不受影响。
+ * 并通过 [isScrollIntent] 在接管前把「甩动页面」与「拿起卡片」分开。
  */
 private suspend fun PointerInputScope.dragAfterSlop(
+    pointerCount: HomePointerCountState?,
     onStart: (Offset) -> Unit,
     onDelta: (Offset) -> Unit,
-    onEnd: () -> Unit
+    onEnd: () -> Unit,
+    onCancel: () -> Unit
 ) {
+    val touchSlop = viewConfiguration.touchSlop
+    val density = density
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        if (isMultiPointer(currentEvent, pointerCount)) return@awaitEachGesture
+
+        val tracker = VelocityTracker()
+        tracker.addPosition(down.uptimeMillis, down.position)
         var acc = Offset.Zero
         var started = false
-        val touchSlop = viewConfiguration.touchSlop
         try {
             while (true) {
                 val event = awaitPointerEvent()
+                // 第二根手指落下：本次手势永远不再接管卡片（双指 = 滚动）
+                if (isMultiPointer(event, pointerCount)) {
+                    if (started) {
+                        onCancel()
+                        started = false
+                    }
+                    return@awaitEachGesture
+                }
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
                 val delta = change.positionChange()
                 if (!started) {
                     acc += delta
+                    tracker.addPosition(change.uptimeMillis, change.position)
                     if (acc.getDistance() > touchSlop) {
+                        val velocity = tracker.calculateVelocity()
+                        if (
+                            isScrollIntent(
+                                accumulated = acc,
+                                lastStep = delta,
+                                velocity = Offset(velocity.x, velocity.y),
+                                elapsedMs = change.uptimeMillis - down.uptimeMillis,
+                                touchSlopPx = touchSlop,
+                                density = density
+                            )
+                        ) {
+                            // 判定为滚动：**不消费**本次事件，父级 verticalScroll 在同一个
+                            // Main pass 里紧接着就能拿到它并开始滚动。
+                            return@awaitEachGesture
+                        }
                         started = true
                         change.consume()
                         onStart(down.position)
@@ -516,6 +671,12 @@ fun HomeCardCanvas(
     firstCardAnchor: CoachAnchorState? = null,
     /** 编辑态「＋」按钮的锚点：供「＋ 能加卡」指引把圈落在按钮上（null = 不指） */
     addButtonAnchor: CoachAnchorState? = null,
+    /**
+     * 全屏手指数（见 [HomePointerCountState]）。
+     * 双指手势一律不接管任何卡片交互（拖动 / 拉伸），事件全部让给页面滚动；
+     * null = 不启用该判断（仅本节点自己的 changes 可见）。
+     */
+    pointerCount: HomePointerCountState? = null,
     /** 渲染列数：大屏自适应多列（见 KDoc）；默认与卡片「绝对列数」存储语义一致 */
     columns: Int = HomeLayoutStore.COLUMNS,
     cardContent: @Composable (HomeLayoutStore.Card) -> Unit
@@ -790,7 +951,7 @@ fun HomeCardCanvas(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(SLOT_INSET)
+                                    .padding(vertical = SLOT_INSET)
                                     .clip(HOME_CARD_SHAPE)
                                     // key 只含 card.id：editMode 引起的重组**不再重启本协程**，
                                     // 长按判定后「消费剩余事件直到抬手」的循环才能活到 UP 被吃掉（时序修复）。
@@ -853,13 +1014,13 @@ fun HomeCardCanvas(
                             }
 
                             if (editMode) {
-                                // ② 编辑态指示环：与卡片**同曲率**（HOME_CARD_SHAPE）且同样内缩一个 SLOT_INSET，
+                                // ② 编辑态指示环：与卡片**同曲率**（HOME_CARD_SHAPE）且同样只在纵向内缩一个 SLOT_INSET，
                                 // 环正好贴着卡片外缘、内外圆角一致 —— 视觉上像卡片本身被「点亮」，
                                 // 而不是套一圈曲率对不上的灰框（旧版 RoundedCornerShape(18.dp)，用户反馈「删掉/把曲率做好」）。
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(SLOT_INSET)
+                                        .padding(vertical = SLOT_INSET)
                                         .border(
                                             width = 1.5.dp,
                                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
@@ -881,6 +1042,7 @@ fun HomeCardCanvas(
                                         ) {}
                                         .pointerInput(card.id, cellWpx, cellPitchPx, rowUnitPx) {
                                             dragAfterSlop(
+                                                pointerCount = pointerCount,
                                                 onStart = {
                                                     dragCardId = card.id
                                                     dragTarget = Offset.Zero
@@ -927,6 +1089,11 @@ fun HomeCardCanvas(
                                                         }
                                                     }
                                                     dragCardId = null
+                                                },
+                                                onCancel = {
+                                                    // 双指介入：本次不落位、不交换、不写回 ——
+                                                    // 卡片只负责弹簧归位，其余交给页面滚动。
+                                                    dragCardId = null
                                                 }
                                             )
                                         }
@@ -971,12 +1138,12 @@ fun HomeCardCanvas(
                                         // （用户反馈「拖动/拉伸时圆圈上边和左边被削平」）。
                                     }
                             ) {
-                                // 四角控件的圆心一律落在卡片内 10dp（见 CONTROL_INSET），
-                                // 与相邻卡同侧控件的圆心距 ≥ 30dp > 视觉直径 26dp，圆钮互不相碰。
+                                // 四角控件的圆心距卡面 8dp、向卡外探出 5dp（见 CONTROL_INSET 与 CONTROL_INSET_X），
+                                // 相邻卡同侧控件的圆心距 = 横向 12dp + 16dp = 28dp、纵向 10dp + 16dp = 26dp ≥ 视觉直径 26dp。
                                 Row(
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
-                                        .offset(x = -CONTROL_INSET, y = -CONTROL_INSET),
+                                        .offset(x = -CONTROL_INSET_X, y = -CONTROL_INSET),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     // 「笔」在大头针左侧（仅可编辑卡显示）
@@ -1024,7 +1191,7 @@ fun HomeCardCanvas(
                                     scrim = CONTROL_SCRIM,
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
-                                        .offset(x = CONTROL_INSET, y = -CONTROL_INSET)
+                                        .offset(x = CONTROL_INSET_X, y = -CONTROL_INSET)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Close,
@@ -1039,10 +1206,11 @@ fun HomeCardCanvas(
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .offset(x = CONTROL_INSET, y = CONTROL_INSET)
+                                        .offset(x = CONTROL_INSET_X, y = CONTROL_INSET)
                                         .size(HANDLE_HIT)
                                         .pointerInput(card.id, cellWpx, cellPitchPx, rowUnitPx) {
                                             dragAfterSlop(
+                                                pointerCount = pointerCount,
                                                 onStart = {
                                                     val c = currentCards
                                                         .firstOrNull { it.id == card.id } ?: card
@@ -1112,6 +1280,11 @@ fun HomeCardCanvas(
                                                         commitHaptic()
                                                         cbCardsChange(next)
                                                     }
+                                                },
+                                                onCancel = {
+                                                    // 双指介入：放弃本次拉伸，尺寸保持原样（不写回）
+                                                    resizeCardId = null
+                                                    resizeTotal = Offset.Zero
                                                 }
                                             )
                                         },
@@ -1173,12 +1346,13 @@ private fun ControlButton(
  *
  * 与卡片圆角**同心、曲率一致**，且在外侧留出合理间距（中心线半径 24dp，
  * 弧线内缘距圆角约 2.5dp）——不贴边、不抢视觉，只截取中间一小段短弧。
+ *
+ * 圆心必须与**卡面**右下圆角同心（不是槽位角）：卡面左右与槽位齐平、底部内缩 [SLOT_INSET]，
+ * 所以圆角圆心 = 槽位右下角 −(20, 25)。热区右下在槽位角 +(CONTROL_INSET_X, CONTROL_INSET)，
+ * Canvas 左上角即弧圆心 → Canvas 右下 = 槽位角 +(8−2, 3−1) → 左上 = −(20, 25)，padding = 2 / 2。
  */
 @Composable
 private fun ResizeHandleGlyph() {
-    // 定位：弧圆心需与「卡面右下角圆角」同心，即「卡面右下角 −(20,20)」=「槽位右下角 −25dp」；
-    // Canvas 左上角即圆心 → Canvas（26dp）右下 = 槽位角 +1dp；热区右下在槽位外 +3dp
-    // （CONTROL_INSET）→ padding = 3 − 1 = 2。
     Box(
         modifier = Modifier.padding(end = 2.dp, bottom = 2.dp),
         contentAlignment = Alignment.BottomEnd,

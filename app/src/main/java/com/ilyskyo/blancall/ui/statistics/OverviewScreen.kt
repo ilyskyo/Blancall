@@ -41,7 +41,12 @@ import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.HapticTier
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MarkdownText
+import com.ilyskyo.blancall.ui.common.PullReleaseDirection
+import com.ilyskyo.blancall.ui.common.PullReleaseIndicator
 import com.ilyskyo.blancall.ui.common.StateSwap
+import com.ilyskyo.blancall.ui.common.pullReleaseLatched
+import com.ilyskyo.blancall.ui.common.pullReleaseReached
+import com.ilyskyo.blancall.ui.common.pullReleaseTravel
 import com.ilyskyo.blancall.ui.common.TagChipUi
 import com.ilyskyo.blancall.ui.common.rememberConfirmHaptic
 import com.ilyskyo.blancall.ui.common.rememberHaptic
@@ -130,6 +135,7 @@ import com.ilyskyo.blancall.ui.practice.PickerSelection
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -477,12 +483,6 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // （有 FSRS 状态且 reviewCount>0 才是自适应调度），不在这里另立一套口径。
     val adaptiveIds = remember(fsrsStates) { fsrsStates.filterValues { it.reviewCount > 0 }.keys }
 
-    // 学习任务流下拉提示：只统计真正由 FSRS 调度（练过）的文章，暂停项不算到期
-    val flowDueCount = remember(fsrsStates, pausedArticleIds, nowTick) {
-        fsrsStates.count { (id, state) ->
-            state.reviewCount > 0 && id !in pausedArticleIds && nowTick >= state.due
-        }
-    }
     // 「下一步」的到期文章输入：与任务流同一份 FSRS 到期判定，取最早到期的一篇
     val firstDueArticleId = remember(fsrsStates, pausedArticleIds, nowTick) {
         fsrsStates.entries
@@ -697,27 +697,95 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         val navBarScrollConn = rememberAutoHideNavBarOnScroll()
 
         // ── 下拉进入学习任务流 ──
-        // 任务流不再做成一张可点的卡片：滚到列表顶部后继续下拉，越过阈值先给一次
-        // Threshold 触感（「跨过了一道界」），随后直接进入任务流页。
+        // 任务流不再做成一张可点的卡片：滚到列表顶部后继续下拉，圆环随位移填充。
+        // **手指不松开就不进入**：拉满只给一次 Threshold 触感（「到界了」），
+        // 真正的跳转发生在抬手那一刻 —— 本次手势满过格就算数，没满则回弹。
+        // 满格后回退超过 OVERVIEW_FLOW_PULL_CANCEL_SLACK 才算主动撤回：抬手时的
+        // 几像素回带不再把「已画满」误判成「没拉满」。
         val flowListState = rememberLazyListState()
+        // 唯一的位移真值：拖动时**同步**写入，绘制也从它读。
+        // Animatable 只用来驱动「没拉满 → 回弹」那一段动画，不再承担手势状态。
+        // 旧实现把 Animatable 当手势真值，snapTo 走协程，抬手判定可能读到上一帧的旧值：
+        // 圆圈已经画满、松手却差 1–2dp（「有的时候进不去」的根因之一）。
+        val flowPullPx = remember { mutableFloatStateOf(0f) }
         val flowPullOffset = remember { Animatable(0f) }
+        var flowPullRecoilJob by remember { mutableStateOf<Job?>(null) }
         val flowPullScope = rememberCoroutineScope()
         val flowPullThresholdPx = with(LocalDensity.current) { OVERVIEW_FLOW_PULL_THRESHOLD.toPx() }
-        val flowPullMaxPx = with(LocalDensity.current) { OVERVIEW_FLOW_PULL_MAX.toPx() }
+        val flowPullOvershootPx = with(LocalDensity.current) { OVERVIEW_FLOW_PULL_OVERSHOOT.toPx() }
+        val flowPullCancelSlackPx = with(LocalDensity.current) { OVERVIEW_FLOW_PULL_CANCEL_SLACK.toPx() }
         // AtomicBoolean：判定发生在 NestedScrollConnection 的闭包里，捕获的必须是每帧最新的值。
-        // armed 保证一次拖动只响一次；navigated 保证同一帧的多个 onPreScroll 不会重复导航。
+        // armed 保证「越界触感」一次拖动只响一次（退回阈值下再给额度）；
+        // ready 是「本次手势满过格」的闩锁 —— 抬手时手指常会回带几像素，不能因此把满格判成没满；
+        // navigated 保证抬手判定只导航一次。
         val flowPullArmed = remember { AtomicBoolean(true) }
+        val flowPullReady = remember { AtomicBoolean(false) }
         val flowPullNavigated = remember { AtomicBoolean(false) }
         // 触感强度在设置里改完要立刻生效，所以经 rememberUpdatedState 透传。
         val flowPullHaptic by rememberUpdatedState(rememberHaptic(HapticTier.Threshold))
+        // 无障碍入口：可见面不再写字（提示行已移除，见使用帮助「数据页 · 学习任务流」），
+        // 读屏用户拿不到手势，所以把入口挂在列表节点的自定义操作上。
+        val flowActionLabel = stringResource(com.ilyskyo.blancall.R.string.flow_pull_action)
 
-        /** 未达阈值就松手：把跟手位移收回 0。导航已触发时不再回弹，免得转场中内容往上跳。 */
+        /**
+         * 按手势增量推进位移（正 = 继续拉、负 = 往回收），返回本段手势被消费掉的 y。
+         *
+         * 位移在这一帧**同步**写入 [flowPullPx]（绘制与抬手判定读同一份值），
+         * 不再经 `snapTo` 协程绕一圈。这里只改位移与触感，**绝不导航**：
+         * 导航统一由 [releaseFlowPull] 在抬手时决定。
+         */
+        fun advanceFlowPull(dy: Float): Float {
+            val current = flowPullPx.floatValue
+            if (current <= 0f && dy < 0f) return 0f
+            // 从零重新往下拉 = 新一次手势：解除上一次的一次性导航锁，
+            // 否则一次「导航被忽略」会让后续所有下拉永远进不去。
+            if (current <= 0.5f && dy > 0f) {
+                flowPullNavigated.set(false)
+                flowPullReady.set(false)
+            }
+            // 新拖动抢占回弹：让回弹停在这一帧，位移从这里继续跟手
+            flowPullRecoilJob?.cancel()
+            flowPullRecoilJob = null
+            val next = pullReleaseTravel(
+                current = current,
+                delta = dy,
+                threshold = flowPullThresholdPx,
+                overshootMax = flowPullOvershootPx,
+                overshootRatio = OVERVIEW_FLOW_PULL_OVERSHOOT_RATIO,
+            )
+            if (next != current) flowPullPx.floatValue = next
+            flowPullReady.set(
+                pullReleaseLatched(
+                    wasLatched = flowPullReady.get(),
+                    pullPx = next,
+                    thresholdPx = flowPullThresholdPx,
+                    cancelSlackPx = flowPullCancelSlackPx,
+                )
+            )
+            if (pullReleaseReached(next, flowPullThresholdPx)) {
+                // 跨过阈值：给一次「到界」触感；继续拉、原地停留都不再重复
+                if (flowPullArmed.compareAndSet(true, false)) flowPullHaptic()
+            } else {
+                // 退回阈值以内 ⇒ 下次再拉满还能再响一次
+                flowPullArmed.set(true)
+            }
+            return next - current
+        }
+
+        /** 没拉满（或已回退取消）：从当前位移回弹归零。 */
         fun settleFlowPull() {
-            if (flowPullNavigated.get()) return
-            if (flowPullOffset.value <= 0.5f) return
-            flowPullScope.launch {
+            val pull = flowPullPx.floatValue
+            if (pull <= 0.5f) return
+            flowPullRecoilJob?.cancel()
+            flowPullRecoilJob = flowPullScope.launch {
                 try {
-                    flowPullOffset.animateTo(0f, Motion.pullRecoil())
+                    // Animatable 在拖动期间不跟手，可能落后于手势真值：回弹从真值起步
+                    flowPullOffset.snapTo(pull)
+                    flowPullOffset.animateTo(0f, Motion.pullRecoil()) {
+                        flowPullPx.floatValue = value
+                    }
+                    // 完整播完才清闩锁；被新拖动抢占时交给新拖动判断
+                    flowPullReady.set(false)
                 } finally {
                     // 动画被新的拖动取消时也要重新给一次「到位」额度，否则第二次下拉不响
                     flowPullArmed.set(true)
@@ -728,43 +796,66 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         fun enterStudyFlow() {
             if (flowPullNavigated.compareAndSet(false, true)) {
                 navController.navigate("study_flow")
+                // 兜底：导航若被系统忽略（例如转场中重复调用），本页仍留在组合里，
+                // 800ms 后解除一次性锁并回弹，下一次下拉可以重试；
+                // 导航成功时本页销毁，协程随组合取消，不会执行。
+                flowPullScope.launch {
+                    delay(800)
+                    // 期间用户已开始新手势（advance 会复位锁）或导航已发生 → 兜底不必再动
+                    if (!flowPullNavigated.get()) return@launch
+                    if (navController.currentDestination?.route?.startsWith("study_flow") != true) {
+                        flowPullNavigated.set(false)
+                        flowPullReady.set(false)
+                        settleFlowPull()
+                    }
+                }
             }
         }
 
-        val flowPullConnection = remember(flowListState, flowPullThresholdPx, flowPullMaxPx) {
+        /** 抬手判定：本次手势满过格就进任务流，否则回弹归零。拖动过程中永远不走到这里。 */
+        fun releaseFlowPull() {
+            if (flowPullNavigated.get()) return
+            if (flowPullPx.floatValue <= 0.5f) return
+            if (flowPullReady.get()) {
+                enterStudyFlow()
+                return
+            }
+            settleFlowPull()
+        }
+
+        val flowPullConnection = remember(flowListState, flowPullThresholdPx, flowPullOvershootPx) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    // 松手后的惯性帧不参与蓄力：只有手指拖拽才算数
+                    if (source != NestedScrollSource.Drag) return Offset.Zero
                     val dy = available.y
-                    // 仅「已在顶部 + 手指拖拽」才积累；松手后的惯性帧不得把位移继续往外拉。
-                    if (dy > 0f && !flowListState.canScrollBackward &&
-                        source == NestedScrollSource.Drag
-                    ) {
-                        if (!flowPullNavigated.get()) {
-                            flowPullScope.launch {
-                                val next = (flowPullOffset.value + dy).coerceIn(0f, flowPullMaxPx)
-                                flowPullOffset.snapTo(next)
-                                if (flowPullReached(next, flowPullThresholdPx) &&
-                                    flowPullArmed.compareAndSet(true, false)
-                                ) {
-                                    flowPullHaptic()
-                                    enterStudyFlow()
-                                }
-                            }
-                        }
-                        // 消费本段下拉：不让列表进入系统过度滚动光效
+                    if (dy > 0f && !flowListState.canScrollBackward) {
+                        // 已在顶部还继续下拉：整段转成蓄力位移，不交给系统过度滚动光效
+                        advanceFlowPull(dy)
                         return Offset(0f, dy)
                     }
-                    if (dy != 0f && flowPullOffset.value > 0f) {
-                        flowPullScope.launch {
-                            flowPullOffset.snapTo(0f)
-                            flowPullArmed.set(true)
-                        }
+                    if (dy < 0f && flowPullPx.floatValue > 0f) {
+                        // 手指往回收：先抵掉蓄力位移（圆环倒转），抵完剩下的才让列表滚
+                        val used = advanceFlowPull(dy)
+                        return Offset(0f, used)
                     }
                     return Offset.Zero
                 }
 
+                override fun onPostScroll(
+                    consumed: Offset,
+                    available: Offset,
+                    source: NestedScrollSource,
+                ): Offset {
+                    // 本帧列表把位移吃到底后还剩的向下余量，接到蓄力上：从列表中间一路下拉也连贯
+                    if (source != NestedScrollSource.Drag) return Offset.Zero
+                    if (available.y <= 0f || flowListState.canScrollBackward) return Offset.Zero
+                    advanceFlowPull(available.y)
+                    return Offset(0f, available.y)
+                }
+
                 override suspend fun onPreFling(available: Velocity): Velocity {
-                    settleFlowPull()
+                    releaseFlowPull()
                     return Velocity.Zero
                 }
             }
@@ -815,42 +906,44 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                             .weight(1f)
                             .clipToBounds()
                             // 松手兜底：慢松手时嵌套滚动不会派发 fling 回调（同首页纪律），
-                            // 这里在 Final pass 仅观察、不消费：指针全抬起且仍有位移就回弹。
+                            // 这里在 Final pass 仅观察、不消费：指针全抬起时做一次抬手判定。
                             .pointerInput(Unit) {
                                 awaitPointerEventScope {
                                     while (true) {
                                         val event = awaitPointerEvent(PointerEventPass.Final)
-                                        if (event.changes.none { it.pressed }) settleFlowPull()
+                                        if (event.changes.none { it.pressed }) releaseFlowPull()
                                     }
                                 }
                             }
                     ) {
                         // 指示器画在列表下层：内容跟手下移后，顶部让出的空隙里露出来。
-                        // 读到的是 Animatable 的当前值（绘相位），不会每帧重组整页。
-                        FlowPullIndicator(
-                            pullPx = { flowPullOffset.value },
+                        // 读到的是同步位移真值（绘相位），不会每帧重组整页。
+                        PullReleaseIndicator(
+                            pullPx = { flowPullPx.floatValue },
                             thresholdPx = flowPullThresholdPx,
+                            direction = PullReleaseDirection.Down,
                             modifier = Modifier.align(Alignment.TopCenter)
                         )
                         LazyColumn(
                             state = flowListState,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .graphicsLayer { translationY = flowPullOffset.value }
+                                .graphicsLayer { translationY = flowPullPx.floatValue }
+                                // 手势入口不再有可见文字：这道自定义操作是读屏用户的等价入口
+                                .semantics {
+                                    customActions = listOf(
+                                        CustomAccessibilityAction(flowActionLabel) {
+                                            enterStudyFlow()
+                                            true
+                                        }
+                                    )
+                                }
                                 .nestedScroll(flowPullConnection)
                                 .nestedScroll(navBarScrollConn),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             // 底部只留呼吸留白：导航栏改为「滚动自动收起」后不再需要 120dp 避让底距
                             contentPadding = PaddingValues(bottom = 12.dp)
                         ) {
-                            // 手势提示兼无障碍入口：可见面只说明方向，不是可点卡片；
-                            // 读屏用户通过自定义操作进入（可见面无点击语义）。
-                            item(key = "overview_flow_pull_hint") {
-                                FlowPullHint(
-                                    dueCount = flowDueCount,
-                                    onOpen = { enterStudyFlow() },
-                                )
-                            }
                         // ── 最近训练分析（有则显示） ──
                         latestAnalysis?.let { item ->
                             item(key = "latestAnalysis") {
@@ -2533,121 +2626,24 @@ private fun achievementDescRes(id: String): Int = when (id) {
 }
 
 /**
- * 下拉是否已越过「进入学习任务流」的阈值。
- *
- * 抽成纯函数供 JVM 单测：手势闭包里的判定与测试断言的必须是同一件事。
- * 阈值非正时永不成立 —— 那是一个配置错误，不该变成「一碰就进」。
+ * 下拉进入学习任务流的阈值：滚到顶后再拉这么远即「满格」，抬手即可进入（1:1 跟手，不含阻尼）。
  */
-internal fun flowPullReached(pullPx: Float, thresholdPx: Float): Boolean =
-    thresholdPx > 0f && pullPx >= thresholdPx
-
-/** 下拉进入学习任务流的阈值：滚到顶后再拉这么远即触发（1:1 跟手，不含阻尼）。 */
 private val OVERVIEW_FLOW_PULL_THRESHOLD = 88.dp
 
-/** 下拉位移上限：越过阈值后继续拉，内容也不会无限下移。 */
-private val OVERVIEW_FLOW_PULL_MAX = 140.dp
-
-/** 指示器在开始下拉后的前 24dp 内淡入，避免刚碰屏幕就闪出一个圆环。 */
-private val OVERVIEW_FLOW_INDICATOR_FADE_IN = 24.dp
+/**
+ * 满格后「回退多少才算撤回」的容差。
+ *
+ * 抬手时手指常会回带几像素（系统也可能补一帧反向位移），若拿抬手瞬间的位移直接判阈值，
+ * 就会出现「圆圈已画满、松手却差 1–2dp」的随机失败。闩锁只在这个距离内保持满格：
+ * 回退超过它，圆环已明显倒退，才视为用户主动反悔。
+ */
+private val OVERVIEW_FLOW_PULL_CANCEL_SLACK = 12.dp
 
 /**
- * 任务流下拉提示：一行小字 + 向下箭头，说明这个手势的存在与方向。
- *
- * 刻意不做成可点卡片 —— 入口只有下拉这一条路。读屏用户拿不到手势，
- * 所以这里挂一条不可见的自定义操作（标签是「进入学习任务流」）作为等价入口。
+ * 满格后的阻尼余量：再多拉也只移动这么点，手感是「到顶了、拉不动」。
+ * 留得很小，是为了让手往回退一点点就能看见圈环倒转（撤回必须立刻有反馈）。
  */
-@Composable
-private fun FlowPullHint(dueCount: Int, onOpen: () -> Unit) {
-    val actionLabel = stringResource(com.ilyskyo.blancall.R.string.flow_pull_action)
-    val hint = if (dueCount > 0) {
-        stringResource(com.ilyskyo.blancall.R.string.flow_pull_hint_due, dueCount)
-    } else {
-        stringResource(com.ilyskyo.blancall.R.string.flow_pull_hint)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics {
-                customActions = listOf(
-                    CustomAccessibilityAction(actionLabel) {
-                        onOpen()
-                        true
-                    }
-                )
-            }
-            .padding(top = 2.dp, bottom = 2.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AppIcon(
-            AppIconKind.ChevronRight,
-            modifier = Modifier
-                .size(12.dp)
-                .graphicsLayer { rotationZ = 90f },
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            hint,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-            textAlign = TextAlign.Center
-        )
-    }
-}
+private val OVERVIEW_FLOW_PULL_OVERSHOOT = 8.dp
 
-/**
- * 下拉指示器：跟手位移越大圆环越满；到阈值时正好填满，同时触发触感与导航。
- *
- * 位移与进度都在绘制阶段读取，不把每帧变化带进组合/测量。
- */
-@Composable
-private fun FlowPullIndicator(
-    pullPx: () -> Float,
-    thresholdPx: Float,
-    modifier: Modifier = Modifier,
-) {
-    val accent = MaterialTheme.colorScheme.primary
-    val surface = MaterialTheme.colorScheme.surface
-    Box(
-        modifier = modifier
-            .size(38.dp)
-            .graphicsLayer {
-                val pull = pullPx()
-                alpha = (pull / OVERVIEW_FLOW_INDICATOR_FADE_IN.toPx()).coerceIn(0f, 1f)
-                val progress = if (thresholdPx > 0f) (pull / thresholdPx).coerceIn(0f, 1f) else 0f
-                scaleX = 0.85f + 0.15f * progress
-                scaleY = 0.85f + 0.15f * progress
-                // 指示器居中于「已经被拉出来的空隙」：中心 = 位移的一半
-                translationY = pull * 0.5f - 19.dp.toPx()
-            }
-            .drawBehind {
-                drawCircle(color = surface, radius = size.minDimension / 2f)
-                val progress = if (thresholdPx > 0f) {
-                    (pullPx() / thresholdPx).coerceIn(0f, 1f)
-                } else {
-                    0f
-                }
-                val stroke = 2.dp.toPx()
-                drawArc(
-                    color = accent,
-                    startAngle = -90f,
-                    sweepAngle = 360f * progress,
-                    useCenter = false,
-                    topLeft = Offset(stroke, stroke),
-                    size = Size(size.width - stroke * 2f, size.height - stroke * 2f),
-                    style = Stroke(width = stroke, cap = StrokeCap.Round)
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        AppIcon(
-            AppIconKind.ChevronRight,
-            modifier = Modifier
-                .size(16.dp)
-                .graphicsLayer { rotationZ = 90f },
-            tint = accent
-        )
-    }
-}
-
+/** 满格后继续下拉的阻尼系数（1 = 跟手，0 = 完全拉不动）。 */
+private const val OVERVIEW_FLOW_PULL_OVERSHOOT_RATIO = 0.08f

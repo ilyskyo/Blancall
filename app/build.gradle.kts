@@ -28,8 +28,8 @@ android {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
         targetSdk = 36
-        versionCode = 51
-        versionName = "7.5.2"
+        versionCode = 52
+        versionName = "7.5.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -173,6 +173,9 @@ dependencies {
     // 上游 com.qmdeve.liquidglass:core:1.0.5 已改为源码入库（见 docs/VENDOR-AndroidLiquidGlassView.md），
     // 这里只留它真正需要的那一个运行时依赖。
     implementation(libs.androidx.dynamicanimation)
+
+    // 底部导航栏液态玻璃：Kyant0 Backdrop（Compose 原生 LayerBackdrop + RuntimeShader）
+    implementation(libs.backdrop)
 
     testImplementation(libs.junit)
     // JVM 单测解析 BlancallGenerator 的 JSON 序列化（仅测试期，不进 APK）

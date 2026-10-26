@@ -160,6 +160,12 @@ object AppPrefs {
     val coachSeenFlow: StateFlow<Set<String>> = _coachSeenFlow.asStateFlow()
     private val _sentenceClozeEnabledFlow = MutableStateFlow(true)
     val sentenceClozeEnabledFlow: StateFlow<Boolean> = _sentenceClozeEnabledFlow.asStateFlow()
+    /**
+     * 「首次见到的句子也遮挡」（默认关 = 新句先给全文认读）。
+     * 只在 [sentenceClozeEnabled] 为真时有意义 —— 总开关关掉时本项不生效。
+     */
+    private val _sentenceClozeNewEnabledFlow = MutableStateFlow(false)
+    val sentenceClozeNewEnabledFlow: StateFlow<Boolean> = _sentenceClozeNewEnabledFlow.asStateFlow()
 
     private val _sentenceArticleFilterFlow = MutableStateFlow<Set<Long>>(emptySet())
     /** 句子卡片抽句范围文章筛选：选中的文章 id 集合（空 = 文章维度不限；与标签维度组合见 resolveSentencePool） */
@@ -198,6 +204,7 @@ object AppPrefs {
         _sentenceArticleFilterFlow.value = prefs.getStringSet("sentence_article_filter", emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         _sentenceClozeEnabledFlow.value = prefs.getBoolean("sentence_cloze_enabled", true)
+        _sentenceClozeNewEnabledFlow.value = prefs.getBoolean("sentence_cloze_new_enabled", false)
         _hintLengthEnabledFlow.value = prefs.getBoolean("hint_length_enabled", true)
         _hintContentEnabledFlow.value = prefs.getBoolean("hint_content_enabled", true)
         _coachSeenFlow.value = prefs.getStringSet("coach_seen", emptySet()) ?: emptySet()
@@ -259,6 +266,19 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("sentence_cloze_enabled", value) }
                 _sentenceClozeEnabledFlow.value = value
+            }
+        }
+
+    /**
+     * 首次见到的句子（从没评过级的新句）是否也遮挡，默认关。
+     * 关 = 新句先给全文（输入），遮 = 连新句也先考一次（Anki 式正反面）。
+     */
+    var sentenceClozeNewEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("sentence_cloze_new_enabled", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("sentence_cloze_new_enabled", value) }
+                _sentenceClozeNewEnabledFlow.value = value
             }
         }
 
@@ -362,6 +382,37 @@ object AppPrefs {
     fun setStatsPopupBaseline(practices: Int) {
         if (::prefs.isInitialized) prefs.edit { putInt("stats_popup_baseline", practices) }
     }
+
+    // ── 赞赏邀请（完成态轻入口，见 ui/common/DonationInvite.kt）──
+
+    /**
+     * 累计「完成一次挖空练习 / 走完一轮句子卡」的次数。
+     * 赞赏邀请的门槛依据：不足 5 次说明用户还没验证过产品价值，此时请求只会消耗信任
+     * （KC/Mak/Ofek：价值低时「用后付费」的效应会逆转）。
+     */
+    val donationCompletionCount: Int
+        get() = if (::prefs.isInitialized) prefs.getInt("donation_completion_count", 0) else 0
+
+    /** 累计一次完成事件。只由评分卡与句子卡完成页调用，避免任何一处重复计数。 */
+    fun noteDonationCompletion() {
+        if (::prefs.isInitialized) {
+            prefs.edit { putInt("donation_completion_count", donationCompletionCount + 1) }
+        }
+    }
+
+    /** 赞赏邀请上次出现的时刻（0 = 从未出现）。既是冷却锚点，也是跨位置的去重锁。 */
+    var donationInviteShownAt: Long
+        get() = if (::prefs.isInitialized) prefs.getLong("donation_invite_shown_at", 0L) else 0L
+        set(value) {
+            if (::prefs.isInitialized) prefs.edit { putLong("donation_invite_shown_at", value) }
+        }
+
+    /** 用户点过「不再提示」——此后任何位置都不再出现邀请，且不再累加展示次数。 */
+    var donationInviteDismissed: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("donation_invite_dismissed", false) else false
+        set(value) {
+            if (::prefs.isInitialized) prefs.edit { putBoolean("donation_invite_dismissed", value) }
+        }
 
     // ── AI 学习助手 ──
 

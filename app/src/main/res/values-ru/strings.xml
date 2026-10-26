@@ -190,7 +190,6 @@
     <string name="import_backup_warning">Файл копии заменит текущую библиотеку статей и прогресс упражнений: существующие данные будут перезаписаны без возможности возврата. После импорта нужно перезапустить приложение.</string>
     <string name="minutes_unit">%1$d мин</string>
     <string name="reminder_on_at">Вкл · %1$s</string>
-    <string name="donation_ask">Если есть возможность — поддержите меня по QR-коду 🥹</string>
     <string name="reminder_enable">Включить напоминание</string>
     <string name="notification_permission_required">Для напоминаний требуется разрешение на уведомления. Включите его в настройках системы и вернитесь в приложение.</string>
     <string name="reminder_time">Время напоминания</string>
@@ -207,8 +206,12 @@
     <string name="preset_9pm">21:00</string>
     <string name="edit_home_subtitle">Изменить подзаголовок</string>
     <string name="custom_subtitle">Свой подзаголовок</string>
-    <string name="donation_title">Поддержка · приложение полностью бесплатное</string>
-    <string name="donation_motive">Даже небольшая сумма — сила продолжать обновления</string>
+    <string name="donation_heading">Поддержать Blancall</string>
+    <string name="donation_statement">Blancall полностью бесплатен, все функции доступны.</string>
+    <string name="donation_invite">Если он вам действительно помог, буду рад поддержке.</string>
+    <string name="donation_nudge_prefix">Если хотите,\u0020</string>
+    <string name="donation_nudge_link">поддержите здесь</string>
+    <string name="donation_never">Больше не показывать</string>
     <string name="donation_qr">QR-код для поддержки</string>
     <string name="donation_hide">Скрыть этот блок</string>
     <string name="donation_hide_hint">Скрыто только до конца текущего запуска — при следующем открытии приложения блок вернётся</string>
@@ -341,6 +344,8 @@
     <string name="sentence_cloze_toggle">Восстановление с пропусками</string>
     <string name="sentence_cloze_on_desc">Вспомнить по первым буквам</string>
     <string name="sentence_cloze_off_desc">Показать фразу целиком</string>
+    <string name="sentence_cloze_new_toggle">Скрывать и новые предложения</string>
+    <string name="sentence_cloze_new_desc">Новые предложения начинаются с пропусками - нажмите «Показать ответ»</string>
     <string name="no_tags_create_hint">Тегов нет — создайте их в «Настройки → Теги статей»</string>
     <string name="import_text_title">Импорт текста</string>
     <string name="paste_text">Вставить текст</string>
@@ -931,7 +936,7 @@
         <item quantity="many">Включая %1$d вне-статейных сессий (не учтены в статистике по статьям)</item>
         <item quantity="other">Включая %1$d вне-статейных сессий (не учтены в статистике по статьям)</item>
     </plurals>
-         文案一律在这里 —— 写进 .kt 就会在六语界面上露出简体，而 res 目录守卫查不到那种泄漏 -->
+    <!-- 记忆热力图的色带档位名与「估算」标：数据层只给稳定的 ASCII 键，文案一律在这里 —— 写进 .kt 就会在六语界面上露出简体，而 res 目录守卫查不到那种泄漏 -->
     <string name="heat_band_weak">Слабо</string>
     <string name="heat_band_hard">Трудно</string>
     <string name="heat_band_mid">Средне</string>
@@ -1255,8 +1260,6 @@
     <string name="flow_detail_lapses">Забывания</string>
     <string name="flow_pause_all_confirm_title">Приостановить все задания?</string>
     <string name="flow_pause_all_confirm_body">Все статьи плана перестанут попадать в повторения и напоминания, а карточки предложений перестанут выбираться. Возобновить можно здесь в любой момент.</string>
-    <string name="flow_pull_hint">Потяните вниз, чтобы открыть поток обучения</string>
-    <string name="flow_pull_hint_due">Потяните вниз, чтобы открыть поток обучения · %1$d к повторению</string>
     <string name="flow_pull_action">Открыть поток обучения</string>
     <plurals name="flow_days_later">
         <item quantity="one">Через %1$d день</item>
@@ -1766,6 +1769,10 @@
     <string name="help_168">После включения веб-поиска и ключа Tavily вопросы запускают автоматический поиск для проверки, и AI опирается на авторитетные источники (полезно для проверки заучивания и экзаменационных тем). Без настройки AI отвечает только по статье и своим знаниям.</string>
     <string name="help_169">Конфиденциальность и безопасность</string>
     <string name="help_170">Ключи API шифруются системой и хранятся только на устройстве; они не отправляются. Примечание: во время чата содержимое статьи и учебные данные передаются настроенному вами сервису API. После отключения AI все входы AI скрываются.</string>
+    <!-- ── 学习任务流手势：可见提示已移除，说明只留在本页（help_171+）── -->
+    <string name="help_171">Данные · поток обучения</string>
+    <string name="help_172">На странице «Данные» прокрутите в самый верх и продолжайте тянуть вниз; когда кольцо заполнится и телефон завибрирует, отпустите — откроется поток обучения (запланированные статьи в порядке времени).</string>
+    <string name="help_173">В потоке обучения любую статью можно поставить на паузу, возобновить или перенести следующий повтор; прокрутите вниз и потяните вверх либо нажмите «назад» слева сверху, чтобы вернуться на страницу «Данные».</string>
     <string name="sentence_status_first">Первое запоминание</string>
     <string name="sentence_status_recorded_next">Записано · следующее через %1$d дн.</string>
     <string name="sentence_status_due_last">К повторению · последний раз %1$d дн. назад</string>
@@ -1809,19 +1816,19 @@
     <string name="rating_hard">Трудно</string>
     <string name="rating_good">Помню</string>
     <string name="rating_easy">Легко</string>
-    <string name="notebook_entry_count">Всего: %1</string>
+    <string name="notebook_entry_count">Всего: %1$d</string>
     <string name="reader_practice_section_cd">Тренировать абзац</string>
     <string name="reader_practice_section_title">Превратить абзац в пропуски</string>
     <string name="reader_practice_section_hint">Выберите абзац, который только что вспоминали под маской.</string>
     <string name="reader_practice_section_empty">Нет абзацев с маской для преобразования.</string>
-    <string name="reader_practice_section_spans">Скрыто фрагментов: %1</string>
+    <string name="reader_practice_section_spans">Скрыто фрагментов: %1$d</string>
     <string name="reader_practice_section_name">Из маски в пропуски</string>
     <string name="reader_practice_section_failed">В этом абзаце нет пропусков для тренировки.</string>
     <string name="reason_first">Первое повторение</string>
-    <string name="reason_lapsed">Забыто раз: %1</string>
-    <string name="reason_long_gap">С прошлого раза прошло дней: %1</string>
-    <string name="reason_overdue">Просрочено дней: %1</string>
-    <string name="reason_stable">Стабильно повторений: %1</string>
+    <string name="reason_lapsed">Забыто раз: %1$d</string>
+    <string name="reason_long_gap">С прошлого раза прошло дней: %1$d</string>
+    <string name="reason_overdue">Просрочено дней: %1$d</string>
+    <string name="reason_stable">Стабильно повторений: %1$d</string>
     <string name="reason_scheduled">Пора повторить по плану</string>
     <string name="today_plan_title">План на сегодня</string>
     <string name="today_plan_exam_days">До экзамена: %1$d дн.</string>
@@ -1884,6 +1891,7 @@
     <string name="content_pack_delete_title">Удалить набор</string>
     <string name="content_pack_delete_body">Удаление «%1$s» не затронет уже импортированные статьи.</string>
     <string name="content_pack_import_all">Импортировать всё</string>
+    <string name="library_batch_import">Массовый импорт</string>
     <string name="content_pack_import_result">Импортировано: %1$d, пропущено: %2$d (дубликаты или ошибки).</string>
     <string name="content_pack_view_entries">Показать записи</string>
     <string name="content_pack_collapse">Свернуть</string>
