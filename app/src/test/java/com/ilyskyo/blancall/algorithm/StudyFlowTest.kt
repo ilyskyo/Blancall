@@ -102,6 +102,36 @@ class StudyFlowTest {
         assertEquals(startToday + day, StudyFlow.dueAtDayStart(startToday + day, now, zone))
     }
 
+    @Test
+    fun `暂停中改期用绝对日期_时间前进也不漂移`() {
+        val s = state(due = now + 2 * day)
+        val target = now + 10 * day
+        val pause = StudyFlow.pauseOf(s, now).copy(fixedDue = target)
+
+        // 模拟时间前进 3 天：冻结剩余期会滑到 now+12d，绝对日期必须仍是 D
+        assertEquals(target, StudyFlow.projectedDue(s, pause, now + 3 * day))
+        assertEquals(target, StudyFlow.resumedDue(s, pause, now + 3 * day))
+    }
+
+    @Test
+    fun `恢复时绝对日期已过则立即到期`() {
+        val s = state(due = now + 2 * day)
+        val target = now + 10 * day
+        val pause = StudyFlow.pauseOf(s, now).copy(fixedDue = target)
+
+        assertEquals(now + 12 * day, StudyFlow.resumedDue(s, pause, now + 12 * day))
+    }
+
+    @Test
+    fun `暂停期间手动练习后绝对日期不覆盖新的due`() {
+        val s = state(due = now + 2 * day)
+        val pause = StudyFlow.pauseOf(s, now).copy(fixedDue = now + 10 * day)
+        val practiced = s.copy(lastReview = now + day, due = now + 9 * day)
+
+        assertEquals(now + 9 * day, StudyFlow.projectedDue(practiced, pause, now + 3 * day))
+        assertEquals(now + 9 * day, StudyFlow.resumedDue(practiced, pause, now + 3 * day))
+    }
+
     /** 测试侧复用的日界算法，避免把被测实现当成期望值 */
     private object Studies {
         fun startOfToday(now: Long, zone: ZoneId): Long =

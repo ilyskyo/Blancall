@@ -60,10 +60,10 @@ sealed interface PickerSelection {
 }
 
 // ── 弹窗尺寸常量 ──
-// 高度估算按内容动态计算：标题区 + 每个模式项（当前 4 项 ≈ 376dp）。
+// 高度估算按内容动态计算：标题区 64dp + 每个模式项 56dp（当前 4 项 ≈ 288dp）。
 // 估算宁可偏大不可偏小：偏小会导致 DOWN 方向弹出后底部越过屏幕（真机翻车点）。
 private val PopupHeaderEstimateDp = 64.dp
-private val PopupItemEstimateDp = 78.dp
+private val PopupItemEstimateDp = 56.dp
 private val PopupItemCount = 4
 private val PopupEstimateDp get() = PopupHeaderEstimateDp + PopupItemEstimateDp * PopupItemCount
 private val PopupWidthDp = 320.dp
@@ -383,31 +383,19 @@ private fun ModeListContent(
     isExiting: Boolean,
     onModeSelected: (PickerSelection) -> Unit
 ) {
-    // 项进入窗口：[项进入起点, 项完全显示]。三段错峰但用同一个弹性曲线
     data class ModeEntry(
-        val emoji: String,
         val label: String,
-        val sublabel: String,
         val mode: BlancallMode = BlancallMode.SENTENCE,
         val custom: Boolean = false
     )
+    // 只留模式名，不带任何图标与说明文字：
+    // 「句子挖空 / 字词挖空 / 反向默写」本身就是自解释的动词词组，
+    // 副标题只是在替用户预先解释一遍，试一次就懂的东西不需要提前讲。
     val entries = listOf(
-        ModeEntry(
-            "📝", stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence),
-            stringResource(com.ilyskyo.blancall.R.string.mode_sentence_line), BlancallMode.SENTENCE
-        ),
-        ModeEntry(
-            "🔤", stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word),
-            stringResource(com.ilyskyo.blancall.R.string.mode_word_line), BlancallMode.WORD
-        ),
-        ModeEntry(
-            "✍️", stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse),
-            stringResource(com.ilyskyo.blancall.R.string.mode_reverse_line), BlancallMode.REVERSE
-        ),
-        ModeEntry(
-            "🎯", stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
-            stringResource(com.ilyskyo.blancall.R.string.mode_custom_card_desc), custom = true
-        )
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence), BlancallMode.SENTENCE),
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word), BlancallMode.WORD),
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse), BlancallMode.REVERSE),
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.custom_cloze), custom = true)
     )
     // ── 错峰窗口：把 containerProgress 切成 4 段不重叠区间，每段 0.25 ──
     // 标题：[0.0, 0.25] → 容器刚冒出时立刻出现
@@ -432,12 +420,12 @@ private fun ModeListContent(
             // BOTTOM_SHEET：外层 GlassModalBottomSheet 自带 verticalScroll（内容即可滚动），
             // 此处不得再叠加滚动 —— 嵌套垂直滚动会让内层收到无限高约束并直接崩溃
             //（IllegalStateException: Vertically scrollable ... infinity ...，真机闪退根因）
-            Modifier.padding(top = 20.dp, bottom = 6.dp)
+            Modifier.padding(top = 20.dp, bottom = 10.dp)
         } else {
             // UP / DOWN 浮窗：容器自身无滚动，内容在这里滚动（单层，无嵌套）
             Modifier
                 .verticalScroll(rememberScrollState())
-                .padding(top = 20.dp, bottom = 6.dp)
+                .padding(top = 20.dp, bottom = 10.dp)
         }
     ) {
         // 标题：index 0，最先出现
@@ -457,116 +445,57 @@ private fun ModeListContent(
         Spacer(Modifier.height(14.dp))
 
         // 项：index 1..3，错峰出现
-        entries.forEachIndexed { i, entry ->
-            val p = itemProgress(i + 1)
-            val slideFromTop = expandDirection == ExpandDirection.DOWN || expandDirection == ExpandDirection.BOTTOM_SHEET
-            val itemSlide = (1f - p) * if (slideFromTop) 14f else -14f
-            PressableModeItem(
-                progress = p,
-                itemSlideY = itemSlide,
-                emoji = entry.emoji,
-                label = entry.label,
-                sublabel = entry.sublabel,
-                onClick = {
-                    onModeSelected(
-                        if (entry.custom) PickerSelection.Custom
-                        else PickerSelection.Base(entry.mode)
-                    )
-                }
-            )
+        //
+        // 四项合进一个圆角分组里（行间一条极淡发丝线），而不是各挂一张带描边的独立卡片：
+        // 四张各自描边的卡并列时，边界比内容还显眼，四块深浅不一的"卡"读起来像四个控件；
+        // 一个分组内的四行读起来才是「同一件事的四个选项」。
+        ModeOptionGroup(modifier = Modifier.padding(horizontal = 10.dp)) {
+            entries.forEachIndexed { i, entry ->
+                if (i > 0) ModeOptionDivider()
+                val p = itemProgress(i + 1)
+                val slideFromTop = expandDirection == ExpandDirection.DOWN || expandDirection == ExpandDirection.BOTTOM_SHEET
+                val itemSlide = (1f - p) * if (slideFromTop) 6f else -6f
+                PressableModeItem(
+                    progress = p,
+                    itemSlideY = itemSlide,
+                    label = entry.label,
+                    onClick = {
+                        onModeSelected(
+                            if (entry.custom) PickerSelection.Custom
+                            else PickerSelection.Base(entry.mode)
+                        )
+                    }
+                )
+            }
         }
     }
 }
 
 /**
- * 单项：进度驱动的入场 + 按下时的反馈。
+ * 单项：进度驱动的入场 + 按下时的底纹反馈。
  * 使用 graphicsLayer 而非 AnimatedVisibility，避免多 spec 叠加造成的节奏割裂。
+ *
+ * **这一行不做缩放**：它和上下邻居是紧贴的，一缩放就会在分组底色上露出四道缝，
+ * 看起来像整组被拆开。分组列表的按压反馈交给底纹（见 [ModeOptionRow]），
+ * 这是 iOS 设置页的做法，也是唯一不破坏「整组是一块」的做法。
  */
 @Composable
 private fun PressableModeItem(
     progress: Float,
     itemSlideY: Float,
-    emoji: String,
     label: String,
-    sublabel: String,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    // 按下的**一个**进度量（0=未按，1=按到底）：缩放与 tonalElevation 都从它派生，
-    // 保证两件事同一拍。改造前缩放走弹簧、底色与 tonalElevation 在 isPressed 那一帧
-    // 硬切 —— 东西沉下去了、光却没跟上，读起来像两个动画打架。
-    // 幅度用词表里的 Container 档（0.97，与这里的原值一致）。
-    val pressT by animateFloatAsState(
-        targetValue = if (isPressed) 1f else 0f,
-        animationSpec = Motion.press(),
-        label = "modeCardPress"
-    )
-    val pressScale = 1f - (1f - Motion.Scale.container) * pressT
-    // 底色按词表走 tween（alpha/颜色不用弹簧：没有位移可言）
-    val itemColor by animateColorAsState(
-        targetValue = if (isPressed)
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        else
-            // 不透明实色：与半透明玻璃背景形成明暗层次（不能改成半透明，否则又糊在一起）
-            MaterialTheme.colorScheme.surface,
-        animationSpec = MotionFade.color(MotionFade.pressAlpha),
-        label = "modeCardColor"
-    )
-
-    val itemShape = RoundedCornerShape(14.dp)
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 3.dp)
-            .graphicsLayer {
-                // 入场进度与按压进度合成：press 在 progress=1 后才介入
-                val entryScale = 0.94f + 0.06f * progress
-                val totalScale = entryScale * pressScale
-                scaleX = totalScale
-                scaleY = totalScale
-                translationY = itemSlideY
-                alpha = progress
-            }
-            // 描边：极淡的轮廓线，只做边界暗示，不抢视线
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.onSurface.copy(
-                    alpha = if (isBlancallDark()) 0.10f else 0.06f
-                ),
-                shape = itemShape
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        shape = itemShape,
-        color = itemColor,
-        tonalElevation = 2.dp * pressT
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(emoji, fontSize = 22.sp)
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = sublabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-            }
+    ModeOptionRow(
+        label = label,
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = Modifier.graphicsLayer {
+            translationY = itemSlideY
+            alpha = progress
         }
-    }
+    )
 }
 
 /**

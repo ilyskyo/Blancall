@@ -174,6 +174,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // 长按菜单里「显示提示」那一行打开的「提示设置」浮层（点击该行仍是原来的总开关）
     var showHintSheet by remember { mutableStateOf(false) }
     val hintLength by vm.hintLength.collectAsStateWithLifecycle()
+    val hintPunctuation by vm.hintPunctuation.collectAsStateWithLifecycle()
     // 使用指引的锚点与"看过没"：同一屏最多弹一条，见两处 CoachMark 的 enabled 条件
     val titleAnchor = rememberCoachAnchor()
     // 「显示提示」那一行的锚点：长按它就打开提示设置，指引圈要落在这里
@@ -219,7 +220,10 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     // 必须重新应用配置（rememberSaveable 会把"已应用"误恢复为 true，导致随机挖空且不锁定）
     var customConfigApplied by remember { mutableStateOf(false) }
     LaunchedEffect(initialConfigId, launchOneShotToken, article?.id) {
-        if (article == null || articleIds.size != 1 || customConfigApplied ||
+        // 普通入口（首页继续、文章直接开练）两个参数都是缺省值：这里没有配置要应用，
+        // 也不该落到下面「配置已被删除」的提示分支
+        val hasLaunchConfig = initialConfigId > 0L || launchOneShotToken > 0L
+        if (!hasLaunchConfig || article == null || articleIds.size != 1 || customConfigApplied ||
             vm.customConfigName.value != null
         ) {
             return@LaunchedEffect
@@ -348,6 +352,10 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
             else -> com.ilyskyo.blancall.R.string.hint_preview_none
         }
     )
+    // 标点提示不参与上面「字数 × 内容」的四组合，单独追加一行说明它此刻有没有在起作用
+    val hintPreviewPunct = if (hintPunctuation) {
+        stringResource(com.ilyskyo.blancall.R.string.hint_preview_punct)
+    } else null
 
     val blankCountWarning by vm.blankCountWarning.collectAsStateWithLifecycle()
 
@@ -721,6 +729,29 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         },
                     )
                     GlassMenuItem(
+                        onClick = { vm.toggleHintPunctuation() },
+                        label = {
+                            Column {
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.hint_punctuation_toggle),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    stringResource(com.ilyskyo.blancall.R.string.hint_punctuation_desc),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        trailing = {
+                            GlassSwitch(
+                                checked = hintPunctuation,
+                                onCheckedChange = { vm.toggleHintPunctuation() }
+                            )
+                        },
+                    )
+                    GlassMenuItem(
                         onClick = { vm.toggleHint() },
                         label = {
                             Column {
@@ -747,11 +778,20 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         enabled = false,
                         onClick = {},
                         label = {
-                            Text(
-                                hintPreview,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Column {
+                                Text(
+                                    hintPreview,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (hintPreviewPunct != null) {
+                                    Text(
+                                        hintPreviewPunct,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         },
                     )
                 }
@@ -1023,6 +1063,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                 BlancallMode.SENTENCE -> SentenceClozeContent(
                                     blancall = sentenceCloze,
                                     showBlankLength = hintLength,
+                                    showPunctuationHints = hintPunctuation,
                                     userAnswers = userAnswers,
                                     checkResults = checkResults,
                                     isSubmitted = isSubmitted,
@@ -1146,49 +1187,43 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         )
                         Spacer(Modifier.height(20.dp))
 
-                        // 句子挖空
-                        ModeCard(
-                            emoji = "📝",
-                            title = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence),
-                            desc = stringResource(com.ilyskyo.blancall.R.string.mode_sentence_card_desc),
-                            onClick = {
-                                vm.onModeChosen(BlancallMode.SENTENCE)
-                                modeSelected = true
-                            }
-                        )
-                        Spacer(Modifier.height(10.dp))
-
-                        // 字词挖空
-                        ModeCard(
-                            emoji = "🔤",
-                            title = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word),
-                            desc = stringResource(com.ilyskyo.blancall.R.string.mode_word_card_desc),
-                            onClick = {
-                                vm.onModeChosen(BlancallMode.WORD)
-                                modeSelected = true
-                            }
-                        )
-                        Spacer(Modifier.height(10.dp))
-
-                        // 反向默写
-                        ModeCard(
-                            emoji = "✍️",
-                            title = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse),
-                            desc = stringResource(com.ilyskyo.blancall.R.string.mode_reverse_card_desc),
-                            onClick = {
-                                vm.onModeChosen(BlancallMode.REVERSE)
-                                modeSelected = true
-                            }
-                        )
-                        // 跨文复习专属：「自定义挖空」—— 按文章分别指定要应用的挖空配置
-                        if (isCrossMode) {
-                            Spacer(Modifier.height(10.dp))
-                            ModeCard(
-                                emoji = "🎯",
-                                title = stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
-                                desc = stringResource(com.ilyskyo.blancall.R.string.mode_custom_card_desc),
-                                onClick = { showCrossCustomSheet = true }
+                        // 四项合进一个圆角分组，与锚点浮窗里的模式选项卡同一套视觉，
+                        // 只留模式名：不带图标、不带解释性副标题（试一次就懂，不需要预先讲）
+                        ModeOptionGroup {
+                            // 句子挖空
+                            ModeOptionRow(
+                                label = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence),
+                                onClick = {
+                                    vm.onModeChosen(BlancallMode.SENTENCE)
+                                    modeSelected = true
+                                }
                             )
+                            ModeOptionDivider()
+                            // 字词挖空
+                            ModeOptionRow(
+                                label = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word),
+                                onClick = {
+                                    vm.onModeChosen(BlancallMode.WORD)
+                                    modeSelected = true
+                                }
+                            )
+                            ModeOptionDivider()
+                            // 反向默写
+                            ModeOptionRow(
+                                label = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse),
+                                onClick = {
+                                    vm.onModeChosen(BlancallMode.REVERSE)
+                                    modeSelected = true
+                                }
+                            )
+                            // 跨文复习专属：「自定义挖空」—— 按文章分别指定要应用的挖空配置
+                            if (isCrossMode) {
+                                ModeOptionDivider()
+                                ModeOptionRow(
+                                    label = stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
+                                    onClick = { showCrossCustomSheet = true }
+                                )
+                            }
                         }
                     }
             }

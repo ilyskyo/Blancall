@@ -135,6 +135,11 @@ data class ReminderPlanItem(
  *   应让该原因「缺席」，由次高优先级的规则顶上，而不是把整次提醒清空。
  *
  * 调用方按返回顺序发送即可；建议再设一个上限（见 ReminderWorker.MAX_PER_RUN）兜底。
+ *
+ * ## 共享什么、不共享什么
+ * Worker 的取数口径（哪些算今天到期、哪些被暂停、句子算不算今日一句）由
+ * [com.ilyskyo.blancall.algorithm.StudyCoach.Snapshot] 统一提供，与首页/统计页一致；
+ * 本对象的**优先级、渠道规则、免打扰与去重**是通知自己的，不与今日计划共用。
  */
 object ReminderPlan {
 

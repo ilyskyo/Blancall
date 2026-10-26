@@ -19,19 +19,27 @@ val hasReleaseSigning = keystoreProperties.getProperty("release.storeFile")?.isN
 android {
     namespace = "com.ilyskyo.blancall"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
+        version = release(37) {
+            minorApiLevel = 2
         }
     }
 
     defaultConfig {
         applicationId = "com.ilyskyo.blancall"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 52
         versionName = "7.5.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 16 KB page size：NDK r27 需显式开启，否则 targetSdk 37 在 16KB 设备上
+        // 可能无法加载 native 库（AGP 8.5+ 会校验 APK 对齐）。
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+            }
+        }
 
         // 手写识别 native 只编 arm64-v8a / armeabi-v7a：
         // 目标设备为平板与手机（均为 ARM），x86/x86_64 仅供模拟器，
@@ -126,13 +134,6 @@ android {
         }
     }
 }
-
-// 第三方 LiquidGlass 库要求 compileSdk 37，本机 SDK 暂未安装 android-37 平台；
-// 跳过其 AAR 元数据编译检查（运行时所用 API 在 compileSdk 36 可用，此前构建验证正常）
-// 仅精确放行 check*AarMetadata 任务：不能用 startsWith("check")，否则会命中聚合任务 check 本身，
-// 导致 ./gradlew check 被静默跳过（测试与 lint 不执行）。装 SDK 37 后可整体删除本段。
-tasks.matching { it.name == "checkDebugAarMetadata" || it.name == "checkReleaseAarMetadata" }
-    .configureEach { enabled = false }
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))

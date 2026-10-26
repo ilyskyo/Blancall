@@ -709,6 +709,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             val token = OneShotCloze.put(art.id, cfg)
                             navController.navigate("practice/${art.id}?mode=SENTENCE&oneShot=$token")
                         }
+                    },
+                    // 「练这一段」面板里的挖空方式：整篇按该方式开练（与底部「开始练习」同一入口）
+                    onPracticeMode = { mode ->
+                        navController.navigate("practice/${art.id}?mode=${mode.name}")
                     }
                 )
             }

@@ -134,7 +134,7 @@ import androidx.compose.ui.res.stringResource
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SentenceCardScreen(navController: NavController) {
+fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val articleViewModel: ArticleViewModel = viewModel()
@@ -210,7 +210,7 @@ fun SentenceCardScreen(navController: NavController) {
         mutableStateMapOf<String, FsrsEngine.Rating>()
     }
 
-    LaunchedEffect(activeSentencePool, reviewRound, pausedArticleIds) {
+    LaunchedEffect(activeSentencePool, reviewRound, pausedArticleIds, queueLimit) {
         if (activeSentencePool.isEmpty()) {
             // 全部文章都被暂停（或筛选后为空）：给空态，而不是一直停在加载圈
             states = emptyMap()
@@ -227,10 +227,13 @@ fun SentenceCardScreen(navController: NavController) {
                 sentenceStore, activeSentencePool, s, now,
                 excludedArticleIds = pausedArticleIds,
             )
-            s to DailySentenceCoordinator.buildQueue(
+            val built = DailySentenceCoordinator.buildQueue(
                 sentenceStore, activeSentencePool, s, now, includeAllLearned = allLearned,
                 excludedArticleIds = pausedArticleIds,
             )
+            // 时长预算入口承诺的是「本次 N 句」：截断整条队列（今日句与到期句在前）；
+            // 用户点「复习全部」时 allLearned = true，不受该上限约束。
+            s to if (allLearned || queueLimit <= 0) built else built.take(queueLimit)
         }
         states = loadedStates
         queue = loadedQueue

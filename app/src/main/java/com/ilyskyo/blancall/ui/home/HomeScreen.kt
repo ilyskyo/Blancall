@@ -78,10 +78,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
+import com.ilyskyo.blancall.algorithm.DayBucket
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.ReviewTemplate
-import com.ilyskyo.blancall.algorithm.MistakeNotebook
 import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.algorithm.StudyCoach
 import com.ilyskyo.blancall.algorithm.TagOps
@@ -90,6 +89,7 @@ import com.ilyskyo.blancall.data.repository.CustomClozeStore
 import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.HomeLayoutStore
+import com.ilyskyo.blancall.data.repository.InProgressPracticeStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
@@ -354,33 +354,39 @@ fun HomeScreen(
     val reviewTemplate = remember(reviewTemplateId) { ReviewTemplate.fromId(reviewTemplateId) }
     // FSRS 状态后台加载：首帧先渲染，加载完成后刷新，避免同步读文件卡顿
     var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
-    // 暂停中的文章：任务流里暂停后首页必须立刻不再显示待复习（revision 驱动刷新）
-    var pausedArticleIds by remember { mutableStateOf(fsrsStore.pausedArticleIds()) }
+    // 暂停快照：任务流里暂停/改期后首页必须立刻按新状态重算（revision 驱动刷新）
+    var pauses by remember { mutableStateOf(fsrsStore.pausedArticles()) }
+    var sentenceStates by remember { mutableStateOf(fsrsStore.allSentenceStates()) }
+    val pausedArticleIds = remember(pauses) { pauses.keys }
     val fsrsRevision by fsrsStore.revision.collectAsState()
     LaunchedEffect(fsrsRevision) {
         fsrsStore.awaitLoaded()
         fsrsStates = fsrsStore.allStates()
-        pausedArticleIds = fsrsStore.pausedArticleIds()
-    }
-    val dueArticles = remember(articles, allRecords, fsrsStates, reviewTemplate, pausedArticleIds) {
-        // 先一次性按文章分组建索引，避免对每篇文章重复 filter 全表（O(文章×记录) → O(文章+记录)）
-        val recordsByArticle = allRecords.groupBy { it.articleId }
-        articles.filter { article ->
-            val records = recordsByArticle[article.id].orEmpty()
-            EbbinghausScheduler.getReviewStatus(
-                fsrsStates[article.id],
-                records,
-                reviewTemplate,
-                paused = article.id in pausedArticleIds,
-            ) is EbbinghausScheduler.ReviewStatus.DUE
-        }
+        pauses = fsrsStore.pausedArticles()
+        sentenceStates = fsrsStore.allSentenceStates()
     }
 
+    // ── 今日计划：唯一判定来自 StudyCoach.Snapshot，本页只取数与执行 ──
+    val examEpochDay by ReminderPrefs.examEpochDayFlow.collectAsState()
+    val goalMinutes by ReminderPrefs.goalMinutesFlow.collectAsState()
+    val dailyPracticeGoal by ReminderPrefs.dailyPracticeGoalFlow.collectAsState()
+    var planNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            planNow = System.currentTimeMillis()
+        }
+    }
+    // 跨午夜「今日一句 / 今日次数」自动换日：分钟 tick 里只有日历天变化才换 key
+    val planDate = remember(planNow) { DayBucket.localDate(planNow) }
+
     // ── 句子卡片（每日一句）：到期优先抽句、同日幂等落盘 ──
-    // 抽句与状态推导全部在 IO 线程；随文章加载与 FSRS 状态加载完成自动刷新
+    // 抽句与状态推导全部在 IO 线程；随文章加载、FSRS 状态与日历天变化自动刷新
     // （produceState 换 key 会取消上一轮，setTodayIfAbsent 保证同日只抽一次不重复落盘）
     val sentenceStore = remember { SentenceCardStore.getInstance(context.filesDir) }
-    val sentenceUi by produceState<SentenceDailyUi?>(null, articles, fsrsStates, pausedArticleIds) {
+    val sentenceUi by produceState<SentenceDailyUi?>(
+        null, articles, fsrsStates, pausedArticleIds, planDate
+    ) {
         if (articles.isEmpty()) {
             value = null
             return@produceState
@@ -401,6 +407,7 @@ fun HomeScreen(
                     SentenceSelector.articleIdOf(k) !in pausedArticleIds
             }
             SentenceDailyUi(
+                key = snapshot.key,
                 text = snapshot.text,
                 articleTitle = title,
                 statusLine = sentenceStatusLine(context, states[snapshot.key], now),
@@ -409,98 +416,51 @@ fun HomeScreen(
         }
     }
 
-    // ── 继续练习：扫描未完成的练习进度文件（返回首页时重新扫描） ──
-    val resumables by produceState<List<ResumableItem>>(emptyList(), articles) {
-        if (articles.isEmpty()) { value = emptyList(); return@produceState }
-        value = withContext(Dispatchers.IO) {
-            context.filesDir.listFiles { f ->
-                f.name.startsWith("practice_state_") && f.name.endsWith(".json")
-            }?.mapNotNull { file ->
-                try {
-                    val json = JSONObject(file.readText())
-                    if (json.optString("status") != "IN_PROGRESS") return@mapNotNull null
-                    val total = json.optInt("totalBlanks", 0)
-                    val answered = json.optInt("answeredCount", 0)
-                    if (total - answered <= 0) return@mapNotNull null
-                    ResumableItem(
-                        articleId = json.optLong("articleId", -1L),
-                        mode = json.optString("mode", ""),
-                        answered = answered,
-                        total = total,
-                        lastTime = json.optLong("lastPracticeTime", 0L)
-                    )
-                } catch (_: Exception) { null }
-            }?.sortedByDescending { it.lastTime } ?: emptyList()
-        }
+    // ── 未完成练习：唯一扫描入口（原始事实；暂停/删除过滤在 Snapshot 内完成）──
+    val rawResumables by produceState(emptyList(), articles) {
+        value = if (articles.isEmpty()) emptyList()
+        else withContext(Dispatchers.IO) { InProgressPracticeStore.scan(context.filesDir) }
     }
 
-    // ── 今日计划：唯一判定来自 StudyCoach，本页只取数与执行 ──
-    val examEpochDay by ReminderPrefs.examEpochDayFlow.collectAsState()
-    val goalMinutes by ReminderPrefs.goalMinutesFlow.collectAsState()
-    val dailyPracticeGoal by ReminderPrefs.dailyPracticeGoalFlow.collectAsState()
-    var planNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(60_000)
-            planNow = System.currentTimeMillis()
-        }
-    }
-    val planInput = remember(
-        allRecords, articles, dueArticles, resumables, sentenceUi,
-        goalMinutes, dailyPracticeGoal, examEpochDay, planNow,
+    // 静态部分按数据变化重算；分钟 tick 只重跑时间相关计数（不在 tick 里重扫记录）
+    val prepared = remember(
+        articles, allRecords, fsrsStates, pauses, reviewTemplate,
+        rawResumables, sentenceUi?.key,
     ) {
-        val recordsByArticle = allRecords.groupBy { it.articleId }
-        val today = java.time.LocalDate.now()
-        val entries = MistakeNotebook.entries(allRecords, onlyUnresolved = true)
-        val weakest = articles.mapNotNull { a ->
-            val rs = recordsByArticle[a.id].orEmpty()
-            val total = rs.sumOf { it.totalBlanks }
-            if (total <= 0) null else a to (rs.sumOf { it.correctCount }.toFloat() / total)
-        }.minByOrNull { it.second }?.takeIf { it.second < 0.85f }
-        StudyCoach.Input(
+        StudyCoach.prepare(
+            StudyCoach.Source(
+                articles = articles,
+                records = allRecords,
+                states = fsrsStates,
+                pauses = pauses,
+                sentenceStates = sentenceStates,
+                template = reviewTemplate,
+                resumables = rawResumables,
+                todaySentenceKey = sentenceUi?.key,
+            )
+        )
+    }
+    val snapshot = remember(prepared, planNow, goalMinutes, dailyPracticeGoal, examEpochDay) {
+        StudyCoach.snapshot(
+            prepared = prepared,
             now = planNow,
-            dueArticles = dueArticles.map { a ->
-                val st = fsrsStates[a.id]
-                val last = recordsByArticle[a.id].orEmpty().maxByOrNull { it.timestamp }
-                StudyCoach.DueArticle(
-                    articleId = a.id,
-                    title = a.title,
-                    due = st?.due ?: planNow,
-                    lastReview = st?.lastReview ?: 0L,
-                    reviewCount = st?.reviewCount ?: 0,
-                    lapses = st?.lapses ?: 0,
-                    estimatedBlanks = last?.totalBlanks
-                        ?: (a.content.length / 25).coerceIn(3, 80),
-                    lastDurationMs = last?.duration ?: 0L,
-                )
-            },
-            resumables = resumables.map {
-                StudyCoach.Resumable(
-                    it.articleId,
-                    articles.firstOrNull { a -> a.id == it.articleId }?.title.orEmpty(),
-                    it.mode, it.answered, it.total, it.lastTime
-                )
-            },
-            dueSentenceCount = sentenceUi?.pendingDueCount ?: 0,
-            weakestArticleId = weakest?.first?.id,
-            weakestArticleTitle = weakest?.first?.title.orEmpty(),
-            weakMistakeCount = weakest?.first?.let { w ->
-                entries.count { it.articleId == w.id }
-            } ?: 0,
-            mistakeCount = entries.size,
             goalMinutes = goalMinutes,
-            secondsPerBlank = StudyCoach.secondsPerBlank(
-                allRecords.map { it.duration to it.totalBlanks }
-            ),
-            todayPracticeCount = allRecords.count {
-                java.time.Instant.ofEpochMilli(it.timestamp)
-                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate() == today
-            },
             dailyPracticeGoal = dailyPracticeGoal,
             examEpochDay = examEpochDay.takeIf { it > 0L },
         )
     }
-    val todayPlan = remember(planInput) { StudyCoach.buildPlan(planInput) }
+    val todayPlan = remember(snapshot) { StudyCoach.buildPlan(snapshot.input) }
+
+    // 首页卡片消费的派生列表：到期卡、继续卡与今日计划共用同一份过滤结果
+    val dueArticles = remember(snapshot, articles) {
+        val dueIds = snapshot.input.dueArticles.mapTo(HashSet()) { it.articleId }
+        articles.filter { it.id in dueIds }
+    }
+    val resumables = remember(snapshot) {
+        snapshot.resumables.map {
+            ResumableItem(it.articleId, it.mode, it.answered, it.total, it.lastTime)
+        }
+    }
 
     // 从 ImportScreen 保存成功后返回时接收信号
     var showSaveSuccessDialog by remember { mutableStateOf(false) }
@@ -733,15 +693,22 @@ fun HomeScreen(
 
             // ── 今日计划：一个入口、最多三件事，点第一条直接开练 ──
             TodayPlanCard(
-                input = planInput,
+                input = snapshot.input,
                 plan = todayPlan,
+                dueArticleCount = snapshot.dueArticleCount,
+                pausedArticleCount = snapshot.pausedArticleCount,
+                allScheduledPaused = snapshot.allScheduledPaused,
+                onOpenFlow = { navController.navigate("study_flow") },
                 onStartItem = { item ->
                     when (item.kind) {
                         StudyCoach.Kind.RESUME ->
                             navController.navigate("practice/${item.articleId}?resume=true")
-                        StudyCoach.Kind.REVIEW_ARTICLE,
-                        StudyCoach.Kind.WEAK_ARTICLE ->
+                        StudyCoach.Kind.REVIEW_ARTICLE ->
                             navController.navigate("practice/${item.articleId}?mode=SENTENCE")
+                        StudyCoach.Kind.WEAK_ARTICLE ->
+                            navController.navigate(
+                                "practice/${item.articleId}?mode=SENTENCE&sectionMode=WEAKNESS"
+                            )
                         StudyCoach.Kind.SENTENCE_CARDS ->
                             navController.navigate("sentence_cards")
                         StudyCoach.Kind.MISTAKE_DRILL ->
@@ -753,7 +720,7 @@ fun HomeScreen(
                     }
                 },
                 onStartBudget = { minutes ->
-                    val budget = StudyCoach.budget(planInput, minutes)
+                    val budget = StudyCoach.budget(snapshot.input, minutes)
                     when {
                         budget.articleIds.size > 1 -> navController.navigate(
                             "cross/${budget.articleIds.joinToString(",")}?budget=$minutes"
@@ -761,7 +728,9 @@ fun HomeScreen(
                         budget.articleIds.size == 1 -> navController.navigate(
                             "practice/${budget.articleIds.first()}?mode=SENTENCE&budget=$minutes"
                         )
-                        budget.includeSentenceCards -> navController.navigate("sentence_cards")
+                        budget.sentenceCardCount > 0 -> navController.navigate(
+                            "sentence_cards?limit=${budget.sentenceCardCount}"
+                        )
                     }
                 },
                 onExamEpochDayChange = { ReminderPrefs.examEpochDay = it },
@@ -908,7 +877,9 @@ fun HomeScreen(
                             },
                             stats = homeStats,
                             onOpenStats = { navController.navigateToTab("overview") },
-                            sentenceUi = sentenceUi,
+                            sentenceUi = sentenceUi?.copy(
+                                pendingDueCount = snapshot.sentenceOtherDue
+                            ),
                             onOpenSentenceCard = { anchor ->
                                 navController.navigateReveal("sentence_cards", anchor)
                             },

@@ -93,25 +93,31 @@ fun LiquidGlassPopupBackdrop(
     val refractPx = with(density) { refractionHeightDp.dp.toPx() }
     val offsetPx = with(density) { refractionOffsetDp.dp.toPx() }
 
-    // 主题色光斑：五点均匀分布（左上/右上/左下/右下/底部中），
-    // 确保液态玻璃在整个卡片范围内都有可折射的采样源。
-    // 浅色：靛蓝 + 淡紫 + 冷白；深色：冷白 + 靛蓝 + 淡紫
+    // 采样源光斑：**全中性白色 + 四角镜像对称**。
+    //
+    // 这里原本是五点彩色光斑（左上靛蓝 / 右上淡紫 / 左下蓝紫 / 右下蓝 / 底部白）。
+    // 真机读感是「左上角挂着一片淡蓝残留，右上角什么颜色都没有」——
+    // 玻璃把采样源放大折射后，色相不同的几颗光斑变成局部色块，而不是均匀氛围光。
+    //
+    // 修法不是把 alpha 调小（那只是把色块变淡，仍然一边有一边没有），而是换掉两处不均匀：
+    // 1) 色相：一律纯白，整块玻璃只剩明暗层次，物理上不可能再偏色；
+    // 2) 位置：左右 x 严格镜像、alpha 左右完全一致，杜绝「一边有、一边没有」。
+    // 上下给一点点差（上略亮）保留"顶面受光"的立体感，但左右同值，残色感消失。
+    // 浅色下白斑几乎不可见（玻璃读作统一的磨砂白），深色下是柔和的环境高光。
     val spots = remember(isDark) {
         if (isDark) {
             listOf(
-                LiquidBackdropCanvas.Spot(0x253B5DE7.toInt(), 0.15f, 0.12f, 0.48f),   // 左上 — 靛蓝
-                LiquidBackdropCanvas.Spot(0x207A6BF0.toInt(), 0.85f, 0.10f, 0.46f),   // 右上 — 淡紫
-                LiquidBackdropCanvas.Spot(0x18A78BFA.toInt(), 0.10f, 0.75f, 0.42f),   // 左下 — 淡紫
-                LiquidBackdropCanvas.Spot(0x156B8EF0.toInt(), 0.90f, 0.70f, 0.44f),   // 右下 — 蓝
-                LiquidBackdropCanvas.Spot(0x14FFFFFF,         0.50f, 0.94f, 0.38f)    // 底部中 — 冷白高光
+                LiquidBackdropCanvas.Spot(0x18FFFFFF, 0.20f, 0.16f, 0.62f),   // 左上 — 冷白
+                LiquidBackdropCanvas.Spot(0x18FFFFFF, 0.80f, 0.16f, 0.62f),   // 右上 — 与左上完全同值
+                LiquidBackdropCanvas.Spot(0x0EFFFFFF, 0.20f, 0.84f, 0.62f),   // 左下
+                LiquidBackdropCanvas.Spot(0x0EFFFFFF, 0.80f, 0.84f, 0.62f)    // 右下
             )
         } else {
             listOf(
-                LiquidBackdropCanvas.Spot(0x283B5DE7, 0.14f, 0.10f, 0.46f),           // 左上 — 品牌靛蓝
-                LiquidBackdropCanvas.Spot(0x22A78BFA, 0.86f, 0.08f, 0.44f),          // 右上 — 淡紫
-                LiquidBackdropCanvas.Spot(0x1A7A6BF0, 0.08f, 0.73f, 0.40f),          // 左下 — 蓝紫
-                LiquidBackdropCanvas.Spot(0x186B8EF0, 0.92f, 0.68f, 0.42f),          // 右下 — 蓝
-                LiquidBackdropCanvas.Spot(0x2EFFFFFF, 0.50f, 0.95f, 0.38f)           // 底部中 — 白色高光
+                LiquidBackdropCanvas.Spot(0x14FFFFFF, 0.20f, 0.16f, 0.62f),   // 左上 — 冷白
+                LiquidBackdropCanvas.Spot(0x14FFFFFF, 0.80f, 0.16f, 0.62f),   // 右上 — 与左上完全同值
+                LiquidBackdropCanvas.Spot(0x0AFFFFFF, 0.20f, 0.84f, 0.62f),   // 左下
+                LiquidBackdropCanvas.Spot(0x0AFFFFFF, 0.80f, 0.84f, 0.62f)    // 右下
             )
         }
     }

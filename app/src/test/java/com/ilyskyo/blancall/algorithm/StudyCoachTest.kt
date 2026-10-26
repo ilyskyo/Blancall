@@ -109,7 +109,42 @@ class StudyCoachTest {
         assertTrue("应装下至少一篇", budget.articleIds.isNotEmpty())
         assertTrue("不应把 15 分钟预算排成 20 分钟", budget.estimatedMinutes <= 15)
         assertTrue("应按到期先后", budget.articleIds.first() == 20L)
-        assertFalse(budget.includeSentenceCards)
+        assertEquals(0, budget.sentenceCardCount)
+    }
+
+    @Test
+    fun `只有句子卡时按句数估算并给出本次上限`() {
+        // 40 句到期、无文章、5 分钟：每句 0.4 分钟 → 12 句 ≈ 4.8 分钟
+        val budget = StudyCoach.budget(
+            StudyCoach.Input(now = now, dueSentenceCount = 40),
+            5,
+        )
+        assertTrue(budget.articleIds.isEmpty())
+        assertEquals(12, budget.sentenceCardCount)
+        assertEquals(5, budget.estimatedMinutes)
+        assertFalse(budget.empty)
+    }
+
+    @Test
+    fun `有文章可排时预算只承诺文章不承诺句子卡`() {
+        val budget = StudyCoach.budget(
+            StudyCoach.Input(
+                now = now,
+                dueArticles = listOf(due(1)),
+                dueSentenceCount = 20,
+            ),
+            15,
+        )
+        assertEquals(listOf(1L), budget.articleIds)
+        assertEquals(0, budget.sentenceCardCount)
+    }
+
+    @Test
+    fun `没有文章也没有句子时预算为空`() {
+        val budget = StudyCoach.budget(StudyCoach.Input(now = now), 10)
+        assertTrue(budget.empty)
+        assertEquals(0, budget.sentenceCardCount)
+        assertEquals(0, budget.estimatedMinutes)
     }
 
     @Test

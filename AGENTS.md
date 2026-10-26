@@ -11,8 +11,8 @@
 | 项 | 值 |
 |---|---|
 | applicationId | `com.ilyskyo.blancall` |
-| versionName | `7.5.2`（以 `app/build.gradle.kts` 为准） |
-| versionCode | 50 |
+| versionName | `7.5.3`（以 `app/build.gradle.kts` 为准） |
+| versionCode | 52 |
 | local.properties 的 sdk.dir | Android SDK（`AppData\Local\Android\Sdk`） |
 
 与 `Blancall-Std` 的唯一 gradle 差异就是上面三项的applicationId / versionName。
@@ -24,7 +24,7 @@
   - 提交前确认里面的内容是否该入库 —— 规则类文件通常该入库，缓存类不该
 - `apk-output/` 存放历史发布包（2.8 → 7.x），已被 `.gitignore` 忽略
 - `philosophical_video.mp4`、`_gaokao.txt` 等根目录杂项文件，注意不要误提交
-- Gradle JVM 堆配置两版相同：`org.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8`
+- Gradle JVM 堆配置两版相同：`org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8`
   （Std 的 `gradle.properties:13` 也有这一行，此前误记为「Std 没有」，已据实修正）
 
 ## 打发布包的完整流程

@@ -262,7 +262,7 @@ fun StudyTaskDetailScreen(navController: NavController, articleId: Long) {
                                 task = task,
                                 kind = advice,
                                 note = actionNote,
-                                onStart = { navController.navigate("practice/${task.articleId}") },
+                                onStart = { navController.navigate("practice/${task.articleId}?mode=SENTENCE") },
                                 onWeakness = {
                                     navController.navigate(
                                         "practice/${task.articleId}?mode=SENTENCE&sectionMode=WEAKNESS"
@@ -304,7 +304,7 @@ fun StudyTaskDetailScreen(navController: NavController, articleId: Long) {
                             DetailScheduleCard(
                                 task = task,
                                 intervalDays = intervalDays,
-                                onStart = { navController.navigate("practice/${task.articleId}") },
+                                onStart = { navController.navigate("practice/${task.articleId}?mode=SENTENCE") },
                                 onAdjust = { sheetOpen = true },
                                 onTogglePause = { togglePause() },
                             )
@@ -545,6 +545,17 @@ private fun DetailAdviceCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+            }
+            // 暂停只表示退出计划与提醒，不锁住内容：仍允许从这里直接开始一次练习
+            if (kind == DetailAdviceKind.PAUSED) {
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = onStart) {
+                    Text(
+                        stringResource(R.string.flow_start_review),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
             }
         }
     }

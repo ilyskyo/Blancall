@@ -213,17 +213,22 @@ object BlancallGenerator {
         }
 
         // 构建 SentenceBlankInfo 列表
-        val blanks = blankGroups.mapIndexed { idx, group ->
+        // 空只覆盖实义内容：末尾标点留在正文里（标点不是要默写的记忆内容）。
+        // 分句之间的标点仍留在空内 —— 它是句子结构的一部分，要不要显式提示交给界面开关。
+        // mapNotNull：纯标点组成的退化分句去掉头尾后可能为空，不能留下"空答案"的空。
+        val blanks = blankGroups.mapNotNull { group ->
             val first = group.first()
-            val last = group.last()
+            val joined = group.joinToString("") { it.text }
+            val covered = trimBlankTrailingPunctuation(joined)
+            if (covered.isEmpty()) return@mapNotNull null
             SentenceBlankInfo(
-                index = idx,
-                originalText = group.joinToString("") { it.text },
+                index = 0,
+                originalText = covered,
                 sentenceIndex = first.sentenceIdx,
                 startInSentence = first.startInSentence,
-                endInSentence = last.endInSentence
+                endInSentence = first.startInSentence + covered.length
             )
-        }
+        }.mapIndexed { idx, b -> b.copy(index = idx) }
 
         // 构建 displayText（在句内用 [N] ___ 标记挖空位置）
         val displayParts = mutableListOf<String>()
@@ -257,6 +262,57 @@ object BlancallGenerator {
         if (current.isNotEmpty()) result.add(current.toString())
         return result.ifEmpty { listOf(text) }
     }
+
+    /**
+     * 挖空末尾剥离的标点：句读标点 + 句末标点 + 右配对符号。
+     * 不含数字/字母 —— 「第 3」结尾的 3 是内容，不是标点。
+     */
+    private val BLANK_TRAILING_PUNCT: Set<Char> = CLAUSE_PUNCT + setOf(
+        '。', '.', '！', '!', '？', '?', '…', '~', '～', '：', ':',
+        '"', '\'', '”', '’', '」', '』', '】', '）', ')', '》', '〉'
+    )
+
+    /**
+     * 去掉片段末尾的标点（连同尾随空白）：挖空止于实义内容，标点留在正文里可见。
+     * 只动末尾 —— 内部标点是分句结构的一部分，仍归空内。
+     */
+    internal fun trimBlankTrailingPunctuation(text: String): String {
+        var end = text.length
+        while (end > 0 && (text[end - 1] in BLANK_TRAILING_PUNCT || text[end - 1].isWhitespace())) {
+            end--
+        }
+        return text.substring(0, end)
+    }
+
+    /**
+     * 挖空占位的「标点骨架」：标点原样保留，连续的非标点内容折叠成一个占位段。
+     * 「今日割五城，明日割十城」→「＿＿，＿＿」。
+     *
+     * 只回答「这一空被分成了几段、段间是什么标点」，不泄露任何要默写的字。
+     * 纯字符串操作，供「标点提示」开关在渲染层使用，可被 JVM 单测直接覆盖。
+     */
+    fun punctuationSkeleton(text: String, placeholder: String = "＿＿"): String {
+        if (text.isEmpty()) return text
+        val sb = StringBuilder()
+        var inContent = false
+        for (c in text) {
+            if (isBlankPunctuation(c)) {
+                sb.append(c)
+                inContent = false
+            } else if (!inContent) {
+                sb.append(placeholder)
+                inContent = true
+            }
+        }
+        return sb.toString()
+    }
+
+    /** 空内是否含被挖去的标点：没有标点时保持原来的占位外观，不让开关显得"改了字号" */
+    fun hasBlankedPunctuation(text: String): Boolean = text.any { isBlankPunctuation(it) }
+
+    /** 标点 = 既非汉字/字母/数字，也非空白的字符（数字是内容，绝不能当标点剥掉） */
+    private fun isBlankPunctuation(c: Char): Boolean =
+        !isChinese(c) && !c.isLetterOrDigit() && !c.isWhitespace()
 
     // ========== 字词挖空：1-3字词 + 相邻合并 ==========
 

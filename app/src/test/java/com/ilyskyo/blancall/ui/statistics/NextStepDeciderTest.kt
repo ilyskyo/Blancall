@@ -3,53 +3,124 @@
 
 package com.ilyskyo.blancall.ui.statistics
 
+import com.ilyskyo.blancall.algorithm.StudyCoach
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * [NextStepDecider] 的规则锁定：优先级（到期文章 > 薄弱篇 > 复习 > 空态）是一条产品规则，
- * 改坏了界面不会崩、只是推荐的东西悄悄变了 —— 所以必须有一条测试盯着。
- * 到期文章排第一与 [com.ilyskyo.blancall.algorithm.StudyCoach] 的今日计划同序。
+ * 统计页「下一步」只是今日计划第一条的映射：六种 Kind 必须一一对应。
+ * 以前这里自己排优先级，改坏后界面不会崩、只是两页推荐不同的事 —— 所以逐种钉住。
  */
 class NextStepDeciderTest {
 
+    private val now = 1_800_000_000_000L
+
     @Test
-    fun `有到期文章时优先复习它（即使也有最弱篇与到期句）`() {
-        assertEquals(
-            NextStep.DueArticle(9L),
-            NextStepDecider.decide(dueSentences = 10, weakestArticleId = 42L, dueArticleId = 9L)
+    fun `继续未完成练习映射到Resume`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(
+                now = now,
+                resumables = listOf(
+                    StudyCoach.Resumable(9, "未完成", "SENTENCE", 3, 10, now - 1_000)
+                ),
+                dueArticles = listOf(
+                    StudyCoach.DueArticle(1, "到期", now - 1_000, reviewCount = 3, estimatedBlanks = 10)
+                ),
+            )
         )
+        assertEquals(NextStep.Resume(9L), NextStepDecider.fromPlan(plan))
     }
 
     @Test
-    fun `没有到期文章时最弱篇优先于到期句`() {
-        assertEquals(
-            NextStep.WeaknessDrill(42L),
-            NextStepDecider.decide(dueSentences = 10, weakestArticleId = 42L, dueArticleId = null)
+    fun `到期文章映射到DueArticle`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(
+                now = now,
+                dueArticles = listOf(
+                    StudyCoach.DueArticle(1, "到期", now - 1_000, reviewCount = 3, estimatedBlanks = 10)
+                ),
+                weakestArticleId = 42L,
+            )
         )
+        assertEquals(NextStep.DueArticle(1L), NextStepDecider.fromPlan(plan))
     }
 
     @Test
-    fun `只有最弱篇没有到期句也走薄弱训练`() {
-        assertEquals(
-            NextStep.WeaknessDrill(7L),
-            NextStepDecider.decide(dueSentences = 0, weakestArticleId = 7L)
+    fun `薄弱篇映射到WeaknessDrill`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(
+                now = now,
+                weakestArticleId = 42L,
+                weakestArticleTitle = "弱",
+                weakMistakeCount = 5,
+                dueSentenceCount = 10,
+            )
         )
+        assertEquals(NextStep.WeaknessDrill(42L), NextStepDecider.fromPlan(plan))
     }
 
     @Test
-    fun `无最弱篇有到期句时去复习`() {
-        assertEquals(
-            NextStep.Review,
-            NextStepDecider.decide(dueSentences = 3, weakestArticleId = null)
+    fun `句子卡映射到SentenceCards并带上句数`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(now = now, dueSentenceCount = 10, mistakeCount = 5)
         )
+        assertEquals(NextStep.SentenceCards(10), NextStepDecider.fromPlan(plan))
     }
 
     @Test
-    fun `都没有时空态`() {
-        assertEquals(
-            NextStep.AllClear,
-            NextStepDecider.decide(dueSentences = 0, weakestArticleId = null)
+    fun `错题集训映射到MistakeDrill`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(now = now, mistakeCount = 7, dailyPracticeGoal = 3)
         )
+        assertEquals(NextStep.MistakeDrill(7), NextStepDecider.fromPlan(plan))
+    }
+
+    @Test
+    fun `每日目标映射到DailyGoal并带上差额`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(now = now, dailyPracticeGoal = 3, todayPracticeCount = 1)
+        )
+        assertEquals(NextStep.DailyGoal(2), NextStepDecider.fromPlan(plan))
+    }
+
+    @Test
+    fun `空计划映射到空态`() {
+        assertEquals(NextStep.AllClear, NextStepDecider.fromPlan(StudyCoach.Plan()))
+        assertEquals(NextStep.AllClear, NextStepDecider.fromItem(null))
+    }
+
+    @Test
+    fun `暂停文章的薄弱篇不会变成下一步`() {
+        val day = 24L * 60 * 60 * 1000
+        val snapshot = StudyCoach.snapshot(
+            StudyCoach.Source(
+                articles = listOf(
+                    com.ilyskyo.blancall.data.model.Article(
+                        id = 1L, title = "暂停的弱篇", content = "文".repeat(400)
+                    )
+                ),
+                records = listOf(
+                    com.ilyskyo.blancall.data.model.PracticeRecord(
+                        articleId = 1L,
+                        mode = "SENTENCE",
+                        totalBlanks = 10,
+                        correctCount = 3,
+                        timestamp = now - day,
+                    )
+                ),
+                states = mapOf(
+                    1L to com.ilyskyo.blancall.algorithm.FsrsEngine.CardState(
+                        due = now + day, lastReview = now - day, reviewCount = 3
+                    )
+                ),
+                pauses = mapOf(
+                    1L to com.ilyskyo.blancall.algorithm.StudyFlow.Pause(now - day, 0L)
+                ),
+            ),
+            now = now,
+        )
+        val plan = StudyCoach.buildPlan(snapshot.input)
+        assertEquals(null, snapshot.weakest)
+        assertEquals(NextStep.AllClear, NextStepDecider.fromPlan(plan))
     }
 }

@@ -12,8 +12,9 @@ import kotlin.math.max
 /**
  * 「学习任务流」的纯调度推导：暂停冻结、恢复落点、按日分桶与 7 日预测。
  *
- * 暂停不是把 due 改到很远的地方 —— 那样恢复时原始间隔已经丢了。这里冻结的是
+ * 暂停不是把 due 改到很远的地方 —— 那样恢复时原始间隔已经丢了。默认冻结的是
  * **暂停那一刻离到期还有多久**（[Pause.remainingMs]），恢复时从当下重新接上这段剩余期；
+ * 用户在暂停中选了具体日期时改用绝对落点 [Pause.fixedDue]，日期不会随时间漂移。
  * 暂停期间用户若手动练过一次，状态已由练习页正常推进，恢复就尊重那次推进（取较晚者）。
  *
  * 全部函数无 Android 依赖、可注入时钟与时区，JVM 单测直接覆盖。
@@ -25,8 +26,16 @@ object StudyFlow {
     /** 任务在时间轴上的位置；顺序即界面分组顺序 */
     enum class Phase { OVERDUE, TODAY, TOMORROW, THIS_WEEK, LATER, PAUSED }
 
-    /** 暂停快照：暂停时刻 + 当时剩余的到期时长（毫秒，>=0） */
-    data class Pause(val pausedAt: Long, val remainingMs: Long)
+    /**
+     * 暂停快照：暂停时刻 + 当时剩余的到期时长（毫秒，>=0）。
+     * [fixedDue] > 0 表示用户在暂停中选择过具体日期：此后预计到期与恢复落点都以它为准，
+     * 不再随时间滑动；0 = 沿用「冻结剩余期」的旧语义。
+     */
+    data class Pause(
+        val pausedAt: Long,
+        val remainingMs: Long,
+        val fixedDue: Long = 0L,
+    )
 
     /** 暂停时冻结的剩余期：已逾期则冻结为 0（恢复即到期） */
     fun remainingAtPause(due: Long, now: Long): Long = (due - now).coerceAtLeast(0L)
@@ -36,7 +45,7 @@ object StudyFlow {
 
     /**
      * 暂停中的任务「预计在哪天到期」：
-     * - 暂停后没有手动练习：恢复时刻 + 冻结剩余期，随当前时间滑动；
+     * - 暂停后没有手动练习：有绝对日期用绝对日期，否则恢复时刻 + 冻结剩余期；
      * - 暂停后手动练过：那次练习已经写了新的 due，展示与恢复都以它为准（已过期则回到现在）。
      */
     fun projectedDue(
@@ -46,6 +55,7 @@ object StudyFlow {
     ): Long {
         if (pause == null) return state.due
         if (state.lastReview > pause.pausedAt) return max(state.due, now)
+        if (pause.fixedDue > 0L) return max(pause.fixedDue, now)
         return now + pause.remainingMs
     }
 

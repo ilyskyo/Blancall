@@ -63,7 +63,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextAlign
-import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.GlassButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,12 +87,12 @@ import com.ilyskyo.blancall.ui.common.HapticTier
 import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.ReadingMaxWidth
 import com.ilyskyo.blancall.ui.common.pinchZoomByTouch
-import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.common.tapGesturesPenAware
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
 import com.ilyskyo.blancall.ui.theme.ThemeManager
 import com.ilyskyo.blancall.ui.theme.ThemeMode
+import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.qmdeve.liquidglass.widget.LiquidGlassView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -102,9 +102,6 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 // ========== 阅读背景 / 配色 ==========
-
-/** 一段可用于「遮挡转练」的正文：全文起点 + 段内已遮区间 */
-private data class PracticeParagraph(val start: Int, val text: String, val spans: List<IntRange>)
 
 /** 米白纸张色 */
 private val PaperBeige = Color(0xFFF6F0E6)
@@ -147,6 +144,8 @@ fun ReadingModeScreen(
     onExit: () -> Unit,
     /** 「把这一段变成挖空」：段落起点（全文坐标）+ 段内遮块区间；转换与导航由外层负责 */
     onPracticeParagraph: (Int, List<IntRange>) -> Unit = { _, _ -> },
+    /** 「练这一段」面板里选的挖空方式（句子 / 字词 / 反向）：整篇练习，导航由外层负责 */
+    onPracticeMode: (BlancallMode) -> Unit = {},
 ) {
     // 章节翻页的回执：「跨过去一页」是轻的一下（Toggle），
     // 而不是 Compose 语义类型那一下 —— 与 ui/common/Haptics.kt 同一套直振栈。
@@ -256,6 +255,8 @@ fun ReadingModeScreen(
     // 「遮挡段 → 一次性挖空」：只列出真的被遮住的段落，避免用户从头翻找
     var showPracticeSheet by remember { mutableStateOf(false) }
     var practiceChoices by remember { mutableStateOf<List<PracticeParagraph>>(emptyList()) }
+    // 遮挡段统计完成标记：面板刚弹出时先显示占位，避免「当前没有可转换的遮挡段」错态闪一下
+    var practiceChoicesReady by remember { mutableStateOf(false) }
     LaunchedEffect(
         showPracticeSheet,
         readerPrefs.occlusionMode,
@@ -263,14 +264,19 @@ fun ReadingModeScreen(
         article.id,
     ) {
         if (!showPracticeSheet) return@LaunchedEffect
+        practiceChoicesReady = false
         practiceChoices = withContext(Dispatchers.IO) {
             val paras = ReaderOcclusion.splitParagraphs(article.content)
+            val store = MaskConfigStore.getInstance(context.filesDir)
+            // 「自定义」粒度用哪套配置：先看本文阅读设置，设置里没写（旧数据 / 刚清过）就退回
+            // 配置库的「使用中」标记 —— 不然这里恒算成 0 段可练，面板看着还是空的。
+            val customId = readerPrefs.occlusionCustomConfigId.takeIf { it > 0L }
+                ?: store.getSelected(article.id)
             val customSpansByPara: Map<Int, List<IntRange>> =
-                if (readerPrefs.occlusionMode == "custom" && readerPrefs.occlusionCustomConfigId > 0L) {
-                    val cfg = MaskConfigStore.getInstance(context.filesDir)
-                        .getConfigs(article.id)
-                        .firstOrNull { it.id == readerPrefs.occlusionCustomConfigId }
-                    cfg?.spans
+                if (readerPrefs.occlusionMode == "custom" && customId > 0L) {
+                    store.getConfigs(article.id)
+                        .firstOrNull { it.id == customId }
+                        ?.spans
                         ?.groupBy { it.p }
                         ?.mapValues { (_, spans) -> spans.map { it.a until it.e } }
                         .orEmpty()
@@ -288,6 +294,7 @@ fun ReadingModeScreen(
                 else PracticeParagraph(start = p.start, text = p.text, spans = spans)
             }
         }
+        practiceChoicesReady = true
     }
     // 遮挡自定义浮层：null=无 / "list"=配置列表 / "edit"=编辑器（编辑器从列表进出）
     var maskOverlay by remember { mutableStateOf<String?>(null) }
@@ -907,73 +914,23 @@ fun ReadingModeScreen(
             }  // close LiquidGlassPill content
     }
 
-    // ── 遮挡段转练：选一段 → 一次性挖空（不写配置库，不新增第三套语义）──
-    if (showPracticeSheet) {
-        BlancallAlertDialog(
-            onDismissRequest = { showPracticeSheet = false },
-            title = { Text(stringResource(com.ilyskyo.blancall.R.string.reader_practice_section_title)) },
-            text = {
-                Column {
-                    Text(
-                        stringResource(com.ilyskyo.blancall.R.string.reader_practice_section_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    if (practiceChoices.isEmpty()) {
-                        Text(
-                            stringResource(com.ilyskyo.blancall.R.string.reader_practice_section_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .heightIn(max = 380.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            practiceChoices.forEach { choice ->
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .pressClick {
-                                            showPracticeSheet = false
-                                            onPracticeParagraph(choice.start, choice.spans)
-                                        }
-                                ) {
-                                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                                        Text(
-                                            text = choice.text.take(48) + if (choice.text.length > 48) "…" else "",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = stringResource(
-                                                com.ilyskyo.blancall.R.string.reader_practice_section_spans,
-                                                choice.spans.size
-                                            ),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showPracticeSheet = false }) {
-                    Text(stringResource(com.ilyskyo.blancall.R.string.close))
-                }
-            }
-        )
-    }
+    // ── 遮挡段转练：「练这一段」面板 ──
+    // 旧实现是只有标题 + 空态的对话框（没遮住时点开等于什么都不给），现在铺成底部面板：
+    // 上面是「把遮住的段落变成挖空」，下面是三种挖空方式（点了直接进整篇练习）。
+    ReaderPracticeSheet(
+        visible = showPracticeSheet,
+        choices = practiceChoices,
+        choicesReady = practiceChoicesReady,
+        onDismiss = { showPracticeSheet = false },
+        onPracticeParagraph = { choice ->
+            showPracticeSheet = false
+            onPracticeParagraph(choice.start, choice.spans)
+        },
+        onPracticeMode = { mode ->
+            showPracticeSheet = false
+            onPracticeMode(mode)
+        }
+    )
 
     // ── 阅读设置面板（液态玻璃底部面板）──
     // sheetState 外提以便统一管理面板状态；面板内的「自定义」入口采用

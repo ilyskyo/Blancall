@@ -663,16 +663,24 @@ fun AppNavigation() {
         }
 
         // 句子卡片大卡片界面（首页小卡片点入；华为堆叠形态：划卡 + 三键评级）
+        // limit：时长预算入口按分钟折算的本次句数上限；0 = 不限（日常进入与「复习全部」）
         composable(
-            "sentence_cards",
+            "sentence_cards?limit={limit}",
+            arguments = listOf(
+                navArgument("limit") {
+                    type = NavType.IntType
+                    defaultValue = 0
+                }
+            ),
             enterTransition = { revealEnter(enterSlide()) },
             exitTransition = { revealExit(exitSlide()) },
             popExitTransition = { revealPopExit(popExitSlide()) },
             popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
+            val limit = backStackEntry.arguments?.getInt("limit") ?: 0
             RevealPageShell(backStackEntry.id) {
                 HeroEntry(this) {
-                    SentenceCardScreen(navController)
+                    SentenceCardScreen(navController, queueLimit = limit)
                 }
             }
         }

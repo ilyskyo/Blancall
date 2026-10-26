@@ -226,6 +226,10 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     internal val _hintLength = MutableStateFlow(AppPrefs.hintLengthEnabled)
     val hintLength: StateFlow<Boolean> = _hintLength.asStateFlow()
 
+    // 标点提示（空内被挖去的标点照原样显示）：只给结构线索，不喂任何要默写的字
+    internal val _hintPunctuation = MutableStateFlow(AppPrefs.hintPunctuationEnabled)
+    val hintPunctuation: StateFlow<Boolean> = _hintPunctuation.asStateFlow()
+
     /**
      * 落笔即停、收笔即恢复：手写也走强弱提示，只是别在写着的时候弹出来。
      *
@@ -1593,6 +1597,12 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     fun toggleHintLength() {
         _hintLength.value = !_hintLength.value
         AppPrefs.hintLengthEnabled = _hintLength.value
+    }
+
+    /** 切换「标点提示」（空内被挖去的标点照原样显示） */
+    fun toggleHintPunctuation() {
+        _hintPunctuation.value = !_hintPunctuation.value
+        AppPrefs.hintPunctuationEnabled = _hintPunctuation.value
     }
 
     fun dismissBlankCountWarning() {

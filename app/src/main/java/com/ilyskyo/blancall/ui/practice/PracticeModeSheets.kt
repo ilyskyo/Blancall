@@ -4,8 +4,8 @@
 package com.ilyskyo.blancall.ui.practice
 
 import androidx.compose.animation.core.Spring
-import com.ilyskyo.blancall.ui.common.Motion
-import androidx.compose.animation.core.animateFloatAsState
+import com.ilyskyo.blancall.ui.common.MotionFade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,12 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import com.ilyskyo.blancall.ui.common.GlassCard
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
@@ -32,72 +31,104 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.BlancallGenerator
 import com.ilyskyo.blancall.algorithm.SectionSplitter
+import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.ilyskyo.blancall.ui.viewmodel.SectionMode
 
 
-// ========== 模式选择卡片 ==========
+// ========== 练习模式选项的统一分组视觉 ==========
+//
+// 三个入口（锚点浮窗 / 进页居中卡片 / 切换模式底部面板）共用这一套行与分组，
+// 保证「选模式」这件事在 App 里长一个样：
+//   · 只有模式名一行，不带 emoji、不带解释性副标题
+//   · 四行合进一块极淡中性底色的圆角分组，行间一条发丝线
+//   · 按压只换底纹，不缩放（行是紧贴的，一缩就露缝，整组被拆开）
 
+/** 分组内单行高度：52dp —— 高于 48dp 触控下限，四行叠起来仍有呼吸。 */
+private val ModeRowMinHeight = 52.dp
+
+/** 分组圆角：比玻璃的 20dp 小一档，读作「玻璃里的一块」，不与外框抢轮廓。 */
+private val ModeGroupShape = RoundedCornerShape(14.dp)
+
+/**
+ * 模式选项分组容器：一块圆角底色，组内自行插入 [ModeOptionDivider] 与 [ModeOptionRow]。
+ */
 @Composable
-internal fun ModeCard(
-    emoji: String,
-    title: String,
-    desc: String,
-    onClick: () -> Unit
+internal fun ModeOptionGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
 ) {
-    // 按压缩放弹性反馈，让点击有"活力"
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = Motion.press(),
-        label = "modeCardScale"
-    )
-    GlassCard(
-        modifier = Modifier
+    val isDark = isBlancallDark()
+    Column(
+        modifier = modifier
             .fillMaxWidth()
-            .scale(scale),
-        shape = RoundedCornerShape(16.dp),
-        interactionSource = interactionSource,
-        onClick = onClick
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // emoji 放圆形强调色背景里，更醒目有活力
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(50)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(emoji, fontSize = 22.sp)
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    desc,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Text(
-                "→",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
+            .clip(ModeGroupShape)
+            // 比玻璃再深一档的极淡中性底（无色相）：只做「这一组自成一整块」的暗示
+            .background(
+                MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.06f else 0.035f)
+            ),
+        content = content
+    )
+}
+
+/** 组内行间发丝线：1 物理像素、从文字起点内缩，不横穿整块。 */
+@Composable
+internal fun ModeOptionDivider() {
+    // 1.dp 在 2.6x~3x 屏会画成 3px 粗线，这里按密度换算回 1px
+    val density = LocalDensity.current.density
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 10.dp)
+            .fillMaxWidth()
+            .height((1f / density).dp)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
+    )
+}
+
+/**
+ * 分组内单行：只有一行模式名。
+ *
+ * @param modifier 外部修饰（入场动画等）；背景与点击由本组件负责
+ * @param interactionSource 可由调用方传入，让按压底纹与外部动画取同一个交互源
+ */
+@Composable
+internal fun ModeOptionRow(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    interactionSource: MutableInteractionSource? = null
+) {
+    // 与 GlassCard 同一写法：外部要观察按压（比如驱动入场动画）就传进来，否则本地自建
+    val src = interactionSource ?: remember { MutableInteractionSource() }
+    val isPressed by src.collectIsPressedAsState()
+    val rowBackground by animateColorAsState(
+        targetValue = if (isPressed)
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+        else Color.Transparent,
+        // 色彩没有位移，不用弹簧：弹簧会在终点附近抖
+        animationSpec = MotionFade.color(MotionFade.pressAlpha),
+        label = "modeRowBackground"
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ModeRowMinHeight)
+            // 背景在 clickable 之前：底纹要铺满整行（含左右内边距），而不只是文字范围
+            .background(rowBackground)
+            .clickable(
+                interactionSource = src,
+                indication = null,
+                onClick = onClick
             )
-        }
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

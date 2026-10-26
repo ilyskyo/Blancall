@@ -431,6 +431,86 @@ class ReminderPlanTest {
         assertEquals(listOf(ReminderReason.NoStudyToday), plans.map { it.reason })
     }
 
+    // ── 通知共享的输入口径：暂停必须穿透到「未完成 / 到期 / 薄弱」 ──
+
+    @Test
+    fun `暂停文章的未完成与到期不会进入通知输入`() {
+        val now = 1_700_000_000_000L
+        val day = 24L * 60 * 60 * 1000
+        val snap = com.ilyskyo.blancall.algorithm.StudyCoach.snapshot(
+            com.ilyskyo.blancall.algorithm.StudyCoach.Source(
+                articles = listOf(
+                    com.ilyskyo.blancall.data.model.Article(
+                        id = 1L, title = "暂停篇", content = "文".repeat(400)
+                    )
+                ),
+                states = mapOf(
+                    1L to com.ilyskyo.blancall.algorithm.FsrsEngine.CardState(
+                        due = now - day, lastReview = now - 2 * day, reviewCount = 3
+                    )
+                ),
+                pauses = mapOf(
+                    1L to com.ilyskyo.blancall.algorithm.StudyFlow.Pause(now - day, 0L)
+                ),
+                resumables = listOf(
+                    com.ilyskyo.blancall.algorithm.StudyCoach.InProgressPractice(
+                        1L, "SENTENCE", 2, 10, now
+                    )
+                ),
+            ),
+            now = now,
+        )
+        val plans = decide(
+            hasStudiedToday = false,
+            dueArticleCount = snap.dueArticleCount,
+            dueSentenceCount = snap.sentenceTotalDue,
+            hasIncompletePractice = snap.firstResumable != null,
+            weakCount = snap.mistakeCount,
+        )
+        assertTrue(
+            "暂停文章不应催未完成/到期/薄弱：$plans",
+            plans.none {
+                it.reason == ReminderReason.IncompletePractice ||
+                    it.reason == ReminderReason.DueReview ||
+                    it.reason == ReminderReason.WeakContent
+            },
+        )
+    }
+
+    @Test
+    fun `模板兜底文章到期时通知与首页同样认为到期`() {
+        val now = 1_700_000_000_000L
+        val day = 24L * 60 * 60 * 1000
+        val record = com.ilyskyo.blancall.data.model.PracticeRecord(
+            articleId = 2L,
+            mode = "SENTENCE",
+            totalBlanks = 10,
+            correctCount = 8,
+            timestamp = now - 2 * day,
+            duration = 60_000L,
+        )
+        val snap = com.ilyskyo.blancall.algorithm.StudyCoach.snapshot(
+            com.ilyskyo.blancall.algorithm.StudyCoach.Source(
+                articles = listOf(
+                    com.ilyskyo.blancall.data.model.Article(
+                        id = 2L, title = "模板篇", content = "文".repeat(400)
+                    )
+                ),
+                records = listOf(record),
+            ),
+            now = now,
+        )
+        assertEquals(1, snap.dueArticleCount)
+        assertEquals(2L, snap.input.dueArticles.single().articleId)
+        val plans = decide(
+            hasStudiedToday = false,
+            dueArticleCount = snap.dueArticleCount,
+            firstDueArticleId = 2L,
+            dueArticleTitle = "模板篇",
+        )
+        assertEquals(listOf(ReminderReason.DueReview), plans.map { it.reason })
+    }
+
     // ── 免打扰窗口（纯函数） ──
 
     @Test

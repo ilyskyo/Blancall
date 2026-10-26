@@ -71,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.ui.cloze.nextDefaultConfigName
+import com.ilyskyo.blancall.ui.cloze.shouldPersistEditorSnapshot
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.ContentFingerprint
@@ -211,46 +212,22 @@ fun MaskConfigEditScreen(
     // 快照归属的配置 id：回放前校验，防把另一套配置的编辑现场误当作本配置的（用户反馈的“旧配置内容不对”）
     var editorSnapshotFor by rememberSaveable { mutableLongStateOf(-1L) }
     var snapshotApplied by remember { mutableStateOf(false) }
+    // 「组合期」捕获的恢复快照（rememberSaveable 的恢复值；新进入时为 null）。
+    // 回放判定只认它，**不能读实时 editorSnapshot** —— 本会话 LaunchedEffect(editSeq) 写下的
+    // 快照会污染实时值，让「点开已保存配置」被误判成「有现场可回放」，磁盘回填随即整段跳过。
+    // 真机 bug：已保存配置点开是空白、名字也丢了；再保存就落成「自定义 2 / 自定义 3」。
+    val restoredSnapshot = remember { editorSnapshot }
 
     if (levels.size != paragraphs.size) {
         levels.clear()
         repeat(paragraphs.size) { levels.add(0) }
     }
 
-    // 有快照 = 恢复现场：现场（可能含未保存编辑）比磁盘新，直接回放；
-    // **仅限已有配置（configId>0）且快照归属一致**：
-    // ① 新建（configId<=0）必须从空白起步 —— 新建会话的快照归属也是 -1，
-    //    与「上一会话/跨进程恢复残留的快照」无法区分（同为 -1），一律禁止回放
-    //    可从根上杜绝「点新建却带出旧现场」；
-    // ② 已有配置仍按「快照归属 == 本配置」严格校验，跨配置（列表里点了另一套）必须
-    //    丢弃、改从磁盘加载（否则会拿着上一套的现场把新配置的内容顶掉）。
-    val snapshotForRestore = editorSnapshot
-    if (!snapshotApplied && configId > 0 && snapshotForRestore != null && editorSnapshotFor == configId) {
-        snapshotApplied = true
-        runCatching {
-            val o = JSONObject(snapshotForRestore)
-            o.optJSONArray("levels")?.let { lv ->
-                if (lv.length() == paragraphs.size) {
-                    levels.clear()
-                    for (i in 0 until lv.length()) levels.add(lv.optInt(i, 0))
-                }
-            }
-            masks.clear()
-            o.optJSONArray("masks")?.let { arr ->
-                for (j in 0 until arr.length()) {
-                    val r = arr.optJSONArray(j) ?: continue
-                    if (r.length() >= 4) {
-                        masks.add(
-                            MaskConfigStore.MaskSpan(r.optInt(0), r.optInt(1), r.optInt(2), r.optInt(3))
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    // 编辑驱动（而非每帧）持久化编辑现场快照：任何编辑 editSeq++，重组后序列化一次
+    // 编辑驱动（而非每帧）持久化编辑现场快照：任何编辑 editSeq++，重组后序列化一次。
+    // ⚠️ editSeq==0（初次组合）必须跳过：那一刻磁盘回填还在 IO 挂起中，写下去的「空现场」
+    // 会被当成恢复源 ⇒ 已保存配置永远打不开（同 CustomClozeEditScreen 的真机 bug，见 shouldPersistEditorSnapshot）。
     LaunchedEffect(editSeq) {
+        if (!shouldPersistEditorSnapshot(editSeq)) return@LaunchedEffect
         editorSnapshot = runCatching {
             JSONObject().apply {
                 put("levels", JSONArray().apply { levels.forEach { put(it) } })
@@ -272,13 +249,44 @@ fun MaskConfigEditScreen(
         // 已有配置同样以入口 configId 为准（与列表页的会话 key 双保险）。
         val targetId = if (configId > 0) configId else -1L
         if (savedId != targetId) savedId = targetId
-        if (configId > 0 && !snapshotApplied) {
+        if (configId > 0) {
+            // ① 现场回放：只认「组合期带进来的快照」且归属必须是本配置。
+            //    新建（configId<=0）一律从空白起步 —— 新建会话的快照归属也是 -1，与跨会话残留
+            //    无法区分，禁止回放可从根上杜绝「点新建却带出旧现场」。
+            val snap = restoredSnapshot
+            if (snap != null && shouldRestoreMaskSnapshot(configId, snap, editorSnapshotFor, snapshotApplied)) {
+                runCatching {
+                    val o = JSONObject(snap)
+                    o.optJSONArray("levels")?.let { lv ->
+                        if (lv.length() == paragraphs.size) {
+                            levels.clear()
+                            for (i in 0 until lv.length()) levels.add(lv.optInt(i, 0))
+                        }
+                    }
+                    masks.clear()
+                    o.optJSONArray("masks")?.let { arr ->
+                        for (j in 0 until arr.length()) {
+                            val r = arr.optJSONArray(j) ?: continue
+                            if (r.length() >= 4) {
+                                masks.add(
+                                    MaskConfigStore.MaskSpan(r.optInt(0), r.optInt(1), r.optInt(2), r.optInt(3))
+                                )
+                            }
+                        }
+                    }
+                }.onSuccess { snapshotApplied = true }
+            }
+            // ② 名称 / 创建时间 / 失配警示：现场快照不承载这三项，无论是否回放现场都必须从磁盘取
+            //   （真机 bug：跳过这一步 ⇒ 名字空白 ⇒ 保存时按默认编号起名，配置被改成「自定义 N」）；
+            //   遮挡区间只在「没有回放现场」时用磁盘值（现场可能含未保存编辑，比磁盘新）。
             cfgs.firstOrNull { it.id == configId }?.let { cfg ->
                 editingName = cfg.name
                 savedCreatedAt = cfg.createdAt
-                masks.clear()
-                masks.addAll(cfg.spans)
                 hashMismatch = cfg.contentHash != null && cfg.contentHash != ContentFingerprint.md5Hex(article.content)
+                if (!snapshotApplied) {
+                    masks.clear()
+                    masks.addAll(cfg.spans)
+                }
                 editSeq++
             }
         }
@@ -366,6 +374,18 @@ fun MaskConfigEditScreen(
         // 磁盘写放 IO 线程，完成后回调（返回列表等保存成功再走）
         scope.launch {
             val newId = withContext(Dispatchers.IO) { store.saveConfig(article.id, cfg) }
+            // 回读确认真的落盘了：MaskConfigStore 在「配置库读盘失败」时会拒绝写盘以免抹掉
+            // 其它文章的配置，那种情况下不能弹「已保存」骗用户（列表里根本没有）。
+            val persisted = withContext(Dispatchers.IO) { store.getConfig(article.id, newId) != null }
+            if (!persisted) {
+                Toast.makeText(
+                    context,
+                    resources.getString(com.ilyskyo.blancall.R.string.save_failed),
+                    Toast.LENGTH_SHORT
+                ).show()
+                onDone(false)
+                return@launch
+            }
             savedId = newId
             if (isNew) {
                 // 仅新建：标记为本文使用中的配置，并把阅读遮挡切到自定义，保存即见效果
@@ -399,16 +419,24 @@ fun MaskConfigEditScreen(
     fun isNameTaken(name: String, excludeId: Long): Boolean =
         existingConfigs.any { it.id != excludeId && it.name.trim() == name }
 
-    /** 保存入口：新配置弹命名框；编辑已有配置沿用原名单直接保存（与自定义挖空一致） */
+    /** 保存入口：编辑已有配置一律覆盖保存（名字先按磁盘原值兜底），新建才弹命名框 */
     fun requestSave() {
-        if (savedId > 0L && editingName.isNotBlank()) {
-            doSave()
-        } else {
-            if (editingName.isBlank()) {
+        if (savedId > 0L) {
+            // 名字意外为空时先把本文配置里的原名找回来：旧实现此时去拿 nextDefaultName()，
+            // 于是「进编辑 → 保存」一次就把配置改名成 自定义2、自定义3（真机 bug）。
+            if (editingName.isBlank()) editingName = existingMaskConfigName(existingConfigs, savedId)
+            if (editingName.isNotBlank()) {
+                doSave()
+            } else {
                 editingName = nextDefaultName()
+                showSaveDialog = true
             }
-            showSaveDialog = true
+            return
         }
+        if (editingName.isBlank()) {
+            editingName = nextDefaultName()
+        }
+        showSaveDialog = true
     }
 
     /** 返回入口：有未保存改动先确认（含「清空后」场景），防误触丢失 */
@@ -716,6 +744,24 @@ private data class MaskSnapshot(
     val levels: List<Int>,
     val masks: List<MaskConfigStore.MaskSpan>
 )
+
+/**
+ * 现场回放判定（纯函数，可单测）：只有「已有配置」且「组合期带进来的快照确实属于本配置」才回放。
+ *
+ * 真机 bug 的锚点：旧实现读实时 `editorSnapshot`，本会话 LaunchedEffect(editSeq) 写下的空现场
+ * 立刻把它点亮 ⇒ [alreadyApplied] 变 true ⇒ 磁盘回填被跳过 ⇒ 已保存配置打开是空白。
+ * 所以判据必须是「组合期」那一份值（[restoredSnapshot]），而不是会话中途被改写的那一份。
+ */
+internal fun shouldRestoreMaskSnapshot(
+    configId: Long,
+    restoredSnapshot: String?,
+    snapshotOwnerId: Long,
+    alreadyApplied: Boolean
+): Boolean = !alreadyApplied && configId > 0L && restoredSnapshot != null && snapshotOwnerId == configId
+
+/** 本文配置里某套配置的原名（找不到返回空串）：保存前用它兜底，避免把配置改名成默认编号 */
+internal fun existingMaskConfigName(configs: List<MaskConfigStore.MaskConfig>, id: Long): String =
+    if (id <= 0L) "" else configs.firstOrNull { it.id == id }?.name?.trim().orEmpty()
 
 /**
  * 句级（level 0）可编辑遮挡段落：渲染与阅读模式 OccludedParagraph 完全同款

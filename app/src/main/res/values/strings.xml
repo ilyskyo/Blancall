@@ -245,7 +245,6 @@
         <item quantity="other">确定要删除选中的 %1$d 篇文章吗？\n删除后无法恢复。</item>
     </plurals>
     <string name="export_pdf">导出 PDF</string>
-    <string name="export_type">导出类型</string>
     <string name="export_pdf_original">原文 PDF</string>
     <string name="export_pdf_cloze">挖空 PDF</string>
     <string name="export_pdf_cloze_desc">保留挖空空位（[N] ___），供练习作答</string>
@@ -276,15 +275,18 @@
     <string name="hint_sheet_title">提示设置</string>
     <string name="hint_length_toggle">字数提示</string>
     <string name="hint_length_desc">每个空旁标出这一空有几个字</string>
+    <string name="hint_punctuation_toggle">标点提示</string>
+    <string name="hint_punctuation_desc">空内的逗号、顿号等照原样显示（如「＿＿，＿＿」）</string>
     <string name="hint_content_toggle">内容提示</string>
     <string name="hint_content_desc">停 10 秒淡显首字，再 5 秒自动补全</string>
     <string name="hint_preview_both">空位显示「3 字」；10 秒后淡显首字，15 秒补全</string>
     <string name="hint_preview_length">空位显示「3 字」；不给字</string>
     <string name="hint_preview_content">空位只显示序号；10 秒后淡显首字</string>
     <string name="hint_preview_none">空位只显示序号，完全不给提示</string>
+    <string name="hint_preview_punct">空内标点照原样显示，不给出要默写的字</string>
     <string name="coach_got_it">知道了</string>
     <string name="coach_practice_more_title">长按这里</string>
-    <string name="coach_practice_more_body">可以分别开关字数提示与内容提示，四种组合任选。</string>
+    <string name="coach_practice_more_body">可以分别开关字数提示、标点提示与内容提示，按需要组合。</string>
     <string name="coach_practice_title_title">左右拖标题</string>
     <string name="coach_practice_title_body">快速切换句子 / 字词 / 反向三种练习模式。</string>
     <string name="coach_home_long_title">长按卡片</string>
@@ -711,10 +713,6 @@
     <string name="generating_blanks">正在生成挖空…</string>
     <string name="preparing">正在准备…</string>
     <string name="pick_practice_mode">选择练习模式</string>
-    <string name="mode_sentence_card_desc">隐藏完复句子，适合段落背诵</string>
-    <string name="mode_word_card_desc">挖掉关键词/字，精准检测掌握度</string>
-    <string name="mode_reverse_card_desc">把段落打散后默写原文，深度记忆</string>
-    <string name="mode_custom_card_desc">按文章分别指定要应用的挖空配置</string>
     <string name="switch_practice_mode">切换练习模式</string>
     <string name="mode_sentence_line">分句/半句/复句 — 理解式记忆</string>
     <string name="mode_word_line">1–3字词精准填空 — 细节记忆</string>
@@ -1027,17 +1025,20 @@
     <!-- ── 学习任务流（flow_*）：FSRS 正在计划中的文章时间线；暂停/恢复/调期/强度 ── -->
     <string name="flow_title">学习任务流</string>
     <string name="flow_summary_title">当前计划</string>
-    <string name="flow_summary_due_label">项待复习</string>
+    <string name="flow_summary_due_now">篇现在可复习</string>
     <string name="flow_summary_active">计划中</string>
     <string name="flow_summary_overdue">逾期</string>
     <string name="flow_summary_paused">已暂停</string>
-    <string name="flow_next_task">最近一项：%1$s</string>
+    <string name="flow_summary_later_today">今天晚些时候 %1$d 篇</string>
+    <string name="flow_next_task_article">最近到期文章：%1$s</string>
     <string name="flow_no_next_task">暂时没有待复习任务</string>
+    <string name="flow_scope_note">本页只列 FSRS 文章；句子卡、错题、未完成练习见首页今日计划。</string>
     <string name="flow_forecast_title">未来 7 天</string>
     <string name="flow_forecast_hint">每天到期的任务数</string>
     <string name="flow_schedule_title">记忆调度</string>
     <string name="flow_plan_effect">复习强度只影响之后安排的新间隔，已排好的时间不变</string>
-    <string name="flow_postpone_due">到期任务移到明天</string>
+    <string name="flow_postpone_due">到期文章移到明天</string>
+    <string name="flow_postpone_note">只移动文章计划；句子卡与错题不受影响。</string>
     <string name="flow_resume_all">恢复全部暂停</string>
     <string name="flow_pause_all">全部暂停</string>
     <string name="flow_done_postponed">已把到期任务移到明天</string>
@@ -1045,10 +1046,11 @@
     <string name="flow_done_paused_all">已暂停全部任务</string>
     <string name="flow_done_plan">已切换复习强度</string>
     <string name="flow_filter_all">全部 %1$d</string>
-    <string name="flow_filter_due">待复习 %1$d</string>
+    <string name="flow_filter_due">今天 %1$d</string>
     <string name="flow_filter_paused">已暂停 %1$d</string>
     <string name="flow_group_overdue">已逾期</string>
     <string name="flow_group_today">今天</string>
+    <string name="flow_group_today_split">已到期 %1$d · 稍后 %2$d</string>
     <string name="flow_group_tomorrow">明天</string>
     <string name="flow_group_week">未来 7 天</string>
     <string name="flow_group_later">更晚</string>
@@ -1072,7 +1074,7 @@
     <string name="flow_custom_date">选择具体日期</string>
     <string name="flow_apply">应用</string>
     <string name="flow_cancel">取消</string>
-    <string name="flow_pause_note">暂停后不再计入待复习与提醒；恢复时从暂停处接续。</string>
+    <string name="flow_pause_note">暂停只表示退出计划与提醒，不禁止手动练习；恢复时从暂停处接续。</string>
     <string name="flow_empty_title">还没有正在计划中的任务</string>
     <string name="flow_empty_body">FSRS 会在完成一次练习后自动安排复习，任务会出现在这里。</string>
     <string name="flow_empty_filtered_title">这个筛选下没有任务</string>
@@ -1085,7 +1087,7 @@
     <string name="flow_detail_difficulty">难度</string>
     <string name="flow_detail_lapses">遗忘</string>
     <string name="flow_pause_all_confirm_title">暂停全部任务？</string>
-    <string name="flow_pause_all_confirm_body">所有正在计划中的文章将退出待复习与提醒，句子卡也会暂停抽取；可随时在这里恢复。</string>
+    <string name="flow_pause_all_confirm_body">所有文章及其句子将退出待复习与提醒；首页今日计划只保留暂停提示，可随时恢复。</string>
     <string name="flow_pull_action">进入学习任务流</string>
     <plurals name="flow_days_later">
         <item quantity="other">%1$d 天后</item>
@@ -1102,7 +1104,7 @@
     <string name="flow_detail_started_label">开始学习</string>
     <string name="flow_detail_advice_label">下一步建议</string>
     <string name="flow_advice_paused_title">计划已暂停</string>
-    <string name="flow_advice_paused_body">这篇暂不进入待复习与提醒。准备好后随时恢复，剩余间隔会从恢复时接续。</string>
+    <string name="flow_advice_paused_body">暂停只表示退出计划与提醒，不禁止手动练习。准备好后随时恢复，剩余间隔会从恢复时接续。</string>
     <string name="flow_advice_overdue_title">已经逾期</string>
     <string name="flow_advice_overdue_body">越晚复习，留存掉得越多。今天练一次，就能把节奏拉回来。</string>
     <string name="flow_advice_low_retention_title">留存偏低</string>
@@ -1252,7 +1254,6 @@
     <string name="western_download_pdf">下载 PDF</string>
     <string name="western_import_full">全文导入背诵列表</string>
     <string name="western_imported">已导入</string>
-    <string name="western_enter_article">请进入某一篇文章</string>
     <string name="western_enter_thinker">请进入某位思想家素材页</string>
     <string name="pdf_view_image_mode">查看图片模式</string>
     <string name="pdf_view_text_mode">查看文本模式</string>
@@ -1639,10 +1640,13 @@
     <string name="reader_practice_section_cd">练这一段</string>
     <string name="reader_practice_section_title">把这一段变成挖空</string>
     <string name="reader_practice_section_hint">选一段刚才遮着回忆的段落，只练它</string>
-    <string name="reader_practice_section_empty">当前没有可转换的遮挡段</string>
+    <string name="reader_practice_section_empty">这篇还没有遮住的地方，可以先用下面的方式练</string>
     <string name="reader_practice_section_spans">遮了 %1$d 处</string>
     <string name="reader_practice_section_name">遮挡转练</string>
     <string name="reader_practice_section_failed">这一段没有可练习的空位</string>
+    <string name="reader_practice_sheet_title">练这一段</string>
+    <string name="reader_practice_sheet_hint">选一种挖空方式，直接开练</string>
+    <string name="reader_practice_mode_section">整篇按挖空方式练习</string>
     <string name="reason_first">第一次复习</string>
     <string name="reason_lapsed">忘过 %1$d 次</string>
     <string name="reason_long_gap">上次隔了 %1$d 天</string>
@@ -1650,11 +1654,15 @@
     <string name="reason_stable">已经稳住 %1$d 次</string>
     <string name="reason_scheduled">按计划到期</string>
     <string name="today_plan_title">今日计划</string>
-    <string name="today_plan_exam_days">距考试 %1$d 天</string>
+    <string name="today_plan_subtitle_due">共 %1$d 篇到期 · 清单约 %2$d 分钟</string>
+    <string name="today_plan_subtitle_exam">距考试 %1$d 天 · 清单约 %2$d 分钟</string>
+    <string name="today_plan_subtitle_exam_due">距考试 %1$d 天 · 共 %2$d 篇到期 · 清单约 %3$d 分钟</string>
     <string name="today_plan_minutes">今天约 %1$d 分钟</string>
     <string name="today_plan_budget">只有 %1$d 分钟</string>
     <string name="today_plan_exam_behind">按当前速度，到考试日可能排不完</string>
     <string name="today_plan_empty">现在没有到期内容。选一个时长，或先复习一篇文章。</string>
+    <string name="today_plan_paused_hint">已暂停 %1$d 篇 · 去任务流恢复</string>
+    <string name="today_plan_empty_paused">已暂停 %1$d 篇文章，去任务流恢复</string>
     <string name="today_plan_item_minutes">%1$d 分钟</string>
     <string name="today_plan_exam_set">考试日期：%1$s</string>
     <string name="today_plan_set_exam">设置考试日期</string>
@@ -1673,7 +1681,8 @@
     <string name="today_plan_budget_hint">选一个时长，只安排这个时间内能练完的内容。</string>
     <string name="today_plan_minutes_unit">%1$d 分钟</string>
     <string name="today_plan_budget_empty">这个时长内没有能安排的内容</string>
-    <string name="today_plan_budget_result">%1$d 篇 · 约 %2$d 分钟</string>
+    <string name="today_plan_budget_result_articles">%1$d 篇 · 约 %2$d 分钟</string>
+    <string name="today_plan_budget_result_cards">%1$d 句 · 约 %2$d 分钟</string>
     <string name="today_plan_budget_start">开始</string>
     <string name="budget_remaining">剩余 %1$d 分钟</string>
     <string name="budget_end_title">时间到了</string>
@@ -1709,7 +1718,6 @@
     <string name="content_pack_delete">删除</string>
     <string name="content_pack_delete_title">删除内容包</string>
     <string name="content_pack_delete_body">删除「%1$s」不会删除已经导入的文章。</string>
-    <string name="content_pack_import_all">全部导入</string>
     <string name="library_batch_import">批量导入</string>
     <string name="content_pack_import_result">已导入 %1$d 篇，跳过 %2$d 篇（重复或失败）</string>
     <string name="content_pack_view_entries">查看篇目</string>
@@ -1755,5 +1763,7 @@
     <string name="ov_next_step_due_article_title">复习《%1$s》</string>
     <string name="ov_next_step_scope_article">文章练习 · 句子挖空</string>
     <string name="ov_next_step_action_start">开始复习</string>
+    <string name="ov_next_step_go_mistakes">去错题本</string>
+    <string name="ov_next_step_go_articles">去我的文章</string>
     <string name="content_pack_disclaimer">内容包由你自行提供，请确认拥有使用与分享这些文本的权利。</string>
 </resources>

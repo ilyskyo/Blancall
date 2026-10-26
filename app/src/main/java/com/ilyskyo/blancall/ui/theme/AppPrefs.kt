@@ -152,6 +152,13 @@ object AppPrefs {
     val hintContentEnabledFlow: StateFlow<Boolean> = _hintContentEnabledFlow.asStateFlow()
 
     /**
+     * 「标点提示」：把空内被挖去的标点（逗号、顿号等）按原样显示，默认关。
+     * 分句结构本身也是背诵内容；只有记不清「这一空是一句还是两句」时才需要打开。
+     */
+    private val _hintPunctuationEnabledFlow = MutableStateFlow(false)
+    val hintPunctuationEnabledFlow: StateFlow<Boolean> = _hintPunctuationEnabledFlow.asStateFlow()
+
+    /**
      * 已看过的「使用指引」key 集合（CoachMark 一次性提示）。
      * 用集合而不是一堆 boolean：每加一处引导不必再动一次 AppPrefs；
      * 设置页的「重新播放使用指引」就是把它清空。
@@ -207,6 +214,7 @@ object AppPrefs {
         _sentenceClozeNewEnabledFlow.value = prefs.getBoolean("sentence_cloze_new_enabled", false)
         _hintLengthEnabledFlow.value = prefs.getBoolean("hint_length_enabled", true)
         _hintContentEnabledFlow.value = prefs.getBoolean("hint_content_enabled", true)
+        _hintPunctuationEnabledFlow.value = prefs.getBoolean("hint_punctuation_enabled", false)
         _coachSeenFlow.value = prefs.getStringSet("coach_seen", emptySet()) ?: emptySet()
         _readingFontFlow.value = prefs.getFloat("reading_font", 17f).coerceIn(14f, 36f)
         _readingLineHeightFlow.value = prefs.getFloat("reading_line_height", 2.0f).coerceIn(1.4f, 2.4f)
@@ -299,6 +307,16 @@ object AppPrefs {
             if (::prefs.isInitialized) {
                 prefs.edit { putBoolean("hint_content_enabled", value) }
                 _hintContentEnabledFlow.value = value
+            }
+        }
+
+    /** 空内被挖去的标点是否按原样显示（默认关） */
+    var hintPunctuationEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("hint_punctuation_enabled", false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("hint_punctuation_enabled", value) }
+                _hintPunctuationEnabledFlow.value = value
             }
         }
 

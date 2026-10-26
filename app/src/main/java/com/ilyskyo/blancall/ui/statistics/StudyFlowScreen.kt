@@ -208,7 +208,13 @@ fun StudyFlowScreen(navController: NavController) {
     val tasks = remember(articles, states, pauses, sentenceStates, nowTick) {
         buildTasks(articles, states, pauses, sentenceStates, nowTick)
     }
-    val todayCount = tasks.count {
+    // 「现在可复习」只认精确到期（含逾期）；今天晚些时候到期的单独标注，不混进大数字
+    val dueNowCount = tasks.count { it.phase != StudyFlow.Phase.PAUSED && it.due <= nowTick }
+    val todayDueNow = tasks.count { it.phase == StudyFlow.Phase.TODAY && it.due <= nowTick }
+    val laterTodayCount = tasks.count {
+        it.phase == StudyFlow.Phase.TODAY && it.due > nowTick
+    }
+    val todayGroupCount = tasks.count {
         it.phase == StudyFlow.Phase.TODAY || it.phase == StudyFlow.Phase.OVERDUE
     }
     val overdueCount = tasks.count { it.phase == StudyFlow.Phase.OVERDUE }
@@ -477,7 +483,8 @@ fun StudyFlowScreen(navController: NavController) {
                     item(key = "flow_summary") {
                         FlowSummaryCard(
                             activeCount = activeCount,
-                            todayCount = todayCount,
+                            dueNowCount = dueNowCount,
+                            laterTodayCount = laterTodayCount,
                             overdueCount = overdueCount,
                             pausedCount = pausedCount,
                             nextTitle = nextTask?.title,
@@ -492,7 +499,7 @@ fun StudyFlowScreen(navController: NavController) {
                                 toggleHaptic()
                                 scheduleExpanded = !scheduleExpanded
                             },
-                            dueCount = todayCount,
+                            dueCount = todayGroupCount,
                             pausedCount = pausedCount,
                             activeCount = activeCount,
                             actionNote = actionNote,
@@ -525,7 +532,7 @@ fun StudyFlowScreen(navController: NavController) {
                         FlowFilterRow(
                             filter = filter,
                             allCount = tasks.size,
-                            dueCount = todayCount,
+                            dueCount = todayGroupCount,
                             pausedCount = pausedCount,
                             onSelect = { filterName = it.name },
                         )
@@ -558,6 +565,8 @@ fun StudyFlowScreen(navController: NavController) {
                                             phase = row.phase,
                                             anchorDue = row.anchorDue,
                                             count = rows.count { it is FlowRowItem.Task && it.task.phase == row.phase },
+                                            todayDueNow = todayDueNow,
+                                            todayLater = laterTodayCount,
                                         )
                                     }
                                 }
@@ -735,7 +744,8 @@ private fun tomorrowStart(now: Long): Long {
 @Composable
 private fun FlowSummaryCard(
     activeCount: Int,
-    todayCount: Int,
+    dueNowCount: Int,
+    laterTodayCount: Int,
     overdueCount: Int,
     pausedCount: Int,
     nextTitle: String?,
@@ -756,17 +766,25 @@ private fun FlowSummaryCard(
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    "$todayCount",
+                    "$dueNowCount",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    stringResource(R.string.flow_summary_due_label),
+                    stringResource(R.string.flow_summary_due_now),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+            if (laterTodayCount > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.flow_summary_later_today, laterTodayCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Macaron.info().accent
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -779,12 +797,18 @@ private fun FlowSummaryCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
             Spacer(Modifier.height(8.dp))
             Text(
-                nextTitle?.let { stringResource(R.string.flow_next_task, it) }
+                nextTitle?.let { stringResource(R.string.flow_next_task_article, it) }
                     ?: stringResource(R.string.flow_no_next_task),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.flow_scope_note),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
             )
         }
     }
@@ -1013,6 +1037,12 @@ private fun FlowScheduleCard(
                             )
                         }
                     }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.flow_postpone_note),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     AnimatedVisibility(
                         visible = actionNote != null,
                         enter = expandVertically(Motion.contentSize()) + fadeIn(MotionFade.alpha(MotionFade.enter)),
@@ -1092,7 +1122,13 @@ private fun FlowFilterRow(
 // ────────────────────────────────────────────────
 
 @Composable
-private fun FlowGroupHeader(phase: StudyFlow.Phase, anchorDue: Long, count: Int) {
+private fun FlowGroupHeader(
+    phase: StudyFlow.Phase,
+    anchorDue: Long,
+    count: Int,
+    todayDueNow: Int = 0,
+    todayLater: Int = 0,
+) {
     val accent = phaseAccent(phase)
     val formatter = dateFormatter()
     val weekdayFormatter = remember { SimpleDateFormat("EEE", Locale.getDefault()) }
@@ -1159,10 +1195,11 @@ private fun FlowGroupHeader(phase: StudyFlow.Phase, anchorDue: Long, count: Int)
             }
             Spacer(Modifier.height(1.dp))
             Text(
-                if (phase == StudyFlow.Phase.PAUSED) {
-                    stringResource(R.string.flow_resume_on, dateText)
-                } else {
-                    dateText
+                when {
+                    phase == StudyFlow.Phase.PAUSED -> stringResource(R.string.flow_resume_on, dateText)
+                    phase == StudyFlow.Phase.TODAY && todayLater > 0 ->
+                        stringResource(R.string.flow_group_today_split, todayDueNow, todayLater)
+                    else -> dateText
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)

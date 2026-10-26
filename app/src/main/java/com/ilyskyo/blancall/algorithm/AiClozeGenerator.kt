@@ -281,16 +281,22 @@ object AiClozeGenerator {
         sentences: List<String>,
         blankSentenceIndices: Set<Int>
     ): BlancallGenerator.SentenceClozeResult {
-        val blanks = blankSentenceIndices.sorted().mapIndexed { k, sIdx ->
-            val sentence = sentences.getOrElse(sIdx) { return@mapIndexed null }
+        // 与本地句子挖空同一口径：空止于实义内容，句末标点留在正文里。
+        // 先过滤再编号：被丢弃的退化句不能留下 index 空洞。
+        val blanks = blankSentenceIndices.sorted().mapNotNull { sIdx ->
+            val sentence = sentences.getOrNull(sIdx) ?: return@mapNotNull null
+            val covered = BlancallGenerator.trimBlankTrailingPunctuation(sentence)
+            if (covered.isEmpty()) return@mapNotNull null
+            sIdx to covered
+        }.mapIndexed { k, (sIdx, covered) ->
             BlancallGenerator.SentenceBlankInfo(
                 index = k,
-                originalText = sentence,
+                originalText = covered,
                 sentenceIndex = sIdx,
                 startInSentence = 0,
-                endInSentence = sentence.length
+                endInSentence = covered.length
             )
-        }.filterNotNull()
+        }
         return BlancallGenerator.SentenceClozeResult(
             sentences = sentences,
             blanks = blanks,

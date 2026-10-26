@@ -736,192 +736,28 @@ fun ListScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         )
     }
 
-    // 导出 / 出卷对话框（同一入口：选 1 篇 = 单篇导出，选多篇 = 组卷）
+    // 导出 / 出卷面板（同一入口：选 1 篇 = 单篇导出，选多篇 = 组卷）
     AnimatedOverlayPresence(visible = showExportDialog) {
-        // 预选：多选态快捷导出带入选中的文章；正常入口默认第一篇
-        var selectedIds by remember {
-            mutableStateOf(
-                exportPreselectIds.ifEmpty {
-                    articles.firstOrNull()?.id?.let { setOf(it) } ?: emptySet()
-                }
-            )
-        }
-        // 导出类型：false = 原文 PDF（完整正文）；true = 挖空 PDF（保留空位呈现）
-        var exportAsCloze by remember { mutableStateOf(false) }
-        // 每篇取几个空：0 = 生成器默认密度；出卷时可按篇均题量收口
-        var maxBlanksPerArticle by remember { mutableStateOf(0) }
-        // 挖空卷默认附答案页（答案与题目分页），单篇与组卷一致
-        var includeAnswers by remember { mutableStateOf(true) }
-        val sortedArticles = remember(articles) { articles.sortedByDescending { it.updatedAt } }
-        val selectedArticles = sortedArticles.filter { it.id in selectedIds }
-        BlancallAlertDialog(
-            onDismissRequest = { showExportDialog = false },
-            title = { Text(stringResource(com.ilyskyo.blancall.R.string.export_pdf)) },
-            text = {
-                Column {
-                    Text(
-                        stringResource(com.ilyskyo.blancall.R.string.export_type),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = !exportAsCloze,
-                            onClick = { exportAsCloze = false },
-                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.export_pdf_original)) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        )
-                        FilterChip(
-                            selected = exportAsCloze,
-                            onClick = { exportAsCloze = true },
-                            label = { Text(stringResource(com.ilyskyo.blancall.R.string.export_pdf_cloze)) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (exportAsCloze) stringResource(com.ilyskyo.blancall.R.string.export_pdf_cloze_desc)
-                        else stringResource(com.ilyskyo.blancall.R.string.export_pdf_original_desc),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (exportAsCloze) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            stringResource(com.ilyskyo.blancall.R.string.exam_paper_blanks_per_article),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(0, 5, 8, 10).forEach { n ->
-                                FilterChip(
-                                    selected = maxBlanksPerArticle == n,
-                                    onClick = { maxBlanksPerArticle = n },
-                                    label = {
-                                        Text(
-                                            if (n == 0) stringResource(com.ilyskyo.blancall.R.string.exam_paper_blank_default)
-                                            else n.toString()
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                stringResource(com.ilyskyo.blancall.R.string.exam_paper_include_answers),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
-                            )
-                            com.ilyskyo.blancall.ui.common.GlassSwitch(
-                                checked = includeAnswers,
-                                onCheckedChange = { includeAnswers = it }
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        stringResource(com.ilyskyo.blancall.R.string.pick_articles_to_export),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Column(
-                        modifier = Modifier.heightIn(max = 240.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        sortedArticles.forEach { article ->
-                            val isSelected = article.id in selectedIds
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .pressClick {
-                                        selectedIds = if (isSelected) selectedIds - article.id
-                                        else selectedIds + article.id
-                                    },
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                else MaterialTheme.colorScheme.surface
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = isSelected,
-                                        onCheckedChange = {
-                                            selectedIds = if (isSelected) selectedIds - article.id
-                                            else selectedIds + article.id
-                                        }
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            article.title,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            pluralStringResource(com.ilyskyo.blancall.R.plurals.char_count, article.content.length, article.content.length),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (selectedArticles.isNotEmpty()) {
-                            showExportDialog = false
-                            scope.launch {
-                                exportPaperPdf(
-                                    context = context,
-                                    articles = selectedArticles,
-                                    asCloze = exportAsCloze,
-                                    maxBlanksPerArticle = maxBlanksPerArticle,
-                                    includeAnswers = includeAnswers && exportAsCloze,
-                                )
-                            }
-                        }
-                    },
-                    enabled = selectedArticles.isNotEmpty()
-                ) {
-                    Text(
-                        if (selectedArticles.size > 1) {
-                            stringResource(com.ilyskyo.blancall.R.string.exam_paper_start, selectedArticles.size)
-                        } else {
-                            stringResource(com.ilyskyo.blancall.R.string.export_action)
-                        }
+        ExportPdfSheet(
+            articles = articles,
+            preselectIds = exportPreselectIds,
+            onDismiss = { showExportDialog = false },
+            onExport = { selected, asCloze, maxBlanksPerArticle, includeAnswers ->
+                // 先收起面板（宿主会等退场播完再移除）；导出本身在协程里继续
+                showExportDialog = false
+                scope.launch {
+                    exportPaperPdf(
+                        context = context,
+                        articles = selected,
+                        asCloze = asCloze,
+                        maxBlanksPerArticle = maxBlanksPerArticle,
+                        includeAnswers = includeAnswers,
                     )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showExportDialog = false }) {
-                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
-                }
-            }
         )
     }
-    
+
     // 模式选择弹窗：常驻组件，内部状态控制显隐，保证退场动画完整播放
     AdaptiveModePicker(
         visible = showModePicker,

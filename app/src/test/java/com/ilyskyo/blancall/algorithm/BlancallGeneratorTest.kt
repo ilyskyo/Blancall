@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.algorithm
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -41,6 +42,78 @@ class BlancallGeneratorTest {
     fun `句子挖空_空文本安全`() {
         val result = BlancallGenerator.generateSentenceCloze("")
         assertEquals(0, result.blanks.size)
+    }
+
+    // ── 挖空范围：末尾标点不挖，内部标点保留 ──
+    // 标点不是要默写的记忆内容；尾随标点留在正文里。分句之间的标点仍属于空
+    // （句子结构本身要背），是否显式提示由界面「标点提示」开关决定。
+
+    @Test
+    fun `句子挖空_末尾标点不进入空`() {
+        val content = "六国破灭，非兵不利。赂秦而力亏，破灭之道也。"
+        val result = BlancallGenerator.generateSentenceCloze(
+            content, count = 1, strategy = BlancallGenerator.Strategy.FULL_COVERAGE
+        )
+
+        assertEquals(1, result.blanks.size)
+        val blank = result.blanks.first()
+        assertEquals("尾随逗号应被剥掉", "六国破灭", blank.originalText)
+        assertEquals("逗号应留在正文里、紧跟在空之后", "，非兵不利。",
+            result.sentences[0].substring(blank.endInSentence))
+        assertTrue("展示文本应保留被留在正文里的逗号", result.displayText.contains("[1] ___，非兵不利。"))
+    }
+
+    @Test
+    fun `句子挖空_跨分句的空保留内部标点但不带尾随标点`() {
+        val content = "今日割五城，明日割十城。起视四境。"
+        val result = BlancallGenerator.generateSentenceCloze(
+            content, count = 2, strategy = BlancallGenerator.Strategy.FULL_COVERAGE
+        )
+
+        assertEquals(1, result.blanks.size)
+        val blank = result.blanks.first()
+        assertEquals("内部逗号保留、尾随句号剥掉", "今日割五城，明日割十城", blank.originalText)
+        assertEquals("句号应留在正文里", "。", result.sentences[0].substring(blank.endInSentence))
+        assertTrue(result.displayText.contains("[1] ___。"))
+    }
+
+    @Test
+    fun `句子挖空_整句为空时也不吃句末标点`() {
+        val content = "春眠不觉晓。处处闻啼鸟。"
+        val result = BlancallGenerator.generateSentenceCloze(content, count = 2)
+
+        assertEquals(listOf("春眠不觉晓", "处处闻啼鸟"), result.blanks.map { it.originalText })
+        assertTrue(result.displayText.contains("[1] ___。"))
+        assertTrue(result.displayText.contains("[2] ___。"))
+    }
+
+    @Test
+    fun `句子挖空_随机生成的空都不以标点结尾`() {
+        val trailing = "，,;；、。.！!？?…~\"'」』】）)》〉".toSet()
+        repeat(20) {
+            BlancallGenerator.generateSentenceCloze(article, count = 3).blanks.forEach { b ->
+                assertTrue("空不应为空", b.originalText.isNotEmpty())
+                assertFalse("空以标点结尾：「${b.originalText}」", b.originalText.last() in trailing)
+            }
+        }
+    }
+
+    @Test
+    fun `标点骨架_保留标点并把每段内容折叠成一个占位`() {
+        assertEquals("＿＿，＿＿", BlancallGenerator.punctuationSkeleton("今日割五城，明日割十城"))
+        assertEquals("＿＿", BlancallGenerator.punctuationSkeleton("六国破灭"))
+        assertEquals("＿＿、＿＿；＿＿", BlancallGenerator.punctuationSkeleton("第一、第二；第三"))
+        assertEquals("", BlancallGenerator.punctuationSkeleton(""))
+        assertEquals("纯标点原样返回", "「……」", BlancallGenerator.punctuationSkeleton("「……」"))
+        assertEquals("数字是内容，不能被当成标点", "＿＿.＿＿", BlancallGenerator.punctuationSkeleton("3.14"))
+        assertTrue(BlancallGenerator.hasBlankedPunctuation("今日割五城，明日割十城"))
+        assertFalse("没有标点的空应保持原占位外观", BlancallGenerator.hasBlankedPunctuation("六国破灭"))
+        assertFalse("数字不是标点", BlancallGenerator.hasBlankedPunctuation("2026"))
+        assertEquals(
+            "右引号与句读都应算尾随标点",
+            "六国破灭",
+            BlancallGenerator.trimBlankTrailingPunctuation("六国破灭，”")
+        )
     }
 
     @Test

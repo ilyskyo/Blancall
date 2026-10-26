@@ -34,6 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.MistakeNotebook
+import com.ilyskyo.blancall.algorithm.StudyCoach
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
@@ -101,7 +102,9 @@ import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.AchievementTimelineStore
+import com.ilyskyo.blancall.data.repository.InProgressPracticeStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.data.repository.SentenceCardStore
 import com.ilyskyo.blancall.data.model.toErrorType
 import com.ilyskyo.blancall.algorithm.DateRange
 import com.ilyskyo.blancall.algorithm.DayBucket
@@ -374,7 +377,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 WeakArticle(articleId, c.toFloat() / t, articleRecords.size) to
                     WeaknessMath.adjustedErrorRate((t - c).coerceAtLeast(0), t, overallErrorPrior)
             }
-            .sortedBy { it.second }
+            .sortedByDescending { it.second }
             .take(3)
             .map { it.first }
 
@@ -465,6 +468,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     var sentenceStates by remember { mutableStateOf(fsrsStore.allSentenceStates()) }
     // 暂停中的文章：预测与句子到期数都不再把它们读成「该复习」
     var pausedArticleIds by remember { mutableStateOf(fsrsStore.pausedArticleIds()) }
+    var pauses by remember { mutableStateOf(fsrsStore.pausedArticles()) }
     var fsrsReady by remember { mutableStateOf(false) }
     val fsrsRevision by fsrsStore.revision.collectAsState()
     LaunchedEffect(fsrsRevision) {
@@ -472,6 +476,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         fsrsStates = fsrsStore.allStates()
         sentenceStates = fsrsStore.allSentenceStates()
         pausedArticleIds = fsrsStore.pausedArticleIds()
+        pauses = fsrsStore.pausedArticles()
         fsrsReady = true
     }
     val predictions = remember(articles, allRecords, template, fsrsStates, pausedArticleIds) {
@@ -482,16 +487,6 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // 「这条结论是 FSRS 算的还是模板估的」——判据与 ForgettingPredictor 走哪条分支用的是同一个条件
     // （有 FSRS 状态且 reviewCount>0 才是自适应调度），不在这里另立一套口径。
     val adaptiveIds = remember(fsrsStates) { fsrsStates.filterValues { it.reviewCount > 0 }.keys }
-
-    // 「下一步」的到期文章输入：与任务流同一份 FSRS 到期判定，取最早到期的一篇
-    val firstDueArticleId = remember(fsrsStates, pausedArticleIds, nowTick) {
-        fsrsStates.entries
-            .filter { (id, state) ->
-                state.reviewCount > 0 && id !in pausedArticleIds && nowTick >= state.due
-            }
-            .minByOrNull { it.value.due }
-            ?.key
-    }
 
     // ── 句子记忆统计：取自句子级 FSRS 状态，留存率口径与文章一致（同函数同参数）──
     val sentenceStats = remember(sentenceStates, nowTick, pausedArticleIds) {
@@ -530,6 +525,44 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     val unresolvedMistakes = remember(allRecords) {
         MistakeNotebook.entries(allRecords, onlyUnresolved = true).size
     }
+
+    // ── 今日工作快照：统计页「下一步」与首页今日计划共用同一份取数与过滤 ──
+    val rawResumables by produceState(emptyList(), articles) {
+        value = if (articles.isEmpty()) emptyList()
+        else withContext(Dispatchers.IO) { InProgressPracticeStore.scan(context.filesDir) }
+    }
+    // 只读今日一句的键（不调用 ensureToday，统计页不负责抽句）
+    val todaySentenceKey by produceState<String?>(null, todayKey) {
+        value = withContext(Dispatchers.IO) {
+            SentenceCardStore.getInstance(context.filesDir).today()
+                ?.takeIf { it.date == todayKey.toString() }?.key
+        }
+    }
+    val todayPrepared = remember(
+        articles, allRecords, fsrsStates, pauses, sentenceStates, template,
+        rawResumables, todaySentenceKey,
+    ) {
+        StudyCoach.prepare(
+            StudyCoach.Source(
+                articles = articles,
+                records = allRecords,
+                states = fsrsStates,
+                pauses = pauses,
+                sentenceStates = sentenceStates,
+                template = template,
+                resumables = rawResumables,
+                todaySentenceKey = todaySentenceKey,
+            )
+        )
+    }
+    val todaySnapshot = remember(todayPrepared, nowTick, dailyGoal) {
+        StudyCoach.snapshot(
+            prepared = todayPrepared,
+            now = nowTick,
+            dailyPracticeGoal = dailyGoal,
+        )
+    }
+    val todayPlan = remember(todaySnapshot) { StudyCoach.buildPlan(todaySnapshot.input) }
 
     // ── 成就徽章 ──
     val achievements = remember(allRecords, longestFromRecords, sentenceStats) {
@@ -1006,9 +1039,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         }
                         // ── 「下一步」行动卡（置顶）──
                         // 整页其余卡片都在陈列「练了多少 / 错在哪一类 / 哪篇弱」，用户看完仍要自己回答
-                        // 「所以现在练什么」。这张卡把已有结论汇成一个动词：到期句数 + 最弱一篇 → 一个按钮。
-                        // 只给「最该做的那一件」：到期文章 > 薄弱篇 > 到期句，与首页今日计划同序。
-                        val nextWeakest = stats.weakestArticles.firstOrNull()
+                        // 「所以现在练什么」。这张卡直接渲染今日计划第一条，不再自己排优先级。
                         item(key = "overview_mistake_notebook") {
                             AnimatedOverviewCard {
                                 GlassCard(
@@ -1049,27 +1080,22 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         item(key = "overview_card_next_step") {
                             AnimatedOverviewCard {
                                 NextStepCard(
-                                    dueSentences = sentenceStats.dueCount,
-                                    weakest = nextWeakest,
-                                    weakestTitle = nextWeakest?.let { w ->
-                                        weakTitles[w.articleId] ?: stringResource(
-                                            com.ilyskyo.blancall.R.string.ov_article_fallback, w.articleId
-                                        )
-                                    }.orEmpty(),
-                                    dueArticleId = firstDueArticleId,
-                                    dueArticleTitle = firstDueArticleId?.let { id ->
-                                        articles.firstOrNull { it.id == id }?.title
-                                            ?: stringResource(
-                                                com.ilyskyo.blancall.R.string.ov_article_fallback, id
-                                            )
-                                    }.orEmpty(),
+                                    plan = todayPlan,
+                                    weakest = todaySnapshot.weakest,
+                                    pausedArticleCount = todaySnapshot.pausedArticleCount,
+                                    onOpenFlow = { navController.navigate("study_flow") },
+                                    onResume = { articleId ->
+                                        navController.navigate("practice/$articleId?resume=true")
+                                    },
                                     onWeaknessDrill = { articleId ->
                                         navController.navigate("practice/$articleId?mode=SENTENCE&sectionMode=WEAKNESS")
                                     },
                                     onGoReview = { navController.navigate("sentence_cards") },
                                     onGoArticle = { articleId ->
                                         navController.navigate("practice/$articleId?mode=SENTENCE")
-                                    }
+                                    },
+                                    onGoMistakes = { navController.navigate("mistakes") },
+                                    onGoDailyGoal = { navController.navigateToTab("list") },
                                 )
                             }
                         }
@@ -1699,44 +1725,30 @@ private fun TagStatRow(stat: TagOps.TagStat, maxArticles: Int) {
 }
 
 /**
- * 「建议下一步」卡：把整页的「陈列」收成一个动词。
+ * 「建议下一步」卡：直接渲染今日计划的第一条。
  *
- * 为什么需要它：其余卡片都在回答「我练了多少 / 错在哪一类 / 哪篇弱」，
- * 而用户合上页面时真正要的是「所以现在练什么」。
- *
- * 改造前后的差别（用户反馈"根本没反应过来是哪个模式"）：
- * - 旧卡只写「今日待复习 17 句 / 去练习」。**17 句属于哪个模块？点了会进什么？** 界面没说，
- *   用户点进去才发现是句子卡片 —— 这不是文案瑕疵，是让用户先付出一次试错。
- *   现在标题直接写明来源（句子卡片 / 文章练习），并单列一行「记忆方式」。
- * - 旧卡没说它支持哪些挖空方式。用户以为"待复习"能覆盖字词挖空与反向默写，
- *   实际句子卡只有「遮挡整句（首字提示）」这一种。现在把能力边界写进卡面：
- *   句子卡 = 只做整句回忆；文章练习 = 句子挖空 / 字词挖空 / 反向默写。
- * - 旧卡同时列出「17 句」和「最弱一篇」，却只给一个按钮，读者无法判断按钮会执行哪一条。
- *   现在主建议（有按钮）与次建议（一行可点文字）分开 —— 只执行一件，但另一件也看得见。
- *
- * 为什么仍只给一个主动作：选择本身就是负担，三选一必然有两项是当下不该做的。
+ * 以前这里自己排「到期文章 > 薄弱 > 句子」，与首页今日计划不同序，同一时刻两页推荐不同的事。
+ * 现在优先级只存在于 [StudyCoach.buildPlan]，本卡只负责按 [StudyCoach.Kind] 换文案与入口 ——
+ * 覆盖全部六种 Kind（含错题集训与每日目标），首页第一条是什么，这里就是什么。
  *
  * 为什么用薄荷绿：`continueP` 是这套马卡龙里语义为「继续 / 前进」的那一支，
  * 与「下一步」的动作含义同向；其余色相在别处已各自绑定了含义（info=信息、warn=警告）。
- *
- * 放在哪：留在全局统计页顶部（诊断结论属于诊断页），不作为首页固定卡。
- * 首页是用户可自由增删排序的卡片画布（HomeCardCanvas / HomeLayoutStore），
- * 系统硬塞一张不可移除的卡会破坏「我的首页我做主」；若以后要在首页看到，
- * 应做成**可选卡片类型**由用户自己添加，而不是默认插入。
  */
 @Composable
 private fun NextStepCard(
-    dueSentences: Int,
-    weakest: WeakArticle?,
-    weakestTitle: String,
-    dueArticleId: Long?,
-    dueArticleTitle: String,
+    plan: StudyCoach.Plan,
+    weakest: StudyCoach.Weakest?,
+    pausedArticleCount: Int,
+    onOpenFlow: () -> Unit,
+    onResume: (Long) -> Unit,
     onWeaknessDrill: (Long) -> Unit,
     onGoReview: () -> Unit,
     onGoArticle: (Long) -> Unit,
+    onGoMistakes: () -> Unit,
+    onGoDailyGoal: () -> Unit,
 ) {
-    // 「下一步练什么」的优先级由纯函数决定（可单测），这里只负责渲染结果
-    val step = NextStepDecider.decide(dueSentences, weakest?.articleId, dueArticleId)
+    // 优先级由纯函数决定（可单测），这里只负责把第一条渲染成动作
+    val step = NextStepDecider.fromPlan(plan)
     val hue = Macaron.continueP()
     GlassCard(containerColor = hue.fill) {
         Column(Modifier.padding(16.dp)) {
@@ -1752,10 +1764,28 @@ private fun NextStepCard(
             }
             Spacer(Modifier.height(10.dp))
             when (step) {
+                is NextStep.Resume -> {
+                    val item = plan.items.firstOrNull()
+                    NextStepPrimary(
+                        headline = stringResource(
+                            com.ilyskyo.blancall.R.string.today_plan_resume,
+                            item?.title.orEmpty()
+                        ),
+                        scope = stringResource(
+                            com.ilyskyo.blancall.R.string.today_plan_resume_detail,
+                            item?.answered ?: 0,
+                            item?.total ?: 0
+                        ),
+                        limit = null,
+                        actionLabel = stringResource(com.ilyskyo.blancall.R.string.continue_action),
+                        onAction = { onResume(step.articleId) },
+                    )
+                }
                 is NextStep.DueArticle -> {
                     NextStepPrimary(
                         headline = stringResource(
-                            com.ilyskyo.blancall.R.string.ov_next_step_due_article_title, dueArticleTitle
+                            com.ilyskyo.blancall.R.string.ov_next_step_due_article_title,
+                            plan.items.firstOrNull()?.title.orEmpty()
                         ),
                         scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_article),
                         limit = null,
@@ -1778,16 +1808,19 @@ private fun NextStepCard(
                     } ?: ""
                     NextStepPrimary(
                         headline = stringResource(
-                            com.ilyskyo.blancall.R.string.ov_next_step_weak_title, weakestTitle
+                            com.ilyskyo.blancall.R.string.ov_next_step_weak_title,
+                            weakest?.title.orEmpty()
                         ),
                         scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_practice),
                         limit = null,
                         actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_action),
                         onAction = { onWeaknessDrill(step.articleId) },
-                        a11y = "$weakLabel $weakestTitle $weakValue",
+                        a11y = "$weakLabel ${weakest?.title.orEmpty()} $weakValue",
                     )
                     // 次建议：还有到期句子时给一条出口 —— 不做按钮，只做一行可点文字，
                     // 视觉权重明显低于主建议，读者不会以为要同时做两件
+                    val dueSentences = plan.items
+                        .firstOrNull { it.kind == StudyCoach.Kind.SENTENCE_CARDS }?.count ?: 0
                     if (dueSentences > 0) {
                         Spacer(Modifier.height(8.dp))
                         NextStepSecondary(
@@ -1802,16 +1835,40 @@ private fun NextStepCard(
                         )
                     }
                 }
-                NextStep.Review -> {
+                is NextStep.SentenceCards -> {
                     NextStepPrimary(
                         headline = pluralStringResource(
                             com.ilyskyo.blancall.R.plurals.ov_next_step_due_sentences,
-                            dueSentences, dueSentences
+                            step.count, step.count
                         ),
                         scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_sentences),
                         limit = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_limit_sentences),
                         actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_go_sentences),
                         onAction = onGoReview,
+                    )
+                }
+                is NextStep.MistakeDrill -> {
+                    NextStepPrimary(
+                        headline = stringResource(com.ilyskyo.blancall.R.string.today_plan_mistakes),
+                        scope = stringResource(
+                            com.ilyskyo.blancall.R.string.today_plan_mistake_detail,
+                            step.count
+                        ),
+                        limit = null,
+                        actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_go_mistakes),
+                        onAction = onGoMistakes,
+                    )
+                }
+                is NextStep.DailyGoal -> {
+                    NextStepPrimary(
+                        headline = stringResource(com.ilyskyo.blancall.R.string.today_plan_daily_goal),
+                        scope = stringResource(
+                            com.ilyskyo.blancall.R.string.today_plan_goal_detail,
+                            step.gap
+                        ),
+                        limit = null,
+                        actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_go_articles),
+                        onAction = onGoDailyGoal,
                     )
                 }
                 NextStep.AllClear -> {
@@ -1826,6 +1883,22 @@ private fun NextStepCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (pausedArticleCount > 0) {
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(
+                            onClick = onOpenFlow,
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                stringResource(
+                                    com.ilyskyo.blancall.R.string.today_plan_paused_hint,
+                                    pausedArticleCount
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -55,6 +55,10 @@ import java.time.ZoneId
 internal fun TodayPlanCard(
     input: StudyCoach.Input,
     plan: StudyCoach.Plan,
+    dueArticleCount: Int,
+    pausedArticleCount: Int,
+    allScheduledPaused: Boolean,
+    onOpenFlow: () -> Unit,
     onStartItem: (StudyCoach.Item) -> Unit,
     onStartBudget: (Int) -> Unit,
     onExamEpochDayChange: (Long) -> Unit,
@@ -74,11 +78,37 @@ internal fun TodayPlanCard(
                     Text(
                         text = buildString {
                             val days = plan.examDaysLeft
-                            if (days != null && days >= 0) {
-                                append(stringResource(R.string.today_plan_exam_days, days))
-                                append(" · ")
+                            val hasExam = days != null && days >= 0
+                            when {
+                                hasExam && dueArticleCount > 0 -> append(
+                                    stringResource(
+                                        R.string.today_plan_subtitle_exam_due,
+                                        days ?: 0,
+                                        dueArticleCount,
+                                        plan.estimatedMinutes
+                                    )
+                                )
+                                hasExam -> append(
+                                    stringResource(
+                                        R.string.today_plan_subtitle_exam,
+                                        days ?: 0,
+                                        plan.estimatedMinutes
+                                    )
+                                )
+                                dueArticleCount > 0 -> append(
+                                    stringResource(
+                                        R.string.today_plan_subtitle_due,
+                                        dueArticleCount,
+                                        plan.estimatedMinutes
+                                    )
+                                )
+                                else -> append(
+                                    stringResource(
+                                        R.string.today_plan_minutes,
+                                        plan.estimatedMinutes
+                                    )
+                                )
                             }
-                            append(stringResource(R.string.today_plan_minutes, plan.estimatedMinutes))
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -104,11 +134,24 @@ internal fun TodayPlanCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
             if (plan.items.isEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    stringResource(R.string.today_plan_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (allScheduledPaused && pausedArticleCount > 0) {
+                    TextButton(
+                        onClick = onOpenFlow,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            stringResource(R.string.today_plan_empty_paused, pausedArticleCount),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    Text(
+                        stringResource(R.string.today_plan_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             } else {
                 plan.items.forEachIndexed { index, item ->
                     if (index > 0) {
@@ -149,6 +192,19 @@ internal fun TodayPlanCard(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+            }
+            // 暂停入口只在确有暂停时露出：平时不增加常驻按钮，空态单独给一句可点的提示
+            if (pausedArticleCount > 0 && plan.items.isNotEmpty()) {
+                TextButton(
+                    onClick = onOpenFlow,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.today_plan_paused_hint, pausedArticleCount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -283,12 +339,16 @@ private fun TimeBudgetDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    if (budget.empty) {
-                        stringResource(R.string.today_plan_budget_empty)
-                    } else {
-                        stringResource(
-                            R.string.today_plan_budget_result,
+                    when {
+                        budget.empty -> stringResource(R.string.today_plan_budget_empty)
+                        budget.articleIds.isNotEmpty() -> stringResource(
+                            R.string.today_plan_budget_result_articles,
                             budget.articleIds.size,
+                            budget.estimatedMinutes
+                        )
+                        else -> stringResource(
+                            R.string.today_plan_budget_result_cards,
+                            budget.sentenceCardCount,
                             budget.estimatedMinutes
                         )
                     },

@@ -23,7 +23,7 @@ import java.util.concurrent.CountDownLatch
  * FSRS 记忆状态持久化存储（fsrs_state.json）。
  *
  * 以文章 id 为键保存 [FsrsEngine.CardState]，练习完成时更新、页面查询时读取。
- * 文件格式：{"version":2,"articleId": {"difficulty":..,"stability":..,"due":..,"lastReview":..,"reviewCount":..,"lapses":..},"paused":{"articleId":{"at":..,"remainingMs":..}}}
+ * 文件格式：{"version":2,"articleId": {"difficulty":..,"stability":..,"due":..,"lastReview":..,"reviewCount":..,"lapses":..},"paused":{"articleId":{"at":..,"remainingMs":..,"fixedDue":..}}}
  *
  * 版本 2 新增 `paused` 表（学习任务流的暂停快照）。抬版本号是为了让旧版本读到本文件后
  * **拒绝写盘**，而不是在整本重写时把暂停表静默抹掉 —— 与 StoreVersion 的既有约定一致。
@@ -204,7 +204,9 @@ class FsrsStateStore private constructor(private val file: File) {
                     val item = o.optJSONObject(idKey) ?: return@forEach
                     val at = item.optLong("at", 0L)
                     val remaining = item.optLong("remainingMs", 0L).coerceAtLeast(0L)
-                    if (at > 0L) parsedPauses[id] = StudyFlow.Pause(at, remaining)
+                    // 旧文件没有这个字段：按 0 处理（沿用冻结剩余期），不抬版本、不破坏旧数据
+                    val fixedDue = item.optLong("fixedDue", 0L).coerceAtLeast(0L)
+                    if (at > 0L) parsedPauses[id] = StudyFlow.Pause(at, remaining, fixedDue)
                 }
                 return@forEach
             }
@@ -261,6 +263,7 @@ class FsrsStateStore private constructor(private val file: File) {
                         JSONObject()
                             .put("at", info.pausedAt)
                             .put("remainingMs", info.remainingMs)
+                            .put("fixedDue", info.fixedDue)
                     )
                 }
                 json.put(PAUSE_KEY, paused)
@@ -349,8 +352,10 @@ class FsrsStateStore private constructor(private val file: File) {
 
     /**
      * 调整某文章的下次复习时间。
-     * 暂停中的任务调整的是「恢复后落到哪」：冻结剩余期改成从此刻到目标日期，
-     * 保证界面上看到的目标与实际恢复落点一致；未暂停则直接改 due。
+     * 暂停中的任务调整的是「恢复后落到哪」：写入绝对日期 [StudyFlow.Pause.fixedDue]，
+     * 保证日期选择器选中的那天稳定、重启后不漂移；同时把 `remainingMs` 同步成当前剩余期，
+     * 作为旧版本读新文件时的回退值。
+     * 暂停期间手动练过的，展示与恢复都以那次练习推进的 `state.due` 为准，改期也要同步写它。
      */
     fun rescheduleArticle(
         articleId: Long,
@@ -364,9 +369,10 @@ class FsrsStateStore private constructor(private val file: File) {
             val target = due.coerceAtLeast(0L)
             if (pausedArticles.containsKey(articleId)) {
                 val pause = pausedArticles.getValue(articleId)
-                pausedArticles[articleId] = pause.copy(remainingMs = (target - now).coerceAtLeast(0L))
-                // 暂停期间手动练过：展示口径已经是 state.due（见 StudyFlow.projectedDue），
-                // 改期必须同步写 state.due，否则界面上看到的目标与恢复后的落点会分叉。
+                pausedArticles[articleId] = pause.copy(
+                    remainingMs = (target - now).coerceAtLeast(0L),
+                    fixedDue = target,
+                )
                 if (state.lastReview > pause.pausedAt) {
                     states[articleId] = state.copy(due = target)
                 }

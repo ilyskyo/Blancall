@@ -79,6 +79,22 @@ object EbbinghausScheduler {
     }
 
     /**
+     * 模板兜底路径的下次到期时刻；null = 没练过或已排完（都不该进到期列表）。
+     *
+     * 这是模板调度的唯一「到期时间」出口：今日计划的快照与 [isDue] / [getReviewStatus]
+     * 都从这里取，避免一处按记录条数算、另一处按 FSRS 的 due 算，两屏给出相反结论。
+     */
+    fun nextReviewAt(template: ReviewTemplate, records: List<PracticeRecord>): Long? {
+        if (records.isEmpty()) return null
+        val sorted = records.sortedBy { it.timestamp }
+        if (sorted.size >= template.intervals.size) return null
+        val last = sorted.last()
+        val lastAcc = if (last.totalBlanks > 0)
+            last.correctCount.toFloat() / last.totalBlanks else 1f
+        return nextReviewTime(template, sorted.size - 1, last.timestamp, lastAcc)
+    }
+
+    /**
      * 判断是否需要复习
      * @param clock 可注入的当前时间源（默认 System.currentTimeMillis()），便于测试
      */
@@ -87,15 +103,7 @@ object EbbinghausScheduler {
         records: List<PracticeRecord>,
         clock: () -> Long = { System.currentTimeMillis() }
     ): Boolean {
-        if (records.isEmpty()) return false
-        val sorted = records.sortedBy { it.timestamp }
-        val count = sorted.size
-        // count 达到/超过复习轮次总数即视为已完成，不再 due
-        if (count >= template.intervals.size) return false
-        val lastTime = sorted.last().timestamp
-        val lastAcc = if (sorted.last().totalBlanks > 0)
-            sorted.last().correctCount.toFloat() / sorted.last().totalBlanks else 1f
-        val nextTime = nextReviewTime(template, count - 1, lastTime, lastAcc) ?: return false
+        val nextTime = nextReviewAt(template, records) ?: return false
         return clock() >= nextTime
     }
 
@@ -109,15 +117,7 @@ object EbbinghausScheduler {
         clock: () -> Long = { System.currentTimeMillis() }
     ): ReviewStatus {
         if (records.isEmpty()) return ReviewStatus.NOT_STARTED
-        val sorted = records.sortedBy { it.timestamp }
-        val count = sorted.size
-        // count 达到/超过复习轮次总数即视为已完成
-        if (count >= template.intervals.size) return ReviewStatus.COMPLETED
-
-        val lastTime = sorted.last().timestamp
-        val lastAcc = if (sorted.last().totalBlanks > 0)
-            sorted.last().correctCount.toFloat() / sorted.last().totalBlanks else 1f
-        val nextTime = nextReviewTime(template, count - 1, lastTime, lastAcc) ?: return ReviewStatus.COMPLETED
+        val nextTime = nextReviewAt(template, records) ?: return ReviewStatus.COMPLETED
 
         val now = clock()
         if (now >= nextTime) return ReviewStatus.DUE

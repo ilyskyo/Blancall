@@ -15,16 +15,20 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.ilyskyo.blancall.algorithm.DayBucket
 import com.ilyskyo.blancall.algorithm.FsrsEngine
-import com.ilyskyo.blancall.algorithm.SentenceSelector
+import com.ilyskyo.blancall.algorithm.ReviewTemplate
+import com.ilyskyo.blancall.algorithm.StudyCoach
+import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.PracticeRecord
-import com.ilyskyo.blancall.data.model.PracticeStatus
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
+import com.ilyskyo.blancall.data.repository.InProgressPracticeStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.data.repository.SentenceCardStore
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.ReminderFrequency
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
-import org.json.JSONObject
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -55,6 +59,8 @@ class ReminderWorker(
         return try {
             // 双保险：即使 BlancallApp 未在该进程初始化，也确保 Prefs 可用（init 可重入）
             runCatching { ReminderPrefs.init(applicationContext) }
+            // 到期判定要读复习模板，AppPrefs 也必须可用（同一份 init 可重入约定）
+            runCatching { AppPrefs.init(applicationContext) }
 
             if (!ReminderPrefs.enabled) {
                 Log.d(TAG, "提醒已关闭，跳过")
@@ -125,10 +131,7 @@ class ReminderWorker(
         val articleStates = fsrs?.allStates().orEmpty()
         // 用户主动暂停的文章不再催：到期判定与启停状态同源（fsrs_state.json 的 paused 表）
         val pausedArticleIds = fsrs?.pausedArticleIds().orEmpty()
-        val dueArticles = articleStates
-            .filterKeys { it !in pausedArticleIds }
-            .filterValues { FsrsEngine.isDue(it, now) }
-        val firstDueArticleId = dueArticles.entries.minByOrNull { it.value.due }?.key ?: -1L
+        val pauses = fsrs?.pausedArticles().orEmpty()
 
         // 未来 72 小时内到期、但此刻还没到期：提前说「哪一篇快到期了」
         val upcomingTasks = articleStates
@@ -166,20 +169,37 @@ class ReminderWorker(
             }
 
         val sentenceStates = fsrs?.allSentenceStates().orEmpty()
-        val dueSentenceCount = sentenceStates.count { (key, state) ->
-            key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) &&
-                FsrsEngine.isDue(state, now) &&
-                SentenceSelector.articleIdOf(key) !in pausedArticleIds
-        }
         val today = DayBucket.localDate(now)
         val sentenceCardPracticedToday = sentenceStates.values.any { state ->
             state.reviewCount > 0 && DayBucket.localDate(state.lastReview) == today
         }
 
-        val incomplete = findIncompletePractice()
+        // 与首页、统计页共用同一份取数：到期文章含模板兜底，句子数用「全部到期句」；
+        // 未完成练习只保留未暂停、未删除、仍有剩余空的记录。
         val records = loadRecords()
+        val snapshot = StudyCoach.snapshot(
+            StudyCoach.Source(
+                articles = loadArticles(),
+                records = records,
+                states = articleStates,
+                pauses = pauses,
+                sentenceStates = sentenceStates,
+                template = ReviewTemplate.fromId(AppPrefs.reviewTemplateId),
+                resumables = runCatching {
+                    InProgressPracticeStore.scan(context.filesDir)
+                }.getOrDefault(emptyList()),
+                todaySentenceKey = runCatching {
+                    SentenceCardStore.getInstance(context.filesDir).today()
+                        ?.takeIf { it.date == today.toString() }?.key
+                }.getOrNull(),
+            ),
+            now = now,
+        )
+        val firstDue = snapshot.input.dueArticles.minByOrNull { it.due }
+        val firstDueArticleId = firstDue?.articleId ?: -1L
+        val incomplete = snapshot.resumables.firstOrNull()
         val todayCount = records.count { DayBucket.localDate(it.timestamp) == today }
-        val weakCount = countWeakContent(records)
+        val weakCount = countWeakContent(records, pausedArticleIds)
         val lastPractice = records
             .filter { it.totalBlanks > 0 }
             .maxByOrNull { it.timestamp }
@@ -197,8 +217,8 @@ class ReminderWorker(
             hasStudiedToday = ReminderPrefs.hasStudiedToday(),
             todayCount = todayCount,
             dailyGoal = ReminderPrefs.dailyPracticeGoal,
-            dueArticleCount = dueArticles.size,
-            dueSentenceCount = dueSentenceCount,
+            dueArticleCount = snapshot.dueArticleCount,
+            dueSentenceCount = snapshot.sentenceTotalDue,
             firstDueArticleId = firstDueArticleId,
             sentenceCardPracticedToday = sentenceCardPracticedToday,
             hasIncompletePractice = incomplete != null,
@@ -206,13 +226,28 @@ class ReminderWorker(
             incompleteRemaining = incomplete?.remaining ?: 0,
             weakCount = weakCount,
             streakDays = ReminderPrefs.studyStreakDays,
-            dueArticleTitle = if (firstDueArticleId > 0) articleTitle(firstDueArticleId) else "",
+            dueArticleTitle = firstDue?.title
+                ?: if (firstDueArticleId > 0) articleTitle(firstDueArticleId) else "",
             incompleteArticleTitle = incomplete?.let { articleTitle(it.articleId) }.orEmpty(),
             upcomingTasks = upcomingTasks,
             forgettingRisks = forgettingRisks,
             lastPractice = lastPractice,
             allowReasons = allowedReasons(),
         )
+    }
+
+    /** 全部文章快照：与首页同一份模板兜底输入；读盘失败按空库处理，不让提醒整体失败。 */
+    private suspend fun loadArticles(): List<Article> {
+        return try {
+            val repo = ArticleRepository.getInstance(
+                context.filesDir.resolve("articles.json").absolutePath
+            )
+            // 与记录同约定：等首载完成，否则 first() 可能拿到初始空表，模板兜底到期会被漏掉
+            withTimeoutOrNull(2000L) { repo.awaitLoaded() }
+            withTimeoutOrNull(2000L) { repo.allArticles.first() }.orEmpty()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     /** 文章标题：取不到时返回空串，由通知文案回落到「未命名文章」，绝不让整条提醒发不出去。 */
@@ -232,40 +267,6 @@ class ReminderWorker(
         (record.correctCount.toFloat() / record.totalBlanks * 100)
             .roundToInt().coerceIn(0, 100)
 
-    /** 未完成练习的定位信息（仅取数，判定在 [ReminderPlan]）。 */
-    private data class IncompletePractice(val articleId: Long, val remaining: Int)
-
-    /**
-     * 查找第一个未完成的练习状态文件。
-     */
-    private fun findIncompletePractice(): IncompletePractice? {
-        try {
-            val filesDir = context.filesDir
-            val stateFiles = filesDir.listFiles { file ->
-                file.name.startsWith("practice_state_") && file.name.endsWith(".json")
-            } ?: return null
-
-            for (file in stateFiles) {
-                try {
-                    val json = JSONObject(file.readText())
-                    val status = json.optString("status", "")
-                    if (status != PracticeStatus.IN_PROGRESS.name) continue
-
-                    val articleId = json.optLong("articleId", -1L)
-                    if (articleId <= 0) continue
-
-                    val totalBlanks = json.optInt("totalBlanks", 0)
-                    val answeredCount = json.optInt("answeredCount", 0)
-                    val remaining = totalBlanks - answeredCount
-                    if (remaining > 0) {
-                        return IncompletePractice(articleId, remaining)
-                    }
-                } catch (_: Exception) { /* 跳过损坏文件 */ }
-            }
-        } catch (_: Exception) { }
-        return null
-    }
-
     /**
      * 一次性读取练习记录：今日次数、薄弱内容、最近一次练习都要用它。
      * 精确等待加载完成（2 秒上限），避免把「还没加载完」当成「今天没练 / 没有记录」。
@@ -282,11 +283,12 @@ class ReminderWorker(
         }
     }
 
-    /** 统计薄弱内容（错误过的题目数量，按文章+空号去重）。 */
-    private fun countWeakContent(records: List<PracticeRecord>): Int {
+    /** 统计薄弱内容（错误过的题目数量，按文章+空号去重）；暂停文章的错题不再计入。 */
+    private fun countWeakContent(records: List<PracticeRecord>, pausedArticleIds: Set<Long>): Int {
         if (records.isEmpty()) return 0
         val mistakeSet = mutableSetOf<String>()
         for (record in records) {
+            if (record.articleId in pausedArticleIds) continue
             for (m in record.mistakes) {
                 mistakeSet.add("${record.articleId}_${m.blankIndex}")
             }

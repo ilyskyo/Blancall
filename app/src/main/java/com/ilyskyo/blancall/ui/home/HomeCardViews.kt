@@ -109,6 +109,8 @@ private val NARROW_CARD_WIDTH = 168.dp
  * 由宿主在 HomeScreen 里抽句并算好后传入，卡片自身不做抽句与状态推导。
  */
 data class SentenceDailyUi(
+    /** 今日一句的句子记忆键（s:<articleId>:<hash16>；快照来源） */
+    val key: String,
     /** 句文（展示主体） */
     val text: String,
     /** 来源文章标题（实时取文章列表，缺失回落快照标题） */

@@ -154,7 +154,7 @@ class FsrsStateStoreSentenceTest {
     }
 
     @Test
-    fun `暂停中改期写的是恢复后的落点`() {
+    fun `暂停中改期写的是绝对落点而不是相对剩余期`() {
         await()
         val id = 9102L
         val now = System.currentTimeMillis()
@@ -163,11 +163,41 @@ class FsrsStateStoreSentenceTest {
 
         val target = now + 10 * day
         assertTrue(store.rescheduleArticle(id, target, now + day))
-        assertEquals(target, now + day + store.pausedArticles().getValue(id).remainingMs)
+        val pause = store.pausedArticles().getValue(id)
+        assertEquals(target, pause.fixedDue)
+        // 旧版本回退值仍同步维护：改期那一刻到目标的剩余期
+        assertEquals(9 * day, pause.remainingMs)
 
         store.resumeArticle(id, now + 2 * day)
-        // 恢复时刻 + 冻结剩余期（改期时目标相对「改期那一刻」10 天）
-        assertEquals(now + 11 * day, store.get(id)!!.due)
+        // 选中的日期就是落点：不会因为「恢复时刻 + 剩余期」漂到 now+11d
+        assertEquals(target, store.get(id)!!.due)
+    }
+
+    @Test
+    fun `暂停改期的绝对日期会落盘并在重载后保持`() {
+        await()
+        val id = 9108L
+        val now = System.currentTimeMillis()
+        store.save(id, activeState(due = now + 2 * day, lastReview = now - day))
+        store.pauseArticle(id, now)
+        val target = now + 12 * day
+        store.rescheduleArticle(id, target, now)
+
+        runBlocking { store.reload() }
+        assertEquals(target, store.pausedArticles().getValue(id).fixedDue)
+    }
+
+    @Test
+    fun `旧JSON没有fixedDue字段时按0解析`() {
+        val dir = Files.createTempDirectory("blancall-fixeddue-legacy").toFile()
+        val file = File(dir, "fsrs_state.json")
+        file.writeText(
+            """{"version":2,"42":{"difficulty":4.0,"stability":3.0,"due":200000,"lastReview":100000,"reviewCount":2,"lapses":0},"paused":{"42":{"at":150000,"remainingMs":50000}}}"""
+        )
+        val legacy = FsrsStateStore.createForTest(file.absolutePath)
+        runBlocking { legacy.awaitLoaded() }
+        assertEquals(0L, legacy.pausedArticles().getValue(42L).fixedDue)
+        assertEquals(50_000L, legacy.pausedArticles().getValue(42L).remainingMs)
     }
 
     @Test

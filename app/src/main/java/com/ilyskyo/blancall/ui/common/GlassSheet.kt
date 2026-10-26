@@ -49,6 +49,13 @@ fun GlassModalBottomSheet(
     // 本组件已经把「先 hide() 播完退场、再通知调用方」做在内部（见 requestDismiss），
     // 外部只需在 wantToDismiss 时把 onDismissRequest 交给我们即可，不必自己再调 hide()。
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    // 面板底色默认沿用面板玻璃染色；分组表单（如 iOS 风格导出面板）需要
+    // 「浅一层的面板 + 更亮的行卡片」两档层次，由调用方显式指定整块底色。
+    containerColor: Color? = null,
+    // 面板内容是否整体可滚。默认 true（短内容面板跟着内容一起滚，小屏也不裁）；
+    // 列表型面板（iOS 表单 sheet）要传 false：头部与底部按钮必须钉住，
+    // 只有中间的列表自己滚 —— 否则一滑列表整张面板就跟着动，手势跟 iOS 不一样。
+    contentScrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val isDark = isBlancallDark()
@@ -122,7 +129,7 @@ fun GlassModalBottomSheet(
         onDismissRequest = requestDismiss,
         modifier = modifier,
         shape = shape,
-        containerColor = stain,
+        containerColor = containerColor ?: stain,
         scrimColor = scrimColor,
         dragHandle = dragHandle,
         // 直接展开到内容高度；避免部分展开（半屏）时出现大片留白
@@ -131,10 +138,13 @@ fun GlassModalBottomSheet(
             // wrap 高度 + 可滚动，让面板高度恰好包住内容（不出现大块留白）。
             // 这里曾有一层 glassSurface(18f) 的"backdrop 模糊"：它包着的 AmbientBackground 什么都不绘制，
             // 于是每次开面板都为一层空像素付全屏 GPU 模糊，而面板颜色本来就来自 containerColor。
+            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                    .then(
+                        if (contentScrollable) Modifier.verticalScroll(scrollState) else Modifier
+                    ),
                 content = content
             )
         }
