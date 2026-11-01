@@ -83,6 +83,14 @@ internal fun ReadingSettingsSheet(
     onOpenMaskConfig: () -> Unit,
     /** 当前「自定义」遮挡配置名（空 = 未选/已删除），选中自定义粒度时显示在 chip 上 */
     maskConfigName: String,
+    /** 本文已有的划线/批注条数（0 时入口变成「回正文去长按」） */
+    marksCount: Int,
+    onOpenMarks: () -> Unit,
+    /** 个人阅读速度（标准字/分钟），用于估算剩余时间 */
+    speedCpm: Float,
+    /** 已累计的有效阅读秒数（0 = 还没校准，用默认速度） */
+    speedSampleSeconds: Long,
+    onResetSpeed: () -> Unit,
     isDark: Boolean,
     accent: Color
 ) {
@@ -154,9 +162,7 @@ internal fun ReadingSettingsSheet(
         // 转发调用方外提的那份 sheetState：退场由上方 LaunchedEffect 驱动它收到 Hidden，
         // 不转发时调用方持有的 state 是个死对象（改造前正是如此）。
         sheetState = sheetState,
-        dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isDark) Color(0x66FFFFFF) else Color(0x33000000)))
-        } }
+        // 抓手用 GlassModalBottomSheet 的全局默认短横线，不再各面板自绘。
     ) {
         Column(
             Modifier
@@ -289,17 +295,17 @@ internal fun ReadingSettingsSheet(
                                 },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = when {
-                                        selected && isDark -> Color(0x334B5563)
+                                        selected && isDark -> accent.copy(alpha = 0.18f)
                                         selected -> accent.copy(alpha = 0.12f)
                                         else -> Color.Transparent
                                     },
                                     labelColor = if (isDark) DarkText else PaperWhiteText,
-                                    selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                                    selectedLabelColor = accent
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true, selected = selected,
                                     borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
-                                    selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                                    selectedBorderColor = accent.copy(alpha = 0.45f)
                                 )
                             )
                         }
@@ -323,17 +329,17 @@ internal fun ReadingSettingsSheet(
                                 label = { Text(weightLabel(w)) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = when {
-                                        selected && isDark -> Color(0x334B5563)
+                                        selected && isDark -> accent.copy(alpha = 0.18f)
                                         selected -> accent.copy(alpha = 0.12f)
                                         else -> Color.Transparent
                                     },
                                     labelColor = if (isDark) DarkText else PaperWhiteText,
-                                    selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                                    selectedLabelColor = accent
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true, selected = selected,
                                     borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
-                                    selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                                    selectedBorderColor = accent.copy(alpha = 0.45f)
                                 )
                             )
                         }
@@ -447,18 +453,18 @@ internal fun ReadingSettingsSheet(
                         label = { Text(label) },
                         colors = FilterChipDefaults.filterChipColors(
                             containerColor = when {
-                                selected && isDark -> Color(0x334B5563)
+                                selected && isDark -> accent.copy(alpha = 0.18f)
                                 selected -> accent.copy(alpha = 0.12f)
                                 else -> Color.Transparent
                             },
                             labelColor = if (isDark) DarkText else PaperWhiteText,
-                            selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                            selectedLabelColor = accent
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = selected,
                             borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
-                            selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                            selectedBorderColor = accent.copy(alpha = 0.45f)
                         )
                     )
                 }
@@ -488,18 +494,18 @@ internal fun ReadingSettingsSheet(
                         label = { Text(label) },
                         colors = FilterChipDefaults.filterChipColors(
                             containerColor = when {
-                                selected && isDark -> Color(0x334B5563)
+                                selected && isDark -> accent.copy(alpha = 0.18f)
                                 selected -> accent.copy(alpha = 0.12f)
                                 else -> Color.Transparent
                             },
                             labelColor = if (isDark) DarkText else PaperWhiteText,
-                            selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                            selectedLabelColor = accent
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = enabled,
                             selected = selected,
                             borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
-                            selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                            selectedBorderColor = accent.copy(alpha = 0.45f)
                         )
                     )
                 }
@@ -569,17 +575,17 @@ internal fun ReadingSettingsSheet(
                                 label = { Text(label) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = when {
-                                        selected && isDark -> Color(0x334B5563)
+                                        selected && isDark -> accent.copy(alpha = 0.18f)
                                         selected -> accent.copy(alpha = 0.12f)
                                         else -> Color.Transparent
                                     },
                                     labelColor = if (isDark) DarkText else PaperWhiteText,
-                                    selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                                    selectedLabelColor = accent
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true, selected = selected,
                                     borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
-                                    selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                                    selectedBorderColor = accent.copy(alpha = 0.45f)
                                 )
                             )
                         }
@@ -609,17 +615,17 @@ internal fun ReadingSettingsSheet(
                             },
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = when {
-                                    customActive && isDark -> Color(0x334B5563)
+                                    customActive && isDark -> accent.copy(alpha = 0.18f)
                                     customActive -> accent.copy(alpha = 0.12f)
                                     else -> Color.Transparent
                                 },
                                 labelColor = if (isDark) DarkText else PaperWhiteText,
-                                selectedLabelColor = if (isDark) Color(0xFFB9CFF2) else accent
+                                selectedLabelColor = accent
                             ),
                             border = FilterChipDefaults.filterChipBorder(
                                 enabled = true, selected = customActive,
                                 borderColor = if (isDark) Color(0x3DFFFFFF) else Color(0x1F000000),
-                                selectedBorderColor = if (isDark) Color(0x66B9CFF2) else accent.copy(alpha = 0.6f)
+                                selectedBorderColor = accent.copy(alpha = 0.45f)
                             )
                         )
                     }
@@ -649,6 +655,101 @@ internal fun ReadingSettingsSheet(
                                     .pressClick { onOcclusionColorChange(idx) },
                                 contentAlignment = Alignment.Center
                             ) {}
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ── 划线与批注：入口行（右侧直接显示条数）──
+            // 放这里而不是顶栏：顶栏已有返回/标题/练习/设置，再加一个必然压缩标题；
+            // 整理划线本来就是「读完回头收拾」的动作，属于设置这一档。
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    // 一条都没有时也打开列表：空态里写着「长按正文即可划线」，
+                    // 点一下什么都没发生（面板还关了）才是真困惑
+                    .pressClick { onOpenMarks() }
+                    .padding(vertical = 10.dp, horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.reader_marks_entry),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDark) DarkText else PaperWhiteText
+                    )
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.reader_marks_entry_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) DarkSub else PaperWhiteSub
+                    )
+                }
+                Text(
+                    if (marksCount > 0) {
+                        stringResource(com.ilyskyo.blancall.R.string.reader_marks_entry_count, marksCount)
+                    } else {
+                        ""
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = accent
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // ── 阅读速度：剩余时间估算的依据（可重新统计）──
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .padding(vertical = 10.dp, horizontal = 2.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.reader_speed_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDark) DarkText else PaperWhiteText
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        stringResource(
+                            com.ilyskyo.blancall.R.string.reader_speed_value,
+                            speedCpm.roundToInt()
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = accent
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (speedSampleSeconds > 0L) {
+                            stringResource(
+                                com.ilyskyo.blancall.R.string.reader_speed_basis_personal,
+                                (speedSampleSeconds / 60).toInt()
+                            )
+                        } else {
+                            stringResource(com.ilyskyo.blancall.R.string.reader_speed_basis_default)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) DarkSub else PaperWhiteSub,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (speedSampleSeconds > 0L) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .pressClick { onResetSpeed() }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                stringResource(com.ilyskyo.blancall.R.string.reader_speed_reset),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = accent
+                            )
                         }
                     }
                 }

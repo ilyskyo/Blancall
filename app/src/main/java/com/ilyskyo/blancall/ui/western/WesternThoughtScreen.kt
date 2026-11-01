@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -74,7 +75,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.font.FontWeight
@@ -90,8 +90,10 @@ import com.ilyskyo.blancall.data.contentpack.ContentPackStore
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.data.repository.ArticleRepository
+import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
 import com.ilyskyo.blancall.ui.practice.PickerSelection
+import com.ilyskyo.blancall.ui.settings.BatchImportResult
 import com.ilyskyo.blancall.ui.settings.buildPackBatchItems
 import com.ilyskyo.blancall.ui.settings.importPackSelection
 import com.ilyskyo.blancall.ui.common.AppIcon
@@ -130,11 +132,10 @@ import java.util.Locale
  */
 @Composable
 fun WesternThoughtScreen(navController: NavController) {
-    // 根 tab 页面（素材库）：返回键 = 退出应用（与「我的文章」「数据」tab 平级语义一致，绝不 pop 回上一 tab/首页）
-    val libBackContext = LocalContext.current
-    BackHandler {
-        (libBackContext as? android.app.Activity)?.finish()
-    }
+    // 根 tab 的「返回＝退出应用」只在 AppNavigation 注册一处（见那边的 BackHandler）。
+    // 这里曾经也有一份：旧版 OnBackPressedDispatcher 下重复注册无害，
+    // activity 1.13 起 BackHandler 改投 NavigationEventDispatcher（与 NavHost 同一套），
+    // 多注册会改变响应顺序，转场中途可能抢在 NavHost 前面直接 finish。
     // 仅展示已启用的内置素材库（设置 → 拓展功能 中勾选）
     val enabledLibraries by AppPrefs.builtInLibraryKeysFlow.collectAsState()
 
@@ -165,8 +166,10 @@ fun WesternThoughtScreen(navController: NavController) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // 顶部 25dp 与「我的文章/全局统计」标题对齐（那两页标题行高 40dp 内含 5dp 垂直居中）
-                .padding(start = 20.dp, top = 25.dp, end = 20.dp, bottom = 15.dp),
+                // 顶栏统一位置：距状态栏下沿 12dp、行高 40dp —— 「我的文章/数据」与内页返回键
+                // 的圆心都落在同一条 32dp 基线上，本页标题也一样。
+                .padding(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 15.dp)
+                .heightIn(min = 40.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -215,7 +218,7 @@ fun WesternThoughtScreen(navController: NavController) {
                         meta = stringResource(com.ilyskyo.blancall.R.string.content_pack_title),
                         accent = Color(0xFF3E6B57),
                         icon = AppIconKind.Articles,
-                        onClick = { navController.navigate("content_packs") },
+                        onClick = { navController.navigate("philo_packs") },
                         trailing = {
                             BatchImportPill(
                                 text = stringResource(com.ilyskyo.blancall.R.string.library_batch_import),
@@ -243,16 +246,21 @@ fun WesternThoughtScreen(navController: NavController) {
             items = batchItems,
             importing = batchImporting,
             onDismissRequest = { if (!batchImporting) batchPack = null },
-            onConfirm = { keys ->
+            onConfirm = { keys, tagIds ->
                 batchImporting = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
-                        importPackSelection(
+                        val imported = importPackSelection(
                             articleRepo,
                             packStore,
                             pack,
                             keys.mapNotNull { it.toIntOrNull() }.toSet()
                         )
+                        if (tagIds.isNotEmpty() && imported.articleIds.isNotEmpty()) {
+                            TagStore.getInstance(context.filesDir)
+                                .applyBatchToggle(imported.articleIds, tagIds, emptySet())
+                        }
+                        imported
                     }
                     batchImporting = false
                     batchPack = null
@@ -260,8 +268,8 @@ fun WesternThoughtScreen(navController: NavController) {
                         context,
                         context.getString(
                             com.ilyskyo.blancall.R.string.content_pack_import_result,
-                            result.first,
-                            result.second
+                            result.imported,
+                            result.skipped
                         ),
                         Toast.LENGTH_LONG
                     ).show()
@@ -599,6 +607,9 @@ fun LibraryContentPage(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // 4dp 上距 + 56dp 行高：40dp 返回圆垂直居中后顶边正好落在 12dp，
+                // 与全应用其它页面的返回键同一高度
+                .padding(top = 4.dp)
                 .height(56.dp)
                 .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -931,11 +942,16 @@ fun LibraryContentPage(
             items = items,
             importing = batchImporting,
             onDismissRequest = { if (!batchImporting) batchItems = null },
-            onConfirm = { keys ->
+            onConfirm = { keys, tagIds ->
                 batchImporting = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
-                        importGaokaoSelection(context, articleRepo, keys)
+                        val imported = importGaokaoSelection(context, articleRepo, keys)
+                        if (tagIds.isNotEmpty() && imported.articleIds.isNotEmpty()) {
+                            TagStore.getInstance(context.filesDir)
+                                .applyBatchToggle(imported.articleIds, tagIds, emptySet())
+                        }
+                        imported
                     }
                     batchImporting = false
                     batchItems = null
@@ -943,8 +959,8 @@ fun LibraryContentPage(
                         context,
                         resources.getString(
                             com.ilyskyo.blancall.R.string.content_pack_import_result,
-                            result.first,
-                            result.second
+                            result.imported,
+                            result.skipped
                         ),
                         Toast.LENGTH_LONG
                     ).show()
@@ -1165,13 +1181,14 @@ private suspend fun importGaokaoSelection(
     context: Context,
     repo: ArticleRepository,
     keys: Set<String>,
-): Pair<Int, Int> {
+): BatchImportResult {
     val existingHashes = runCatching {
         repo.awaitLoaded()
         repo.allArticles.first().mapTo(HashSet()) { ContentFingerprint.md5Hex(it.content) }
     }.getOrElse { HashSet() }
     var imported = 0
     var skipped = 0
+    val articleIds = mutableListOf<Long>()
     keys.mapNotNull { it.removePrefix("p").toIntOrNull() }
         .filter { it in 1..GAOKAO_PIECE_COUNT }
         .distinct()
@@ -1183,7 +1200,7 @@ private suspend fun importGaokaoSelection(
             } else if (!existingHashes.add(ContentFingerprint.md5Hex(txt.third))) {
                 skipped++
             } else {
-                val ok = runCatching {
+                val newId = runCatching {
                     repo.insert(
                         Article(
                             title = txt.first.ifBlank { "p$n" },
@@ -1191,11 +1208,16 @@ private suspend fun importGaokaoSelection(
                             author = txt.second,
                         )
                     )
-                }.isSuccess
-                if (ok) imported++ else skipped++
+                }.getOrNull()
+                if (newId != null) {
+                    imported++
+                    articleIds += newId
+                } else {
+                    skipped++
+                }
             }
         }
-    return imported to skipped
+    return BatchImportResult(imported, skipped, articleIds)
 }
 
 /**

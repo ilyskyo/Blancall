@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +44,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.ilyskyo.blancall.ui.common.AdaptiveChipRow
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppLocale
 
@@ -51,6 +53,8 @@ import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.GlassDropdownMenu
 import com.ilyskyo.blancall.ui.common.GlassMenuItem
+import com.ilyskyo.blancall.ui.common.HapticTier
+import com.ilyskyo.blancall.ui.common.rememberHaptic
 import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.GlassSwitch
@@ -75,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
@@ -88,6 +93,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -101,6 +109,10 @@ import com.ilyskyo.blancall.data.repository.InkStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import com.ilyskyo.blancall.data.backup.LearningDataReloader
+import com.ilyskyo.blancall.notification.NotificationHelper
+import com.ilyskyo.blancall.notification.ReminderNotifications
+import com.ilyskyo.blancall.notification.ReminderPlan
+import com.ilyskyo.blancall.notification.ReminderSchedule
 import com.ilyskyo.blancall.notification.ReminderWorker
 import com.ilyskyo.blancall.ui.common.BackButton
 import com.ilyskyo.blancall.ui.common.PressTier
@@ -111,9 +123,18 @@ import com.ilyskyo.blancall.ui.theme.ReminderFrequency
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import com.ilyskyo.blancall.ui.theme.ThemeManager
 import com.ilyskyo.blancall.ui.theme.ThemeMode
+import com.ilyskyo.blancall.ui.theme.AppearanceSnapshot
+import com.ilyskyo.blancall.ui.theme.AppearanceStore
+import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
+import com.ilyskyo.blancall.ui.tag.TagColorPicker
+import androidx.compose.ui.graphics.toArgb
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
+import java.time.DayOfWeek
+import java.time.LocalDateTime
 import java.util.Date
 import java.util.Locale
 
@@ -278,7 +299,7 @@ fun SettingsScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
-                .padding(horizontal = 20.dp, vertical = 20.dp)
+                .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp)
         ) {
         // 顶部返回按钮 + 标题
         Row(
@@ -302,6 +323,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -413,8 +435,7 @@ fun SettingsScreen(navController: NavController) {
                                     label = {
                                         Text(localeLabel(choice),
                                             style = localeNameStyle(choice, MaterialTheme.typography.bodyMedium),
-                                            color = if (picked) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurface)
+                                            color = MaterialTheme.colorScheme.onSurface)
                                     },
                                     trailing = {
                                         if (picked) AppIcon(
@@ -446,6 +467,132 @@ fun SettingsScreen(navController: NavController) {
                         GlassSwitch(
                             checked = lightBeige,
                             onCheckedChange = { AppPrefs.lightBeigeBackgroundEnabled = it }
+                        )
+                    }
+
+                    // 页面灰色底（默认关 = 与卡片同色，即旧版观感）；开启后底色深一档、卡片靠面差立起来。
+                    // 存储语义仍是 flatBackground=true 表示「同色」，这里只把开关的极性倒过来：
+                    // 用户理解的是「打开=灰底」，不是「关掉同色」。
+                    val flatBackground by AppearanceStore.state.collectAsState()
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.flat_background),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(com.ilyskyo.blancall.R.string.flat_background_desc),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
+                        }
+                        GlassSwitch(
+                            checked = !flatBackground.flatBackground,
+                            onCheckedChange = { on ->
+                                AppearanceStore.update { it.copy(flatBackground = !on) }
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    // ── 界面字体（标题/正文族）──
+                    // 内置霞鹜文楷与阅读页共用同一份 ttf，不额外增包体；
+                    // 「系统衬线」在某些国产 ROM 上会退化成黑体，选内置楷体可绕开机型差异。
+                    val appearance by AppearanceStore.state.collectAsState()
+                    var showFontMenu by remember { mutableStateOf(false) }
+                    val fontLabelRes = when (appearance.uiFont) {
+                        AppearanceSnapshot.FONT_SANS -> com.ilyskyo.blancall.R.string.ui_font_sans
+                        AppearanceSnapshot.FONT_XWWK -> com.ilyskyo.blancall.R.string.ui_font_xwwk
+                        else -> com.ilyskyo.blancall.R.string.ui_font_serif
+                    }
+                    Box {
+                        Surface(
+                            onClick = { showFontMenu = true },
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.ui_font),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                    Text(stringResource(com.ilyskyo.blancall.R.string.ui_font_desc),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 16.dp))
+                                }
+                                Text(stringResource(fontLabelRes),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        GlassDropdownMenu(
+                            expanded = showFontMenu,
+                            onDismissRequest = { showFontMenu = false }
+                        ) {
+                            listOf(
+                                AppearanceSnapshot.FONT_SERIF to com.ilyskyo.blancall.R.string.ui_font_serif,
+                                AppearanceSnapshot.FONT_SANS to com.ilyskyo.blancall.R.string.ui_font_sans,
+                                AppearanceSnapshot.FONT_XWWK to com.ilyskyo.blancall.R.string.ui_font_xwwk,
+                            ).forEach { (value, labelRes) ->
+                                val picked = appearance.uiFont == value
+                                GlassMenuItem(
+                                    onClick = {
+                                        showFontMenu = false
+                                        AppearanceStore.update { it.copy(uiFont = value) }
+                                    },
+                                    label = {
+                                        Text(stringResource(labelRes),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                    },
+                                    trailing = {
+                                        if (picked) AppIcon(
+                                            kind = AppIconKind.Check,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    // ── 界面字号 ──
+                    FontScaleSlider(current = appearance.uiFontScale)
+
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    // ── 玻璃染色（液态玻璃是否吸取主题色）──
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.glass_tint),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(com.ilyskyo.blancall.R.string.glass_tint_desc),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
+                        }
+                        GlassSwitch(
+                            checked = appearance.glassTint,
+                            onCheckedChange = { v -> AppearanceStore.update { it.copy(glassTint = v) } }
                         )
                     }
 
@@ -526,8 +673,7 @@ fun SettingsScreen(navController: NavController) {
                                     label = {
                                         Text(stringResource(labelId),
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = if (picked) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurface)
+                                            color = MaterialTheme.colorScheme.onSurface)
                                     },
                                     trailing = {
                                         if (picked) AppIcon(
@@ -576,27 +722,32 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                val accentIndex by AppPrefs.accentColorFlow.collectAsState()
+                val appearance by AppearanceStore.state.collectAsState()
+                val isDark = isBlancallDark()
+                var showCustomPicker by remember { mutableStateOf(false) }
+                val accentIndex = appearance.accentIndex
+                // 6 颗 40dp + 5×8dp = 280dp。可用宽度 = 屏宽 − 页面 40 − 卡片 32 = 288dp（360dp 机型），
+                // 留 8dp 余量。旧版 44dp + 12dp = 324dp 在 360dp 屏溢出 36dp，居中排列 ⇒ 首尾各被裁 18dp。
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // 根据系统深色模式选择 primaryDark/primaryLight，保证深色下对比度
-                    val isDark = isBlancallDark()
                     AccentPresets.forEachIndexed { index, preset ->
-                        val isSelected = index == accentIndex
+                        val isSelected = !appearance.useCustomAccent && index == accentIndex
                         val accentColor = if (isDark) preset.primaryDark else preset.primaryLight
                         Surface(
-                            onClick = { AppPrefs.accentColorIndex = index },
+                            onClick = { AppearanceStore.setAccentIndex(index) },
                             shape = RoundedCornerShape(50),
                             color = if (isSelected) accentColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
-                            modifier = Modifier.size(44.dp),
+                            modifier = Modifier.size(40.dp),
                             border = if (isSelected)
                                 BorderStroke(2.5.dp, accentColor)
                             else
@@ -607,7 +758,7 @@ fun SettingsScreen(navController: NavController) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Surface(
-                                    modifier = Modifier.size(24.dp),
+                                    modifier = Modifier.size(22.dp),
                                     shape = RoundedCornerShape(50),
                                     color = accentColor,
                                     content = {}
@@ -616,12 +767,91 @@ fun SettingsScreen(navController: NavController) {
                                     AppIcon(
                                         kind = AppIconKind.Check,
                                         tint = accentColor,
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(13.dp)
                                     )
                                 }
                             }
                         }
                     }
+                }
+
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                // ── 自定义主题色（色环自由取色）──
+                Surface(
+                    onClick = { showCustomPicker = true },
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.theme_color_custom),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(com.ilyskyo.blancall.R.string.theme_color_custom_desc),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val dot = if (appearance.useCustomAccent) Color(appearance.customArgb)
+                            else MaterialTheme.colorScheme.outlineVariant
+                            Box(
+                                Modifier
+                                    .size(20.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(dot)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
+                            )
+                            if (appearance.useCustomAccent) {
+                                Spacer(Modifier.width(8.dp))
+                                AppIcon(
+                                    kind = AppIconKind.Check,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ── 跟随系统取色（Android 12+ 动态取色）──
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.material_you),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(com.ilyskyo.blancall.R.string.material_you_desc),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 16.dp))
+                        }
+                        GlassSwitch(
+                            checked = appearance.materialYou,
+                            onCheckedChange = { v -> AppearanceStore.update { it.copy(materialYou = v) } }
+                        )
+                    }
+                }
+
+                if (showCustomPicker) {
+                    // 单独抽一层：GlassModalBottomSheet 的签名里带 SheetState（实验性 M3 API），
+                    // 调用点必须 OptIn —— 把 OptIn 关在这个小组件里，别污染整个设置页。
+                    CustomAccentSheet(
+                        appearance = appearance,
+                        onDismiss = { showCustomPicker = false }
+                    )
                 }
             }
 
@@ -633,6 +863,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -717,6 +948,84 @@ fun SettingsScreen(navController: NavController) {
                         Text(stringResource(com.ilyskyo.blancall.R.string.clear))
                     }
                 }
+
+                HorizontalDivider(
+                    Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                )
+
+                // ── 句子卡片：点按翻页动画 ──
+                // 只影响「点按评级按钮换卡」那一段飞出；手动上下滑是翻卡手势本体，不能关。
+                val tapExitEnabled by AppPrefs.sentenceTapExitEnabledFlow.collectAsState()
+                val tapExitSpeed by AppPrefs.sentenceTapExitSpeedFlow.collectAsState()
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(com.ilyskyo.blancall.R.string.sentence_card_anim_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Text(stringResource(com.ilyskyo.blancall.R.string.sentence_card_anim_desc),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 16.dp))
+                    }
+                    GlassSwitch(
+                        checked = tapExitEnabled,
+                        onCheckedChange = { AppPrefs.sentenceTapExitEnabled = it }
+                    )
+                }
+                AnimatedVisibility(
+                    visible = tapExitEnabled,
+                    enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                        expandVertically(Motion.contentSize()),
+                    exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                        shrinkVertically(Motion.contentSize())
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.sentence_card_anim_speed),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                stringResource(
+                                    com.ilyskyo.blancall.R.string.sentence_card_anim_speed_value,
+                                    (Motion.cardTapExitSeconds(tapExitSpeed) * 1000).roundToInt()
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            value = tapExitSpeed,
+                            // 拖动只改内存（每帧落盘会在 AtomicFiles 的 fsync 上卡 UI），松手再落盘
+                            onValueChange = { AppPrefs.previewSentenceTapExitSpeed(it) },
+                            onValueChangeFinished = { AppPrefs.flushSentenceTapExitSpeed() },
+                            valueRange = 0f..1f,
+                            steps = 9,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        // 预览卡：同一份 Motion 谱子 + 同一段位移算式，拖动每跨一格就飞一次
+                        SentenceTapExitPreview(
+                            enabled = true,
+                            speed = tapExitSpeed,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp)
+                        )
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.sentence_card_anim_preview_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp)
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -727,6 +1036,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -951,6 +1261,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -980,6 +1291,13 @@ fun SettingsScreen(navController: NavController) {
                             )
                         }
                     }
+                    // 「每天学多久」是首页今日计划的输入，不属于提醒；
+                    // 放在这里而不是提醒卡片的折叠区，关掉提醒后设置仍然可见。
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+                    StudyDurationSettings()
                 }
             }
 
@@ -1000,6 +1318,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -1014,13 +1333,20 @@ fun SettingsScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🎓", style = MaterialTheme.typography.titleMedium)
+                            AppIcon(
+                                AppIconKind.School,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Spacer(Modifier.width(10.dp))
                             Text(stringResource(com.ilyskyo.blancall.R.string.guided_tour), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
                         }
-                        Text("→", style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        AppIcon(
+                            AppIconKind.ChevronRight,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
                 HorizontalDivider(
@@ -1076,13 +1402,20 @@ fun SettingsScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("📖", style = MaterialTheme.typography.titleMedium)
+                            AppIcon(
+                                AppIconKind.Library,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Spacer(Modifier.width(10.dp))
                             Text(stringResource(com.ilyskyo.blancall.R.string.help_about), style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface)
                         }
-                        Text("→", style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        AppIcon(
+                            AppIconKind.ChevronRight,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -1095,6 +1428,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -1123,8 +1457,11 @@ fun SettingsScreen(navController: NavController) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Text("→", style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        AppIcon(
+                            AppIconKind.ChevronRight,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -1137,6 +1474,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -1254,6 +1592,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -1367,6 +1706,7 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary)
 
             GlassCard(
+                backdrop = false,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -1460,6 +1800,7 @@ fun SettingsScreen(navController: NavController) {
                 }
 
                 GlassCard(
+                    backdrop = false,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -1749,6 +2090,48 @@ private fun backupErrorMessage(context: Context, e: Throwable): String = when (e
 }
 
 /**
+ * 自定义主题色面板：色环取色（复用标签取色器，颜色数学全在 ColorOps 里）。
+ *
+ * 取色即生效 —— 拖动色环时整页颜色会跟着「溶」过去（BlancallTheme 的 140ms 过渡），
+ * 不需要「应用」按钮，所以底部只有一个「完成」用来收起面板。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomAccentSheet(
+    appearance: AppearanceSnapshot,
+    onDismiss: () -> Unit,
+) {
+    // 拖动期间只改内存，离开组合这一下才落盘 —— 滑掉面板、点完成、返回键都走这里
+    DisposableEffect(Unit) { onDispose { AppearanceStore.flush() } }
+    GlassModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Text(stringResource(com.ilyskyo.blancall.R.string.theme_color_custom),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(12.dp))
+            // 色环拖动同样是每帧回调 → 只改内存，面板关闭时统一落盘
+            TagColorPicker(
+                color = if (appearance.useCustomAccent) appearance.customArgb
+                else appearance.accentPreset().primaryLight.toArgb(),
+                previewName = "Aa",
+                onColorChange = { c ->
+                    AppearanceStore.preview {
+                        it.copy(customArgb = c or (0xFF shl 24), useCustomAccent = true)
+                    }
+                }
+            )
+            Spacer(Modifier.height(16.dp))
+            GlassButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(com.ilyskyo.blancall.R.string.done),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+/**
  * 触感强度的四个可选项：`value` 存进偏好（与 ui.common.HapticLevel 的字符串一一对应），
  * `label` 上屏。顺序就是屏幕上从左到右 —— 「关」放最后，避免手滑点掉全部反馈。
  */
@@ -1776,6 +2159,8 @@ private val hapticLevelChoices = listOf(
  *   会把 weight(1f) 的文字区挤窄，description 的换行点一变、行高就跳。
  * - 未选中底色用 Transparent 而非 surface：GlassCard 的底本来就与 surface 同色，
  *   铺一层不透明色只会在圆角处多出一圈色差。
+ * - 文字不随选中换色：内缩色块 + 勾已经说清「这一项是选中的」，
+ *   再把标题染成主色会让整行读起来像强调/链接，也会和右侧「当前值用主色」的摘要行撞语义。
  */
 @Composable
 private fun OptionRow(
@@ -1815,14 +2200,12 @@ private fun OptionRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.bodyLarge,
-                    color = if (selected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface)
+                    color = MaterialTheme.colorScheme.onSurface)
                 if (description != null) {
                     Spacer(Modifier.height(2.dp))
                     Text(description,
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -1859,23 +2242,198 @@ private fun OptionDivider(faded: Boolean) {
     )
 }
 
-// ========== 学习提醒设置卡片 ==========
+// ========== 学习时长 / 学习提醒设置 ==========
 
+/**
+ * 每日学习时长（分钟）。
+ *
+ * 它只喂首页「今日计划」，与通知里的「今天还差几次」（dailyPracticeGoal）是两个目标。
+ * 放在复习计划卡片里、且不随提醒开关消失：关掉提醒的人仍然有每日计划要设置。
+ */
 @Composable
-private fun ReminderSettingsCard() {
-    val context = LocalContext.current
-    val enabled by ReminderPrefs.enabledFlow.collectAsState()
-    val hour by ReminderPrefs.hourFlow.collectAsState()
-    val minute by ReminderPrefs.minuteFlow.collectAsState()
+private fun StudyDurationSettings() {
     val goalMinutes by ReminderPrefs.goalMinutesFlow.collectAsState()
-    val frequency by ReminderPrefs.frequencyFlow.collectAsState()
-
-    var showTimePicker by remember { mutableStateOf(false) }
-    // 自定义目标分钟数输入
     var showCustomMinutesDialog by remember { mutableStateOf(false) }
     var customMinutesInput by remember { mutableStateOf("") }
 
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Text(stringResource(com.ilyskyo.blancall.R.string.daily_goal), style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(6.dp))
+        // 当前值可能恰是放不下的那个预设：保它可见，否则整行会像“没选中”
+        val durationPresets = listOf(5, 10, 20)
+        AdaptiveChipRow(
+            modifier = Modifier.fillMaxWidth(),
+            spacing = 8.dp,
+            alwaysTrailing = 1,
+            keepIndices = if (goalMinutes in durationPresets) {
+                setOf(durationPresets.indexOf(goalMinutes))
+            } else {
+                emptySet()
+            },
+        ) {
+            durationPresets.forEach { mins ->
+                FilterChip(
+                    selected = goalMinutes == mins,
+                    onClick = { ReminderPrefs.goalMinutes = mins },
+                    label = { AdaptiveChipLabel(stringResource(com.ilyskyo.blancall.R.string.minutes_unit, mins)) },
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+            FilterChip(
+                selected = goalMinutes !in listOf(5, 10, 20),
+                onClick = {
+                    customMinutesInput = if (goalMinutes in listOf(5, 10, 20)) "" else goalMinutes.toString()
+                    showCustomMinutesDialog = true
+                },
+                label = {
+                    AdaptiveChipLabel(
+                        if (goalMinutes in listOf(5, 10, 20)) stringResource(com.ilyskyo.blancall.R.string.custom)
+                        else stringResource(com.ilyskyo.blancall.R.string.minutes_unit, goalMinutes)
+                    )
+                },
+                shape = RoundedCornerShape(8.dp)
+            )
+        }
+    }
+
+    AnimatedOverlayPresence(visible = showCustomMinutesDialog) {
+        BlancallAlertDialog(
+            onDismissRequest = { showCustomMinutesDialog = false },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_daily_goal_title)) },
+            text = {
+                OutlinedTextField(
+                    value = customMinutesInput,
+                    onValueChange = { input ->
+                        customMinutesInput = input.filter { it.isDigit() }.take(4)
+                    },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.minutes_field_label)) },
+                    suffix = { Text(stringResource(com.ilyskyo.blancall.R.string.minutes_word)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = customMinutesInput.toIntOrNull() != null,
+                    onClick = {
+                        customMinutesInput.toIntOrNull()?.let { ReminderPrefs.goalMinutes = it.coerceIn(1, 1440) }
+                        showCustomMinutesDialog = false
+                    }
+                ) { Text(stringResource(com.ilyskyo.blancall.R.string.ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomMinutesDialog = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+private fun openReminderNotificationSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    runCatching { context.startActivity(intent) }
+}
+
+/** 权限 / 渠道被系统关掉时的提示行：文案 + 一个直接去系统设置的出口。 */
+@Composable
+private fun ReminderStatusRow(text: String, action: String, onAction: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))
+            .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onErrorContainer
+        )
+        TextButton(onClick = onAction) {
+            Text(action, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun QuietHourRow(labelRes: Int, minutes: Int, onClick: () -> Unit) {
+    val context = LocalContext.current
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(stringResource(labelRes), style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                NotificationHelper.formatTimeOfDay(context, minutes),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReminderSettingsCard() {
+    val context = LocalContext.current
+    val locale = context.resources.configuration.locales[0]
+    val enabled by ReminderPrefs.enabledFlow.collectAsState()
+    val hour by ReminderPrefs.hourFlow.collectAsState()
+    val minute by ReminderPrefs.minuteFlow.collectAsState()
+    val frequency by ReminderPrefs.frequencyFlow.collectAsState()
+    val reminderDays by ReminderPrefs.reminderDaysFlow.collectAsState()
+    val quietEnabled by ReminderPrefs.quietHoursEnabledFlow.collectAsState()
+    val quietStart by ReminderPrefs.quietStartMinutesFlow.collectAsState()
+    val quietEnd by ReminderPrefs.quietEndMinutesFlow.collectAsState()
+    val dailyGoal by ReminderPrefs.dailyPracticeGoalFlow.collectAsState()
+
+    var showTimePicker by remember { mutableStateOf(false) }
+    var showQuietStartPicker by remember { mutableStateOf(false) }
+    var showQuietEndPicker by remember { mutableStateOf(false) }
+    var showCustomGoalDialog by remember { mutableStateOf(false) }
+    var customGoalInput by remember { mutableStateOf("") }
+
+    // 系统通知可能在本页之外被改（权限弹窗 / 系统设置 / 通知渠道被关），
+    // 每次回到前台重读一次，否则开关会一直显示过期的「已开启」
+    var notificationStatus by remember { mutableStateOf(ReminderNotifications.status(context)) }
+    val lifecycleOwner = context as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val owner = lifecycleOwner ?: return@DisposableEffect onDispose { }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationStatus = ReminderNotifications.status(context)
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+
+    val nextAt = ReminderSchedule.nextAt(LocalDateTime.now(), hour, minute, reminderDays)
+    val nextAtText = NotificationHelper.formatReminderTime(context, nextAt)
+    val reminderInQuietHours = quietEnabled &&
+        ReminderPlan.isQuietMinute(hour * 60 + minute, quietStart, quietEnd)
+
+    fun reschedule() {
+        // WorkManager 未初始化等异常不应崩设置页；下一次回前台还有补调度兜底
+        runCatching { ReminderWorker.scheduleNext(context) }
+    }
+
     GlassCard(
+        backdrop = false,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp)
     ) {
@@ -1890,10 +2448,20 @@ private fun ReminderSettingsCard() {
                     Text(stringResource(com.ilyskyo.blancall.R.string.reminder_enable), style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        if (enabled) stringResource(com.ilyskyo.blancall.R.string.reminder_on_at, String.format(Locale.getDefault(), "%02d:%02d", hour, minute))
-                        else stringResource(com.ilyskyo.blancall.R.string.reminder_off_state),
+                        when {
+                            !enabled -> stringResource(com.ilyskyo.blancall.R.string.reminder_off_state)
+                            !notificationStatus.notificationsEnabled ->
+                                stringResource(com.ilyskyo.blancall.R.string.reminder_on_blocked)
+                            notificationStatus.channelsBlocked ->
+                                stringResource(com.ilyskyo.blancall.R.string.reminder_on_channel_blocked)
+                            else -> stringResource(com.ilyskyo.blancall.R.string.reminder_on_at, nextAtText)
+                        },
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (enabled && !notificationStatus.allGood) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
                 GlassSwitch(
@@ -1903,8 +2471,9 @@ private fun ReminderSettingsCard() {
                         if (newEnabled) {
                             (context as? MainActivity)?.requestNotificationPermissionIfNeeded()
                         } else {
-                            ReminderWorker.cancel(context)
+                            runCatching { ReminderWorker.cancel(context) }
                         }
+                        notificationStatus = ReminderNotifications.status(context)
                     }
                 )
             }
@@ -1938,7 +2507,7 @@ private fun ReminderSettingsCard() {
                                 color = MaterialTheme.colorScheme.onSurface)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    String.format(Locale.getDefault(), "%02d:%02d", hour, minute),
+                                    NotificationHelper.formatTimeOfDay(context, hour * 60 + minute),
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.primary
@@ -1950,35 +2519,136 @@ private fun ReminderSettingsCard() {
                         }
                     }
 
+                    // 提醒时间落在免打扰窗口里时，当天会被 Worker 静默跳过；
+                    // 以前没有任何地方告诉用户，现在把因果关系直接写在时间下面
+                    if (reminderInQuietHours) {
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.reminder_time_in_quiet_hours),
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
                     HorizontalDivider(
                         Modifier.padding(horizontal = 16.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
 
-                    // 每日学习目标
+                    // 提醒频率与提醒日
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text(stringResource(com.ilyskyo.blancall.R.string.daily_goal), style = MaterialTheme.typography.bodyLarge,
+                        Text(stringResource(com.ilyskyo.blancall.R.string.reminder_frequency), style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(5, 10, 20).forEach { mins ->
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ReminderFrequency.entries.forEach { freq ->
                                 FilterChip(
-                                    selected = goalMinutes == mins,
-                                    onClick = { ReminderPrefs.goalMinutes = mins },
-                                    label = { AdaptiveChipLabel(stringResource(com.ilyskyo.blancall.R.string.minutes_unit, mins)) },
+                                    selected = frequency == freq,
+                                    onClick = {
+                                        ReminderPrefs.frequency = freq
+                                        reschedule()
+                                    },
+                                    label = { Text(stringResource(freq.labelRes), style = MaterialTheme.typography.labelSmall) },
                                     shape = RoundedCornerShape(8.dp)
                                 )
                             }
-                            // 自定义目标分钟数：已自定义时按钮显示实际分钟数
+                        }
+
+                        if (frequency == ReminderFrequency.CUSTOM) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(stringResource(com.ilyskyo.blancall.R.string.reminder_days), style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Spacer(Modifier.height(6.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                DayOfWeek.values().forEach { day ->
+                                    val selected = day in reminderDays
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = {
+                                            val newDays = if (selected) reminderDays - day else reminderDays + day
+                                            if (newDays.isEmpty()) {
+                                                // 空集合会让提醒彻底静默；宁可拦下这次取消
+                                                Toast.makeText(
+                                                    context,
+                                                    com.ilyskyo.blancall.R.string.reminder_keep_one_day,
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            } else {
+                                                ReminderPrefs.frequency = ReminderFrequency.CUSTOM
+                                                ReminderPrefs.reminderDays = newDays
+                                                reschedule()
+                                            }
+                                        },
+                                        label = {
+                                            Text(
+                                                ReminderSchedule.shortDayName(day, locale),
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
+                        } else if (frequency != ReminderFrequency.DAILY) {
+                            // 预设档以前只写「每周 3 天」，用户看不出是哪三天
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                ReminderSchedule.formatDays(reminderDays, locale),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+
+                    // 每日练习次数目标：通知里的「今天还差 N 次」按它计算。
+                    // 与上面的「每日学习时长」是两个目标，分开放在各自语义正确的位置。
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text(stringResource(com.ilyskyo.blancall.R.string.custom_goal_label), style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Text(stringResource(com.ilyskyo.blancall.R.string.reminder_daily_goal_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(1, 3, 5, 10).forEach { g ->
+                                FilterChip(
+                                    selected = dailyGoal == g,
+                                    onClick = { ReminderPrefs.dailyPracticeGoal = g },
+                                    label = {
+                                        AdaptiveChipLabel(
+                                            stringResource(com.ilyskyo.blancall.R.string.goal_count_chip, g)
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
                             FilterChip(
-                                selected = goalMinutes !in listOf(5, 10, 20),
+                                selected = dailyGoal !in listOf(1, 3, 5, 10),
                                 onClick = {
-                                    customMinutesInput = if (goalMinutes in listOf(5, 10, 20)) "" else goalMinutes.toString()
-                                    showCustomMinutesDialog = true
+                                    customGoalInput = if (dailyGoal in listOf(1, 3, 5, 10)) "" else dailyGoal.toString()
+                                    showCustomGoalDialog = true
                                 },
                                 label = {
                                     AdaptiveChipLabel(
-                                        if (goalMinutes in listOf(5, 10, 20)) stringResource(com.ilyskyo.blancall.R.string.custom) else stringResource(com.ilyskyo.blancall.R.string.minutes_unit, goalMinutes)
+                                        if (dailyGoal in listOf(1, 3, 5, 10)) {
+                                            stringResource(com.ilyskyo.blancall.R.string.custom)
+                                        } else {
+                                            stringResource(com.ilyskyo.blancall.R.string.goal_count_chip, dailyGoal)
+                                        }
                                     )
                                 },
                                 shape = RoundedCornerShape(8.dp)
@@ -1991,70 +2661,222 @@ private fun ReminderSettingsCard() {
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
 
-                    // 提醒频率
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text(stringResource(com.ilyskyo.blancall.R.string.reminder_frequency), style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            ReminderFrequency.entries.forEach { freq ->
-                                FilterChip(
-                                    selected = frequency == freq,
-                                    onClick = { ReminderPrefs.frequency = freq },
-                                    label = { Text(stringResource(freq.labelRes), style = MaterialTheme.typography.labelSmall) },
-                                    shape = RoundedCornerShape(8.dp)
+                    // 免打扰时段
+                    Column(Modifier.padding(vertical = 8.dp)) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(com.ilyskyo.blancall.R.string.reminder_quiet_hours),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    if (quietEnabled) {
+                                        "${NotificationHelper.formatTimeOfDay(context, quietStart)} – " +
+                                            NotificationHelper.formatTimeOfDay(context, quietEnd)
+                                    } else {
+                                        stringResource(com.ilyskyo.blancall.R.string.reminder_off_state)
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                            GlassSwitch(
+                                checked = quietEnabled,
+                                onCheckedChange = {
+                                    ReminderPrefs.quietHoursEnabled = it
+                                    reschedule()
+                                }
+                            )
+                        }
+                        AnimatedVisibility(
+                            visible = quietEnabled,
+                            enter = fadeIn(MotionFade.alpha(MotionFade.enter)) +
+                                expandVertically(Motion.contentSize()),
+                            exit = fadeOut(MotionFade.alpha(MotionFade.exit)) +
+                                shrinkVertically(Motion.contentSize())
+                        ) {
+                            Column {
+                                Spacer(Modifier.height(4.dp))
+                                QuietHourRow(com.ilyskyo.blancall.R.string.date_range_start, quietStart) {
+                                    showQuietStartPicker = true
+                                }
+                                QuietHourRow(com.ilyskyo.blancall.R.string.date_range_end, quietEnd) {
+                                    showQuietEndPicker = true
+                                }
+                                if (quietStart == quietEnd) {
+                                    Text(
+                                        stringResource(com.ilyskyo.blancall.R.string.reminder_quiet_same),
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }
+
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+
+                    // 系统通知状态：权限被拒 / 渠道被关时给出明确出口，
+                    // 不再让开关在「系统已拦截」的情况下继续显示「已开启」
+                    if (!notificationStatus.notificationsEnabled) {
+                        ReminderStatusRow(
+                            text = stringResource(com.ilyskyo.blancall.R.string.reminder_notifications_off),
+                            action = stringResource(com.ilyskyo.blancall.R.string.reminder_open_settings),
+                            onAction = { openReminderNotificationSettings(context) }
+                        )
+                    } else if (notificationStatus.channelsBlocked) {
+                        ReminderStatusRow(
+                            text = stringResource(com.ilyskyo.blancall.R.string.reminder_channels_some_off),
+                            action = stringResource(com.ilyskyo.blancall.R.string.reminder_open_settings),
+                            onAction = { openReminderNotificationSettings(context) }
+                        )
+                    }
+
+                    Surface(
+                        onClick = { openReminderNotificationSettings(context) },
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.reminder_system_notification_settings),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("▸", style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+
+                    Surface(
+                        onClick = {
+                            val posted = NotificationHelper.showTest(context, nextAtText)
+                            val message = when {
+                                posted -> com.ilyskyo.blancall.R.string.reminder_test_sent
+                                !notificationStatus.notificationsEnabled ->
+                                    com.ilyskyo.blancall.R.string.notification_permission_required
+                                // 系统通知开着却发不出去，只剩「提醒渠道被关」这一种可能
+                                else -> com.ilyskyo.blancall.R.string.reminder_channels_some_off
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        },
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(com.ilyskyo.blancall.R.string.reminder_test_notification),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Text("▸", style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.reminder_schedule_note),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
     }
 
-    // ── 时间选择弹窗 ──
+    // ── 提醒时间 ──
     AnimatedOverlayPresence(visible = showTimePicker) {
         TimePickerDialog(
+            title = stringResource(com.ilyskyo.blancall.R.string.set_reminder_time),
             currentHour = hour,
             currentMinute = minute,
             onConfirm = { h, m ->
                 ReminderPrefs.hour = h
                 ReminderPrefs.minute = m
                 showTimePicker = false
-                ReminderWorker.scheduleNext(context)
+                reschedule()
             },
             onDismiss = { showTimePicker = false }
         )
     }
 
-    // ── 自定义目标分钟数输入对话框 ──
-    AnimatedOverlayPresence(visible = showCustomMinutesDialog) {
+    // ── 免打扰起止：与提醒时间共用同一套分钟级选择器 ──
+    AnimatedOverlayPresence(visible = showQuietStartPicker) {
+        TimePickerDialog(
+            title = stringResource(com.ilyskyo.blancall.R.string.reminder_quiet_hours),
+            currentHour = quietStart / 60,
+            currentMinute = quietStart % 60,
+            onConfirm = { h, m ->
+                ReminderPrefs.quietStartMinutes = h * 60 + m
+                showQuietStartPicker = false
+                reschedule()
+            },
+            onDismiss = { showQuietStartPicker = false }
+        )
+    }
+    AnimatedOverlayPresence(visible = showQuietEndPicker) {
+        TimePickerDialog(
+            title = stringResource(com.ilyskyo.blancall.R.string.reminder_quiet_hours),
+            currentHour = quietEnd / 60,
+            currentMinute = quietEnd % 60,
+            onConfirm = { h, m ->
+                ReminderPrefs.quietEndMinutes = h * 60 + m
+                showQuietEndPicker = false
+                reschedule()
+            },
+            onDismiss = { showQuietEndPicker = false }
+        )
+    }
+
+    // ── 自定义每日练习次数 ──
+    AnimatedOverlayPresence(visible = showCustomGoalDialog) {
         BlancallAlertDialog(
-            onDismissRequest = { showCustomMinutesDialog = false },
-            title = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_daily_goal_title)) },
+            onDismissRequest = { showCustomGoalDialog = false },
+            title = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_goal_title)) },
             text = {
                 OutlinedTextField(
-                    value = customMinutesInput,
+                    value = customGoalInput,
                     onValueChange = { input ->
-                        customMinutesInput = input.filter { it.isDigit() }.take(3)
+                        customGoalInput = input.filter { it.isDigit() }.take(3)
                     },
-                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.minutes_field_label)) },
-                    suffix = { Text(stringResource(com.ilyskyo.blancall.R.string.minutes_word)) },
+                    label = { Text(stringResource(com.ilyskyo.blancall.R.string.custom_goal_label)) },
+                    suffix = { Text(stringResource(com.ilyskyo.blancall.R.string.goal_times_unit)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
             },
             confirmButton = {
                 TextButton(
-                    enabled = customMinutesInput.toIntOrNull() != null,
+                    enabled = customGoalInput.toIntOrNull() != null,
                     onClick = {
-                        customMinutesInput.toIntOrNull()?.let { ReminderPrefs.goalMinutes = it.coerceIn(1, 600) }
-                        showCustomMinutesDialog = false
+                        customGoalInput.toIntOrNull()?.let {
+                            ReminderPrefs.dailyPracticeGoal = it.coerceAtLeast(1)
+                        }
+                        showCustomGoalDialog = false
                     }
                 ) { Text(stringResource(com.ilyskyo.blancall.R.string.ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showCustomMinutesDialog = false }) { Text(stringResource(com.ilyskyo.blancall.R.string.cancel)) }
+                TextButton(onClick = { showCustomGoalDialog = false }) {
+                    Text(stringResource(com.ilyskyo.blancall.R.string.cancel))
+                }
             }
         )
     }
@@ -2065,6 +2887,7 @@ private fun ReminderSettingsCard() {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TimePickerDialog(
+    title: String,
     currentHour: Int,
     currentMinute: Int,
     onConfirm: (hour: Int, minute: Int) -> Unit,
@@ -2077,7 +2900,7 @@ private fun TimePickerDialog(
     BlancallAlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(20.dp),
-        title = { Text(stringResource(com.ilyskyo.blancall.R.string.set_reminder_time), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
+        title = { Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // 手动输入区域
@@ -2291,3 +3114,68 @@ private fun saveDonationQrToGallery(context: Context): String? {
 }
 
 private const val TAG_DONATION = "DonationQr"
+
+/**
+ * 界面字号：无极滑杆 + 5% 刻度吸附。
+ *
+ * 拖动期间**只动本地值**（滑杆位置与百分比），松手才把字号写进 [AppearanceStore]。
+ * 字号挂在整棵主题上，拖动时每帧上报会让全树按帧重组 —— 手感就是滑块发涩、跟不上手指。
+ */
+@Composable
+private fun FontScaleSlider(current: Float) {
+    var value by remember { mutableFloatStateOf(current) }
+    var dragging by remember { mutableStateOf(false) }
+    val stopHaptic = rememberHaptic(HapticTier.Toggle)
+    var lastStop by remember { mutableStateOf(false) }
+
+    // 外部变化（恢复备份 / 重新进入设置页）同步到滑杆；拖动期间不抢
+    LaunchedEffect(current) {
+        if (!dragging && abs(current - value) > 0.0005f) value = current
+    }
+
+    Column {
+        Row(
+            Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(com.ilyskyo.blancall.R.string.ui_font_scale),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Text(stringResource(com.ilyskyo.blancall.R.string.ui_font_scale_desc),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 16.dp))
+            }
+            Text("${(value * 100).roundToInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary)
+        }
+        Slider(
+            value = value,
+            onValueChange = { raw ->
+                dragging = true
+                // 拖动中保留连续值（只在刻度附近吸附），否则 1% 一档会一跳十几像素
+                val dragged = AppearanceStore.dragUiFontScale(raw)
+                value = dragged
+                val atStop = AppearanceStore.isFontScaleStop(dragged)
+                if (atStop && !lastStop) stopHaptic()
+                lastStop = atStop
+            },
+            onValueChangeFinished = {
+                dragging = false
+                lastStop = false
+                // 松手再规整到 1%，存下的是干净值
+                val settled = AppearanceStore.snapUiFontScale(value)
+                value = settled
+                AppearanceStore.preview { it.copy(uiFontScale = settled) }
+                AppearanceStore.flush()
+            },
+            valueRange = AppearanceStore.MIN_SCALE..AppearanceStore.MAX_SCALE,
+            // 不设 steps：连续滑动；刻度吸附由 snapUiFontScale 完成
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+    }
+}

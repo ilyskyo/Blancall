@@ -8,11 +8,52 @@
         <item name="android:navigationBarColor">@color/background_light</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowBackground">@color/background_light</item>
+        <item name="android:windowAnimationStyle">@style/BlancallWindowAnimationNone</item>
     </style>
 
     <!-- Splash 启动屏主题：应用启动时显示纯色底（与主页一致），消除白屏。 -->
     <style name="Theme.Blancall.Splash" parent="Theme.Blancall">
         <item name="android:windowBackground">@color/splash_background</item>
+    </style>
+
+    <!-- 启动屏的明暗两版：windowBackground 在 Compose 读到偏好之前就已生效，
+         资源限定符只跟「系统夜间」走，管不了 App 内手动选的明暗。
+         MainActivity 在 onCreate 里按偏好 setTheme 到这两个之一：
+         手动深色 + 系统浅色时不再闪白帧，手动浅色 + 系统夜间时不再闪黑帧。 -->
+    <style name="Theme.Blancall.Splash.Light" parent="Theme.Blancall">
+        <item name="android:windowBackground">@color/background_light</item>
+        <item name="android:statusBarColor">@color/background_light</item>
+        <item name="android:navigationBarColor">@color/background_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="Theme.Blancall.Splash.Dark" parent="Theme.Blancall">
+        <item name="android:windowBackground">@color/background_dark</item>
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:navigationBarColor">@color/background_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <!-- 窗口动画归零：Compose 接管所有转场（页面、弹窗、面板），系统窗口再挂一份
+         就会和 Compose 的动画叠成两种节奏。部分 ROM（实测华为）的默认 dialog
+         窗口动画是「从右下角推入」，app 层只能通过这里把它关掉。
+         副作用：Activity 之间的窗口转场也归零 —— 本应用只有 MainActivity 与
+         Splash 主题，页面切换全部走 Compose Navigation，正是想要的效果。 -->
+    <style name="BlancallWindowAnimationNone">
+        <item name="android:windowEnterAnimation">@null</item>
+        <item name="android:windowExitAnimation">@null</item>
+        <item name="android:activityOpenEnterAnimation">@null</item>
+        <item name="android:activityOpenExitAnimation">@null</item>
+        <item name="android:activityCloseEnterAnimation">@null</item>
+        <item name="android:activityCloseExitAnimation">@null</item>
+        <item name="android:taskOpenEnterAnimation">@null</item>
+        <item name="android:taskOpenExitAnimation">@null</item>
+        <item name="android:taskCloseEnterAnimation">@null</item>
+        <item name="android:taskCloseExitAnimation">@null</item>
+        <item name="android:taskToFrontEnterAnimation">@null</item>
+        <item name="android:taskToFrontExitAnimation">@null</item>
+        <item name="android:taskToBackEnterAnimation">@null</item>
+        <item name="android:taskToBackExitAnimation">@null</item>
     </style>
 
 </resources>

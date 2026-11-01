@@ -3,7 +3,6 @@
 
 package com.ilyskyo.blancall.ui.statistics
 
-import androidx.activity.compose.BackHandler
 import com.ilyskyo.blancall.ui.common.MotionFade
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -35,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.MistakeNotebook
 import com.ilyskyo.blancall.algorithm.StudyCoach
+import com.ilyskyo.blancall.ui.common.AdaptiveChipRow
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
@@ -228,10 +228,10 @@ private data class WeaknessProfile(
 fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     val resources = LocalResources.current
-    // 根 tab 页面：返回键 = 退出应用（与「我的文章」「素材库」tab 平级语义一致，绝不 pop 回上一 tab/首页）
-    BackHandler {
-        (context as? android.app.Activity)?.finish()
-    }
+    // 根 tab 的「返回＝退出应用」只在 AppNavigation 注册一处（见那边的 BackHandler）。
+    // 这里曾经也有一份：旧版 OnBackPressedDispatcher 下重复注册无害，
+    // activity 1.13 起 BackHandler 改投 NavigationEventDispatcher（与 NavHost 同一套），
+    // 多注册会改变响应顺序，转场中途可能抢在 NavHost 前面直接 finish。
     val recordRepo = remember {
         RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath)
     }
@@ -469,6 +469,8 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
     // 暂停中的文章：预测与句子到期数都不再把它们读成「该复习」
     var pausedArticleIds by remember { mutableStateOf(fsrsStore.pausedArticleIds()) }
     var pauses by remember { mutableStateOf(fsrsStore.pausedArticles()) }
+    // 计划成员表（v3）：还没练过的计划文章也要参与「下一步」推导
+    var enrolled by remember { mutableStateOf(fsrsStore.enrolledArticles()) }
     var fsrsReady by remember { mutableStateOf(false) }
     val fsrsRevision by fsrsStore.revision.collectAsState()
     LaunchedEffect(fsrsRevision) {
@@ -477,6 +479,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         sentenceStates = fsrsStore.allSentenceStates()
         pausedArticleIds = fsrsStore.pausedArticleIds()
         pauses = fsrsStore.pausedArticles()
+        enrolled = fsrsStore.enrolledArticles()
         fsrsReady = true
     }
     val predictions = remember(articles, allRecords, template, fsrsStates, pausedArticleIds) {
@@ -539,7 +542,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
         }
     }
     val todayPrepared = remember(
-        articles, allRecords, fsrsStates, pauses, sentenceStates, template,
+        articles, allRecords, fsrsStates, pauses, sentenceStates, enrolled, template,
         rawResumables, todaySentenceKey,
     ) {
         StudyCoach.prepare(
@@ -552,6 +555,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 template = template,
                 resumables = rawResumables,
                 todaySentenceKey = todaySentenceKey,
+                enrolled = enrolled,
             )
         )
     }
@@ -622,7 +626,7 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                 .fillMaxSize()
                 // 大屏放宽上限：平板横屏用满宽度展示统计卡，窄屏不受影响（600dp 内铺满）
                 .widthIn(max = if (LocalIsLargeScreen) GridMaxWidth else 600.dp)
-                .padding(horizontal = 20.dp, vertical = 20.dp)
+                .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp)
         ) {
             // ── 顶部栏：返回 + 标题 + 筛选 + 导出 ──
             Row(
@@ -1128,8 +1132,6 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                             Spacer(Modifier.width(16.dp))
                                             Column(Modifier.weight(1f)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("🔥", style = MaterialTheme.typography.titleMedium)
-                                                    Spacer(Modifier.width(4.dp))
                                                     Text(stringResource(com.ilyskyo.blancall.R.string.streak_days, streakFromRecords),
                                                         style = MaterialTheme.typography.titleMedium,
                                                         fontWeight = FontWeight.SemiBold,
@@ -1337,8 +1339,28 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                         Spacer(Modifier.height(10.dp))
                                         CalendarHeatmap(
                                             range = activeRange,
-                                            countOn = { countByDate[it] ?: 0 }
+                                            countOn = { countByDate[it] ?: 0 },
+                                            onDayClick = { date ->
+                                                navController.navigate(
+                                                    "practice_history?day=${date.toEpochDay()}"
+                                                )
+                                            },
                                         )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End,
+                                        ) {
+                                            TextButton(
+                                                onClick = { navController.navigate("practice_history") },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            ) {
+                                                Text(
+                                                    stringResource(com.ilyskyo.blancall.R.string.practice_history_view_all),
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.tertiary,
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1357,7 +1379,12 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                         if (stats.totalMistakes > 0) {
                             item(key = "overview_card_9") {
                                 AnimatedOverviewCard {
-                                    WeaknessProfileCard(weakness = weakness)
+                                    WeaknessProfileCard(
+                                        weakness = weakness,
+                                        onErrorClick = { type ->
+                                            navController.navigate("mistakes?errorType=$type")
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -1575,7 +1602,13 @@ fun OverviewScreen(navController: NavController, onBack: (() -> Unit)? = null) {
                                         val maxArticles = tagStats.maxOf { it.articleCount }.coerceAtLeast(1)
                                         tagStats.forEachIndexed { index, stat ->
                                             if (index > 0) Spacer(Modifier.height(12.dp))
-                                            TagStatRow(stat = stat, maxArticles = maxArticles)
+                                            TagStatRow(
+                                                stat = stat,
+                                                maxArticles = maxArticles,
+                                                onClick = stat.tag?.let { tag ->
+                                                    { navController.navigate("tag/${tag.id}") }
+                                                },
+                                            )
                                         }
                                     }
                                 }
@@ -1676,10 +1709,23 @@ private fun AnimatedOverviewCard(content: @Composable () -> Unit) {
  * 多标签文章计入各自标签（各标签之和会大于总量）；「未分类」= 无任何标签的文章。
  */
 @Composable
-private fun TagStatRow(stat: TagOps.TagStat, maxArticles: Int) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun TagStatRow(
+    stat: TagOps.TagStat,
+    maxArticles: Int,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick == null) Modifier
+                else Modifier.pressClick { onClick() }
+            )
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (stat.tag != null) {
-            TagDot(tag = TagChipUi(stat.tag.name, stat.tag.color), size = 10.dp)
+            TagDot(tag = TagChipUi(stat.tag.name, stat.tag.color, stat.tag.id), size = 10.dp)
         } else {
             Box(
                 Modifier
@@ -1704,6 +1750,14 @@ private fun TagStatRow(stat: TagOps.TagStat, maxArticles: Int) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (onClick != null) {
+            Spacer(Modifier.width(2.dp))
+            AppIcon(
+                AppIconKind.ChevronRight,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
     Spacer(Modifier.height(4.dp))
     val barColor = stat.tag?.let { Color(0xFF000000.toInt() or (it.color and 0xFFFFFF)) }
@@ -1750,7 +1804,12 @@ private fun NextStepCard(
     // 优先级由纯函数决定（可单测），这里只负责把第一条渲染成动作
     val step = NextStepDecider.fromPlan(plan)
     val hue = Macaron.continueP()
-    GlassCard(containerColor = hue.fill) {
+    // 「调整计划」不再单独占一行文字键：整卡点击即进入任务流（等同旧按钮效果），
+    // 卡内的「继续/开始学习」按钮仍走自己的动作，GlassCard 的整卡点击不会吞掉内容区交互。
+    GlassCard(
+        containerColor = hue.fill,
+        onClick = if (step == NextStep.AllClear) null else onOpenFlow,
+    ) {
         Column(Modifier.padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(hue.accent, RoundedCornerShape(50)))
@@ -1790,6 +1849,20 @@ private fun NextStepCard(
                         scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_article),
                         limit = null,
                         actionLabel = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_action_start),
+                        onAction = { onGoArticle(step.articleId) },
+                    )
+                }
+                is NextStep.StartArticle -> {
+                    NextStepPrimary(
+                        headline = stringResource(
+                            com.ilyskyo.blancall.R.string.ov_next_step_start_article_title,
+                            plan.items.firstOrNull()?.title.orEmpty()
+                        ),
+                        scope = stringResource(com.ilyskyo.blancall.R.string.ov_next_step_scope_article),
+                        limit = null,
+                        actionLabel = stringResource(
+                            com.ilyskyo.blancall.R.string.ov_next_step_action_start_learning
+                        ),
                         onAction = { onGoArticle(step.articleId) },
                     )
                 }
@@ -2013,7 +2086,7 @@ private fun TodayGoalCard(
                 Text(
                     stringResource(
                         if (achieved) com.ilyskyo.blancall.R.string.daily_goal_achieved
-                        else com.ilyskyo.blancall.R.string.notif_daily_goal_title
+                        else com.ilyskyo.blancall.R.string.today_plan_daily_goal
                     ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
@@ -2042,10 +2115,17 @@ private fun TodayGoalCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             Spacer(Modifier.height(10.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            AdaptiveChipRow(
+                modifier = Modifier.fillMaxWidth(),
+                spacing = 6.dp,
+                alwaysLeading = 1,
+                alwaysTrailing = 1,
+                // 头部「目标」占第 0 位，预设从第 1 位开始；当前值必须可见
+                keepIndices = if (goal in goalOptions) {
+                    setOf(1 + goalOptions.indexOf(goal))
+                } else {
+                    emptySet()
+                },
             ) {
                 Text(stringResource(com.ilyskyo.blancall.R.string.goal_label),
                     style = MaterialTheme.typography.labelSmall,
@@ -2315,7 +2395,10 @@ private fun urgencyBadge(p: ForgettingPredictor.Prediction): Pair<String, androi
 
 /** 弱点画像卡片：雷达图 + 针对性训练建议 */
 @Composable
-private fun WeaknessProfileCard(weakness: WeaknessProfile) {
+private fun WeaknessProfileCard(
+    weakness: WeaknessProfile,
+    onErrorClick: (String) -> Unit,
+) {
     // 轴名走资源：这五个字原先在代码里写死中文，六语用户的统计页上整块是简体，
     // 而多语言守卫只比 res 目录、查不出它。
     val axes = listOf(
@@ -2345,6 +2428,39 @@ private fun WeaknessProfileCard(weakness: WeaknessProfile) {
                     weakness.totalMistakes
                 )
             )
+            // 每个维度都能下钻到对应错误类型的错题本：雷达图只回答「哪类多」，
+            // 用户接下来要的是「哪些错」，不能让他再回列表自己筛。
+            if (weakness.totalMistakes > 0) {
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    val dimensions = listOf(
+                        "TYPO" to weakness.typo,
+                        "GLYPH_CONFUSED" to weakness.glyph,
+                        "MISSING" to weakness.missing,
+                        "EXTRA" to weakness.extra,
+                        "WRONG_ORDER" to weakness.order,
+                        "INCORRECT" to weakness.incorrect,
+                    )
+                    dimensions.forEachIndexed { index, (type, value) ->
+                        if (value > 0f) {
+                            GlassButton(
+                                onClick = { onErrorClick(type) },
+                                modifier = Modifier.height(30.dp),
+                            ) {
+                                Text(
+                                    "${axes[index]} ${(value * 100).toInt()}%",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(10.dp))
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
@@ -2352,8 +2468,6 @@ private fun WeaknessProfileCard(weakness: WeaknessProfile) {
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("💡", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.width(6.dp))
                 Text(
                     advice,
                     style = MaterialTheme.typography.bodySmall,

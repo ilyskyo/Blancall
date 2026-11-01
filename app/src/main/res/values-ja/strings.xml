@@ -29,6 +29,18 @@
     <string name="continue_import">取り込みを続ける</string>
     <string name="view_details">詳細を見る</string>
     <string name="due_tasks">復習のタスク</string>
+    <string name="today_plan_all_title">今日の計画</string>
+    <string name="today_plan_all_manage">計画を管理</string>
+    <string name="today_plan_all_ready">今すぐ %1$d 件</string>
+    <string name="today_plan_all_empty">今日やる記事はありません</string>
+    <string name="today_plan_board_summary">継続 %1$d 件 · 復習待ち %2$d 件 · 文 %3$d 件 · 間違い %4$d 件</string>
+    <string name="section_overdue">期限切れ</string>
+    <string name="section_today">今日</string>
+    <string name="due_tasks_today_only">今日期限 %1$d 件</string>
+    <string name="due_tasks_overdue_only">期限切れ %1$d 件</string>
+    <string name="due_tasks_split">今日 %1$d 件 · 期限切れ %2$d 件</string>
+    <string name="due_list_title">復習待ち</string>
+    <string name="due_list_empty">期限が来た記事はありません</string>
     <string name="resume_tasks">続きを待つ</string>
     <string name="recently_used">最近使った項目</string>
     <string name="no_due_today">本日分の復習は終わりました</string>
@@ -56,6 +68,31 @@
     <string name="added_on">%1$s に追加</string>
     <plurals name="char_count_short">
         <item quantity="other">%1$d 字</item>
+    </plurals>
+    <string name="text_stats_title">文字数</string>
+    <string name="text_stats_open">文字数を表示</string>
+    <string name="text_stats_chars_with_spaces">文字数（空白を含む）</string>
+    <string name="text_stats_chars_no_spaces">文字数（空白を除く）</string>
+    <string name="text_stats_punctuation">句読点</string>
+    <string name="text_stats_spaces">空白</string>
+    <string name="text_stats_paragraphs">段落</string>
+    <string name="text_stats_digits">数字</string>
+    <string name="text_stats_letters">アルファベット</string>
+    <string name="text_stats_han">漢字</string>
+    <string name="text_stats_kana">かな</string>
+    <string name="text_stats_hangul">ハングル</string>
+    <string name="text_stats_words">単語</string>
+    <plurals name="text_count_han">
+        <item quantity="other">%1$d 漢字</item>
+    </plurals>
+    <plurals name="text_count_kana">
+        <item quantity="other">%1$d 字</item>
+    </plurals>
+    <plurals name="text_count_word">
+        <item quantity="other">%1$d 語</item>
+    </plurals>
+    <plurals name="text_count_char">
+        <item quantity="other">%1$d 文字</item>
     </plurals>
     <string name="new_tag">新しいタグ</string>
     <string name="edit_tag">タグを編集</string>
@@ -117,6 +154,8 @@
     <string name="ui_language_desc">このアプリの表示だけが変わり、システム言語はそのままです</string>
     <string name="beige_background">ベージュの背景色</string>
     <string name="beige_background_desc">オンにするとライトモードで画面がベージュ色の背景になります。ダークモードには影響しません。</string>
+    <string name="flat_background">ページ背景を一段暗く</string>
+    <string name="flat_background_desc">オンにすると背景がカードより一段暗くなり、カードが浮き立ちます</string>
     <string name="nav_glass">ナビゲーションバーの流体ガラス</string>
     <string name="nav_glass_desc">下部ナビゲーションバーの実際の流体ガラス屈折効果。オフにすると単色背景になり、電池にやさしくなります。</string>
     <string name="haptic_strength">触覚の強さ</string>
@@ -124,11 +163,29 @@
     <string name="home_subtitle">ホームサブタイトル</string>
     <string name="home_subtitle_desc">ホームのブランド行下にあるタグライン。タップして編集</string>
     <string name="theme_color">テーマカラー</string>
+    <string name="theme_color_custom">カスタムテーマカラー</string>
+    <string name="theme_color_custom_desc">カラーホイールで自由に選べます（上の 6 種類の代わり）。</string>
+    <string name="material_you">システムの配色に合わせる</string>
+    <string name="material_you_desc">Android 12 以降の壁紙の色を使います。上のテーマカラーより優先されます。</string>
+    <string name="ui_font">画面フォント</string>
+    <string name="ui_font_desc">見出しと本文の書体。読書ページは独自の設定を持ちます。</string>
+    <string name="ui_font_serif">システム明朝</string>
+    <string name="ui_font_sans">システムゴシック</string>
+    <string name="ui_font_xwwk">霞鶩文楷</string>
+    <string name="ui_font_scale">画面の文字サイズ</string>
+    <string name="ui_font_scale_desc">画面全体の文字サイズをまとめて拡大縮小します。読書と練習は別設定です。</string>
+    <string name="glass_tint">ガラスの着色</string>
+    <string name="glass_tint_desc">液体ガラスがテーマ色を帯びます。オフにすると無色になります。</string>
     <string name="export_backup_desc">記事ライブラリと練習進捗などの学習データを 1 つのバックアップファイルにまとめます。UI の好み設定は含みません</string>
     <string name="keep_wrong_ink_desc">間違えた手の書き解答は保存され、学習統計の練習履歴で「その時書いた字」を見返せます。端末内にのみ保存</string>
     <string name="import_backup_desc">バックアップファイルから学習データを復元します。現在のデータを上書きし、完了後にアプリの再起動が必要です</string>
     <string name="indent_first_line_desc">オンにすると、プレーンテキストの貼り付け・取り込み時に各段落の先頭へスペース 2 字分を自動で入れます。PDF・Word などの文書は原文のままです</string>
     <string name="clear_saved_ink">保存済みの間違いの墨跡を消去</string>
+    <string name="sentence_card_anim_title">タップでめくるアニメーション</string>
+    <string name="sentence_card_anim_desc">評価ボタンで次のカードに切り替えるときの飛び出しアニメーション。上下スワイプには影響しません</string>
+    <string name="sentence_card_anim_speed">飛び出し速度</string>
+    <string name="sentence_card_anim_speed_value">約 %1$d ミリ秒</string>
+    <string name="sentence_card_anim_preview_hint">プレビューをタップすると、現在の速度でもう一度再生します</string>
     <string name="keep_wrong_ink">間違いの手書き墨跡を保存</string>
     <string name="article_tags_desc">記事を分類し、色を指定してカードにバッジで表示</string>
     <string name="western_thoughts">西洋思想の書き方素材</string>
@@ -169,11 +226,28 @@
     <string name="reminder_enable">リマインダーをオン</string>
     <string name="notification_permission_required">リマインダーには通知の許可が必要です。システム設定で許可してからアプリに戻ってください。</string>
     <string name="reminder_time">通知時刻</string>
-    <string name="daily_goal">1 日の学習目標</string>
+    <string name="daily_goal">1日の学習時間</string>
     <string name="custom">カスタム</string>
     <string name="reminder_frequency">通知の間隔</string>
     <string name="custom_daily_goal_title">1 日の学習時間を設定</string>
     <string name="minutes_field_label">分数</string>
+    <string name="reminder_days">リマインダーの曜日</string>
+    <string name="reminder_keep_one_day">少なくとも1日は選択してください</string>
+    <string name="reminder_quiet_hours">通知しない時間帯</string>
+    <string name="reminder_time_in_quiet_hours">リマインダー時刻が通知しない時間帯にあるため、その日は通知されません。</string>
+    <string name="reminder_quiet_same">開始と終了が同じため、通知しない時間帯は適用されません。</string>
+    <string name="reminder_on_blocked">オン · 通知がオフ</string>
+    <string name="reminder_on_channel_blocked">オン · 一部のチャネルがオフ</string>
+    <string name="reminder_notifications_off">通知がオフのため、リマインダーは届きません。</string>
+    <string name="reminder_channels_some_off">一部のリマインダー通知チャネルがシステム設定でオフになっています。</string>
+    <string name="reminder_open_settings">設定を開く</string>
+    <string name="reminder_system_notification_settings">システムの通知設定</string>
+    <string name="reminder_test_notification">テスト通知を送信</string>
+    <string name="reminder_test_title">テスト通知</string>
+    <string name="reminder_test_body">リマインダーは正常です。次回：%1$s</string>
+    <string name="reminder_test_sent">テスト通知を送信しました</string>
+    <string name="reminder_schedule_note">リマインダーはシステムが管理するため、省電力モードでは遅れることがあります。</string>
+    <string name="reminder_daily_goal_hint">通知の「あと何回」はこの目標に基づきます。</string>
     <string name="set_reminder_time">通知時刻を設定</string>
     <string name="preset_8am">朝 8:00</string>
     <string name="preset_1230pm">昼 12:30</string>
@@ -239,7 +313,7 @@
     <string name="clear_filter">条件をクリア</string>
     <string name="delete_selected">選択を削除</string>
     <string name="add_tags">タグを付ける</string>
-    <string name="cross_review">🔗 記事横断復習</string>
+    <string name="cross_review">記事横断復習</string>
     <string name="delete_article_confirm">「%1$s」を削除しますか？\n削除すると復元できません。</string>
     <plurals name="delete_articles_confirm">
         <item quantity="other">選択した %1$d 記事を削除しますか？\n削除すると復元できません。</item>
@@ -255,6 +329,7 @@
         <item quantity="other">%1$d 日後に復習</item>
     </plurals>
     <string name="mastered">習得済み</string>
+    <string name="plan_todo">未着手</string>
     <string name="urgency_not_started">未着手</string>
     <string name="practice">練習</string>
     <string name="sentence_cards">文カード</string>
@@ -326,8 +401,8 @@
     <string name="parsing_file">ファイルを解析中…</string>
     <string name="save_failed">保存に失敗しました</string>
     <string name="doc_images_dropped">文書内の画像は取り込めないため、テキストのみ保存しました</string>
-    <string name="due_tasks_count">復習のタスク（%1$d 件）</string>
     <string name="resume_tasks_count">続きを待つ（%1$d）</string>
+    <string name="start_action">開始</string>
     <string name="review_action">復習</string>
     <string name="continue_action">続ける</string>
     <string name="cloze_mode_sentence">文の穴埋め</string>
@@ -650,7 +725,7 @@
     <string name="analysis_dialog_title">練習分析 · %1$s</string>
     <string name="analysis_hints_line">%1$s · 弱いヒント %2$d / 強いヒント %3$d</string>
     <string name="learned_sentences_label">覚えた文</string>
-    <string name="stat_total_reviews">累計復習</string>
+    <string name="stat_total_reviews">累計記憶</string>
     <plurals name="sentence_round_reviewed">
         <item quantity="other">今回の復習 %1$d 文</item>
     </plurals>
@@ -707,7 +782,6 @@
     <string name="section_selected">段落：選択（%1$d/%2$d）</string>
     <string name="section_focus">フォーカス：この一文と周辺</string>
     <string name="share_note">ノートを共有</string>
-    <string name="mixed_smart_only">混合練習はスマート穴埋めを使うため、1 篇分のカスタム設定は適用されません</string>
     <string name="ai_cloze_failed_local">AI 穴埋めに失敗したため、ローカルアルゴリズムに切り替えました：%1$s</string>
     <string name="ai_cloze_no_profile">AI 穴埋めはオンですが、「設定 → AI 設定」に有効な対話設定がありません。現在はローカルアルゴリズムです。</string>
     <string name="generating_blanks">穴埋めを生成中…</string>
@@ -770,7 +844,7 @@
     <string name="custom_goal_title">1日の目標をカスタム</string>
     <string name="custom_goal_label">1日の練習回数</string>
     <string name="goal_times_unit">回</string>
-    <string name="due_soon_title">⏰ まもなく忘却</string>
+    <string name="due_soon_title">まもなく忘却</string>
     <string name="prediction_item_desc">%1$s、定着率 %2$d%%、%3$s</string>
     <string name="decay_expanded">減衰曲線を表示中</string>
     <string name="decay_collapsed">タップで減衰曲線を表示</string>
@@ -873,8 +947,8 @@
         <item quantity="other">%1$d 回以上の作答で色分け開始。色は現在の保持率——赤いほど忘れかけ</item>
     </plurals>
     <!-- ── 通知チャンネルとリマインダー（notif_*）：NotificationChannels / NotificationHelper に対応 ── -->
-    <string name="notif_channel_due_name">復習の期限</string>
-    <string name="notif_channel_due_desc">記事や文の復習時期・期限間近・忘却予測を通知します</string>
+    <string name="notif_channel_due_name">期限と開始</string>
+    <string name="notif_channel_due_desc">記事や文の復習時期、計画中の記事の開始時期、忘却予測を通知します</string>
     <string name="notif_channel_sentence_name">一文カード</string>
     <string name="notif_channel_sentence_desc">毎日の一文と期限が来た一文カードの通知</string>
     <string name="notif_channel_goal_name">やり残しと今日の目標</string>
@@ -895,7 +969,7 @@
     <string name="notif_mode_word">単語穴埋め</string>
     <string name="notif_mode_reverse">段落書き取り</string>
     <string name="notif_no_study_title">📖 今日の暗記リマインダー</string>
-    <string name="notif_no_study_body">今日はまだ暗記を終えていません。数分だけ復習しましょう。</string>
+    <string name="notif_no_study_body">今日の練習はまだ終わっていません。連続 %1$d 日の記録を途切れさせないようにしましょう。</string>
     <string name="notif_no_study_body_first">今日はまだ暗記を終えていません。最初の練習を始めましょう！</string>
     <string name="notif_weak_title">🎯 弱点の復習</string>
     <plurals name="notif_weak_body">
@@ -915,6 +989,14 @@
         <item quantity="other">%1$d 件が復習の期限です。今のうちに復習すると記憶に残ります。</item>
     </plurals>
     <string name="notif_due_review_named_one">「%1$s」の復習時間です。始めましょう。</string>
+    <string name="notif_start_article_title">📖 初回練習の準備</string>
+    <string name="notif_start_article_named_one">「%1$s」は計画に追加済みです。初回の練習を始めましょう。</string>
+    <plurals name="notif_start_article_named">
+        <item quantity="other">「%1$s」など %2$d 件が未開始です。1 件選んで始めましょう。</item>
+    </plurals>
+    <plurals name="notif_start_article_body">
+        <item quantity="other">計画中の %1$d 件が未開始です。今日は初回練習を始めましょう。</item>
+    </plurals>
     <plurals name="notif_due_review_named">
         <item quantity="other">「%1$s」など %2$d 件が復習時間です。始めましょう。</item>
     </plurals>
@@ -973,6 +1055,25 @@
     <string name="blank_warn_suggestion">おすすめ：%1$d（最大値ではなく、練習に適した推奨値）</string>
     <string name="blank_use_suggested">おすすめを使う（%1$d）</string>
     <!-- ── 閲覧画面の状態と操作（reader_*）── -->
+    <!-- ── 文章详情页计划状态条（plan_bar_*）── -->
+    <plurals name="plan_bar_practices">
+        <item quantity="other">%1$d 回練習</item>
+    </plurals>
+    <string name="plan_bar_accuracy">正答率 %1$d%%</string>
+    <string name="plan_bar_not_started">未開始</string>
+    <string name="plan_bar_overdue">期限切れ</string>
+    <string name="plan_bar_due_today">今日復習</string>
+    <string name="plan_bar_start_today">今日開始</string>
+    <string name="plan_bar_start_overdue">そろそろ始めましょう</string>
+    <string name="plan_bar_due_tomorrow">明日復習</string>
+    <string name="plan_bar_start_tomorrow">明日開始</string>
+    <plurals name="plan_bar_due_days">
+        <item quantity="other">%1$d 日後に復習</item>
+    </plurals>
+    <plurals name="plan_bar_start_days">
+        <item quantity="other">%1$d 日後に開始</item>
+    </plurals>
+    <string name="plan_bar_enroll">計画に追加</string>
     <string name="reader_read_minutes">読了：%1$d 分</string>
     <string name="reader_read_less_minute">読了：1 分未満</string>
     <string name="reader_finished">読了</string>
@@ -984,6 +1085,34 @@
     <string name="reader_prev_section">前のセクション</string>
     <string name="reader_full_text">全文</string>
     <string name="reader_next_section">次のセクション</string>
+    <string name="reader_select_copy">コピー</string>
+    <string name="reader_select_highlight">ハイライト</string>
+    <string name="reader_select_unhighlight">解除</string>
+    <string name="reader_select_note">注釈</string>
+    <string name="reader_select_edit_note">注釈を編集</string>
+    <string name="reader_note_title">注釈</string>
+    <string name="reader_note_hint">メモを入力…</string>
+    <string name="reader_mark_copied">コピーしました</string>
+    <string name="reader_marks_title">ハイライトと注釈</string>
+    <string name="reader_marks_empty">まだハイライトや注釈はありません。本文を長押しするとハイライトできます。</string>
+    <string name="reader_marks_count">全 %1$d 件</string>
+    <string name="reader_marks_entry">ハイライトと注釈</string>
+    <string name="reader_marks_entry_hint">本文を長押しでハイライト・注釈</string>
+    <string name="reader_marks_entry_count">%1$d 件</string>
+    <string name="reader_speed_title">読書速度</string>
+    <string name="reader_speed_value">約 %1$d 字/分</string>
+    <string name="reader_speed_basis_personal">あなたの読書記録から推定（累計 %1$d 分）</string>
+    <string name="reader_speed_basis_default">記録がまだありません。既定値を使用します</string>
+    <string name="reader_speed_reset">再計測</string>
+    <string name="reader_remaining_hours">残り約 %1$d 時間 %2$d 分</string>
+    <string name="reader_remaining_hours_only">残り約 %1$d 時間</string>
+    <string name="reader_idle_title">まだ読んでいますか？</string>
+    <string name="reader_idle_body">この画面で %1$d 分止まっています</string>
+    <string name="reader_idle_yes">読んでいます</string>
+    <string name="reader_idle_no">あとで</string>
+    <string name="reader_idle_cheer">いいですね！</string>
+    <string name="reader_idle_cheer_detail">さらに %1$d 分読めました。続けましょう</string>
+    <string name="reader_idle_paused">どうぞ。続きから再開できます</string>
     <!-- ── 学習データのバックアップ／復元（backup_*）：エラー種別は BackupManager、文言はここ ── -->
     <string name="backup_export_done">バックアップを書き出しました。大切に保管してください。</string>
     <string name="backup_export_failed">書き出しに失敗：%1$s</string>
@@ -1023,7 +1152,8 @@
     <string name="data_archive_none">アーカイブが必要な記録はまだありません</string>
     <string name="flow_title">学習タスクフロー</string>
     <string name="flow_summary_title">現在の計画</string>
-    <string name="flow_summary_due_now">件が今すぐ復習できます</string>
+    <string name="flow_summary_due_now">件が今すぐ練習できます</string>
+    <string name="flow_summary_due_new">うち %1$d 件は未練習</string>
     <string name="flow_summary_active">計画中</string>
     <string name="flow_summary_overdue">期限切れ</string>
     <string name="flow_summary_paused">一時停止中</string>
@@ -1043,6 +1173,8 @@
     <string name="flow_done_resumed_all">一時停止中のタスクをすべて再開しました</string>
     <string name="flow_done_paused_all">すべてのタスクを一時停止しました</string>
     <string name="flow_done_plan">復習強度を変更しました</string>
+    <string name="flow_undo">元に戻す</string>
+    <string name="flow_undone">元に戻しました</string>
     <string name="flow_filter_all">すべて %1$d</string>
     <string name="flow_filter_due">今日 %1$d</string>
     <string name="flow_filter_paused">一時停止 %1$d</string>
@@ -1054,13 +1186,16 @@
     <string name="flow_group_later">それ以降</string>
     <string name="flow_group_paused">一時停止中</string>
     <string name="plan_paused">一時停止中</string>
-    <string name="flow_task_meta">復習 %1$d 回 · 定着率 %2$d%%</string>
+    <string name="flow_task_meta">練習 %1$d 回 · 定着率 %2$d%%</string>
+    <string name="flow_task_meta_no_retention">練習 %1$d 回</string>
+    <string name="flow_task_meta_new">未練習</string>
     <string name="flow_sentence_due">復習待ちの文カード %1$d</string>
     <string name="flow_due_overdue">期限切れ</string>
     <string name="flow_due_today">今日</string>
     <string name="flow_due_tomorrow">明日</string>
     <string name="flow_resume_on">%1$s に再開</string>
     <string name="flow_start_review">復習を始める</string>
+    <string name="flow_start_learning">学習を始める</string>
     <string name="flow_adjust_schedule">日程を調整</string>
     <string name="flow_pause">一時停止</string>
     <string name="flow_resume">再開</string>
@@ -1096,12 +1231,15 @@
     <string name="flow_now">今</string>
     <string name="flow_detail_title">タスク詳細</string>
     <string name="flow_detail_retention_label">現在の定着率</string>
-    <string name="flow_detail_reviews_label">復習回数</string>
     <string name="flow_detail_sentences_label">学習済みの文</string>
     <string name="flow_detail_started_label">学習開始</string>
     <string name="flow_detail_advice_label">次のおすすめ</string>
     <string name="flow_advice_paused_title">計画は一時停止中です</string>
     <string name="flow_advice_paused_body">一時停止は計画とリマインダーから外すだけで、手動の練習は禁止しません。準備ができたら再開でき、残りの間隔はそこから続きます。</string>
+    <string name="flow_advice_not_started_title">まだ未着手</string>
+    <string name="flow_advice_not_started_body">この記事は計画に追加されていますが、まだ一度も練習していません。一度練習すると、ここに記憶曲線と復習リズムが表示されます。</string>
+    <string name="flow_advice_legacy_body">この記事には練習記録がありますが、記憶状態はまだありません。1 回練習すると、ここに記憶曲線と復習リズムが表示されます。</string>
+    <string name="flow_advice_legacy_title">過去の練習記録で予定</string>
     <string name="flow_advice_overdue_title">期限切れです</string>
     <string name="flow_advice_overdue_body">待つほど定着率は下がります。今日 1 回練習すればリズムを取り戻せます。</string>
     <string name="flow_advice_low_retention_title">定着率が低めです</string>
@@ -1128,6 +1266,8 @@
     <string name="flow_detail_mistakes_title">誤りの種類</string>
     <string name="flow_detail_schedule_title">スケジュール</string>
     <string name="flow_detail_next_due">次回の復習</string>
+    <string name="flow_detail_plan_start">学習開始予定</string>
+    <string name="flow_detail_practices_label">練習回数</string>
     <string name="flow_detail_interval">今回の間隔（日）</string>
     <string name="flow_detail_records_title">最近の練習</string>
     <string name="flow_detail_view_all_stats">詳細データを見る</string>
@@ -1187,7 +1327,7 @@
 
     <!-- ── 统计：目标与弱点建议 ── -->
     <string name="stats_article_line">%1$d 記事 · %2$d 回 · 正答率 %3$d%%</string>
-    <string name="daily_goal_achieved">🎯 今日の目標達成</string>
+    <string name="daily_goal_achieved">今日の目標達成</string>
     <string name="daily_goal_progress">%1$d / %2$d 回</string>
     <string name="weakness_profile_title">弱点プロフィール</string>
     <string name="weakness_total_mistakes">計 %1$d 件の誤り</string>
@@ -1353,7 +1493,6 @@
     <string name="retry">再試行</string>
     <string name="ai_difficulty_intro">選択した難易度と戦略で「%1$s」の穴埋めを生成します。</string>
     <string name="ai_start_generating">生成を開始</string>
-    <string name="start_action">開始</string>
 
     <!-- ── Pro AI 运行时状态 ── -->
     <string name="ai_cross_title">横断 AI · %1$d 記事</string>
@@ -1416,10 +1555,33 @@
 
     <!-- ── 使用帮助正文 ── -->
     <string name="help_001">ヘルプ</string>
+    <string name="help_flow_title">全体の流れ</string>
+    <string name="help_flow_intro">取り込みから復習までの閉じた循環</string>
+    <string name="help_flow_1_t">記事を取り込む</string>
+    <string name="help_flow_1_d">ホームの「記事を追加」または「マイ記事 → インポート」から取り込み。貼り付け・ファイル・コンテンツパックに対応</string>
+    <string name="help_flow_2_t">今日の計画</string>
+    <string name="help_flow_2_d">ホームのカードに今日やるべき三つを表示。右上の「設定」で学習時間と試験日を調整</string>
+    <string name="help_flow_3_t">学習タスクフロー</string>
+    <string name="help_flow_3_d">データタブを下に引いて開く。一時停止・日付変更・復習計画の切り替えができ、「明日に移す」は取り消せます</string>
+    <string name="help_flow_4_t">練習</string>
+    <string name="help_flow_4_d">文穴埋め / 単語穴埋め / 逆ディクテーション / カスタム穴埋め。文カードはタップでもスワイプでもめくれます</string>
+    <string name="help_flow_5_t">記録と復習</string>
+    <string name="help_flow_5_d">評価のたびに FSRS へ保存。期限が来ると今日の計画へ自動で戻り、進捗はデータタブにまとまります</string>
+    <string name="help_flow_loop">期限が来たら「今日の計画」に戻り、循環が閉じます</string>
+    <string name="help_shared_title">共通のデータ</string>
+    <string name="help_shared_intro">以下の値は一つだけです。どの入口で変更しても他の入口に反映されます</string>
+    <string name="help_shared_1_t">1日の学習時間</string>
+    <string name="help_shared_1_d">今日の計画設定 ↔ 設定 · 記憶プラン。今日の計画の合計時間を決めます</string>
+    <string name="help_shared_2_t">1日の練習回数</string>
+    <string name="help_shared_2_d">今日の計画設定 ↔ 設定 · リマインダー ↔ データタブ「今日の目標」。リマインダーの残り回数の基準でもあります</string>
+    <string name="help_shared_3_t">試験日</string>
+    <string name="help_shared_3_d">今日の計画設定 ↔ 設定。カウントダウンの表示とペースだけに影響し、復習の予定は変えません</string>
+    <string name="help_shared_4_t">復習プラン</string>
+    <string name="help_shared_4_d">設定 · 記憶プラン ↔ 学習タスクフロー。ホームのリマインダーとフローは同じテンプレートを使います</string>
     <string name="help_002">練習を始める</string>
     <string name="help_003">記事を選び、「練習を始める」をタップしてモードを選ぶと暗記を始められます。</string>
     <string name="help_004">3 つの入口（いずれか 1 つ）</string>
-    <string name="help_005">閲覧ページ下部の「練習を始める」：先に記事を開いてから開始します。</string>
+    <string name="help_005">記事詳細ページ下部の「練習を始める」：先に記事を開いてから開始します。</string>
     <string name="help_006">ホームカードの「練習」ボタン：「最近使った」「記事カード」「続きから」などのカードから直接開始できます。</string>
     <string name="help_007">ホームの「続きから」カード：未完了の練習を元の進捗のまま再開します。</string>
     <string name="help_008">練習の流れ</string>
@@ -1452,7 +1614,7 @@
     <string name="help_035">段落をシャッフルして默写 — 全体を復元</string>
     <string name="help_036">向いている場面：試験前の確認と模擬試験</string>
     <string name="help_037">カスタム穴埋め</string>
-    <string name="help_038">自分で指定した位置だけを穴埋めします。閲覧ページでマスク粒度を「カスタム」にし、文・語・字ごとに指定します。練習時はカスタム設定を選ぶだけです。練習前に新規作成・編集もできます。</string>
+    <string name="help_038">自分で指定した位置だけを穴埋めします。記事詳細ページでマスク粒度を「カスタム」にし、文・語・字ごとに指定します。練習時はカスタム設定を選ぶだけです。練習前に新規作成・編集もできます。</string>
     <string name="help_039">向いている場面：非常に狙いを絞った個別暗記</string>
     <string name="help_040">横断ミックス練習</string>
     <string name="help_041">「私の記事」で長押しして複数選択に入り、2 件以上選んで「練習を始める」をタップすると、記事をまたいで穴埋めが混ざります。ミックス練習はスマート穴埋めを使い、単一記事のカスタム設定は適用しません。</string>
@@ -1537,14 +1699,14 @@
     <string name="help_120">左上のアイコンをタップしてロゴを変更できます（カスタム絵文字も可）。</string>
     <string name="help_121">サブタイトルの文字をタップしてカスタマイズできます。</string>
     <string name="help_122">私の記事</string>
-    <string name="help_123">記事をタップして閲覧ページへ。</string>
+    <string name="help_123">記事をタップして記事詳細ページへ。</string>
     <string name="help_124">長押しで複数選択：一括削除、2 件以上選んで横断ミックス練習、AI へ送信。</string>
-    <string name="help_125">閲覧ページ</string>
+    <string name="help_125">記事詳細ページ</string>
     <string name="help_126">下部ボタン：学習統計／閲覧モード／カスタム／練習開始。Pro 版には AI もあります。</string>
     <string name="help_127">「閲覧モード」では文字サイズ、行間、フォント、太さ、配色、マスク粒度（均衡／語句／カスタム）を調整できます。</string>
     <string name="help_128">本文を 2 本指でピンチすると、文字サイズを直接拡大縮小できます。</string>
     <string name="help_129">右上：記事の削除／編集。</string>
-    <string name="help_130">カスタムマスク（閲覧ページ）</string>
+    <string name="help_130">カスタムマスク（記事詳細ページ）</string>
     <string name="help_131">マスク粒度を「カスタム」に切り替えると設定一覧が開きます。項目をタップするとそのまま使用、行末の「編集」でマーキングページへ、長押しで名前変更／削除。</string>
     <string name="help_132">カスタム粒度を選ぶと、ボタンに現在使用中の設定名が表示されます.</string>
     <string name="help_133">マーキングページ：文をタップで文全体をマスク、文を長押しで語に分割し語をタップでマスク、語を長押しで字に分割、さらに長押しで段階的に戻ります。</string>
@@ -1555,7 +1717,7 @@
     <string name="help_138">完了後の成績カードでは正答率と所要時間を確認でき、そのまま共有できます。</string>
     <string name="help_139">カスタム穴埋め（練習時）</string>
     <string name="help_140">設定一覧：タップで編集、長押しで練習開始／名前変更／削除、選択モードではタップで直接練習開始。</string>
-    <string name="help_141">編集ページ：タップで穴埋めを選択、長押しで粒度を切り替え（閲覧ページのマーキングと同じ）。</string>
+    <string name="help_141">編集ページ：タップで穴埋めを選択、長押しで粒度を切り替え（記事詳細ページのマーキングと同じ）。</string>
     <string name="help_142">インポートページの「保存して穴埋め」から新規作成へ直行できます。インポート直後に要点を指定できます。</string>
     <string name="help_143">記事のインポート</string>
     <string name="help_144">2 つの方法：テキスト貼り付け、ファイル読み込み（txt、PDF、Word など。PDF はプレビュー可）。</string>
@@ -1564,16 +1726,16 @@
     <string name="help_147">下部の 2 ボタン：「保存のみ」は保存して戻る、「保存して穴埋め」は保存後すぐにその記事のカスタム穴埋め編集へ。</string>
     <string name="help_148">共通操作</string>
     <string name="help_149">全ページ左上の白い丸ボタンで戻れます。システムの戻るジェスチャー／キーも使えます。</string>
-    <string name="help_150">閲覧ページがマーキング／編集状態のときは、まず編集を終了してからページを離れます。</string>
+    <string name="help_150">記事詳細ページがマーキング／編集状態のときは、まず編集を終了してからページを離れます。</string>
     <string name="help_151">主要操作には振動フィードバックがあります：しきい値を超える引き下ろし、長押しでカード編集、カードのドラッグ／サイズ変更、長押しメニューなど。</string>
-    <string name="help_152">記事の削除は元に戻せません：閲覧ページ右上の「削除」または「私の記事」の一括削除を使います。</string>
+    <string name="help_152">記事の削除は元に戻せません：記事詳細ページ右上の「削除」または「私の記事」の一括削除を使います。</string>
     <string name="help_153">設定の「データ」：ワンタップ書き出しで記事ライブラリと練習進捗を 1 つのバックアップにまとめます。ワンタップ読み込みで新規インストールへ復元します（現在のデータを上書きし、完了後に終了して再起動します）。</string>
     <string name="help_154">AI を有効にすると、記事を AI に渡して難所の解説、練習問題の作成、よくある間違いの分析を依頼できます。</string>
     <string name="help_155">有効化と設定</string>
     <string name="help_156">「設定 → AI → AI 機能を有効化」でオンにし、API URL、API Key、モデル名を入力します。OpenAI 互換 API（DeepSeek / Qwen / GLM / Kimi など）に対応しています。</string>
     <string name="help_157">ウェブ検索：設定で「ウェブ検索」を有効にし、tavily.com でメール登録して無料の API Key（tvly-xxx、月 1000 回まで無料）を取得し、「Tavily API Key」欄に貼り付けます。</string>
     <string name="help_158">入口の場所</string>
-    <string name="help_159">閲覧ページの「AI」ボタン</string>
+    <string name="help_159">記事詳細ページの「AI」ボタン</string>
     <string name="help_160">記事を読んでいるとき、下部ボタン列の「AI」をタップすると、現在の記事を伴って会話を開きます。</string>
     <string name="help_161">記事一覧の「AI に送る」</string>
     <string name="help_162">記事を長押しして複数選択し、「AI に送る」をタップすると、複数記事をまたいで会話できます。</string>
@@ -1617,16 +1779,16 @@
     <string name="notebook_drill_empty">本文が変更されたため、このまとまりは練習できません。</string>
     <string name="notebook_drill_name">間違いの再練習</string>
     <string name="notebook_drill_partial">%1$d 件は本文の変更で見つからず、残りだけを練習します。</string>
-    <string name="review_timeline_title">実際の復習履歴</string>
+    <string name="review_timeline_title">実際の練習履歴</string>
     <string name="review_timeline_local_only">この端末のみ</string>
-    <string name="review_timeline_none">まだ復習ログがありません。次の復習から記録されます。</string>
+    <string name="review_timeline_none">練習記録はまだありません。初回の練習後に記録が始まります</string>
     <string name="review_timeline_one">1 回だけの記録で、まだ傾向はありません。</string>
-    <string name="review_timeline_steady_start">最初から安定しています</string>
-    <string name="review_timeline_steady_after">%1$d 回目の復習から安定</string>
+    <string name="review_timeline_steady_start">初回の練習から安定</string>
+    <string name="review_timeline_steady_after">%1$d 回目の練習後に安定</string>
     <string name="review_timeline_shaky">直近の復習でまた不安定になりました</string>
-    <string name="review_timeline_interval_hint">復習ごとの実際の間隔</string>
+    <string name="review_timeline_interval_hint">練習ごとの実際の間隔</string>
     <string name="review_timeline_review_no">%1$d 回目</string>
-    <string name="review_timeline_first">初回の復習</string>
+    <string name="review_timeline_first">初回の練習</string>
     <string name="review_timeline_gap">%1$s 日後</string>
     <string name="rating_again">忘れた</string>
     <string name="rating_hard">苦手</string>
@@ -1643,8 +1805,8 @@
     <string name="reader_practice_sheet_title">この段落を練習</string>
     <string name="reader_practice_sheet_hint">穴埋めの種類を選んですぐ始めます。</string>
     <string name="reader_practice_mode_section">全文を穴埋めで練習</string>
-    <string name="reason_first">初回の復習</string>
     <string name="reason_lapsed">%1$d 回忘れています</string>
+    <string name="reason_first_practice">初回の練習</string>
     <string name="reason_long_gap">前回から %1$d 日</string>
     <string name="reason_overdue">%1$d 日超過</string>
     <string name="reason_stable">%1$d 回安定しています</string>
@@ -1654,12 +1816,20 @@
     <string name="today_plan_subtitle_exam">試験まで %1$d 日・約 %2$d 分</string>
     <string name="today_plan_subtitle_exam_due">試験まで %1$d 日・期限 %2$d 件・約 %3$d 分</string>
     <string name="today_plan_minutes">今日は約 %1$d 分</string>
-    <string name="today_plan_budget">%1$d 分</string>
     <string name="today_plan_exam_behind">このペースでは試験までに終わらない可能性があります。</string>
     <string name="today_plan_empty">いま期限が来ている内容はありません。時間を選ぶか記事を復習しましょう。</string>
     <string name="today_plan_paused_hint">一時停止 %1$d 件・学習タスクフローで再開</string>
     <string name="today_plan_empty_paused">%1$d 件の記事が一時停止中です。学習タスクフローで再開できます。</string>
     <string name="today_plan_item_minutes">%1$d 分</string>
+    <string name="plan_settings_title">今日の計画設定</string>
+    <string name="plan_settings_subtitle">今日の計画だけに影響し、復習の予定は変わりません</string>
+    <string name="plan_settings_exam_hint">ペースの目安にのみ使われ、復習の予定は変わりません</string>
+    <string name="plan_settings_duration_label">1日の学習時間</string>
+    <string name="plan_settings_duration_hint">今日の計画の合計時間を決めます</string>
+    <string name="plan_settings_estimate">今日は約 %1$d 分かかります</string>
+    <string name="plan_settings_show_on_card">今日の計画カードに目標の進捗を表示</string>
+    <string name="plan_settings_show_on_card_hint">オフにするとカードに目標の進捗を表示しません</string>
+    <string name="today_plan_goal_progress">今日の目標 %1$d 回 · 実施済み %2$d 回</string>
     <string name="today_plan_exam_set">試験日：%1$s</string>
     <string name="today_plan_set_exam">試験日を設定</string>
     <string name="today_plan_clear_exam">解除</string>
@@ -1668,18 +1838,13 @@
     <string name="today_plan_sentence_cards">一文カード</string>
     <string name="today_plan_daily_goal">今日の目標</string>
     <string name="today_plan_resume_detail">%2$d 問中 %1$d 問回答済み</string>
+    <string name="today_plan_start_article">%1$s を学習開始</string>
+    <string name="today_plan_start_detail">未練習 · 今日から始める</string>
     <string name="today_plan_review_detail">復習の時期</string>
     <string name="today_plan_weak_detail">苦手な記事・間違い %1$d 件</string>
     <string name="today_plan_mistake_detail">未克服の間違い %1$d 件</string>
     <string name="today_plan_sentence_detail">%1$d 文が期限</string>
     <string name="today_plan_goal_detail">あと %1$d 回</string>
-    <string name="today_plan_budget_title">使える時間は？</string>
-    <string name="today_plan_budget_hint">時間を選ぶと、その範囲に収まる内容だけを選びます。</string>
-    <string name="today_plan_minutes_unit">%1$d 分</string>
-    <string name="today_plan_budget_empty">この時間に収まる内容がありません。</string>
-    <string name="today_plan_budget_result_articles">%1$d 記事・約 %2$d 分</string>
-    <string name="today_plan_budget_result_cards">%1$d 文・約 %2$d 分</string>
-    <string name="today_plan_budget_start">開始</string>
     <string name="budget_remaining">残り %1$d 分</string>
     <string name="budget_end_title">時間になりました</string>
     <string name="budget_end_body">予定した時間が過ぎました。回答済みを提出するか、続けてください。</string>
@@ -1701,6 +1866,10 @@
     <string name="exam_paper_start">問題用紙を作成（%1$d 記事）</string>
     <string name="exam_paper_title">問題用紙・%1$d 記事</string>
     <string name="notif_action_start">復習を開始</string>
+    <string name="notif_action_start_learning">学習を始める</string>
+    <string name="notif_action_resume">練習を続ける</string>
+    <string name="notif_action_view_task">タスクを見る</string>
+    <string name="notif_action_sentence">文を練習</string>
     <string name="open">開く</string>
     <string name="content_pack_title">コンテンツパック</string>
     <string name="content_pack_settings_desc">txt / md のまとまりを取り込む</string>
@@ -1757,9 +1926,24 @@
     <string name="widget_sentence_due">%1$d 文が期日</string>
     <string name="ov_notebook_count">未克服 %1$d 件</string>
     <string name="ov_next_step_due_article_title">「%1$s」を復習</string>
+    <string name="ov_next_step_start_article_title">「%1$s」を学習開始</string>
     <string name="ov_next_step_scope_article">記事練習・文の穴埋め</string>
     <string name="ov_next_step_action_start">復習を開始</string>
+    <string name="ov_next_step_action_start_learning">学習を始める</string>
     <string name="ov_next_step_go_mistakes">間違いノートへ</string>
     <string name="ov_next_step_go_articles">記事一覧へ</string>
     <string name="content_pack_disclaimer">コンテンツパックはユーザーが用意したものです。テキストの使用・共有権を確認してください。</string>
+    <string name="view_tag">タグを表示</string>
+    <string name="tag_detail_articles">記事</string>
+    <string name="sentence_scope_this_article">この記事のみ</string>
+    <string name="sentence_scope_this_tag">「%1$s」のみ</string>
+    <string name="sentence_scope_empty">この範囲に復習できる文がありません</string>
+    <string name="practice_history_sources">参照記事</string>
+    <string name="practice_history_no_sources">古い記録には参照記事がありません</string>
+    <string name="practice_history_empty_day">この日の練習記録はありません</string>
+    <string name="practice_history_view_all">すべての練習履歴を見る</string>
+    <string name="import_tags_label">タグ（任意）</string>
+    <string name="search_sentences">一致した文</string>
+    <string name="search_practice_sentence">この文を練習</string>
+    <string name="view_article">原文を読む</string>
 </resources>

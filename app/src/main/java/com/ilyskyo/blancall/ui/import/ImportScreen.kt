@@ -29,6 +29,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.pressClick
+import com.ilyskyo.blancall.data.repository.TagStore
+import com.ilyskyo.blancall.ui.tag.TagSelectionSheet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +90,10 @@ fun ImportScreen(navController: NavController) {
     // 可预览文件（TXT/PDF/DOCX/DOC/EPUB/HTML/RTF/MD）：导入后提供「预览文件」入口；
     // 预览返回后仍保留（rememberSaveable）
     var previewFileUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    // 导入前选好的标签：文章此时还不存在，先留在表单里，写入成功后统一绑定
+    var selectedTagIds by rememberSaveable { mutableStateOf(LongArray(0)) }
+    var showTagSheet by remember { mutableStateOf(false) }
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // 文档含图片提示：仅文件导入且源文档含图片/嵌入对象时显示
     var imageNotice by rememberSaveable { mutableStateOf<String?>(null) }
@@ -126,6 +133,11 @@ fun ImportScreen(navController: NavController) {
             if (autoIndent && AppPrefs.autoIndentEnabled) applyFirstLineIndent(saveContent) else saveContent
         try {
             val articleId = articleViewModel.insertArticleBlocking(saveTitle, contentOut, autoIndent, saveAuthor)
+            if (selectedTagIds.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    tagStore.setArticleTags(articleId, selectedTagIds.toSet())
+                }
+            }
             showLargeFileWarning = false
             errorMessage = null
             navController.previousBackStackEntry?.savedStateHandle?.apply {
@@ -211,7 +223,7 @@ fun ImportScreen(navController: NavController) {
         ) {
         // ── 标题（固定，不参与滚动）──
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BackButton(onClick = { navController.popBackStack() })
@@ -341,6 +353,54 @@ fun ImportScreen(navController: NavController) {
                     if (!useFileImport) contentFocusRequester.requestFocus()
                 }),
                 shape = RoundedCornerShape(10.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 导入时顺手打标签：否则批量导入后还要回列表长按多选——
+        // 文章刚写完的这一刻，用户最清楚它属于哪一类。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    RoundedCornerShape(10.dp),
+                )
+                .pressClick { showTagSheet = true }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(com.ilyskyo.blancall.R.string.import_tags_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                if (selectedTagIds.isEmpty()) {
+                    stringResource(com.ilyskyo.blancall.R.string.add_tags)
+                } else {
+                    pluralStringResource(
+                        com.ilyskyo.blancall.R.plurals.tag_filter_count,
+                        selectedTagIds.size,
+                        selectedTagIds.size,
+                    )
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selectedTagIds.isEmpty()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+            )
+            Spacer(Modifier.weight(1f))
+            AppIcon(
+                kind = AppIconKind.Add,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
 
@@ -603,7 +663,7 @@ fun ImportScreen(navController: NavController) {
     }
 
     // ── 全屏输入对话框 ──
-    // 与阅读页的全屏编辑对话框同一处理：窗口存活条件带上「退场还在播」那一项。
+    // 与文章详情页的全屏编辑对话框同一处理：窗口存活条件带上「退场还在播」那一项。
     // 改造前只写 `if (showFullscreenInput)`，flag 一翻窗口同帧被拆，
     // 那套 alpha + 14dp 位移只放过入场，退场从未上过屏。
     // 减动效时 alpha 走 snap 同帧归零，条件同帧失效 —— 跳过动画，而不是延后 dismiss。
@@ -644,6 +704,18 @@ fun ImportScreen(navController: NavController) {
                 )
             }
         }
+    }
+
+    // ── 导入标签选择 ──
+    AnimatedOverlayPresence(visible = showTagSheet) {
+        TagSelectionSheet(
+            initialSelected = selectedTagIds.toSet(),
+            onDismiss = { showTagSheet = false },
+            onConfirm = { tags ->
+                selectedTagIds = tags.toLongArray()
+                showTagSheet = false
+            },
+        )
     }
 }
 

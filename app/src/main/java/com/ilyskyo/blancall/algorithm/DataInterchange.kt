@@ -105,6 +105,7 @@ object DataInterchange {
             .put("id", record.id)
             .put("articleId", record.articleId)
             .put("articleTitle", articleTitle)
+            .put("sourceArticleIds", JSONArray(record.sourceArticleIds))
             .put("mode", record.mode)
             .put("totalBlanks", record.totalBlanks)
             .put("correctCount", record.correctCount)
@@ -127,6 +128,7 @@ object DataInterchange {
                             .put("sentenceIndex", m.sentenceIndex)
                             .put("similarity", m.similarity.toDouble())
                             .put("sentenceText", m.sentenceText)
+                            .put("articleId", m.articleId)
                     )
                 }
             })
@@ -141,6 +143,7 @@ object DataInterchange {
                             .put("sentenceIndex", a.sentenceIndex)
                             .put("similarity", a.similarity.toDouble())
                             .put("sentenceText", a.sentenceText)
+                            .put("articleId", a.articleId)
                     )
                 }
             })
@@ -205,6 +208,7 @@ object DataInterchange {
                     sentenceIndex = o.optInt("sentenceIndex", -1),
                     similarity = o.optDouble("similarity", -1.0).toFloat(),
                     sentenceText = o.optString("sentenceText", ""),
+                    articleId = o.optLong("articleId", -1L),
                 )
             }
         }.getOrElse { emptyList() }

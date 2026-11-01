@@ -100,7 +100,7 @@ private val TAG_ROW_GAP = 8.dp
  * 数据实时来自 [TagStore.data]（跨页面改动即时反映）；首次进入在 IO 线程 priming 一次。
  */
 @Composable
-fun TagManagerScreen(navController: NavController) {
+fun TagManagerScreen(navController: NavController, initialTagId: Long = -1L) {
     val context = LocalContext.current
     val store = remember { TagStore.getInstance(context.filesDir) }
     val data by store.data.collectAsState()
@@ -122,6 +122,17 @@ fun TagManagerScreen(navController: NavController) {
     // 管理该标签下的文章（勾选列表）；null = 未打开
     var managing by remember { mutableStateOf<Tag?>(null) }
     var menuFor by remember { mutableStateOf<Long?>(null) }
+    // 从标签主页点「管理」进来：等标签库读盘后直接打开该标签的文章管理面板。
+    // 只消费一次，避免用户关掉面板后又被 LaunchedEffect 重新弹开。
+    var initialManageConsumed by remember(initialTagId) { mutableStateOf(false) }
+    LaunchedEffect(initialTagId, data.tags) {
+        if (!initialManageConsumed && initialTagId > 0L) {
+            data.tags.firstOrNull { it.id == initialTagId }?.let { tag ->
+                managing = tag
+                initialManageConsumed = true
+            }
+        }
+    }
 
     // ── 拖动排序状态（行高固定：目标位 = 起点 + round(位移 / 步长)）──
     var draggingId by remember { mutableStateOf<Long?>(null) }
@@ -182,7 +193,7 @@ fun TagManagerScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
-                .padding(horizontal = 20.dp, vertical = 20.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
         ) {
             // ── 顶栏：返回 + 标题 + 新建 ──
             Row(
@@ -366,6 +377,13 @@ fun TagManagerScreen(navController: NavController) {
                                     expanded = menuFor == tag.id,
                                     onDismissRequest = { menuFor = null },
                                 ) {
+                                    GlassMenuItem(
+                                        onClick = {
+                                            menuFor = null
+                                            navController.navigate("tag/${tag.id}")
+                                        },
+                                        label = { Text(stringResource(com.ilyskyo.blancall.R.string.view_tag)) },
+                                    )
                                     GlassMenuItem(
                                         onClick = {
                                             menuFor = null

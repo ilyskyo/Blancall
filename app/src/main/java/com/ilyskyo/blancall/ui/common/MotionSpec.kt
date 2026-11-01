@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import kotlin.math.pow
 
 /**
  * 全局动效词表。两条纪律，别处不再写数字：
@@ -51,8 +52,9 @@ object Motion {
      * `adb shell settings put global animator_duration_scale 0`，后者不能，
      * 而那条命令正是用来验「关掉动画后不卡中间态」的。
      *
-     * 本项目锁定的 Compose 1.10.4 既没有 LocalMotionDurationScale，
-     * Animatable 也不读 MotionDurationScale —— 框架层没有可挂载的坍缩点，只能在本层做。
+     * Animatable 不读系统动画开关，框架层没有可挂载的坍缩点，只能在本层做。
+     * （不在注释里锁版本号：Compose 升到 1.12 之后，旧注释里那句「本项目锁定的
+     *  Compose 1.10.4 没有 X」就变成了一条假陈述。）
      */
     internal var animatorsEnabled: () -> Boolean = { ValueAnimator.areAnimatorsEnabled() }
 
@@ -125,6 +127,17 @@ object Motion {
     fun sheetSlide(): FiniteAnimationSpec<IntOffset> =
         offsetSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
 
+    /**
+     * 底部浮条（撤销提示）的滑入滑出。
+     *
+     * 与 [sheetSlide] 同一套阻尼，理由也一样：浮条停在悬浮底栏上沿，
+     * 向上过冲会在它和底栏之间露出一条页面底色，读起来像「没贴住」。
+     * 单列出来是因为它比面板轻得多（行程只有自身高度），将来要单独调手感时
+     * 不该顺手改掉底部面板的节奏。
+     */
+    fun toastSlide(): FiniteAnimationSpec<IntOffset> =
+        offsetSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
+
     /** 卡片在网格或列表里换槽落位。 */
     fun cardSettle(): FiniteAnimationSpec<Float> =
         floatSpring(Spring.DampingRatioLowBouncy, Spring.StiffnessMediumLow)
@@ -144,12 +157,55 @@ object Motion {
      *
      * 与手势飞离（[cardFly]）分开：手势是「甩出去」，卡跟着手指走、速度由手指给，
      * 需要一个看得见的过程；点按是「确认，下一张」，用户会连点，离场必须在两次点击之间
-     * 基本走完 —— StiffnessMedium(1500f) 收敛约 120ms，比手势那份快一档以上。
-     * 用同一个时长会让第二下点击撞上还在飞的卡（旧版就是被它吞掉的）。
+     * 基本走完 —— 默认档位就是改造前的 StiffnessMedium(1500f)，收敛约 120ms，
+     * 比手势那份快一档以上。用同一个时长会让第二下点击撞上还在飞的卡（旧版就是被它吞掉的）。
+     *
+     * @param speed 用户可调的速率，0f = 最慢、1f = 最快，见 [cardTapExitSeconds]。
+     *   默认值 [TAP_EXIT_DEFAULT_SPEED] 与改造前的手感等值，**不要**顺手改它：
+     *   老用户升级后不该发现「翻卡变慢/变快了」。
      */
-    fun cardTapExit(): FiniteAnimationSpec<Float> =
+    fun cardTapExit(speed: Float = TAP_EXIT_DEFAULT_SPEED): FiniteAnimationSpec<Float> =
         if (reduced) snap()
-        else spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+        else spring(Spring.DampingRatioNoBouncy, tapExitStiffness(speed))
+
+    /**
+     * 速率档位 → 这一档**实际收敛需要多久**（秒）。
+     *
+     * 设置页的读数与预览都走这一个函数，所以「看到的数字」和「看到的手感」不会各说一套。
+     * 换算依据：无过冲弹簧衰减到约 5%（屏幕上已经看不出还在动）时 ωt ≈ 4.6，
+     * 而 ω = √stiffness，于是 t ≈ 4.6 / √k。这个 4.6 与词表里
+     * 「StiffnessMedium ≈ 120ms」「StiffnessMediumLow ≈ 230ms」两句注释同源。
+     */
+    fun cardTapExitSeconds(speed: Float = TAP_EXIT_DEFAULT_SPEED): Float =
+        tapExitMs(speed) / 1000f
+
+    /**
+     * 速率取值的映射：滑杆 0..1 对应的时长在 600ms..60ms 之间**等比**变化（10 倍）。
+     *
+     * 不用线性：线性映射下，慢端拖一格只差几十毫秒（肉眼看不出），快端一拖就是半程，
+     * 滑杆会有一半是死区。等比才能让「每一格的观感变化」大致相同 ——
+     * 这也是音量/亮度滑杆一律用对数刻度的同一个理由。
+     */
+    private fun tapExitMs(speed: Float): Float {
+        val s = speed.coerceIn(0f, 1f)
+        return TAP_EXIT_SLOWEST_MS * (TAP_EXIT_FASTEST_MS / TAP_EXIT_SLOWEST_MS).pow(s)
+    }
+
+    /** 时长 → 弹簧刚度（与 [cardTapExitSeconds] 的 4.6 是同一个式子，只是解出 k）。 */
+    private fun tapExitStiffness(speed: Float): Float =
+        (TAP_EXIT_SETTLE_OMEGA_T * 1000f / tapExitMs(speed))
+            .pow(2)
+            .coerceIn(Spring.StiffnessVeryLow, Spring.StiffnessHigh)
+
+    /** 滑杆最慢/最快两端的收敛时长（毫秒）。范围再大就会碰到弹簧常量的下界（见上面的 clamp）。 */
+    private const val TAP_EXIT_SLOWEST_MS = 600f
+    private const val TAP_EXIT_FASTEST_MS = 60f
+
+    /** 默认档位：约 120ms，与改造前 StiffnessMedium 等值（0.7 是按 [tapExitMs] 反解出来的，不是拍的）。 */
+    const val TAP_EXIT_DEFAULT_SPEED = 0.7f
+
+    /** 无过冲弹簧衰减到约 5% 的无量纲时间（ωt），用来把刚度换算成可读时长。 */
+    private const val TAP_EXIT_SETTLE_OMEGA_T = 4.6f
 
     /**
      * 句卡**回弹**（没达到提交条件，卡片回到原位）。
@@ -515,8 +571,12 @@ object MotionFade {
     /**
      * 主题/强调色切换时整页底色的溶开时长。
      * 系统栏图标极性在它的一半处翻转 —— 早了字在浅色底上变白看不见，晚了像两个动画。
+     *
+     * 2026-10-28 由 260 压到 180：白→黑之间做颜色插值，必然要经过 50% 灰，
+     * 插得越久那一段「闪灰」越像故障。**不能低于 [enter]** —— `MotionSpecTest`
+     * 钉着「整页换肤不该比一个控件的显隐更快」，180 正好贴住这条下界。
      */
-    const val themeSwitch = 260
+    const val themeSwitch = 180
 
     /** 拖拽命中高亮这类「需要被看见但不该打扰」的色彩变化。 */
     const val highlight = 600

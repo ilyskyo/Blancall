@@ -23,10 +23,15 @@ import java.util.concurrent.CountDownLatch
  * FSRS 记忆状态持久化存储（fsrs_state.json）。
  *
  * 以文章 id 为键保存 [FsrsEngine.CardState]，练习完成时更新、页面查询时读取。
- * 文件格式：{"version":2,"articleId": {"difficulty":..,"stability":..,"due":..,"lastReview":..,"reviewCount":..,"lapses":..},"paused":{"articleId":{"at":..,"remainingMs":..,"fixedDue":..}}}
+ * 文件格式：{"version":3,"articleId": {"difficulty":..,"stability":..,"due":..,"lastReview":..,"reviewCount":..,"lapses":..},"paused":{"articleId":{"at":..,"remainingMs":..,"fixedDue":..}},"enrolled":{"articleId":加入时刻}}
  *
  * 版本 2 新增 `paused` 表（学习任务流的暂停快照）。抬版本号是为了让旧版本读到本文件后
  * **拒绝写盘**，而不是在整本重写时把暂停表静默抹掉 —— 与 StoreVersion 的既有约定一致。
+ *
+ * 版本 3 新增 `enrolled` 表：**还没有练习记录的文章也能进计划**（详情页「加入计划」）。
+ * 以前「计划成员」是从 `reviewCount > 0` 反推的，于是「先攒几篇再练」这条路根本不存在。
+ * 读侧对 v1/v2 完全兼容：没有该键就是空表，成员资格退回旧口径（`reviewCount > 0`），
+ * 老用户升级后计划一条都不会少；写侧一律写 v3，v2 及更旧的代码读到 v3 会拒写。
  *
  * 「句子卡片」的句子级状态复用同一文件、同一把锁与同一套备份机制，
  * 以字符串命名空间键 `s:<articleId>:<hash16>` 区分（见 [sentenceStates]）：
@@ -47,6 +52,15 @@ class FsrsStateStore private constructor(private val file: File) {
      * 「due 改了但暂停没存上」这种恢复后凭空早到/晚到的分叉。
      */
     private val pausedArticles = ConcurrentHashMap<Long, StudyFlow.Pause>()
+
+    /**
+     * 计划成员表（v3）：articleId → 加入计划时刻。
+     *
+     * 与 `states` 分成两张表的理由：`reviewCount` 是「练过几次」，不是「要不要学」。
+     * 拿它兼任成员资格，就会出现「没练过 = 不在计划 = 连暂停都做不了」的死角。
+     * 加入时刻决定任务流里的首练到期时间，因此不是 Set 而是 Map。
+     */
+    private val enrolledArticles = ConcurrentHashMap<Long, Long>()
 
     /**
      * 状态变更计数：界面用它刷新自己的快照。
@@ -78,13 +92,16 @@ class FsrsStateStore private constructor(private val file: File) {
          * 本版本会照写不误 —— 每条卡片状态都按整本重写，新版认识的字段就这样被抹平。
          * 现在写侧带版本、读侧高于本版本就拒绝写盘（见 [StoreVersion]）。
          */
-        const val CURRENT_VERSION = 2
+        const val CURRENT_VERSION = 3
 
         /** 版本键名：与卡片键的命名空间不冲突（卡片键要么是数字、要么以 s: 开头，都不是对象值） */
         private const val VERSION_KEY = "version"
 
         /** 暂停表键名：值是一层对象（articleId → {at, remainingMs}），不与卡片键同名 */
         private const val PAUSE_KEY = "paused"
+
+        /** 计划成员表键名：值是一层对象（articleId → 加入时刻），同样不与卡片键同名 */
+        private const val ENROLLED_KEY = "enrolled"
 
         @Volatile
         private var instance: FsrsStateStore? = null
@@ -125,6 +142,7 @@ class FsrsStateStore private constructor(private val file: File) {
         val states: Map<Long, FsrsEngine.CardState>,
         val sentenceStates: Map<String, FsrsEngine.CardState>,
         val pausedArticles: Map<Long, StudyFlow.Pause>,
+        val enrolledArticles: Map<Long, Long>,
         val fromNewerVersion: Boolean,
     )
 
@@ -159,9 +177,9 @@ class FsrsStateStore private constructor(private val file: File) {
         }
     }
 
-    private fun emptySnapshot() = ParsedSnapshot(emptyMap(), emptyMap(), emptyMap(), false)
+    private fun emptySnapshot() = ParsedSnapshot(emptyMap(), emptyMap(), emptyMap(), emptyMap(), false)
 
-    /** 在锁内整体替换三张表：并发 save 只能看到「换入前」或「换入后」的完整快照 */
+    /** 在锁内整体替换四张表：并发 save 只能看到「换入前」或「换入后」的完整快照 */
     private fun applySnapshot(snapshot: ParsedSnapshot) {
         synchronized(persistLock) {
             states.clear()
@@ -170,6 +188,8 @@ class FsrsStateStore private constructor(private val file: File) {
             sentenceStates.putAll(snapshot.sentenceStates)
             pausedArticles.clear()
             pausedArticles.putAll(snapshot.pausedArticles)
+            enrolledArticles.clear()
+            enrolledArticles.putAll(snapshot.enrolledArticles)
             fromNewerVersion = snapshot.fromNewerVersion
         }
     }
@@ -196,6 +216,7 @@ class FsrsStateStore private constructor(private val file: File) {
         val parsedStates = HashMap<Long, FsrsEngine.CardState>()
         val parsedSentences = HashMap<String, FsrsEngine.CardState>()
         val parsedPauses = HashMap<Long, StudyFlow.Pause>()
+        val parsedEnrolled = HashMap<Long, Long>()
         obj.keys().forEach { key ->
             val o = obj.optJSONObject(key) ?: return@forEach
             if (key == PAUSE_KEY) {
@@ -207,6 +228,16 @@ class FsrsStateStore private constructor(private val file: File) {
                     // 旧文件没有这个字段：按 0 处理（沿用冻结剩余期），不抬版本、不破坏旧数据
                     val fixedDue = item.optLong("fixedDue", 0L).coerceAtLeast(0L)
                     if (at > 0L) parsedPauses[id] = StudyFlow.Pause(at, remaining, fixedDue)
+                }
+                return@forEach
+            }
+            if (key == ENROLLED_KEY) {
+                // v3 新增。v1/v2 文件没有这个键 ⇒ 空表 ⇒ 成员资格退回 reviewCount>0，行为与升级前一致。
+                // 加入时刻缺失（脏数据）按 0 收下而不是丢弃：成员资格比时间戳更重要，
+                // 0 会让任务流把它排在「逾期」组，用户仍点得到，不会凭空消失。
+                o.keys().forEach { idKey ->
+                    val id = idKey.toLongOrNull() ?: return@forEach
+                    parsedEnrolled[id] = o.optLong(idKey, 0L).coerceAtLeast(0L)
                 }
                 return@forEach
             }
@@ -226,7 +257,7 @@ class FsrsStateStore private constructor(private val file: File) {
                 parsedStates[id] = state
             }
         }
-        return ParsedSnapshot(parsedStates, parsedSentences, parsedPauses, newer)
+        return ParsedSnapshot(parsedStates, parsedSentences, parsedPauses, parsedEnrolled, newer)
     }
 
     /** 句子键合法性：`s:<数字articleId>:<非空hash>`，防止脏键污染句子表 */
@@ -268,6 +299,13 @@ class FsrsStateStore private constructor(private val file: File) {
                 }
                 json.put(PAUSE_KEY, paused)
             }
+            // 计划成员表（v3）：只写有成员的键，空表不落盘（与暂停表同约定）。
+            // 旧版本读到 v3 会整本拒写，所以这里不需要为它留兼容形态。
+            if (enrolledArticles.isNotEmpty()) {
+                val enrolled = JSONObject()
+                enrolledArticles.forEach { (id, at) -> enrolled.put(id.toString(), at) }
+                json.put(ENROLLED_KEY, enrolled)
+            }
             // 原子写 + fsync + 备份轮换统一到 AtomicFiles（tmp → fsync → .bak → rename → 目录 fsync）
             AtomicFiles.writeTextAtomic(file, json.toString())
         } catch (e: Exception) {
@@ -295,10 +333,63 @@ class FsrsStateStore private constructor(private val file: File) {
         synchronized(persistLock) {
             val hadState = states.remove(articleId) != null
             val hadPause = pausedArticles.remove(articleId) != null
-            if (hadState || hadPause) {
+            // 计划成员也要跟着走：文章都没了，成员表里留着就是一个永远点不开的任务
+            val hadEnrolled = enrolledArticles.remove(articleId) != null
+            if (hadState || hadPause || hadEnrolled) {
                 persist()
                 bumpRevision()
             }
+        }
+    }
+
+    // ────────────────────────────────────────────────
+    // 学习任务流：计划成员（v3）
+    // ────────────────────────────────────────────────
+
+    /**
+     * 是否在计划里。口径与任务流的成员判定保持一致：
+     * 练过的（`reviewCount > 0`）自动算在计划里，还没练的靠 [enroll] 主动加入。
+     *
+     * 为什么不是单一的真值来源：v3 之前计划成员完全由 `reviewCount` 反推，升级迁移
+     * 如果给老文章补写 `enrolled` 就会凭空造出一批"用户从没加入过"的记录；这里保留并集，
+     * 老数据一条都不用动，新加入的走新表。
+     */
+    fun isInPlan(articleId: Long): Boolean =
+        (states[articleId]?.reviewCount ?: 0) > 0 || enrolledArticles.containsKey(articleId)
+
+    /** 计划成员快照（articleId → 加入时刻）；只读拷贝，调用方可安全持有 */
+    fun enrolledArticles(): Map<Long, Long> = enrolledArticles.toMap()
+
+    fun enrolledIds(): Set<Long> = enrolledArticles.keys.toSet()
+
+    /**
+     * 把还没练过的文章加入计划。已在计划（练过 / 已加入）返回 false，不写盘、不唤醒界面。
+     * 加入时刻决定任务流里「首练」的到期时间，调用方应在用户点按的当下把 now 传进来。
+     * 阻塞等首次加载完成，调用方需在 IO 线程执行（与 [save] 同约定）。
+     */
+    fun enroll(articleId: Long, now: Long = System.currentTimeMillis()): Boolean {
+        if (articleId <= 0L) return false
+        loadLatch.await()
+        synchronized(persistLock) {
+            if (isInPlan(articleId)) return false
+            enrolledArticles[articleId] = now.coerceAtLeast(0L)
+            persist()
+            bumpRevision()
+            return true
+        }
+    }
+
+    /**
+     * 移出计划。只删本表记录；练过的文章仍靠 `reviewCount` 留在计划里（返回 false 表示没有成员记录可删），
+     * 所以「移出已练文章」这件事本轮不提供，别用一个假删除骗用户。
+     */
+    fun unenroll(articleId: Long): Boolean {
+        loadLatch.await()
+        synchronized(persistLock) {
+            if (enrolledArticles.remove(articleId) == null) return false
+            persist()
+            bumpRevision()
+            return true
         }
     }
 
@@ -315,17 +406,23 @@ class FsrsStateStore private constructor(private val file: File) {
     fun pausedArticleIds(): Set<Long> = pausedArticles.keys.toSet()
 
     /**
-     * 暂停某文章的 FSRS 调度：冻结「此刻离 due 还有多久」。
-     * 未练习过（reviewCount=0）的文章没有可冻结的计划，返回 false。
+     * 暂停某文章的调度：冻结「此刻离 due 还有多久」。
+     * 不在计划里（没练过、也没主动加入）返回 false。
+     * v3 起「加入计划但还没练」的文章也可以暂停：它没有可冻结的间隔，
+     * 冻结 0 表示「恢复即到期」，到期时间本就由加入时刻（或改期后的时刻）决定。
      * 阻塞等首次加载完成，调用方需在 IO 线程执行（与 [save] 同约定）。
      */
     fun pauseArticle(articleId: Long, now: Long = System.currentTimeMillis()): Boolean {
         loadLatch.await()
         synchronized(persistLock) {
-            val state = states[articleId] ?: return false
-            if (state.reviewCount <= 0) return false
+            if (!isInPlan(articleId)) return false
             if (pausedArticles.containsKey(articleId)) return true
-            pausedArticles[articleId] = StudyFlow.pauseOf(state, now)
+            val state = states[articleId]
+            pausedArticles[articleId] = if (state != null && state.reviewCount > 0) {
+                StudyFlow.pauseOf(state, now)
+            } else {
+                StudyFlow.Pause(pausedAt = now, remainingMs = 0L)
+            }
             persist()
             bumpRevision()
             return true
@@ -334,6 +431,7 @@ class FsrsStateStore private constructor(private val file: File) {
 
     /**
      * 恢复某文章的调度：把冻结的剩余期从当下接上；暂停期间手动练过则尊重那次推进。
+     * 还没练过的计划成员没有 state，它的到期时间来自加入时刻，若暂停中改过绝对日期就落到那一天。
      * 返回是否真的从暂停态恢复。
      */
     fun resumeArticle(articleId: Long, now: Long = System.currentTimeMillis()): Boolean {
@@ -343,6 +441,8 @@ class FsrsStateStore private constructor(private val file: File) {
             val state = states[articleId]
             if (state != null) {
                 states[articleId] = state.copy(due = StudyFlow.resumedDue(state, pause, now))
+            } else if (pause.fixedDue > 0L) {
+                enrolledArticles[articleId] = pause.fixedDue.coerceAtLeast(now)
             }
             persist()
             bumpRevision()
@@ -364,9 +464,23 @@ class FsrsStateStore private constructor(private val file: File) {
     ): Boolean {
         loadLatch.await()
         synchronized(persistLock) {
-            val state = states[articleId] ?: return false
-            if (state.reviewCount <= 0) return false
             val target = due.coerceAtLeast(0L)
+            val state = states[articleId]
+            if (state == null || state.reviewCount <= 0) {
+                // 还没练过的计划成员：它的「到期时间」就是加入时刻，改期改的就是这个时间戳。
+                // 不在计划里（既没练过也没加入）则无从改起。
+                if (!enrolledArticles.containsKey(articleId)) return false
+                enrolledArticles[articleId] = target
+                pausedArticles[articleId]?.let { pause ->
+                    pausedArticles[articleId] = pause.copy(
+                        remainingMs = (target - now).coerceAtLeast(0L),
+                        fixedDue = target,
+                    )
+                }
+                persist()
+                bumpRevision()
+                return true
+            }
             if (pausedArticles.containsKey(articleId)) {
                 val pause = pausedArticles.getValue(articleId)
                 pausedArticles[articleId] = pause.copy(
@@ -378,6 +492,65 @@ class FsrsStateStore private constructor(private val file: File) {
                 }
             } else {
                 states[articleId] = state.copy(due = target)
+            }
+            persist()
+            bumpRevision()
+            return true
+        }
+    }
+
+    // ────────────────────────────────────────────────
+    // 撤销：任务流里「移到明天 / 全部暂停」这类一次性成片操作的反悔路径
+    // ────────────────────────────────────────────────
+
+    /**
+     * 一次可撤销操作的现场快照：三个字段都记**按下按钮之前**的原值，`null` = 当时没有这条记录。
+     *
+     * 撤销为什么是「整块写回」而不是「再调一次反向操作」：
+     * 反向调用得各自复刻当时的前置判断（这篇是否暂停、有没有练过、固定日期写没写过），
+     * 任何一处判错都会把任务恢复到比原来更早或更晚的一天。快照只陈述事实，不重新推理。
+     */
+    data class UndoSnapshot(
+        val articleId: Long,
+        val state: FsrsEngine.CardState?,
+        val pause: StudyFlow.Pause?,
+        val enrolledAt: Long?,
+    )
+
+    /** 为 [ids] 逐篇取现场快照。阻塞等首次加载，调用方需在 IO 线程执行（与 [save] 同约定）。 */
+    fun snapshotArticles(ids: Collection<Long>): List<UndoSnapshot> {
+        loadLatch.await()
+        synchronized(persistLock) {
+            return ids.distinct().map { id ->
+                UndoSnapshot(
+                    articleId = id,
+                    state = states[id]?.copy(),
+                    pause = pausedArticles[id],
+                    enrolledAt = enrolledArticles[id],
+                )
+            }
+        }
+    }
+
+    /**
+     * 按快照整块写回，撤销一次暂停 / 恢复 / 改期群操作。
+     *
+     * 幂等：同一份快照写两遍结果一样，所以「撤了又撤」不会把数据推坏。
+     * 空快照直接返回 false，不制造一次无意义的整本重写。
+     */
+    fun restoreArticles(snapshots: List<UndoSnapshot>): Boolean {
+        if (snapshots.isEmpty()) return false
+        loadLatch.await()
+        synchronized(persistLock) {
+            snapshots.forEach { snap ->
+                val before = snap.state
+                if (before == null) states.remove(snap.articleId) else states[snap.articleId] = before.copy()
+                val pause = snap.pause
+                if (pause == null) pausedArticles.remove(snap.articleId)
+                else pausedArticles[snap.articleId] = pause
+                val enrolledAt = snap.enrolledAt
+                if (enrolledAt == null) enrolledArticles.remove(snap.articleId)
+                else enrolledArticles[snap.articleId] = enrolledAt
             }
             persist()
             bumpRevision()

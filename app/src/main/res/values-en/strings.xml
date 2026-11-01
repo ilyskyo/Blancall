@@ -30,6 +30,18 @@
     <string name="continue_import">Continue importing</string>
     <string name="view_details">View details</string>
     <string name="due_tasks">Tasks to review</string>
+    <string name="today_plan_all_title">Plan for today</string>
+    <string name="today_plan_all_manage">Manage plan</string>
+    <string name="today_plan_all_ready">Ready now: %1$d</string>
+    <string name="today_plan_all_empty">Nothing to practice today</string>
+    <string name="today_plan_board_summary">Continue %1$d · Due %2$d · Sentences %3$d · Mistakes %4$d</string>
+    <string name="section_overdue">Overdue</string>
+    <string name="section_today">Today</string>
+    <string name="due_tasks_today_only">Due today: %1$d</string>
+    <string name="due_tasks_overdue_only">Overdue: %1$d</string>
+    <string name="due_tasks_split">Due today %1$d · Overdue %2$d</string>
+    <string name="due_list_title">To review</string>
+    <string name="due_list_empty">Nothing is due</string>
     <string name="resume_tasks">To finish</string>
     <string name="recently_used">Recently used</string>
     <string name="no_due_today">Nothing to review today</string>
@@ -57,6 +69,35 @@
     <string name="clear_search">Clear search</string>
     <string name="added_on">Added %1$s</string>
     <plurals name="char_count_short">
+        <item quantity="one">%1$d character</item>
+        <item quantity="other">%1$d characters</item>
+    </plurals>
+    <string name="text_stats_title">Text statistics</string>
+    <string name="text_stats_open">View text statistics</string>
+    <string name="text_stats_chars_with_spaces">Characters (with spaces)</string>
+    <string name="text_stats_chars_no_spaces">Characters (without spaces)</string>
+    <string name="text_stats_punctuation">Punctuation</string>
+    <string name="text_stats_spaces">Spaces</string>
+    <string name="text_stats_paragraphs">Paragraphs</string>
+    <string name="text_stats_digits">Digits</string>
+    <string name="text_stats_letters">Letters</string>
+    <string name="text_stats_han">Han characters</string>
+    <string name="text_stats_kana">Kana</string>
+    <string name="text_stats_hangul">Hangul</string>
+    <string name="text_stats_words">Words</string>
+    <plurals name="text_count_han">
+        <item quantity="one">%1$d Chinese character</item>
+        <item quantity="other">%1$d Chinese characters</item>
+    </plurals>
+    <plurals name="text_count_kana">
+        <item quantity="one">%1$d character</item>
+        <item quantity="other">%1$d characters</item>
+    </plurals>
+    <plurals name="text_count_word">
+        <item quantity="one">%1$d word</item>
+        <item quantity="other">%1$d words</item>
+    </plurals>
+    <plurals name="text_count_char">
         <item quantity="one">%1$d character</item>
         <item quantity="other">%1$d characters</item>
     </plurals>
@@ -125,6 +166,8 @@
     <string name="ui_language_desc">Changes this app only — your system language stays as it is</string>
     <string name="beige_background">Cream background</string>
     <string name="beige_background_desc">When on, light mode uses a cream background. Dark mode is unaffected.</string>
+    <string name="flat_background">Gray page background</string>
+    <string name="flat_background_desc">Cards stay white on a darker page background, so they stand out</string>
     <string name="nav_glass">Navigation bar glass</string>
     <string name="nav_glass_desc">Real liquid-glass refraction on the bottom bar. Turning it off uses a flat colour and saves power.</string>
     <string name="haptic_strength">Haptics</string>
@@ -132,11 +175,29 @@
     <string name="home_subtitle">Home subtitle</string>
     <string name="home_subtitle_desc">The tagline under the brand row on Home. Tap to edit.</string>
     <string name="theme_color">Accent color</string>
+    <string name="theme_color_custom">Custom accent color</string>
+    <string name="theme_color_custom_desc">Pick any hue on the wheel instead of the six presets above.</string>
+    <string name="material_you">Use system colors</string>
+    <string name="material_you_desc">Takes wallpaper colors on Android 12 and later, overriding every accent above.</string>
+    <string name="ui_font">Interface font</string>
+    <string name="ui_font_desc">Typeface for titles and body text; the reading page keeps its own typesetting.</string>
+    <string name="ui_font_serif">System serif</string>
+    <string name="ui_font_sans">System sans</string>
+    <string name="ui_font_xwwk">LXGW WenKai</string>
+    <string name="ui_font_scale">Interface text size</string>
+    <string name="ui_font_scale_desc">Scales all interface text; reading and practice pages have their own.</string>
+    <string name="glass_tint">Tinted glass</string>
+    <string name="glass_tint_desc">Liquid glass picks up the accent color; off keeps it neutral white.</string>
     <string name="export_backup_desc">Packs your article library and practice progress into one backup file; interface preferences are not included</string>
     <string name="keep_wrong_ink_desc">Handwritten answers to missed items are stored, so you can review "what I wrote at the time" in the practice history; kept on this device only</string>
     <string name="import_backup_desc">Restores learning data from a backup file. Current data is overwritten, and the app needs to restart afterwards</string>
     <string name="indent_first_line_desc">When on, pasted or imported plain text gets two spaces at the start of each paragraph; PDF, Word and other documents keep their original layout</string>
     <string name="clear_saved_ink">Clear saved ink</string>
+    <string name="sentence_card_anim_title">Tap-to-turn animation</string>
+    <string name="sentence_card_anim_desc">The fly-out animation when you tap a rating button; swiping between cards is unaffected</string>
+    <string name="sentence_card_anim_speed">Fly-out speed (ms)</string>
+    <string name="sentence_card_anim_speed_value">About %1$d</string>
+    <string name="sentence_card_anim_preview_hint">Tap the preview card to replay it at the current speed</string>
     <string name="keep_wrong_ink">Keep handwritten ink on missed items</string>
     <string name="article_tags_desc">Categorise articles and set their colour, shown as a badge on cards</string>
     <string name="western_thoughts">Western thought material</string>
@@ -177,11 +238,28 @@
     <string name="reminder_enable">Enable reminder</string>
     <string name="notification_permission_required">Reminders need notification permission. Please enable it in system settings, then return to the app.</string>
     <string name="reminder_time">Reminder time</string>
-    <string name="daily_goal">Daily study goal</string>
+    <string name="daily_goal">Daily study time</string>
     <string name="custom">Custom</string>
     <string name="reminder_frequency">Reminder frequency</string>
     <string name="custom_daily_goal_title">Custom daily study time</string>
     <string name="minutes_field_label">Minutes</string>
+    <string name="reminder_days">Reminder days</string>
+    <string name="reminder_keep_one_day">Keep at least one day</string>
+    <string name="reminder_quiet_hours">Quiet hours</string>
+    <string name="reminder_time_in_quiet_hours">The reminder time falls inside quiet hours, so no reminder will be sent that day.</string>
+    <string name="reminder_quiet_same">Start and end are the same, so quiet hours are not active.</string>
+    <string name="reminder_on_blocked">On · Notifications off</string>
+    <string name="reminder_on_channel_blocked">On · Some channels off</string>
+    <string name="reminder_notifications_off">Notifications are off, so reminders cannot be delivered.</string>
+    <string name="reminder_channels_some_off">Some reminder channels are turned off in system settings.</string>
+    <string name="reminder_open_settings">Open settings</string>
+    <string name="reminder_system_notification_settings">System notification settings</string>
+    <string name="reminder_test_notification">Send a test notification</string>
+    <string name="reminder_test_title">Test notification</string>
+    <string name="reminder_test_body">Reminders are working. Next reminder: %1$s</string>
+    <string name="reminder_test_sent">Test notification sent</string>
+    <string name="reminder_schedule_note">Reminders are scheduled by the system and may be delayed in power-saving mode.</string>
+    <string name="reminder_daily_goal_hint">The “still N to go” line in notifications uses this goal.</string>
     <string name="set_reminder_time">Set reminder time</string>
     <string name="preset_8am">8:00 AM</string>
     <string name="preset_1230pm">12:30 PM</string>
@@ -247,7 +325,7 @@
     <string name="clear_filter">Clear filter</string>
     <string name="delete_selected">Delete selected</string>
     <string name="add_tags">Tag</string>
-    <string name="cross_review">🔗 Cross-article review</string>
+    <string name="cross_review">Cross-article review</string>
     <string name="delete_article_confirm">Delete “%1$s”? This cannot be undone.</string>
     <plurals name="delete_articles_confirm">
         <item quantity="one">Delete the selected article? This cannot be undone.</item>
@@ -265,6 +343,7 @@
         <item quantity="other">Review in %1$d days</item>
     </plurals>
     <string name="mastered">Mastered</string>
+    <string name="plan_todo">To start</string>
     <string name="urgency_not_started">Not started</string>
     <string name="practice">Practice</string>
     <string name="sentence_cards">Sentence cards</string>
@@ -337,8 +416,8 @@
     <string name="parsing_file">Reading the file…</string>
     <string name="save_failed">Could not save</string>
     <string name="doc_images_dropped">Images in the document cannot be imported; only the text was kept</string>
-    <string name="due_tasks_count">Tasks to review (%1$d)</string>
     <string name="resume_tasks_count">To continue (%1$d)</string>
+    <string name="start_action">Start</string>
     <string name="review_action">Review</string>
     <string name="continue_action">Continue</string>
     <string name="cloze_mode_sentence">Sentence cloze</string>
@@ -686,7 +765,7 @@
     <string name="analysis_dialog_title">Analysis · %1$s</string>
     <string name="analysis_hints_line">%1$s · %2$d gentle hints / %3$d strong hints</string>
     <string name="learned_sentences_label">Sentences learned</string>
-    <string name="stat_total_reviews">Total reviews</string>
+    <string name="stat_total_reviews">Total memories</string>
     <plurals name="sentence_round_reviewed">
         <item quantity="one">Reviewed %1$d sentence</item>
         <item quantity="other">Reviewed %1$d sentences</item>
@@ -751,7 +830,6 @@
     <string name="section_selected">Passages: custom (%1$d/%2$d)</string>
     <string name="section_focus">Focus: this line &amp; nearby</string>
     <string name="share_note">Share note</string>
-    <string name="mixed_smart_only">Mixed practice picks blanks automatically; a single article\'s custom config doesn\'t apply</string>
     <string name="ai_cloze_failed_local">AI blanking failed — using the local algorithm: %1$s</string>
     <string name="ai_cloze_no_profile">AI blanking is on, but no chat profile is enabled under Settings → AI. The local algorithm is in use.</string>
     <string name="generating_blanks">Generating blanks…</string>
@@ -816,7 +894,7 @@
     <string name="custom_goal_title">Custom daily goal</string>
     <string name="custom_goal_label">Practices per day</string>
     <string name="goal_times_unit">times</string>
-    <string name="due_soon_title">⏰ Due soon</string>
+    <string name="due_soon_title">Due soon</string>
     <string name="prediction_item_desc">%1$s, retention %2$d%%, %3$s</string>
     <string name="decay_expanded">decay curve expanded</string>
     <string name="decay_collapsed">tap to expand the decay curve</string>
@@ -923,8 +1001,8 @@
         <item quantity="other">Colored after %1$d answers per sentence; color = current retention — redder means closer to forgetting</item>
     </plurals>
     <!-- ── Notification channels & reminders (notif_*): keys mirror NotificationChannels / NotificationHelper ── -->
-    <string name="notif_channel_due_name">Reviews due</string>
-    <string name="notif_channel_due_desc">Reminds you when articles or sentences are due, due soon, or about to be forgotten</string>
+    <string name="notif_channel_due_name">Due &amp; start</string>
+    <string name="notif_channel_due_desc">Reminds you when reviews are due, planned articles are ready to start, or memories are fading</string>
     <string name="notif_channel_sentence_name">Sentence cards</string>
     <string name="notif_channel_sentence_desc">Reminders for the daily sentence and due sentence cards</string>
     <string name="notif_channel_goal_name">Finish &amp; daily goal</string>
@@ -945,7 +1023,7 @@
     <string name="notif_mode_word">Word cloze</string>
     <string name="notif_mode_reverse">Dictation</string>
     <string name="notif_no_study_title">📖 Time to study</string>
-    <string name="notif_no_study_body">You haven\'t practiced today. A few minutes is enough to keep the streak alive.</string>
+    <string name="notif_no_study_body">You have not practiced today. Keep your %1$d-day streak alive.</string>
     <string name="notif_no_study_body_first">You haven\'t practiced today. Start your first session now!</string>
     <string name="notif_weak_title">🎯 Review weak spots</string>
     <plurals name="notif_weak_body">
@@ -969,6 +1047,16 @@
         <item quantity="other">%1$d reviews are due. A quick pass keeps them in memory.</item>
     </plurals>
     <string name="notif_due_review_named_one">“%1$s” is due for review. Start now.</string>
+    <string name="notif_start_article_title">📖 Ready for the first round</string>
+    <string name="notif_start_article_named_one">“%1$s” is in your plan. Start the first practice.</string>
+    <plurals name="notif_start_article_named">
+        <item quantity="one">“%1$s” hasn’t started yet. Pick it to begin.</item>
+        <item quantity="other">“%1$s” and %2$d more haven’t started. Pick one to begin.</item>
+    </plurals>
+    <plurals name="notif_start_article_body">
+        <item quantity="one">%1$d planned article hasn’t started. Try the first round today.</item>
+        <item quantity="other">%1$d planned articles haven’t started. Try the first round today.</item>
+    </plurals>
     <plurals name="notif_due_review_named">
         <item quantity="one">%2$d review is due, starting with “%1$s”. Start now.</item>
         <item quantity="other">%2$d reviews are due, starting with “%1$s”. Start now.</item>
@@ -1029,6 +1117,28 @@
     <string name="blank_warn_suggestion">Suggested: %1$d (not the max — best for practice)</string>
     <string name="blank_use_suggested">Use suggested (%1$d)</string>
     <!-- ── Reading screen status & controls (reader_*) ── -->
+    <!-- ── 文章详情页计划状态条（plan_bar_*）── -->
+    <plurals name="plan_bar_practices">
+        <item quantity="one">Practiced %1$d time</item>
+        <item quantity="other">Practiced %1$d times</item>
+    </plurals>
+    <string name="plan_bar_accuracy">Accuracy %1$d%%</string>
+    <string name="plan_bar_not_started">Not started</string>
+    <string name="plan_bar_overdue">Overdue</string>
+    <string name="plan_bar_due_today">Review today</string>
+    <string name="plan_bar_start_today">Start today</string>
+    <string name="plan_bar_start_overdue">Ready to start</string>
+    <string name="plan_bar_due_tomorrow">Review tomorrow</string>
+    <string name="plan_bar_start_tomorrow">Start tomorrow</string>
+    <plurals name="plan_bar_due_days">
+        <item quantity="one">Review in %1$d day</item>
+        <item quantity="other">Review in %1$d days</item>
+    </plurals>
+    <plurals name="plan_bar_start_days">
+        <item quantity="one">Starts in %1$d day</item>
+        <item quantity="other">Starts in %1$d days</item>
+    </plurals>
+    <string name="plan_bar_enroll">Add to plan</string>
     <string name="reader_read_minutes">Read: %1$d min</string>
     <string name="reader_read_less_minute">Read: under 1 min</string>
     <string name="reader_finished">Finished</string>
@@ -1040,6 +1150,34 @@
     <string name="reader_prev_section">Previous section</string>
     <string name="reader_full_text">Full text</string>
     <string name="reader_next_section">Next section</string>
+    <string name="reader_select_copy">Copy</string>
+    <string name="reader_select_highlight">Highlight</string>
+    <string name="reader_select_unhighlight">Remove</string>
+    <string name="reader_select_note">Note</string>
+    <string name="reader_select_edit_note">Edit note</string>
+    <string name="reader_note_title">Note</string>
+    <string name="reader_note_hint">Write a note…</string>
+    <string name="reader_mark_copied">Copied</string>
+    <string name="reader_marks_title">Highlights &amp; notes</string>
+    <string name="reader_marks_empty">No highlights yet. Long-press a sentence to highlight it.</string>
+    <string name="reader_marks_count">Total: %1$d</string>
+    <string name="reader_marks_entry">Highlights &amp; notes</string>
+    <string name="reader_marks_entry_hint">Long-press text to highlight or add a note</string>
+    <string name="reader_marks_entry_count">%1$d</string>
+    <string name="reader_speed_title">Reading speed</string>
+    <string name="reader_speed_value">About %1$d char/min</string>
+    <string name="reader_speed_basis_personal">Estimated from your reading history (%1$d min total)</string>
+    <string name="reader_speed_basis_default">No reading history yet — using the default speed</string>
+    <string name="reader_speed_reset">Recalculate</string>
+    <string name="reader_remaining_hours">Left: %1$d h %2$d min</string>
+    <string name="reader_remaining_hours_only">Left: %1$d h</string>
+    <string name="reader_idle_title">Still reading?</string>
+    <string name="reader_idle_body">This page has been idle for %1$d min</string>
+    <string name="reader_idle_yes">Yes, reading</string>
+    <string name="reader_idle_no">Not now</string>
+    <string name="reader_idle_cheer">Nice one!</string>
+    <string name="reader_idle_cheer_detail">Another %1$d min in — keep going</string>
+    <string name="reader_idle_paused">Go ahead — pick up where you left off</string>
     <!-- ── Study data backup & restore (backup_*): error types live in data/backup/BackupManager, copy lives here ── -->
     <string name="backup_export_done">Backup exported. Keep it safe.</string>
     <string name="backup_export_failed">Export failed: %1$s</string>
@@ -1080,7 +1218,8 @@
     <string name="data_archive_none">Not enough records to archive yet</string>
     <string name="flow_title">Study flow</string>
     <string name="flow_summary_title">Current plan</string>
-    <string name="flow_summary_due_now">due now</string>
+    <string name="flow_summary_due_now">ready to practice now</string>
+    <string name="flow_summary_due_new">%1$d not practiced yet</string>
     <string name="flow_summary_active">In plan</string>
     <string name="flow_summary_overdue">Overdue</string>
     <string name="flow_summary_paused">Paused</string>
@@ -1100,6 +1239,8 @@
     <string name="flow_done_resumed_all">All paused tasks resumed</string>
     <string name="flow_done_paused_all">All tasks paused</string>
     <string name="flow_done_plan">Review intensity updated</string>
+    <string name="flow_undo">Undo</string>
+    <string name="flow_undone">Undone</string>
     <string name="flow_filter_all">All %1$d</string>
     <string name="flow_filter_due">Today %1$d</string>
     <string name="flow_filter_paused">Paused %1$d</string>
@@ -1111,13 +1252,16 @@
     <string name="flow_group_later">Later</string>
     <string name="flow_group_paused">Paused</string>
     <string name="plan_paused">Paused</string>
-    <string name="flow_task_meta">Reviews %1$d · Retention %2$d%%</string>
+    <string name="flow_task_meta">Practices %1$d · Retention %2$d%%</string>
+    <string name="flow_task_meta_no_retention">Practices %1$d</string>
+    <string name="flow_task_meta_new">Not practiced yet</string>
     <string name="flow_sentence_due">Sentence cards due %1$d</string>
     <string name="flow_due_overdue">Overdue</string>
     <string name="flow_due_today">Today</string>
     <string name="flow_due_tomorrow">Tomorrow</string>
     <string name="flow_resume_on">Resumes %1$s</string>
     <string name="flow_start_review">Start review</string>
+    <string name="flow_start_learning">Start learning</string>
     <string name="flow_adjust_schedule">Adjust schedule</string>
     <string name="flow_pause">Pause</string>
     <string name="flow_resume">Resume</string>
@@ -1155,12 +1299,15 @@
     <string name="flow_now">Now</string>
     <string name="flow_detail_title">Task details</string>
     <string name="flow_detail_retention_label">Current retention</string>
-    <string name="flow_detail_reviews_label">Reviews</string>
     <string name="flow_detail_sentences_label">Sentences learned</string>
     <string name="flow_detail_started_label">Started</string>
     <string name="flow_detail_advice_label">Next step</string>
     <string name="flow_advice_paused_title">Plan is paused</string>
     <string name="flow_advice_paused_body">Pausing only removes this article from the plan and reminders; manual practice is still allowed. Resume anytime and the remaining interval continues from there.</string>
+    <string name="flow_advice_not_started_title">Not started yet</string>
+    <string name="flow_advice_not_started_body">This article is in your plan but has never been practiced. Finish one session and the memory curve and review rhythm will appear here.</string>
+    <string name="flow_advice_legacy_body">This article has practice history but no memory state yet. After one practice, the memory curve and review rhythm will appear here.</string>
+    <string name="flow_advice_legacy_title">Scheduled from practice history</string>
     <string name="flow_advice_overdue_title">Overdue</string>
     <string name="flow_advice_overdue_body">The longer you wait, the more retention drops. One review today puts the rhythm back.</string>
     <string name="flow_advice_low_retention_title">Retention is low</string>
@@ -1188,6 +1335,8 @@
     <string name="flow_detail_mistakes_title">Mistake types</string>
     <string name="flow_detail_schedule_title">Scheduling</string>
     <string name="flow_detail_next_due">Next review</string>
+    <string name="flow_detail_plan_start">Planned start</string>
+    <string name="flow_detail_practices_label">Practices</string>
     <string name="flow_detail_interval">Interval (days)</string>
     <string name="flow_detail_records_title">Recent practice</string>
     <string name="flow_detail_view_all_stats">Full statistics</string>
@@ -1247,7 +1396,7 @@
 
     <!-- ── 统计：目标与弱点建议 ── -->
     <string name="stats_article_line">Articles: %1$d · Practices: %2$d · Accuracy: %3$d%%</string>
-    <string name="daily_goal_achieved">🎯 Today\'s goal achieved</string>
+    <string name="daily_goal_achieved">Today\'s goal achieved</string>
     <string name="daily_goal_progress">%1$d / %2$d</string>
     <string name="weakness_profile_title">Weakness profile</string>
     <string name="weakness_total_mistakes">Mistakes: %1$d</string>
@@ -1413,7 +1562,6 @@
     <string name="retry">Retry</string>
     <string name="ai_difficulty_intro">AI will generate a cloze for "%1$s" using your difficulty and strategy.</string>
     <string name="ai_start_generating">Start generating</string>
-    <string name="start_action">Start</string>
 
     <!-- ── Pro AI 运行时状态 ── -->
     <string name="ai_cross_title">Cross-text AI · articles: %1$d</string>
@@ -1477,10 +1625,33 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
 
     <!-- ── 使用帮助正文 ── -->
     <string name="help_001">Help</string>
+    <string name="help_flow_title">The whole flow</string>
+    <string name="help_flow_intro">From import to review, one closed loop</string>
+    <string name="help_flow_1_t">Import articles</string>
+    <string name="help_flow_1_d">Use the Add article card on Home or Import on My Articles; paste, files, and content packs are supported</string>
+    <string name="help_flow_2_t">Today\'s plan</string>
+    <string name="help_flow_2_d">The Home card lists the three things that matter most today; Settings at the top right adjusts minutes and the exam date</string>
+    <string name="help_flow_3_t">Study flow</string>
+    <string name="help_flow_3_d">Pull down on the Data tab; pause, reschedule, or switch review plans. Move to tomorrow can be undone</string>
+    <string name="help_flow_4_t">Practice</string>
+    <string name="help_flow_4_d">Sentence blanks, word blanks, reverse dictation, and custom blanks; sentence cards turn by tap or swipe</string>
+    <string name="help_flow_5_t">History and review</string>
+    <string name="help_flow_5_d">Every rating is saved to FSRS; due items return to Today\'s plan automatically and progress is summarized on the Data tab</string>
+    <string name="help_flow_loop">When due, it returns to Today\'s plan and the loop closes</string>
+    <string name="help_shared_title">Shared settings</string>
+    <string name="help_shared_intro">These values exist once; changing them at any entry point updates all the others</string>
+    <string name="help_shared_1_t">Daily study time</string>
+    <string name="help_shared_1_d">Today\'s plan settings ↔ Settings · Memory plan; sets the total length of today\'s plan</string>
+    <string name="help_shared_2_t">Daily practice count</string>
+    <string name="help_shared_2_d">Today\'s plan settings ↔ Settings · Reminders ↔ Data tab Today\'s goal; also the basis for how many are left in reminders</string>
+    <string name="help_shared_3_t">Exam date</string>
+    <string name="help_shared_3_d">Today\'s plan settings ↔ Settings; affects only countdown hints and pacing, not review scheduling</string>
+    <string name="help_shared_4_t">Review plan</string>
+    <string name="help_shared_4_d">Settings · Memory plan ↔ Study flow; Home reminders and the flow use the same template</string>
     <string name="help_002">Start practice</string>
     <string name="help_003">Choose an article, tap Start practice, and pick a mode to begin.</string>
     <string name="help_004">Three entry points (choose one)</string>
-    <string name="help_005">Start practice at the bottom of the reader: open an article first.</string>
+    <string name="help_005">Start practice at the bottom of the article page: open an article first.</string>
     <string name="help_006">The Practice button on home cards: start directly from Recent, Article card, Continue and similar cards.</string>
     <string name="help_007">The Continue card on the home screen resumes unfinished practice with its original progress.</string>
     <string name="help_008">Practice flow</string>
@@ -1513,7 +1684,7 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="help_035">Shuffled paragraph recall — restore the whole passage</string>
     <string name="help_036">Best for: pre-exam checks and mock exams</string>
     <string name="help_037">Custom cloze</string>
-    <string name="help_038">Blanks exactly where you marked them. In the reader, switch the masking granularity to Custom and mark sentence by sentence, word by word, or character by character; in practice, choose the custom profile. You can also create or edit one before practice.</string>
+    <string name="help_038">Blanks exactly where you marked them. On the article page, switch the masking granularity to Custom and mark sentence by sentence, word by word, or character by character; in practice, choose the custom profile. You can also create or edit one before practice.</string>
     <string name="help_039">Best for: highly targeted personal memorisation</string>
     <string name="help_040">Cross-text mixed practice</string>
     <string name="help_041">In My articles, long-press to enter selection mode. Select 2 or more articles and tap Start practice to shuffle blanks across them. Mixed practice uses smart cloze and does not apply a single article custom profile.</string>
@@ -1598,14 +1769,14 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="help_120">Tap the top-left icon to change the logo, including a custom emoji.</string>
     <string name="help_121">Tap the subtitle text to customise the subtitle.</string>
     <string name="help_122">My articles</string>
-    <string name="help_123">Tap an article to open the reader.</string>
+    <string name="help_123">Tap an article to open the article page.</string>
     <string name="help_124">Long-press for selection mode: batch delete, select 2 or more for cross-text mixed practice, or send to AI.</string>
-    <string name="help_125">Reader</string>
+    <string name="help_125">Article details</string>
     <string name="help_126">Bottom buttons: study stats, reading mode, custom, start practice. The Pro version also has AI.</string>
     <string name="help_127">Reading mode adjusts font size, line spacing, font, weight, colours and masking granularity: balanced, words, or custom.</string>
     <string name="help_128">Pinch the body text with two fingers to zoom the font size directly.</string>
     <string name="help_129">Top right: delete or edit the article.</string>
-    <string name="help_130">Custom masking (reader)</string>
+    <string name="help_130">Custom masking (article page)</string>
     <string name="help_131">Switch masking granularity to Custom to open the profile list. Tap a profile to use it; tap Edit at the end of a row to open the marking page; long-press to rename or delete.</string>
     <string name="help_132">When custom granularity is selected, the button shows the name of the profile in use.</string>
     <string name="help_133">Marking page: tap a sentence to mask the whole sentence; long-press a sentence to split it into words and tap a word to mask it; long-press a word to split it into characters; long-press again to restore level by level.</string>
@@ -1616,7 +1787,7 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="help_138">The score card after finishing shows accuracy and time, and can be shared directly.</string>
     <string name="help_139">Custom cloze (during practice)</string>
     <string name="help_140">Profile list: tap to edit; long-press to start practice, rename or delete; in picker mode, tap to start practice directly.</string>
-    <string name="help_141">Edit page: tap to select blanks, long-press to switch granularity, matching reader marking.</string>
+    <string name="help_141">Edit page: tap to select blanks, long-press to switch granularity, matching the markings on the article page.</string>
     <string name="help_142">Use Save and mark blanks on the import page to go straight to creating a profile — mark key points right after importing.</string>
     <string name="help_143">Import articles</string>
     <string name="help_144">Two ways: paste text or import a file (txt, PDF, Word and more; PDF can be previewed).</string>
@@ -1625,16 +1796,16 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="help_147">Two buttons at the bottom: Save only stores and returns; Save and mark blanks stores and opens custom cloze editing for that article.</string>
     <string name="help_148">General</string>
     <string name="help_149">The white round button at the top left of every page goes back; the system back gesture or key also works.</string>
-    <string name="help_150">When the reader is in marking or editing state, exit editing first, then leave the page.</string>
+    <string name="help_150">When the article page is in marking or editing state, exit editing first, then leave the page.</string>
     <string name="help_151">Key actions give haptic feedback: pulling past the threshold, long-pressing into card editing, dragging or resizing a card, long-press menus and more.</string>
-    <string name="help_152">Deleting an article cannot be undone: use Delete at the top right of the reader or batch delete in My articles.</string>
+    <string name="help_152">Deleting an article cannot be undone: use Delete at the top right of the article page or batch delete in My articles.</string>
     <string name="help_153">Data in settings: one-tap export packs the article library and practice progress into one backup file; one-tap import restores to a new install (overwrites current data; the app exits to restart after completion).</string>
     <string name="help_154">With AI enabled, you can hand your articles to AI to explain difficult points, create exercises and analyse frequent mistakes.</string>
     <string name="help_155">Enable and configure</string>
     <string name="help_156">Turn it on in Settings → AI → Enable AI, then fill in the API URL, API key and model name. OpenAI-compatible endpoints are supported (DeepSeek, Qwen, GLM, Kimi and others).</string>
     <string name="help_157">Web search: enable it in settings, register free at tavily.com with an email, copy the API key from the console (tvly-xxx, 1000 free calls per month) and paste it into the Tavily API Key field.</string>
     <string name="help_158">Where the entry points are</string>
-    <string name="help_159">AI button on the reader</string>
+    <string name="help_159">AI button on the article page</string>
     <string name="help_160">While reading an article, tap AI in the bottom button row to open a chat with the current article.</string>
     <string name="help_161">Send to AI in the article list</string>
     <string name="help_162">Long-press an article for selection mode, then tap Send to AI to chat with several articles across texts.</string>
@@ -1678,16 +1849,16 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="notebook_drill_empty">These mistakes no longer match the current text, so this batch cannot be practiced.</string>
     <string name="notebook_drill_name">Mistake drill</string>
     <string name="notebook_drill_partial">%1$d item(s) no longer match the edited text and were skipped.</string>
-    <string name="review_timeline_title">Actual review history</string>
+    <string name="review_timeline_title">Real practice timeline</string>
     <string name="review_timeline_local_only">This device only</string>
-    <string name="review_timeline_none">No review log yet. Recording starts after your next review.</string>
+    <string name="review_timeline_none">No practice log yet. Recording starts after your first practice.</string>
     <string name="review_timeline_one">Only one review recorded — no trend yet.</string>
-    <string name="review_timeline_steady_start">Steady from the first review</string>
-    <string name="review_timeline_steady_after">Steady after review %1$d</string>
+    <string name="review_timeline_steady_start">Steady from the first practice</string>
+    <string name="review_timeline_steady_after">Steady after practice %1$d</string>
     <string name="review_timeline_shaky">The latest review was shaky again</string>
-    <string name="review_timeline_interval_hint">Actual interval between reviews</string>
+    <string name="review_timeline_interval_hint">Actual gap between practices</string>
     <string name="review_timeline_review_no">Review %1$d</string>
-    <string name="review_timeline_first">First review</string>
+    <string name="review_timeline_first">First practice</string>
     <string name="review_timeline_gap">%1$s days later</string>
     <string name="rating_again">Forgot</string>
     <string name="rating_hard">Hard</string>
@@ -1704,8 +1875,8 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="reader_practice_sheet_title">Practice this passage</string>
     <string name="reader_practice_sheet_hint">Pick a cloze type and start right away.</string>
     <string name="reader_practice_mode_section">Whole article by cloze type</string>
-    <string name="reason_first">First review</string>
     <string name="reason_lapsed">Times forgotten: %1$d</string>
+    <string name="reason_first_practice">First practice</string>
     <string name="reason_long_gap">Days since last review: %1$d</string>
     <string name="reason_overdue">Days overdue: %1$d</string>
     <string name="reason_stable">Reviews while stable: %1$d</string>
@@ -1715,12 +1886,20 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="today_plan_subtitle_exam">Exam in %1$d d · list ≈ %2$d min</string>
     <string name="today_plan_subtitle_exam_due">Exam in %1$d d · due: %2$d · list ≈ %3$d min</string>
     <string name="today_plan_minutes">About %1$d min today</string>
-    <string name="today_plan_budget">%1$d min</string>
     <string name="today_plan_exam_behind">At this pace, you may not finish before the exam.</string>
     <string name="today_plan_empty">Nothing due right now. Pick a time budget or review an article.</string>
     <string name="today_plan_paused_hint">Paused: %1$d · restore in study flow</string>
     <string name="today_plan_empty_paused">Paused: %1$d. Restore in study flow.</string>
     <string name="today_plan_item_minutes">%1$d min</string>
+    <string name="plan_settings_title">Today\'s plan settings</string>
+    <string name="plan_settings_subtitle">These affect only today\'s plan, not the review schedule</string>
+    <string name="plan_settings_exam_hint">Used only for pace hints; it never changes the review schedule</string>
+    <string name="plan_settings_duration_label">Daily study time</string>
+    <string name="plan_settings_duration_hint">Sets the total length of today\'s plan</string>
+    <string name="plan_settings_estimate">About %1$d min needed today</string>
+    <string name="plan_settings_show_on_card">Show goal progress on the plan card</string>
+    <string name="plan_settings_show_on_card_hint">Turn off to hide the goal progress on the card</string>
+    <string name="today_plan_goal_progress">Goal %1$d · done %2$d</string>
     <string name="today_plan_exam_set">Exam: %1$s</string>
     <string name="today_plan_set_exam">Set exam date</string>
     <string name="today_plan_clear_exam">Clear</string>
@@ -1729,18 +1908,13 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="today_plan_sentence_cards">Sentence cards</string>
     <string name="today_plan_daily_goal">Daily goal</string>
     <string name="today_plan_resume_detail">%1$d of %2$d answered</string>
+    <string name="today_plan_start_article">Start reading %1$s</string>
+    <string name="today_plan_start_detail">Not practiced yet · start today</string>
     <string name="today_plan_review_detail">Due for review</string>
     <string name="today_plan_weak_detail">Weak article · mistakes: %1$d</string>
     <string name="today_plan_mistake_detail">%1$d unresolved mistakes</string>
     <string name="today_plan_sentence_detail">Due sentences: %1$d</string>
     <string name="today_plan_goal_detail">%1$d more practices</string>
-    <string name="today_plan_budget_title">How much time do you have?</string>
-    <string name="today_plan_budget_hint">Pick a duration; we will choose only what fits.</string>
-    <string name="today_plan_minutes_unit">%1$d min</string>
-    <string name="today_plan_budget_empty">Nothing fits this budget right now.</string>
-    <string name="today_plan_budget_result_articles">Articles: %1$d · ≈ %2$d min</string>
-    <string name="today_plan_budget_result_cards">Cards: %1$d · ≈ %2$d min</string>
-    <string name="today_plan_budget_start">Start</string>
     <string name="budget_remaining">%1$d min left</string>
     <string name="budget_end_title">Time\'s up</string>
     <string name="budget_end_body">Your time budget is over. Submit what you have answered, or keep going if you are close.</string>
@@ -1762,6 +1936,10 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="exam_paper_start">Build paper: %1$d</string>
     <string name="exam_paper_title">Practice paper · articles: %1$d</string>
     <string name="notif_action_start">Start review</string>
+    <string name="notif_action_start_learning">Start learning</string>
+    <string name="notif_action_resume">Continue practice</string>
+    <string name="notif_action_view_task">View task</string>
+    <string name="notif_action_sentence">Practice sentences</string>
     <string name="open">Open</string>
     <string name="content_pack_title">Content packs</string>
     <string name="content_pack_settings_desc">Import a collection of txt / md files</string>
@@ -1818,9 +1996,24 @@ Articles loaded: %1$d. Ask me anything about them: explain a sentence, make exer
     <string name="widget_sentence_due">Sentences due: %1$d</string>
     <string name="ov_notebook_count">%1$d unresolved</string>
     <string name="ov_next_step_due_article_title">Review “%1$s”</string>
+    <string name="ov_next_step_start_article_title">Start learning “%1$s”</string>
     <string name="ov_next_step_scope_article">Article practice · sentence cloze</string>
     <string name="ov_next_step_action_start">Start review</string>
+    <string name="ov_next_step_action_start_learning">Start learning</string>
     <string name="ov_next_step_go_mistakes">Open mistakes</string>
     <string name="ov_next_step_go_articles">Open my articles</string>
     <string name="content_pack_disclaimer">Content packs are user-supplied. Please make sure you have the right to use and share the texts.</string>
+    <string name="view_tag">View tag</string>
+    <string name="tag_detail_articles">Articles</string>
+    <string name="sentence_scope_this_article">This article only</string>
+    <string name="sentence_scope_this_tag">Only "%1$s"</string>
+    <string name="sentence_scope_empty">No reviewable sentences in this scope</string>
+    <string name="practice_history_sources">Source articles</string>
+    <string name="practice_history_no_sources">This old record has no source articles</string>
+    <string name="practice_history_empty_day">No practice on this day</string>
+    <string name="practice_history_view_all">View all practice history</string>
+    <string name="import_tags_label">Tags (optional)</string>
+    <string name="search_sentences">Matching sentences</string>
+    <string name="search_practice_sentence">Practice this sentence</string>
+    <string name="view_article">Read article</string>
 </resources>

@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,21 +72,32 @@ import kotlinx.coroutines.withContext
  * 旧记录没有逐空历史时如实标注「无法判断是否攻克」，不把未知当已解决。
  */
 @Composable
-fun MistakeNotebookScreen(navController: NavController, initialArticleId: Long = -1L) {
+fun MistakeNotebookScreen(
+    navController: NavController,
+    initialArticleId: Long = -1L,
+    initialErrorType: String = "",
+) {
     val context = LocalContext.current
     val articleRepo = remember { ArticleRepository.getInstance(context.filesDir.resolve("articles.json").absolutePath) }
     val recordRepo = remember { RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath) }
     val articles by articleRepo.allArticles.collectAsState(initial = emptyList())
     val records by recordRepo.records.collectAsState()
     var onlyUnresolved by remember { mutableStateOf(true) }
+    var errorFilter by rememberSaveable {
+        mutableStateOf(initialErrorType.takeIf { it.isNotBlank() })
+    }
     val articleById = remember(articles) { articles.associateBy { it.id } }
 
-    val entries = remember(records, initialArticleId, onlyUnresolved) {
+    val entries = remember(records, initialArticleId, onlyUnresolved, errorFilter) {
         MistakeNotebook.entries(
             records,
             articleId = initialArticleId.takeIf { it > 0L },
             onlyUnresolved = onlyUnresolved,
-        )
+        ).let { list ->
+            errorFilter?.let { type ->
+                list.filter { it.errorType.name == type }
+            } ?: list
+        }
     }
     val grouped = remember(entries) { entries.groupBy { it.articleId } }
     val navBarConn = rememberAutoHideNavBarOnScroll()
@@ -104,7 +116,12 @@ fun MistakeNotebookScreen(navController: NavController, initialArticleId: Long =
                     .padding(top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BackButton(onClick = { navController.popBackStack() })
+                // 行高被「标题+条数」两行文字撑到 46dp，40dp 圆居中会往下沉 3dp：
+                // 贴顶钉住，顶边才和全应用其它顶栏一样落在 12dp
+                BackButton(
+                    onClick = { navController.popBackStack() },
+                    modifier = Modifier.align(Alignment.Top),
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -131,6 +148,13 @@ fun MistakeNotebookScreen(navController: NavController, initialArticleId: Long =
                     onClick = { onlyUnresolved = false },
                     label = { Text(stringResource(R.string.notebook_all)) }
                 )
+                errorFilter?.let { type ->
+                    FilterChip(
+                        selected = true,
+                        onClick = { errorFilter = null },
+                        label = { Text(errorLabel(type) + " ×") },
+                    )
+                }
             }
             Spacer(Modifier.height(12.dp))
             if (entries.isEmpty()) {
@@ -167,7 +191,12 @@ fun MistakeNotebookScreen(navController: NavController, initialArticleId: Long =
                         val article = articleById[articleId]
                         item(key = "head_$articleId") {
                             ArticleGroupHeader(
-                                title = article?.title ?: stringResource(R.string.ov_article_fallback, articleId),
+                                title = article?.title
+                                    ?: if (articleId <= 0L) {
+                                        stringResource(R.string.reader_cross_cloze)
+                                    } else {
+                                        stringResource(R.string.ov_article_fallback, articleId)
+                                    },
                                 count = articleEntries.size,
                                 onPractice = article?.let {
                                     { startBatch(context, navController, it, articleEntries) }

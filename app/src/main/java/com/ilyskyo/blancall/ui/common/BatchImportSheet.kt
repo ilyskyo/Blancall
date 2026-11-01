@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.ui.common
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,27 +13,38 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ilyskyo.blancall.R
+import com.ilyskyo.blancall.data.repository.TagStore
+import com.ilyskyo.blancall.ui.common.TagChipUi
+import com.ilyskyo.blancall.ui.common.TagDot
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 批量导入面板的一条候选项。
@@ -60,10 +72,17 @@ fun BatchImportSheet(
     items: List<BatchImportItem>,
     importing: Boolean,
     onDismissRequest: () -> Unit,
-    onConfirm: (Set<String>) -> Unit,
+    onConfirm: (Set<String>, Set<Long>) -> Unit,
 ) {
+    val context = LocalContext.current
+    val tagStore = remember { TagStore.getInstance(context.filesDir) }
+    val tagData by tagStore.data.collectAsState()
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { tagStore.snapshot() }
+    }
     // 选择状态跟着候选项重建（切换目标包时不能沿用上一包的选择）
     var selected by remember(items) { mutableStateOf(emptySet<String>()) }
+    var selectedTagIds by rememberSaveable(items) { mutableStateOf(LongArray(0)) }
     val selectableKeys = remember(items) {
         items.filterNot { it.imported }.mapTo(HashSet()) { it.key }
     }
@@ -91,6 +110,48 @@ fun BatchImportSheet(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))
+
+            // 批量导入时顺手打标签：整包/整库导入最常见，导入后再逐篇补标签成本太高。
+            Text(
+                stringResource(R.string.import_tags_label),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (tagData.tags.isEmpty()) {
+                Text(
+                    stringResource(R.string.no_tags_yet),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(vertical = 6.dp),
+                )
+            } else {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(tagData.tags, key = { "tag_${it.id}" }) { tag ->
+                        val checked = tag.id in selectedTagIds
+                        FilterChip(
+                            selected = checked,
+                            onClick = {
+                                selectedTagIds = if (checked) {
+                                    selectedTagIds.filterNot { it == tag.id }.toLongArray()
+                                } else {
+                                    selectedTagIds + tag.id
+                                }
+                            },
+                            label = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TagDot(tag = TagChipUi(tag.name, tag.color, tag.id), size = 8.dp)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(tag.name, style = MaterialTheme.typography.labelSmall)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(
@@ -193,7 +254,7 @@ fun BatchImportSheet(
                 }
                 Spacer(Modifier.weight(1f))
                 Button(
-                    onClick = { onConfirm(selected) },
+                    onClick = { onConfirm(selected, selectedTagIds.toSet()) },
                     enabled = selected.isNotEmpty() && !importing,
                 ) {
                     Text(

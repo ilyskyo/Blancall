@@ -121,7 +121,7 @@ fun MaskConfigListScreen(
 
     /**
      * 点按列表项即「使用」该配置：标记选中 + 遮挡粒度切到自定义 + 确保遮挡开关打开，
-     * 然后返回阅读页（磁盘写放 IO 线程）。
+     * 然后返回文章详情页（磁盘写放 IO 线程）。
      * 旧交互把「使用」藏在长按菜单里、点按却进编辑，用户反馈「无法切换配置」，故提到主操作。
      */
     fun useConfig(cfg: MaskConfigStore.MaskConfig) {
@@ -174,7 +174,7 @@ fun MaskConfigListScreen(
             )
             // ── 顶栏：返回 + 标题 + 新建 ──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = onBack)
@@ -386,7 +386,7 @@ fun MaskConfigListScreen(
                     deleteTarget = null
                     scope.launch {
                         withContext(Dispatchers.IO) { store.deleteConfig(articleId, target.id) }
-                        // 删除「使用中」配置时同步清掉本文章的指向，阅读页 custom 粒度自然回退为无遮挡
+                        // 删除「使用中」配置时同步清掉本文章的指向，文章详情页 custom 粒度自然回退为无遮挡
                         val prefsStore = ReaderPrefsStore.getInstance(context)
                         if (loadArticleReaderPrefs(prefsStore, articleId).occlusionCustomConfigId == target.id) {
                             withContext(Dispatchers.IO) {

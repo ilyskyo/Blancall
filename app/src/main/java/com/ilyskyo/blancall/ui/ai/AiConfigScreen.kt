@@ -60,7 +60,7 @@ fun AiConfigScreen(navController: NavController) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })

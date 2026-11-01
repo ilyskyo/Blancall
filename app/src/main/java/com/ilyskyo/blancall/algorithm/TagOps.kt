@@ -167,8 +167,10 @@ object TagOps {
      * 按标签聚合学习数据：每标签「文章数 / 练习次数 / 累计填空 / 正确数」。
      *
      * - 多标签文章计入各自标签（各标签之和会大于总量，UI 已注明）；
-     * - 跨文练习记录（articleId = -1）无单篇归属，自然排除；
-     * - 「未分类」= 无任何标签的文章，只要有就附在末尾。
+     * - 跨文练习记录（articleId = -1）不再无条件排除：新记录带 [PracticeRecord.sourceArticleIds]，
+     *   只要来源文章里有该标签的文章，这次练习就计入该标签一次（按记录 id 去重，避免多篇同标签重复计数）；
+     * - 旧跨文记录没有来源集合，无法归属，如实排除；
+     * - 「未分类」= 无任何标签的文章，只有整场跨文练习的全部来源都未分类时才计入。
      */
     fun aggregateTagStats(
         articles: List<Article>,
@@ -176,17 +178,37 @@ object TagOps {
         data: TagData,
     ): List<TagStat> {
         if (articles.isEmpty()) return emptyList()
-        val recordsByArticle = records.groupBy { it.articleId }
+        val normalByArticle = records.filter { it.articleId > 0L }.groupBy { it.articleId }
+        val crossRecords = records.filter { it.articleId <= 0L && it.sourceArticleIds.isNotEmpty() }
 
-        fun statOf(tag: Tag?, articleIds: List<Long>): TagStat {
+        fun statOf(
+            tag: Tag?,
+            articleIds: List<Long>,
+            crossMatches: (PracticeRecord) -> Boolean,
+        ): TagStat {
+            val articleIdSet = articleIds.toHashSet()
             var practices = 0
             var blanks = 0
             var correct = 0
             articleIds.forEach { aid ->
-                recordsByArticle[aid]?.forEach { r ->
+                normalByArticle[aid]?.forEach { record ->
                     practices++
-                    blanks += r.totalBlanks
-                    correct += r.correctCount
+                    blanks += record.totalBlanks
+                    correct += record.correctCount
+                }
+            }
+            // 一条跨文记录可能覆盖同一标签的多篇文章，但只能给这个标签计一次；
+            // 不用 record.id 去重：内存/测试里的记录 id 可能都是 0。
+            val crossCounted = BooleanArray(crossRecords.size)
+            crossRecords.forEachIndexed { index, record ->
+                if (!crossCounted[index] &&
+                    record.sourceArticleIds.any { it in articleIdSet } &&
+                    crossMatches(record)
+                ) {
+                    crossCounted[index] = true
+                    practices++
+                    blanks += record.totalBlanks
+                    correct += record.correctCount
                 }
             }
             return TagStat(tag, articleIds.size, practices, blanks, correct)
@@ -194,11 +216,22 @@ object TagOps {
 
         val byTag = data.tags
             .map { tag ->
-                statOf(tag, articles.filter { data.links[it.id]?.contains(tag.id) == true }.map { it.id })
+                statOf(
+                    tag = tag,
+                    articleIds = articles.filter { data.links[it.id]?.contains(tag.id) == true }.map { it.id },
+                    crossMatches = { true },
+                )
             }
             .sortedByDescending { it.articleCount } // 稳定排序：同篇数保持标签库顺序
 
         val untagged = articles.filter { data.links[it.id].isNullOrEmpty() }
-        return if (untagged.isEmpty()) byTag else byTag + statOf(null, untagged.map { it.id })
+        if (untagged.isEmpty()) return byTag
+        val untaggedIds = untagged.mapTo(HashSet()) { it.id }
+        return byTag + statOf(
+            tag = null,
+            articleIds = untagged.map { it.id },
+            // 跨文练习只要碰到一篇有标签的文章，就不该同时出现在「未分类」里
+            crossMatches = { record -> record.sourceArticleIds.all { it in untaggedIds } },
+        )
     }
 }

@@ -17,7 +17,7 @@ Blancall is an open-source project that converts any article into cloze practice
 ## Screenshots
 
 <!-- Screenshots to be added: place images in docs/screenshots/ and uncomment below
-| Reader | Practice |
+| Article page | Practice |
 |---|---|
 | ![](docs/screenshots/reader.png) | ![](docs/screenshots/practice.png) |
 
@@ -35,7 +35,7 @@ Blancall turns any article into cloze practice and uses memory science to help y
 - **Four practice modes** — sentence cloze / keyword cloze / reverse dictation / custom cloze, a progressive path covering every memory level
 - **Daily sentence card** — one sentence auto-picked each day; three-key ratings feed the FSRS scheduler, so fragmented time still moves review forward
 - **Handwritten answers (in-house models)** — self-trained recognition models (7,356 Chinese classes / 47 Latin classes) running on-device via NCNN: write it, and it gets graded
-- **Reading-page masking** — mask the original text right on the reading page; read and memorize in one place
+- **Article-page masking** — mask the original text right on the article page; read and memorize in one place
 - **Custom cloze & mask positions** — mark exam points sentence-by-sentence / word-by-word / character-by-character, saved as named presets you can reuse anytime
 - **Multi-format import** — paste / TXT / PDF (with preview) / Word, auto-split into sentences and paragraphs; start marking key points right after import
 
@@ -76,7 +76,7 @@ Blancall turns any article into cloze practice and uses memory science to help y
 | Immersive reading | Font size, line height, typeface, weight, palette, occlusion granularity; pinch to zoom; vector rendering stays crisp | Pre-class reading, bedtime review | A reading experience tuned to your eyes, closing the read → mark → practice loop |
 | Custom occlusion marking | Switch occlusion to "Custom" and mark sentences / words / characters; save multiple named configurations | Highlighting key exam points | Practice always lands on what you marked as important |
 | Personalized home | Long-press to edit: drag, resize, pin, add/remove cards; pull-down brand header; custom logo & subtitle | Tailoring the home screen | Your most-used actions one tap away |
-| Local reminders | Daily study reminders via local notifications, time and cadence adjustable | Forgetting to practice | A gentle nudge, generated entirely on-device |
+| Local reminders | Daily study reminders via local notifications, with adjustable time, days and quiet hours | Forgetting to practice | A gentle nudge, generated entirely on-device |
 
 ### 4. Insights & Motivation
 

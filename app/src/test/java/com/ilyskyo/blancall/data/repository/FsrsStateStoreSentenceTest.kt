@@ -141,8 +141,8 @@ class FsrsStateStoreSentenceTest {
         assertEquals(2 * day, store.pausedArticles().getValue(id).remainingMs)
         assertTrue("暂停表必须与卡片状态同文件落盘", stateFile.readText().contains("\"paused\""))
         assertTrue(
-            "暂停表是版本 2 的新增字段，版本号必须一起抬（旧版读到后才会拒绝写盘）",
-            stateFile.readText().contains("\"version\":2")
+            "暂停表/成员表都是版本升级的新增字段，版本号必须一起抬（旧版读到后才会拒绝写盘）",
+            stateFile.readText().contains("\"version\":${FsrsStateStore.CURRENT_VERSION}")
         )
         // 暂停不改写原 due：恢复时才有「冻结」可谈
         assertEquals(now + 2 * day, store.get(id)!!.due)

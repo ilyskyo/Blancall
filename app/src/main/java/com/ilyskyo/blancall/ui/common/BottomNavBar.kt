@@ -98,6 +98,23 @@ private val IndicatorLensX = 10.dp
 private val IndicatorLensY = 14.dp
 private val PanelMaxOffset = 4.dp
 
+// ── 侧栏（大屏）悬浮坞几何 ──
+// 侧栏不再是通栏长条，而是一块按内容高度收缩、贴内容区顶部的坞：
+// 通栏形态下 4 项只占 256dp，下方会空出一大截玻璃，横屏下读起来像被拉伸的空壳。
+private val RailSideMargin = 6.dp       // 坞左右留白：面板实宽 = NavRailWidth - 2×此值 = 64dp
+private val RailDockTopMargin = 12.dp   // 坞与内容区顶边的距离
+private val RailDockInsetV = 8.dp       // 坞内上下留白
+private val RailItemHeight = 64.dp      // 单项格高（手势换算与指示器同源）
+private val RailIndicatorWidth = 48.dp  // 选中胶囊只包住图标，不包标签（M3 侧栏构图）
+private val RailIconSlot = 32.dp        // 图标槽高 = 胶囊高
+private val RailLabelGap = 4.dp
+private val RailLabelLine = 16.dp       // 与 labelSmall 的 lineHeight 对齐
+private val RailIndicatorInsetH = (NavRailWidth - RailSideMargin * 2 - RailIndicatorWidth) / 2
+private val RailIconTopInset =
+    (RailItemHeight - RailIconSlot - RailLabelGap - RailLabelLine) / 2
+private val RailCorner = 26.dp
+private val RailIndicatorCorner = 16.dp
+
 /**
  * 导航项定义（底栏与侧栏共用）：
  * [AppIconKind] 是应用自有图标集，避免引入 material-icons-extended 的额外体积。
@@ -114,10 +131,14 @@ private fun navTabsFor(showLibraryTab: Boolean): List<Pair<Int, AppIconKind>> =
     else BaseNavTabs
 
 /**
- * 大屏侧边导航栏（Tablet / 折叠屏展开 / 横屏，Material 3 NavigationRail 规范）。
+ * 大屏侧边导航栏（平板竖屏 / 折叠屏展开 / 手机横屏）。
  *
- * 本次只把它的玻璃源迁到 Compose `drawBackdrop`（与底栏共用 [Backdrop]），
- * 布局、选中动画与手势保持原样；垂直方向的拖动物理不在本次底栏改造范围内。
+ * 形态：**按内容高度收缩的悬浮坞**，贴内容区顶部（与搜索栏同一条起始线）。
+ * 之前是通栏长条：4 项只占 256dp，下方空出一百多 dp 的玻璃，横屏下像被拉伸的空壳。
+ *
+ * 层级（从后到前）：兜底底色 → 液态玻璃 → 1dp 描边 → 选中胶囊 → 图标/文字 → 手势层。
+ * 选中胶囊是**圆角矩形**且四周内缩 4dp：之前是 56×58dp 的正圆贴着面板描边，
+ * 又与面板自身的圆角互相咬合，读起来像一颗从框里鼓出来的气泡。
  */
 @Composable
 fun NavRail(
@@ -128,6 +149,7 @@ fun NavRail(
     backdrop: Backdrop = emptyBackdrop(),
 ) {
     val tabs = navTabsFor(showLibraryTab)
+    val tabCount = tabs.size.coerceAtLeast(1)
     val isDark = isBlancallDark()
     val accent = MaterialTheme.colorScheme.primary
     val subTint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -141,11 +163,9 @@ fun NavRail(
         label = "railGlassAlpha",
     )
 
-    val railWidthDp = NavRailWidth
-    val railCornerDp = 28.dp
-    val railCornerPx = with(density) { railCornerDp.toPx() }
-    val railShape = RoundedCornerShape(railCornerDp)
-    val indicatorShape = RoundedCornerShape(29.dp)
+    val railCornerPx = with(density) { RailCorner.toPx() }
+    val railShape = RoundedCornerShape(RailCorner)
+    val indicatorShape = RoundedCornerShape(RailIndicatorCorner)
     val railBackdrop = rememberLayerBackdrop()
     val indicatorBackdrop = rememberCombinedBackdrop(backdrop, railBackdrop)
 
@@ -154,35 +174,40 @@ fun NavRail(
     val fallbackTint = if (isDark) Color.Black.copy(alpha = 0.92f)
     else Color.White.copy(alpha = 0.86f)
     val borderColor = if (isDark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f)
-    val indicatorTint = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.10f)
+    // 选中胶囊只有 48×32，中性 10% 灰在浅色面板上几乎看不见；
+    // 这里用主色淡填充，让「选中」由底色和图标色一起承担。
+    val indicatorTint = accent.copy(alpha = if (isDark) 0.22f else 0.14f)
 
-    // 选中位置动画（单位 = 导航项索引）：玻璃胶囊 offset 与「滑动切换」手势共用同一实例。
-    val railSelAnim = remember(tabs.size) {
-        Animatable(currentTab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0)).toFloat())
+    // 选中位置动画（单位 = 导航项索引）：玻璃胶囊 offset 与「上下拖动换页」手势共用同一实例。
+    val railSelAnim = remember(tabCount) {
+        Animatable(currentTab.coerceIn(0, tabCount - 1).toFloat())
     }
     val railScope = rememberCoroutineScope()
     // 回调兜 Fresh：pointerInput 块内直接捕获的实例会冻结在协程启动时。
     val onSelectLatest by rememberUpdatedState(onSelect)
-    LaunchedEffect(currentTab, tabs.size) {
+    LaunchedEffect(currentTab, tabCount) {
         if (currentTab >= 0) {
             railSelAnim.animateTo(
-                currentTab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0)).toFloat(),
+                currentTab.coerceIn(0, tabCount - 1).toFloat(),
                 Motion.sliderIndex(),
             )
         }
     }
 
-    Column(
+    val dockHeight = RailItemHeight * tabCount + RailDockInsetV * 2
+
+    Box(
         modifier = modifier
             .fillMaxHeight()
-            .width(railWidthDp)
+            .width(NavRailWidth)
             .windowInsetsPadding(WindowInsets.systemBars)
-            .padding(vertical = 14.dp, horizontal = 10.dp)
+            .padding(horizontal = RailSideMargin, vertical = RailDockTopMargin),
+        contentAlignment = Alignment.TopCenter,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .height(dockHeight)
         ) {
             // ── ① 兜底底色：玻璃未就绪 / 关闭玻璃时可见，也保证阴影有实体可投 ──
             Box(
@@ -238,14 +263,18 @@ fun NavRail(
                     }
             )
 
-            // ── ④ 选中项玻璃胶囊（常驻层，offset 跟随选中项）──
+            // ── ④ 选中项胶囊（常驻层，offset 跟随选中项；只包图标）──
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(58.dp)
                     .offset {
-                        IntOffset(0, (64.dp.toPx() * railSelAnim.value + 3.dp.toPx()).roundToInt())
+                        val top = RailDockInsetV.toPx() +
+                            RailItemHeight.toPx() * railSelAnim.value +
+                            RailIconTopInset.toPx()
+                        IntOffset(0, top.roundToInt())
                     }
+                    .fillMaxWidth()
+                    .padding(horizontal = RailIndicatorInsetH)
+                    .height(RailIconSlot)
                     .zIndex(1f)
             ) {
                 if (glassActive) {
@@ -256,7 +285,8 @@ fun NavRail(
                                 backdrop = indicatorBackdrop,
                                 shape = { indicatorShape },
                                 effects = {
-                                    lens(10.dp.toPx(), 14.dp.toPx(), chromaticAberration = true)
+                                    // 侧栏胶囊同样不开色散：同一套观感，不在这里留一条彩边
+                                    lens(10.dp.toPx(), 14.dp.toPx())
                                 },
                                 highlight = { Highlight.Default },
                                 shadow = {
@@ -274,7 +304,7 @@ fun NavRail(
                         Modifier
                             .matchParentSize()
                             .clip(indicatorShape)
-                            .background(accent.copy(alpha = if (isDark) 0.35f else 0.24f))
+                            .background(indicatorTint)
                     )
                 }
                 Box(
@@ -283,10 +313,13 @@ fun NavRail(
                         .clip(indicatorShape)
                         .drawBehind {
                             drawRoundRect(
-                                color = if (isDark) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.80f),
+                                color = if (isDark) Color.White.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.65f),
                                 size = size,
-                                cornerRadius = CornerRadius(29.dp.toPx(), 29.dp.toPx()),
-                                style = Stroke(width = 1.5.dp.toPx()),
+                                cornerRadius = CornerRadius(
+                                    RailIndicatorCorner.toPx(),
+                                    RailIndicatorCorner.toPx(),
+                                ),
+                                style = Stroke(width = 1.dp.toPx()),
                             )
                         }
                 )
@@ -296,6 +329,7 @@ fun NavRail(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(vertical = RailDockInsetV)
                     .zIndex(2f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top,
@@ -309,37 +343,52 @@ fun NavRail(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(64.dp)
-                            .padding(vertical = 3.dp)
-                            .clip(RoundedCornerShape(50))
-                            .pressFeedback(src, PressTier.Container)
-                            .clickable(
-                                interactionSource = src,
-                                indication = null,
-                                role = Role.Tab,
-                            ) {
-                                tabHaptic()
-                                onSelect(index)
-                            }
-                            .semantics {
-                                this[SemanticsProperties.Selected] = selected
-                            },
+                            .height(RailItemHeight),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 2.dp)
+                                .clip(RoundedCornerShape(RailIndicatorCorner + 4.dp))
+                                // Plain 档：只压暗、不缩放 —— 缩放会与不动的胶囊错位
+                                .pressFeedback(src, PressTier.Plain)
+                                .clickable(
+                                    interactionSource = src,
+                                    indication = null,
+                                    role = Role.Tab,
+                                ) {
+                                    tabHaptic()
+                                    onSelect(index)
+                                }
+                                .semantics {
+                                    this[SemanticsProperties.Selected] = selected
+                                },
+                            contentAlignment = Alignment.TopCenter,
                         ) {
-                            AppIcon(kind = kind, tint = tint, modifier = Modifier.size(22.dp))
-                            Spacer(Modifier.size(3.dp))
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                color = tint,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Column(
+                                modifier = Modifier.padding(top = RailIconTopInset),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(RailIndicatorWidth)
+                                        .height(RailIconSlot),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    AppIcon(kind = kind, tint = tint, modifier = Modifier.size(22.dp))
+                                }
+                                Spacer(Modifier.height(RailLabelGap))
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = tint,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 }
@@ -351,14 +400,15 @@ fun NavRail(
                 Modifier
                     .fillMaxSize()
                     .zIndex(3f)
-                    .pointerInput(tabs.size) {
+                    .padding(vertical = RailDockInsetV)
+                    .pointerInput(tabCount) {
                         awaitEachGesture {
                             val down = awaitFirstDown(
                                 requireUnconsumed = false,
                                 pass = PointerEventPass.Initial,
                             )
                             down.consume()
-                            val unitPx = 64.dp.toPx()
+                            val unitPx = RailItemHeight.toPx()
                             val base = railSelAnim.value
                             var tracking = false
                             while (true) {
@@ -366,9 +416,9 @@ fun NavRail(
                                     .changes.firstOrNull { it.id == down.id } ?: break
                                 if (!change.pressed) {
                                     val startTab = (down.position.y / unitPx)
-                                        .toInt().coerceIn(0, tabs.size - 1)
+                                        .toInt().coerceIn(0, tabCount - 1)
                                     val endTab = (change.position.y / unitPx)
-                                        .toInt().coerceIn(0, tabs.size - 1)
+                                        .toInt().coerceIn(0, tabCount - 1)
                                     val targetTab = if (startTab == endTab) startTab else endTab
                                     railScope.launch {
                                         railSelAnim.animateTo(targetTab.toFloat(), Motion.sliderIndex())
@@ -384,7 +434,7 @@ fun NavRail(
                                 if (tracking) {
                                     change.consume()
                                     val t = (base + dy / unitPx)
-                                        .coerceIn(0f, (tabs.size - 1).toFloat())
+                                        .coerceIn(0f, (tabCount - 1).toFloat())
                                     railScope.launch { railSelAnim.snapTo(t) }
                                 }
                             }
@@ -544,12 +594,24 @@ fun BottomNavBar(
                     )
                 }
 
-                // ── 选中指示器玻璃（可越出栏边）──
+                // ── 选中指示器玻璃（按压时允许越出栏边）──
+                //
+                // 铁律只有一条：**缩放必须放在这一层 graphicsLayer 上，不能只写进 `layerBlock`**。
+                // `layerBlock` 只作用于 drawBackdrop 画出来的玻璃，外面那圈 1.5dp 描边不跟着胀
+                // ⇒ 按压时玻璃 78dp、描边还停在 56dp，屏幕上同时出现大、小两个框 ——
+                // 用户 2026-10-26 报的「多出来的那条框线」就是它。整层一起缩放，永远只有一个轮廓。
+                //
+                // 不要给这一层加 `clip(barShape)`：2026-10-26 试过，按住时胶囊上下被栏高框死，
+                // 用户当场否掉（「上一个版本不是这样的」）。按压越出栏边本来就是要有。
                 Box(
                     Modifier
                         .width(with(density) { tabW.toDp() })
                         .fillMaxHeight()
-                        .graphicsLayer { translationX = physics.position * tabW }
+                        .graphicsLayer {
+                            translationX = physics.position * tabW
+                            scaleX = physics.visualScaleX
+                            scaleY = physics.visualScaleY
+                        }
                         .zIndex(1f)
                 ) {
                     Box(
@@ -565,15 +627,21 @@ fun BottomNavBar(
                                         backdrop = indicatorBackdrop,
                                         shape = { indicatorShape },
                                         effects = {
+                                            // 折射保留，**色散关掉**（2026-10-27 用户报「我的文章页玻璃块有奇怪的色散」）：
+                                            // chromaticAberration 会把胶囊边缘那条亮度交界拆成 RGB 三色，
+                                            // 在白色底上表现为一条黄绿蓝的彩虹带；底色越干净越刺眼。
+                                            // 折射本身已经够表达玻璃厚度，不需要这条彩边。
                                             val p = physics.pressProgress
                                             lens(
                                                 indicatorLensXPx * p,
                                                 indicatorLensYPx * p,
-                                                chromaticAberration = true,
                                             )
                                         },
                                         highlight = {
-                                            Highlight.Default.copy(alpha = physics.pressProgress)
+                                            // 高光只留一层薄sheen：`Highlight.Default` 的 alpha 拉到 1 时，
+                                            // 整个胶囊面会被涂成白色（实测按压时内部 228 → 254，等于把底色吃掉了），
+                                            // 于是「玻璃块」变成一个白洞 —— 用户 2026-10-27 报的正是它。
+                                            Highlight.Default.copy(alpha = 0.30f * physics.pressProgress)
                                         },
                                         shadow = {
                                             // 静止时也留一点投影，白底上仍能看见胶囊；
@@ -590,13 +658,13 @@ fun BottomNavBar(
                                                 alpha = physics.pressProgress,
                                             )
                                         },
-                                        layerBlock = {
-                                            scaleX = physics.visualScaleX
-                                            scaleY = physics.visualScaleY
-                                        },
                                         onDrawSurface = {
                                             val p = physics.pressProgress
-                                            drawRect(indicatorBase, alpha = 1f - p)
+                                            // 底色**常驻**，不随按压退干净（参考实现那行是 alpha = 1f - p）。
+                                            // 退干净以后胶囊内部等于裸页面，而栏体本身带 42% 底色，
+                                            // 于是在白底上胶囊反而比栏更白 —— 读作一个「白洞」，只剩投影描出一圈软边，
+                                            // 再加上折射把边的亮度交界拆成彩边（用户 2026-10-27 报的「玻璃块色散/不对」）。
+                                            drawRect(indicatorBase)
                                             drawRect(Color.Black.copy(alpha = 0.03f * p))
                                         },
                                     )
@@ -609,6 +677,7 @@ fun BottomNavBar(
                                     .background(accent.copy(alpha = if (isDark) 0.35f else 0.24f))
                             )
                         }
+                        // 描边与玻璃同层缩放：它不是「框」，是玻璃的边沿。
                         Box(
                             Modifier
                                 .matchParentSize()
@@ -717,6 +786,13 @@ fun BottomNavBar(
                                     requireUnconsumed = false,
                                     pass = PointerEventPass.Initial,
                                 )
+                                // **按下这一帧就必须吃掉**（2026-10-27 修）：
+                                // 之前只在拖动/抬手时 consume，于是长按（不移动、不抬手）整段时间里
+                                // 事件一路穿到底下的内容上——首页卡片有长按进编辑态，实测长按底栏会
+                                // 直接把页面推进编辑态。`detectTapGestures` 的长按在 500ms 时就触发，
+                                // 等到抬手再 consume 已经晚了。
+                                // 代价：从底栏起手的竖向滑动不再滚动页面（底栏是浮层，本来也不该拖列表）。
+                                down.consume()
                                 val startX = down.position.x
                                 val startY = down.position.y
                                 val startTab = (startX / tabW).toInt().coerceIn(0, tabCount - 1)

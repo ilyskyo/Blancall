@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -21,8 +22,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -254,6 +257,22 @@ fun AdaptiveModePicker(
 
     val cp = containerProgress.value
 
+    // ── 阴影和透明度必须分家 ──
+    //
+    // 改造前 alpha 写在**挂着 .shadow() 的那一层**上，两个症状同一个根：
+    // ① alpha < 1 会把这一整块推进离屏合成缓冲，elevation 投影在缓冲里按**矩形层边界**重算，
+    //    圆角卡片底下于是浮出一个直角外框（BackButton.kt 里记录过同一现象，2026-10-09 真机截图）；
+    // ② 投影也吃这条 alpha，卡片本体先看得见、影子要等 alpha 爬够才显形，
+    //    读起来就是「阴影慢半拍、然后啪一下出现」。
+    // 所以：透明度下沉到卡片本体（下面的内层 Box），阴影这一层只留**缩放**——
+    // 单纯的变换不需要离屏层，投影就能老老实实贴着圆角轮廓、和卡片同一帧长出来。
+    val cardAlpha = if (contentReady) {
+        if (isExiting && cp < 0.35f) (cp / 0.35f).coerceIn(0f, 1f) else cp
+    } else 0f
+    // 影子跟着进度长（cp 本身是弹簧，前段涨得快），退场再原路收回去：
+    // 不写死 18dp —— 面板还小的时候底下压着一圈全尺寸暗影，看起来像没动
+    val shadowLift = 18.dp * cp.coerceIn(0f, 1f)
+
     // 页面内覆盖层渲染：不创建独立窗口。
     // 点击卡片外部区域 → 关闭选项卡；卡片自身交互正常
     Box(
@@ -268,7 +287,18 @@ fun AdaptiveModePicker(
                 interactionSource = remember { MutableInteractionSource() }
             ) { onDismiss() }
     ) {
-        // 卡片容器（液态玻璃，无额外阴影预留）
+        // ── 浮层怎么「浮」起来：靠投影，不靠遮罩 ──
+        //
+        // 试过两个方向：
+        // ① 只做近不透明的白面板 —— 叠在同色页面上糊成一张纸，边界只剩一条极淡的边；
+        // ② 加页面遮罩 —— 有效，但本 App 没有 edge-to-edge，各页面的组合根都在系统栏之内，
+        //    fillMaxSize 只拿到「状态栏下沿到导航栏上沿」这块内容区，上下各留一条没被压暗的白边
+        //    （用户截图指出）。要盖满得按物理屏幕尺寸铺 + 负偏移硬顶出去，依赖祖先不裁剪，脆。
+        // 所以最终走 ③：**面板自己投影**。阴影只跟着面板走，与屏幕尺寸、系统栏、祖先裁剪全都无关，
+        // 也不会像遮罩那样把整页压灰。elevation 用 18dp：在近白页面上刚好托起一层轮廓，
+        // 又不到「悬浮球」那种重。深色下阴影本来就看不见，靠面板自身比背景亮一档（#2C2C2E on #1C1C1E）区分。
+
+        // 卡片容器（液态玻璃 + 投影）
         Box(
             modifier = Modifier
                 .widthIn(max = PopupWidthDp)
@@ -279,14 +309,24 @@ fun AdaptiveModePicker(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                // ⚠️ 这一层**不许再写 alpha**：一写整块进离屏缓冲，下面的投影就被按矩形重算，
+                // 直角外框 + 影子迟到会一起回来（见上方 cardAlpha / shadowLift 的说明）
                 .graphicsLayer {
                         scaleX = morph.startScaleX + (1f - morph.startScaleX) * cp
                         scaleY = morph.startScaleY + (1f - morph.startScaleY) * cp
-                        alpha = if (contentReady) {
-                            if (isExiting && cp < 0.35f) (cp / 0.35f).coerceIn(0f, 1f) else cp
-                        } else 0f
                         transformOrigin = TransformOrigin(morph.originX, morph.originY)
                     }
+                // 阴影放在 graphicsLayer 之内：入场是「从锚点长出来」的缩放，
+                // 阴影必须跟着一起缩，否则面板还小的时候底下已经压着一圈全尺寸的暗影。
+                // clip = false —— 默认会把自己裁掉，阴影就没了。
+                // ambient 压轻、spot 留在下侧：要的是「底部托起一层」，不是四面发光。
+                .shadow(
+                    elevation = shadowLift,
+                    shape = RoundedCornerShape(20.dp),
+                    clip = false,
+                    ambientColor = Color.Black.copy(alpha = 0.10f),
+                    spotColor = Color.Black.copy(alpha = 0.22f)
+                )
             ) {
                 Box(
                     modifier = Modifier
@@ -297,6 +337,8 @@ fun AdaptiveModePicker(
                                 if (!contentReady) contentReady = true
                             }
                         }
+                        // 透明度只作用在卡片本体（玻璃 + 内容），与上面那层投影彻底脱钩
+                        .graphicsLayer { alpha = cardAlpha }
                         .clip(RoundedCornerShape(20.dp))
                 ) {
                     // ── 1) 玻璃底：液态玻璃（API33+）或兜底玻璃板（低版本）──
@@ -385,17 +427,22 @@ private fun ModeListContent(
 ) {
     data class ModeEntry(
         val label: String,
+        val glyph: ModeGlyph,
         val mode: BlancallMode = BlancallMode.SENTENCE,
         val custom: Boolean = false
     )
-    // 只留模式名，不带任何图标与说明文字：
+    // 只留模式名 + 一枚自绘图形，不带 emoji、不带说明文字：
     // 「句子挖空 / 字词挖空 / 反向默写」本身就是自解释的动词词组，
     // 副标题只是在替用户预先解释一遍，试一次就懂的东西不需要提前讲。
     val entries = listOf(
-        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence), BlancallMode.SENTENCE),
-        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word), BlancallMode.WORD),
-        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse), BlancallMode.REVERSE),
-        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.custom_cloze), custom = true)
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence),
+            ModeGlyph.SENTENCE, BlancallMode.SENTENCE),
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word),
+            ModeGlyph.WORD, BlancallMode.WORD),
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse),
+            ModeGlyph.REVERSE, BlancallMode.REVERSE),
+        ModeEntry(stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
+            ModeGlyph.CUSTOM, custom = true)
     )
     // ── 错峰窗口：把 containerProgress 切成 4 段不重叠区间，每段 0.25 ──
     // 标题：[0.0, 0.25] → 容器刚冒出时立刻出现
@@ -446,10 +493,9 @@ private fun ModeListContent(
 
         // 项：index 1..3，错峰出现
         //
-        // 四项合进一个圆角分组里（行间一条极淡发丝线），而不是各挂一张带描边的独立卡片：
-        // 四张各自描边的卡并列时，边界比内容还显眼，四块深浅不一的"卡"读起来像四个控件；
-        // 一个分组内的四行读起来才是「同一件事的四个选项」。
-        ModeOptionGroup(modifier = Modifier.padding(horizontal = 10.dp)) {
+        // 不铺底色：这个控件长在近白玻璃上，填充只会显透或显闷；分组交给等距排列 +
+        // 贯穿的不透明分隔线（理由见 PracticeModeSheets.kt 顶部）。
+        ModeOptionGroup {
             entries.forEachIndexed { i, entry ->
                 if (i > 0) ModeOptionDivider()
                 val p = itemProgress(i + 1)
@@ -459,6 +505,7 @@ private fun ModeListContent(
                     progress = p,
                     itemSlideY = itemSlide,
                     label = entry.label,
+                    glyph = entry.glyph,
                     onClick = {
                         onModeSelected(
                             if (entry.custom) PickerSelection.Custom
@@ -484,11 +531,13 @@ private fun PressableModeItem(
     progress: Float,
     itemSlideY: Float,
     label: String,
+    glyph: ModeGlyph,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     ModeOptionRow(
         label = label,
+        glyph = glyph,
         onClick = onClick,
         interactionSource = interactionSource,
         modifier = Modifier.graphicsLayer {

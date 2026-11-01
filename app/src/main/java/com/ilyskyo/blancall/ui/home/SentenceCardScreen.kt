@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +72,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -134,7 +137,12 @@ import androidx.compose.ui.res.stringResource
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
+fun SentenceCardScreen(
+    navController: NavController,
+    queueLimit: Int = 0,
+    scopeArticleId: Long = -1L,
+    scopeTagId: Long = -1L,
+) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val articleViewModel: ArticleViewModel = viewModel()
@@ -151,13 +159,25 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
     LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
     val rawSentenceFilter by AppPrefs.sentenceTagFilterFlow.collectAsState()
     val rawArticleFilter by AppPrefs.sentenceArticleFilterFlow.collectAsState()
+    // 来源限定（文章详情页 / 任务详情 / 标签主页进入）：本次会话生效，不改写全局筛选。
+    // 用 X 清除后回到全局筛选，避免「从一篇文章进来后，首页句子卡永远只剩这篇」。
+    var activeScopeArticle by rememberSaveable(scopeArticleId) {
+        mutableLongStateOf(scopeArticleId.takeIf { it > 0L } ?: -1L)
+    }
+    var activeScopeTag by rememberSaveable(scopeTagId) {
+        mutableLongStateOf(scopeTagId.takeIf { it > 0L } ?: -1L)
+    }
     var showFilterSheet by remember { mutableStateOf(false) }
-    // 右上角 ⋮ 菜单：遮挡开关 + 复习入口（与阅读页/练习页同款玻璃菜单）
+    // 右上角 ⋮ 菜单：遮挡开关 + 复习入口（与文章详情页/练习页同款玻璃菜单）
     var showMoreMenu by remember { mutableStateOf(false) }
     // 「点卡片揭晓 / 上下滑切卡」一次性指引圈的锚点（整张顶层卡）
     val cardAnchor = rememberCoachAnchor()
     // 挖空遮挡偏好（用户可关：关掉即整句直出，只做快速浏览）
     val clozeEnabled by AppPrefs.sentenceClozeEnabledFlow.collectAsState()
+    // 点按换卡的飞出动画（特性设置）：开关 + 速率。只影响「点评级按钮」这条路，
+    // 上下滑动翻卡是手势本体，没有开关也不可调（见下面的 dragY / advance）。
+    val tapExitAnimEnabled by AppPrefs.sentenceTapExitEnabledFlow.collectAsState()
+    val tapExitSpeed by AppPrefs.sentenceTapExitSpeedFlow.collectAsState()
     // 首次见到的句子是否也遮挡（默认关：新句先给全文认读）
     val clozeNewEnabled by AppPrefs.sentenceClozeNewEnabledFlow.collectAsState()
     // 与现有数据对账：已删标签 / 已删文章的筛选 id 仅本次忽略
@@ -167,10 +187,36 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
     val validArticleFilter = remember(rawArticleFilter, articles) {
         rawArticleFilter.filterTo(mutableSetOf()) { id -> articles.any { it.id == id } }
     }
+    val validScopeArticle = remember(activeScopeArticle, articles) {
+        activeScopeArticle.takeIf { id -> id > 0L && articles.any { it.id == id } }
+    }
+    val validScopeTag = remember(activeScopeTag, tagData) {
+        activeScopeTag.takeIf { id -> id > 0L && tagData.tags.any { it.id == id } }
+    }
+    val scopeActive = validScopeArticle != null || validScopeTag != null
+    val scopeTagName: String = remember(validScopeTag, tagData) {
+        validScopeTag?.let { id -> tagData.tags.firstOrNull { it.id == id }?.name }.orEmpty()
+    }
+    val scopeLabel = when {
+        validScopeArticle != null -> stringResource(com.ilyskyo.blancall.R.string.sentence_scope_this_article)
+        validScopeTag != null -> stringResource(
+            com.ilyskyo.blancall.R.string.sentence_scope_this_tag,
+            scopeTagName,
+        )
+        else -> ""
+    }
     // 筛选后的文章池（组合与回退语义见 [resolveSentencePool]：任何维度命中为空都回退
     // 上一级，保证「选了文章却抽不出句子」的空池不会出现）
-    val sentencePool = remember(articles, tagData, validSentenceFilter, validArticleFilter) {
-        resolveSentencePool(articles, tagData, validSentenceFilter, validArticleFilter)
+    val sentencePool = remember(
+        articles, tagData, validSentenceFilter, validArticleFilter,
+        validScopeArticle, validScopeTag,
+    ) {
+        when {
+            validScopeArticle != null -> articles.filter { it.id == validScopeArticle }
+            // 来源限定是硬范围：标签下没有文章就给空态，不偷偷回退到全部
+            validScopeTag != null -> TagOps.filterArticles(articles, tagData, setOf(validScopeTag), false)
+            else -> resolveSentencePool(articles, tagData, validSentenceFilter, validArticleFilter)
+        }
     }
     // 任务流里暂停的文章：不抽今日句、不进队列、不参与主动复习（先过暂停再分队，
     // 否则暂停文章的句子会从「已暂停」这一层里漏回来）
@@ -200,6 +246,15 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
     // reviewRound 自增触发队列重建（点「复习」/「结束复习」/ 完成页「再复习一轮」）。
     var reviewAll by rememberSaveable { mutableStateOf(false) }
     var reviewRound by rememberSaveable { mutableIntStateOf(0) }
+
+    /** 清除来源限定：回到全局筛选；队列在 LaunchedEffect 里按新池重建。 */
+    fun clearScope() {
+        activeScopeArticle = -1L
+        activeScopeTag = -1L
+        positioned = false
+        currentIndex = 0
+        queue = null
+    }
     /**
      * 回忆面是否已揭晓（Anki 的 Show Answer）。键含 [currentIndex] 与 [reviewRound]：
      * 换卡 / 重排队即归位到「未揭晓」—— 否则上一张的揭晓状态会被下一张继承，直接漏答案。
@@ -210,7 +265,10 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
         mutableStateMapOf<String, FsrsEngine.Rating>()
     }
 
-    LaunchedEffect(activeSentencePool, reviewRound, pausedArticleIds, queueLimit) {
+    LaunchedEffect(
+        activeSentencePool, reviewRound, pausedArticleIds, queueLimit,
+        activeScopeArticle, activeScopeTag,
+    ) {
         if (activeSentencePool.isEmpty()) {
             // 全部文章都被暂停（或筛选后为空）：给空态，而不是一直停在加载圈
             states = emptyMap()
@@ -344,6 +402,10 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
      * 现在索引在点击这一帧就提交，飞走的是旧卡的**一份独立副本**（[exitItem]，画在最上层，
      * 由 [exitOffset] 驱动）。于是下一张立刻成为按钮的主人：点几次就翻几张，
      * 每一次评级都落在当时屏幕上那张卡上。
+     *
+     * 用户在「特性」里可以关掉这段飞出（`sentenceTapExitEnabled`）或调它的速率
+     * （`sentenceTapExitSpeed`）—— 关掉时连副本都不画，索引照旧这一帧提交，
+     * 观感就是「按一下就换了一张」。手势那条路（[advance]）不受这两个开关影响。
      */
     fun rate(item: DailySentenceCoordinator.QueueItem, rating: FsrsEngine.Rating) {
         val items = queue ?: return
@@ -385,14 +447,22 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
         val leaving = items[currentIndex]
         exitToken++
         val myToken = exitToken
-        exitItem = leaving
         currentIndex = advanceTargetIndex(currentIndex, forward = true, items.size)
+        // 关掉「点按翻页动画」：不画离场副本，索引已经在上面提交，这一帧就是下一张。
+        // 仍要 snapTo(0f) —— 上一张的离场可能还在飞（用户刚改完设置就点），
+        // 留着那份位移会让下一张带着偏移出场。
+        if (!tapExitAnimEnabled) {
+            exitItem = null
+            scope.launch { exitOffset.snapTo(0f) }
+            return
+        }
+        exitItem = leaving
         scope.launch {
             try {
                 // snapTo 会取消上一段离场（Animatable 的 mutator 互斥）；被取消那份的
                 // token 已过期，不会把这一份的离场层撤掉
                 exitOffset.snapTo(0f)
-                exitOffset.animateTo(-flyDistance, Motion.cardTapExit())
+                exitOffset.animateTo(-flyDistance, Motion.cardTapExit(tapExitSpeed))
                 if (myToken == exitToken) exitItem = null
             } catch (_: CancellationException) {
                 // 被下一次点击顶掉：离场层已经换人，这里什么都不做
@@ -443,26 +513,56 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.width(10.dp))
-                    // 抽句范围筛选入口（多选标签；背后句子池实时刷新）
-                    GlassButton(
-                        onClick = { showFilterSheet = true },
-                        modifier = Modifier.height(34.dp),
-                    ) {
-                        AppIcon(
-                            kind = AppIconKind.Filter,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            if (validSentenceFilter.isEmpty() && validArticleFilter.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.filter) else stringResource(com.ilyskyo.blancall.R.string.filtered),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                    // 来源限定优先于全局筛选：从一篇文章/一个标签进来时，顶上直接写清范围，
+                    // 点掉 X 才回到全局筛选；否则用户会以为「已经筛过」却抽到别的文章。
+                    if (scopeActive) {
+                        GlassButton(
+                            onClick = { clearScope() },
+                            modifier = Modifier.height(34.dp).widthIn(max = 96.dp),
+                        ) {
+                            AppIcon(
+                                kind = AppIconKind.Filter,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                scopeLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            AppIcon(
+                                kind = AppIconKind.Close,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                contentDescription = stringResource(com.ilyskyo.blancall.R.string.clear_filter),
+                            )
+                        }
+                    } else {
+                        // 抽句范围筛选入口（多选标签；背后句子池实时刷新）
+                        GlassButton(
+                            onClick = { showFilterSheet = true },
+                            modifier = Modifier.height(34.dp),
+                        ) {
+                            AppIcon(
+                                kind = AppIconKind.Filter,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                if (validSentenceFilter.isEmpty() && validArticleFilter.isEmpty()) stringResource(com.ilyskyo.blancall.R.string.filter) else stringResource(com.ilyskyo.blancall.R.string.filtered),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                     Spacer(Modifier.width(8.dp))
                     // ⋮ 三点菜单：顶栏只留「筛选」这一个高频动作，其余（记忆方式 / 全量复习）
-                    // 收进菜单 —— 与阅读页、练习页同一套 ⋮ 组件与层级，不再为每个功能各占一格。
+                    // 收进菜单 —— 与文章详情页、练习页同一套 ⋮ 组件与层级，不再为每个功能各占一格。
                     Box {
                         IconButton(
                             onClick = { showMoreMenu = true },
@@ -611,7 +711,8 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
             }
 
             // 筛选生效指示（透明可见的一行小字，避免"句子突然变少"无从解释）
-            if (validSentenceFilter.isNotEmpty() || validArticleFilter.isNotEmpty()) {
+            // 来源限定优先：它完全覆盖全局筛选，此时再显示全局计数会互相打脸。
+            if (!scopeActive && (validSentenceFilter.isNotEmpty() || validArticleFilter.isNotEmpty())) {
                 // 资源读取留在组合期：getQuantityString 在组合期读的是 Activity 快照，
                 // 语言/字号配置变化时不会随 Compose 的资源订阅刷新；拆成三个 stringResource。
                 val tagFilterText = if (validSentenceFilter.isNotEmpty()) {
@@ -639,6 +740,8 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
             // 复习态与常态的卡片布局因此完全一致（不会因提示行占位而变矮）。
 
             val deck = items
+            val pausedInPool = sentencePool.count { it.id in pausedArticleIds }
+            val allPoolPaused = sentencePool.isNotEmpty() && pausedInPool == sentencePool.size
             StateSwap(
                 targetState = when {
                     deck == null -> 0
@@ -655,7 +758,15 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
                         }
                     }
                     1 -> {
-                        SentenceEmptyView(onBack = { navController.popBackStack() })
+                        SentenceEmptyView(
+                            onBack = { navController.popBackStack() },
+                            onImport = { navController.navigate("import") },
+                            onOpenFlow = { navController.navigate("study_flow") },
+                            onClearScope = if (scopeActive) ({ clearScope() }) else null,
+                            noArticles = articles.isEmpty(),
+                            allPaused = allPoolPaused,
+                            pausedCount = pausedInPool,
+                        )
                     }
                     2 -> {
                         // 智能转换在 when(state) 里没了：这一臂要读 items.count/indexOfFirst，
@@ -786,6 +897,8 @@ fun SentenceCardScreen(navController: NavController, queueLimit: Int = 0) {
                                     revealed = revealed,
                                     clozeEnabled = clozeEnabled,
                                     clozeNewEnabled = clozeNewEnabled,
+                                    onOpenArticle = { id -> navController.navigate("reader/$id") },
+                                    onTagClick = { id -> navController.navigate("tag/$id") },
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .coachAnchor(cardAnchor)

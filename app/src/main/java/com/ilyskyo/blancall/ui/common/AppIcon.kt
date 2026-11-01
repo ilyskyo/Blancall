@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.TrackChanges
@@ -67,6 +68,8 @@ enum class AppIconKind {
     DragHandle,
     /** 复习（句子卡片：用户主动发起再学一轮） */
     Refresh,
+    /** 使用引导（设置页「帮助」分组） */
+    School,
     /** 语言（设置页「界面语言」标题后紧跟的「文A」合体字形，兼作视觉锚点） */
     Language
 }
@@ -99,6 +102,7 @@ fun AppIcon(
         AppIconKind.Home -> Icons.Outlined.Home
         AppIconKind.Articles -> Icons.AutoMirrored.Outlined.Article
         AppIconKind.Insights -> Icons.Outlined.Insights
+        AppIconKind.School -> Icons.Outlined.School
         AppIconKind.MoreVert -> Icons.Outlined.MoreVert
         AppIconKind.SwapHoriz -> Icons.Outlined.SwapHoriz
         AppIconKind.TrackChanges -> Icons.Outlined.TrackChanges

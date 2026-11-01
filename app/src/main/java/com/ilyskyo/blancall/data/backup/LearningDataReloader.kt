@@ -9,6 +9,7 @@ import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
+import com.ilyskyo.blancall.data.repository.ReadingMarkStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 
 /**
@@ -35,8 +36,12 @@ internal object LearningDataReloader {
     internal val REQUIRES_RELOAD_FILES = setOf(
         "articles.json", "records.json", "fsrs_state.json",
         "mask_config.json", "reader_prefs.json", "achievements.json",
+        // 划线 / 批注：带内存缓存，恢复备份后必须丢缓存，否则正文里仍是旧划线
+        "reading_marks.json",
         // ReminderPrefs 的考试日期镜像：恢复后必须重读，否则内存里仍是旧日期
         "exam_goal.json",
+        // 外观镜像：恢复后必须重读，否则界面还挂着旧主题，直到下次冷启动
+        "appearance.json",
     )
 
     /** 已核查「无需动作」的文件：读取即读盘，或缓存带磁盘指纹自动失效 */
@@ -79,8 +84,10 @@ internal object LearningDataReloader {
         attempt { FsrsStateStore.getInstance(filesDir.resolve("fsrs_state.json").absolutePath).reload() }
         attempt { MaskConfigStore.getInstance(filesDir).reload() }
         attempt { ReaderPrefsStore.getInstance(context).reload() }
+        attempt { ReadingMarkStore.getInstance(filesDir).reload() }
         attempt { AchievementTimelineStore.getInstance(filesDir).reload() }
         attempt { com.ilyskyo.blancall.ui.theme.ReminderPrefs.reloadExamGoal() }
+        attempt { com.ilyskyo.blancall.ui.theme.AppearanceStore.reload() }
         return failures
     }
 }

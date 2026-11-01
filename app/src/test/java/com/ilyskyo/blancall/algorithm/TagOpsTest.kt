@@ -211,6 +211,42 @@ class TagOpsTest {
     }
 
     @Test
+    fun `按标签聚合：跨文记录按来源文章计入且每条只计一次`() {
+        val articles = listOf(article(1), article(2), article(3))
+        val data = TagData(
+            tags = listOf(tag(1, "甲"), tag(2, "乙")),
+            links = mapOf(1L to setOf(1L), 2L to setOf(1L), 3L to setOf(2L)),
+        )
+        val crossAll = record(-1, 10, 8).copy(
+            id = 99,
+            sourceArticleIds = listOf(1, 2, 3),
+        )
+        val crossOne = record(-1, 2, 1).copy(
+            id = 100,
+            sourceArticleIds = listOf(1),
+        )
+        val stats = TagOps.aggregateTagStats(articles, listOf(crossAll, crossOne), data)
+
+        val jia = stats.first { it.tag?.id == 1L }
+        // 99 同时覆盖甲的两篇文章，也只能给甲计 1 次；加 100 = 2 次
+        assertEquals(2, jia.practices)
+        assertEquals(12, jia.blanks)
+        assertEquals(9, jia.correct)
+
+        val yi = stats.first { it.tag?.id == 2L }
+        assertEquals(1, yi.practices)
+        assertEquals(10, yi.blanks)
+
+        // 旧跨文记录没有来源集合：无法归属，仍排除
+        val legacy = record(-1, 100, 100)
+        assertEquals(
+            2,
+            TagOps.aggregateTagStats(articles, listOf(crossAll, crossOne, legacy), data)
+                .first { it.tag?.id == 1L }.practices,
+        )
+    }
+
+    @Test
     fun `按标签聚合：全部有标签时无未分类行`() {
         val articles = listOf(article(1))
         val data = TagData(tags = listOf(tag(1, "甲")), links = mapOf(1L to setOf(1L)))

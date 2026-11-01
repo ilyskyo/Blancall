@@ -126,7 +126,7 @@ fun AiScreen(navController: NavController, articleIds: List<Long> = emptyList(),
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })

@@ -3,11 +3,14 @@
 
 package com.ilyskyo.blancall.algorithm
 
+import com.ilyskyo.blancall.data.model.Article
+import com.ilyskyo.blancall.data.model.PracticeRecord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 /** 今日计划 / 时间预算 / 调度理由的规则守卫：改优先级或阈值必须在这里显性改断言。 */
@@ -188,14 +191,72 @@ class StudyCoachTest {
     }
 
     @Test
-    fun `调度理由：没有忘过的新卡是第一次`() {
+    fun `调度理由：没有练过是第一次练习，不是复习`() {
         assertEquals(
-            StudyCoach.ReasonKind.FIRST,
+            StudyCoach.ReasonKind.FIRST_PRACTICE,
             StudyCoach.reasonOf(null, now).kind
         )
         assertEquals(
-            StudyCoach.ReasonKind.FIRST,
+            StudyCoach.ReasonKind.FIRST_PRACTICE,
             StudyCoach.reasonOf(FsrsEngine.CardState(reviewCount = 0), now).kind
+        )
+    }
+
+    @Test
+    fun `有旧记录但没有FSRS状态时按计划到期而不是第一次练习`() {
+        val reason = StudyCoach.reasonOf(
+            FsrsEngine.CardState(due = now - day, lastReview = 0L, reviewCount = 0),
+            now,
+            hasPractice = true,
+        )
+        assertEquals(StudyCoach.ReasonKind.OVERDUE, reason.kind)
+        assertEquals(1, reason.days)
+    }
+
+    @Test
+    fun `当天早些时候到期不算逾期一天`() {
+        val zone = ZoneId.systemDefault()
+        val day = LocalDate.of(2026, 11, 1)
+        val nowAt = day.atTime(20, 0).atZone(zone).toInstant().toEpochMilli()
+        val dueAt = day.atTime(8, 0).atZone(zone).toInstant().toEpochMilli()
+        val trained = FsrsEngine.CardState(
+            due = dueAt, lastReview = dueAt, reviewCount = 2, stability = 1.0,
+        )
+        assertFalse(
+            "分组是「今天」，理由就不能说逾期一天",
+            StudyCoach.reasonOf(trained, nowAt).kind == StudyCoach.ReasonKind.OVERDUE,
+        )
+        assertFalse(
+            "旧记录同样按日历日判断",
+            StudyCoach.reasonOf(trained.copy(reviewCount = 0), nowAt, hasPractice = true).kind ==
+                StudyCoach.ReasonKind.OVERDUE,
+        )
+    }
+
+    @Test
+    fun `只有旧练习记录没有FSRS状态的文章也算练过`() {
+        val record = PracticeRecord(
+            articleId = 2L,
+            mode = "SENTENCE",
+            totalBlanks = 2,
+            correctCount = 2,
+            timestamp = now - day,
+        )
+        val snapshot = StudyCoach.snapshot(
+            StudyCoach.Source(
+                articles = listOf(Article(id = 2L, title = "旧记录", content = "文".repeat(400))),
+                records = listOf(record),
+                states = emptyMap(),
+                enrolled = mapOf(2L to now - day),
+            ),
+            now = now,
+        )
+        val due = snapshot.input.dueArticles.single()
+        assertTrue("有记录就不是未开始", due.hasPractice)
+        assertEquals(
+            "有旧记录应按复习排，而不是开始第一遍",
+            StudyCoach.Kind.REVIEW_ARTICLE,
+            StudyCoach.buildPlan(snapshot.input).items.single().kind,
         )
     }
 

@@ -4,6 +4,7 @@
 package com.ilyskyo.blancall.ui.common
 
 import androidx.compose.ui.graphics.graphicsLayer
+import android.view.ViewParent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -14,6 +15,17 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,10 +53,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 
 /**
  * 列表项入场动画：按 index 错峰淡入 + 轻微上滑。
@@ -78,6 +93,34 @@ fun rememberEnteredOnFirstFrame(): Boolean {
         entered = true
     }
     return entered
+}
+
+/**
+ * 关掉系统给 Dialog 窗口的进入 / 退出动画，只保留 Compose 自己画的动画。
+ *
+ * 为什么需要：部分 ROM（已实测华为 EMUI/HarmonyOS）给 dialog 窗口挂的是
+ * 「从屏幕右下角斜着推入」的窗口动画。它叠在卡片自身的 scaleIn/fadeIn 上，
+ * 观感就是所有弹窗都从右下角冒出来 —— 不在 Material 规范内，也无法用
+ * Compose 的 Dialog API 定制。直接把窗口动画归零，让 [BlancallAlertDialog]
+ * 的居中缩放淡入成为唯一的入场，和原生 Material 弹窗一致。
+ */
+@Composable
+fun SuppressDialogWindowAnimation() {
+    val view = LocalView.current
+    LaunchedEffect(view) {
+        if (view is DialogWindowProvider) {
+            view.window.setWindowAnimations(0)
+            return@LaunchedEffect
+        }
+        var node: ViewParent? = view.parent
+        while (node is android.view.View) {
+            if (node is DialogWindowProvider) {
+                node.window.setWindowAnimations(0)
+                return@LaunchedEffect
+            }
+            node = node.parent
+        }
+    }
 }
 
 /**
@@ -152,6 +195,8 @@ fun BlancallAlertDialog(
     }
 
     Dialog(onDismissRequest = { dismissRequested = true }, properties = properties ?: DialogProperties()) {
+        // 系统窗口动画（部分 ROM 是右下角推入）关掉；入场由下面的 scaleIn + fadeIn 负责
+        SuppressDialogWindowAnimation()
         AnimatedVisibility(
             visible = contentVisible,
             // 位移=弹簧、alpha=tween（词表见 Motion / MotionFade）。
@@ -159,11 +204,15 @@ fun BlancallAlertDialog(
             // 后到达更快、尾段只留一次极小回弹 —— 对话框是被「按」出来的，不是飘出来的。
             enter = scaleIn(
                 initialScale = Motion.Scale.enterFrom,
-                animationSpec = Motion.press()
+                animationSpec = Motion.press(),
+                // 明确锚在卡片中心：默认值在不同 Compose 版本里不保证一致，
+                // 一旦被解析成右下角，入场就会读成「从屏幕角上冒出来」
+                transformOrigin = TransformOrigin.Center
             ) + fadeIn(MotionFade.alpha(MotionFade.enter)),
             exit = scaleOut(
                 targetScale = Motion.Scale.dismissTo,
-                animationSpec = Motion.press()
+                animationSpec = Motion.press(),
+                transformOrigin = TransformOrigin.Center
             ) + fadeOut(MotionFade.alpha(MotionFade.exit))
         ) {
             // 退场播完的唯一可靠信号：内容层被 AnimatedVisibility 移出组合。
@@ -222,7 +271,7 @@ fun BlancallAlertDialog(
  * 全屏 Dialog：淡入 + 14dp 上移，退场原路返回，窗口由本组件自己决定何时拆。
  *
  * 为什么补间器要住在这一层：调用方过去在自己的页面组合里读 `alpha > 0f` 当「窗口还在不在」
- * 的判据，于是淡入的每一帧都重组整页 —— 阅读页与导入页都是上千行的骨架，逐帧重组就是掉帧。
+ * 的判据，于是淡入的每一帧都重组整页 —— 文章详情页与导入页都是上千行的骨架，逐帧重组就是掉帧。
  * 现在动画值只在下面的 graphicsLayer 里被读，只有绘制失效，页面本体不再逐帧重组。
  *
  * 撤销判据仍然用 `alpha > 0f` 而不是等一个完成回调：完成信号可能因为导航离开 / 配置变更
@@ -257,6 +306,8 @@ fun FadeDialogWindow(
                 dismissOnClickOutside = false
             )
         ) {
+            // 同上：窗口动画会与这里的 alpha/位移叠成两种节奏
+            SuppressDialogWindowAnimation()
             Surface(
                 modifier = Modifier
                     .fillMaxSize()

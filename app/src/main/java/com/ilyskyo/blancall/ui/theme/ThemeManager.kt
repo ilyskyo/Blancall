@@ -3,13 +3,8 @@
 
 package com.ilyskyo.blancall.ui.theme
 
-import android.annotation.SuppressLint
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.core.content.edit
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 主题模式
@@ -19,37 +14,22 @@ enum class ThemeMode {
 }
 
 /**
- * 主题管理器（全局单例，SharedPreferences 持久化）
+ * 主题门面（保留旧调用点）。
+ *
+ * 真正的状态与落盘已经收归 [AppearanceStore]：
+ * 外观要能被「一键备份」带走，而备份包只收 filesDir 下的 json，
+ * SharedPreferences 里的值换机就丢。这里只做转发，**不要再往本对象里加状态**
+ * —— 否则又会分叉出第二个真理源。
  */
 object ThemeManager {
-    private lateinit var prefs: SharedPreferences
 
-    private val _themeMode = MutableStateFlow(ThemeMode.SYSTEM)
-    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
-
-    @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
-        prefs = context.applicationContext.getSharedPreferences("theme_prefs", Context.MODE_PRIVATE)
-        val savedName = prefs.getString("theme_mode", null)
-        _themeMode.value = savedName?.let { runCatching { ThemeMode.valueOf(it) }.getOrDefault(ThemeMode.SYSTEM) }
-            ?: ThemeMode.SYSTEM
+        AppearanceStore.init(context)
     }
 
-    fun setThemeMode(mode: ThemeMode) {
-        // 先持久化再更新 StateFlow，避免进程意外终止时状态与磁盘不一致
-        if (::prefs.isInitialized) {
-            prefs.edit { putString("theme_mode", mode.name) }
-        }
-        _themeMode.value = mode
-    }
+    val themeMode: StateFlow<ThemeMode> get() = AppearanceStore.themeMode
 
-    fun toggleTheme(): ThemeMode {
-        val next = when (_themeMode.value) {
-            ThemeMode.SYSTEM -> ThemeMode.LIGHT
-            ThemeMode.LIGHT -> ThemeMode.DARK
-            ThemeMode.DARK -> ThemeMode.SYSTEM
-        }
-        setThemeMode(next)
-        return next
-    }
+    fun setThemeMode(mode: ThemeMode) = AppearanceStore.setThemeMode(mode)
+
+    fun toggleTheme(): ThemeMode = AppearanceStore.toggleTheme()
 }

@@ -139,7 +139,7 @@ fun CustomClozeListScreen(
             )
             // ── 顶栏：返回 + 标题 + 新建 ──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })

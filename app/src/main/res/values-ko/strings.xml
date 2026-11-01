@@ -29,6 +29,18 @@
     <string name="continue_import">가져오기 이어하기</string>
     <string name="view_details">자세히 보기</string>
     <string name="due_tasks">복습할 과제</string>
+    <string name="today_plan_all_title">오늘 계획</string>
+    <string name="today_plan_all_manage">계획 관리</string>
+    <string name="today_plan_all_ready">지금 가능 %1$d개</string>
+    <string name="today_plan_all_empty">오늘 연습할 글이 없습니다</string>
+    <string name="today_plan_board_summary">이어하기 %1$d개 · 복습 대기 %2$d개 · 문장 %3$d개 · 오답 %4$d개</string>
+    <string name="section_overdue">기한 지남</string>
+    <string name="section_today">오늘</string>
+    <string name="due_tasks_today_only">오늘 만기 %1$d편</string>
+    <string name="due_tasks_overdue_only">기한 지남 %1$d편</string>
+    <string name="due_tasks_split">오늘 %1$d편 · 기한 지남 %2$d편</string>
+    <string name="due_list_title">복습 대기</string>
+    <string name="due_list_empty">만기된 글이 없습니다</string>
     <string name="resume_tasks">이어 할 과제</string>
     <string name="recently_used">최근 사용</string>
     <string name="no_due_today">오늘 복습은 모두 끝났습니다</string>
@@ -56,6 +68,31 @@
     <string name="added_on">%1$s 에 추가</string>
     <plurals name="char_count_short">
         <item quantity="other">%1$d 자</item>
+    </plurals>
+    <string name="text_stats_title">텍스트 통계</string>
+    <string name="text_stats_open">텍스트 통계 보기</string>
+    <string name="text_stats_chars_with_spaces">글자 수(공백 포함)</string>
+    <string name="text_stats_chars_no_spaces">글자 수(공백 제외)</string>
+    <string name="text_stats_punctuation">문장 부호</string>
+    <string name="text_stats_spaces">공백</string>
+    <string name="text_stats_paragraphs">문단</string>
+    <string name="text_stats_digits">숫자</string>
+    <string name="text_stats_letters">영문자</string>
+    <string name="text_stats_han">한자</string>
+    <string name="text_stats_kana">가나</string>
+    <string name="text_stats_hangul">한글</string>
+    <string name="text_stats_words">단어</string>
+    <plurals name="text_count_han">
+        <item quantity="other">한자 %1$d자</item>
+    </plurals>
+    <plurals name="text_count_kana">
+        <item quantity="other">%1$d자</item>
+    </plurals>
+    <plurals name="text_count_word">
+        <item quantity="other">%1$d개 단어</item>
+    </plurals>
+    <plurals name="text_count_char">
+        <item quantity="other">%1$d글자</item>
     </plurals>
     <string name="new_tag">새 태그</string>
     <string name="edit_tag">태그 편집</string>
@@ -117,6 +154,8 @@
     <string name="ui_language_desc">이 앱만 바뀌고 시스템 언어는 그대로입니다</string>
     <string name="beige_background">베이지 배경</string>
     <string name="beige_background_desc">켜면 라이트 모드에서 화면이 베이지 배경이 됩니다. 다크 모드에는 영향이 없습니다.</string>
+    <string name="flat_background">페이지 배경을 한 단계 어둡게</string>
+    <string name="flat_background_desc">켜면 배경이 카드보다 한 단계 어두워져 카드가 돋보입니다</string>
     <string name="nav_glass">네비게이션 바 액체 글래스</string>
     <string name="nav_glass_desc">하단 네비게이션 바의 실제 액체 글래스 굴절 효과입니다. 끄면 단색 배경으로 바뀌어 전기를 덜 먹습니다.</string>
     <string name="haptic_strength">촉각 강도</string>
@@ -124,11 +163,29 @@
     <string name="home_subtitle">홈 부제</string>
     <string name="home_subtitle_desc">홈 브랜드 행 아래 표시되는 슬로건. 눌러서 편집</string>
     <string name="theme_color">테마 색</string>
+    <string name="theme_color_custom">사용자 지정 테마 색</string>
+    <string name="theme_color_custom_desc">색상환에서 직접 고릅니다(위의 6가지 대신).</string>
+    <string name="material_you">시스템 색상 사용</string>
+    <string name="material_you_desc">Android 12 이상 배경 화면 색상을 사용하며, 위의 테마 색보다 우선합니다.</string>
+    <string name="ui_font">화면 글꼴</string>
+    <string name="ui_font_desc">제목과 본문 글꼴입니다. 읽기 페이지는 별도 설정을 씁니다.</string>
+    <string name="ui_font_serif">시스템 명조</string>
+    <string name="ui_font_sans">시스템 고딕</string>
+    <string name="ui_font_xwwk">LXGW WenKai</string>
+    <string name="ui_font_scale">화면 글자 크기</string>
+    <string name="ui_font_scale_desc">화면 전체 글자 크기를 조절합니다. 읽기와 연습은 별도 설정입니다.</string>
+    <string name="glass_tint">유리 착색</string>
+    <string name="glass_tint_desc">액체 유리가 테마 색을 띱니다. 끄면 무채색이 됩니다.</string>
     <string name="export_backup_desc">글 목록과 연습 진행도 같은 학습 데이터를 백업 파일 하나로 묶습니다. 화면 선호 설정은 포함하지 않습니다</string>
     <string name="keep_wrong_ink_desc">손으로 쓴 오답 글씨가 보관되어 학습 통계의 연습 기록에서 「그때 쓴 글씨」를 다시 볼 수 있습니다. 기기에만 저장</string>
     <string name="import_backup_desc">백업 파일로 학습 데이터를 되돌립니다. 현재 데이터를 덮어쓰며 끝나면 앱을 다시 시작해야 합니다</string>
     <string name="indent_first_line_desc">켜면 순수 텍스트 붙여넣기/글 가져오기 때 각 단락 첫 줄에 공백 두 칸을 자동으로 넣습니다. PDF·Word 문서는 원문을 그대로 둡니다</string>
     <string name="clear_saved_ink">저장된 오답 먹물 지우기</string>
+    <string name="sentence_card_anim_title">탭 넘김 애니메이션</string>
+    <string name="sentence_card_anim_desc">평가 버튼을 눌러 다음 카드로 넘길 때의 날아가는 애니메이션입니다. 위아래 스와이프에는 영향을 주지 않습니다</string>
+    <string name="sentence_card_anim_speed">날아가는 속도</string>
+    <string name="sentence_card_anim_speed_value">약 %1$d밀리초</string>
+    <string name="sentence_card_anim_preview_hint">미리보기를 탭하면 현재 속도로 다시 재생합니다</string>
     <string name="keep_wrong_ink">오답 손글씨 먹물 보관</string>
     <string name="article_tags_desc">글을 분류하고 색을 지정해 카드에 배지로 표시</string>
     <string name="western_thoughts">서양 사상 글감</string>
@@ -169,11 +226,28 @@
     <string name="reminder_enable">알림 켜기</string>
     <string name="notification_permission_required">알림 기능을 사용하려면 알림 권한이 필요합니다. 시스템 설정에서 권한을 허용한 뒤 앱으로 돌아와 주세요.</string>
     <string name="reminder_time">알림 시각</string>
-    <string name="daily_goal">매일 학습 목표</string>
+    <string name="daily_goal">일일 학습 시간</string>
     <string name="custom">사용자 지정</string>
     <string name="reminder_frequency">알림 주기</string>
     <string name="custom_daily_goal_title">매일 학습 시간 직접 정하기</string>
     <string name="minutes_field_label">분 수</string>
+    <string name="reminder_days">알림 요일</string>
+    <string name="reminder_keep_one_day">하루 이상 선택하세요</string>
+    <string name="reminder_quiet_hours">방해 금지 시간</string>
+    <string name="reminder_time_in_quiet_hours">알림 시간이 방해 금지 시간에 포함되어 해당 날짜에는 알림이 오지 않습니다.</string>
+    <string name="reminder_quiet_same">시작과 종료가 같아 방해 금지 시간이 적용되지 않습니다.</string>
+    <string name="reminder_on_blocked">켜짐 · 알림 꺼짐</string>
+    <string name="reminder_on_channel_blocked">켜짐 · 일부 채널 꺼짐</string>
+    <string name="reminder_notifications_off">알림이 꺼져 있어 리마인더가 전달되지 않습니다.</string>
+    <string name="reminder_channels_some_off">일부 리마인더 알림 채널이 시스템 설정에서 꺼져 있습니다.</string>
+    <string name="reminder_open_settings">설정 열기</string>
+    <string name="reminder_system_notification_settings">시스템 알림 설정</string>
+    <string name="reminder_test_notification">테스트 알림 보내기</string>
+    <string name="reminder_test_title">테스트 알림</string>
+    <string name="reminder_test_body">알림이 정상적으로 작동합니다. 다음 알림: %1$s</string>
+    <string name="reminder_test_sent">테스트 알림을 보냈습니다</string>
+    <string name="reminder_schedule_note">알림은 시스템이 예약하므로 절전 모드에서 지연될 수 있습니다.</string>
+    <string name="reminder_daily_goal_hint">알림의 "오늘 몇 회 남음"은 이 목표를 기준으로 계산됩니다.</string>
     <string name="set_reminder_time">알림 시각 설정</string>
     <string name="preset_8am">오전 8:00</string>
     <string name="preset_1230pm">정오 12:30</string>
@@ -239,7 +313,7 @@
     <string name="clear_filter">필터 지우기</string>
     <string name="delete_selected">선택 삭제</string>
     <string name="add_tags">태그 붙이기</string>
-    <string name="cross_review">🔗 글 넘어 복습</string>
+    <string name="cross_review">글 넘어 복습</string>
     <string name="delete_article_confirm">「%1$s」을(를) 삭제할까요?\n삭제한 뒤에는 되돌릴 수 없습니다.</string>
     <plurals name="delete_articles_confirm">
         <item quantity="other">선택한 %1$d 개의 글을 삭제할까요?\n삭제한 뒤에는 되돌릴 수 없습니다.</item>
@@ -255,6 +329,7 @@
         <item quantity="other">%1$d 일 후 복습</item>
     </plurals>
     <string name="mastered">숙달됨</string>
+    <string name="plan_todo">시작 전</string>
     <string name="urgency_not_started">시작 안 함</string>
     <string name="practice">연습</string>
     <string name="sentence_cards">문장 카드</string>
@@ -326,8 +401,8 @@
     <string name="parsing_file">파일 분석 중…</string>
     <string name="save_failed">저장 실패</string>
     <string name="doc_images_dropped">문서 안의 이미지는 가져올 수 없어 글자 내용만 저장했습니다</string>
-    <string name="due_tasks_count">복습할 과제 (%1$d개)</string>
     <string name="resume_tasks_count">이어 할 과제 (%1$d)</string>
+    <string name="start_action">시작</string>
     <string name="review_action">복습</string>
     <string name="continue_action">이어하기</string>
     <string name="cloze_mode_sentence">문장 빈칸</string>
@@ -650,7 +725,7 @@
     <string name="analysis_dialog_title">연습 분석 · %1$s</string>
     <string name="analysis_hints_line">%1$s · 약한 힌트 %2$d / 강한 힌트 %3$d</string>
     <string name="learned_sentences_label">외운 문장</string>
-    <string name="stat_total_reviews">누적 복습</string>
+    <string name="stat_total_reviews">누적 기억</string>
     <plurals name="sentence_round_reviewed">
         <item quantity="other">이번 복습 %1$d문장</item>
     </plurals>
@@ -707,7 +782,6 @@
     <string name="section_selected">단락: 직접 선택(%1$d/%2$d)</string>
     <string name="section_focus">포커스: 이 문장과 주변</string>
     <string name="share_note">노트 공유</string>
-    <string name="mixed_smart_only">혼합 연습은 스마트 빈칸을 쓰므로 글 하나의 사용자 지정 설정은 적용되지 않습니다</string>
     <string name="ai_cloze_failed_local">AI 빈칸 만들기에 실패해 기기 내 알고리즘으로 바꿨습니다: %1$s</string>
     <string name="ai_cloze_no_profile">AI 빈칸 만들기는 켜졌지만 「설정 → AI 설정」에 쓸 수 있는 대화 설정이 없습니다. 지금은 기기 내 알고리즘을 씁니다.</string>
     <string name="generating_blanks">빈칸 만드는 중…</string>
@@ -770,7 +844,7 @@
     <string name="custom_goal_title">일일 목표 직접 설정</string>
     <string name="custom_goal_label">일일 연습 횟수</string>
     <string name="goal_times_unit">회</string>
-    <string name="due_soon_title">⏰ 곧 잊힐 예정</string>
+    <string name="due_soon_title">곧 잊힐 예정</string>
     <string name="prediction_item_desc">%1$s, 기억률 %2$d%%, %3$s</string>
     <string name="decay_expanded">감쇠 곡선 펼침</string>
     <string name="decay_collapsed">탭하여 감쇠 곡선 펼치기</string>
@@ -873,8 +947,8 @@
         <item quantity="other">%1$d회 이상 답한 문장만 색이 붙습니다. 색 = 현재 기억률, 붉을수록 잊기 직전</item>
     </plurals>
     <!-- ── 알림 채널 및 리마인더(notif_*): NotificationChannels / NotificationHelper 에 대응 ── -->
-    <string name="notif_channel_due_name">복습 예정</string>
-    <string name="notif_channel_due_desc">글이나 문장의 복습 시기, 만료 임박, 망각 예측을 알려드립니다</string>
+    <string name="notif_channel_due_name">예정 및 시작</string>
+    <string name="notif_channel_due_desc">글이나 문장의 복습 시기, 계획 중인 글의 시작 시기, 망각 예측을 알려드립니다</string>
     <string name="notif_channel_sentence_name">문장 카드</string>
     <string name="notif_channel_sentence_desc">매일 한 문장과 복습 시기가 된 문장 카드 알림</string>
     <string name="notif_channel_goal_name">이어하기와 오늘 목표</string>
@@ -895,7 +969,7 @@
     <string name="notif_mode_word">단어 빈칸</string>
     <string name="notif_mode_reverse">단락 받아쓰기</string>
     <string name="notif_no_study_title">📖 오늘의 암기 알림</string>
-    <string name="notif_no_study_body">오늘 아직 암기를 끝내지 않았어요. 몇 분만 복습해 보세요.</string>
+    <string name="notif_no_study_body">오늘 학습을 아직 마치지 않았어요. %1$d일 연속 기록이 끊기지 않게 이어가세요.</string>
     <string name="notif_no_study_body_first">오늘 아직 암기를 끝내지 않았어요. 첫 연습을 시작해 보세요!</string>
     <string name="notif_weak_title">🎯 취약 내용 복습</string>
     <plurals name="notif_weak_body">
@@ -915,6 +989,14 @@
         <item quantity="other">%1$d개가 복습 시기예요. 지금 복습하면 더 오래 기억에 남아요.</item>
     </plurals>
     <string name="notif_due_review_named_one">"%1$s"의 복습 시간입니다. 지금 시작하세요.</string>
+    <string name="notif_start_article_title">📖 첫 연습 준비</string>
+    <string name="notif_start_article_named_one">“%1$s”이(가) 계획에 있습니다. 첫 연습을 시작하세요.</string>
+    <plurals name="notif_start_article_named">
+        <item quantity="other">“%1$s” 등 %2$d개가 아직 시작 전입니다. 하나를 골라 시작하세요.</item>
+    </plurals>
+    <plurals name="notif_start_article_body">
+        <item quantity="other">계획 중인 %1$d개가 아직 시작 전입니다. 오늘 첫 연습을 시작하세요.</item>
+    </plurals>
     <plurals name="notif_due_review_named">
         <item quantity="other">"%1$s" 등 %2$d건이 복습 시간입니다. 지금 시작하세요.</item>
     </plurals>
@@ -973,6 +1055,25 @@
     <string name="blank_warn_suggestion">권장: %1$d (최대값이 아닌 연습에 적합한 값)</string>
     <string name="blank_use_suggested">권장값 사용 (%1$d)</string>
     <!-- ── 읽기 화면 상태와 컨트롤 (reader_*) ── -->
+    <!-- ── 文章详情页计划状态条（plan_bar_*）── -->
+    <plurals name="plan_bar_practices">
+        <item quantity="other">%1$d회 연습</item>
+    </plurals>
+    <string name="plan_bar_accuracy">정확도 %1$d%%</string>
+    <string name="plan_bar_not_started">시작 전</string>
+    <string name="plan_bar_overdue">기한 지남</string>
+    <string name="plan_bar_due_today">오늘 복습</string>
+    <string name="plan_bar_start_today">오늘 시작</string>
+    <string name="plan_bar_start_overdue">이제 시작하세요</string>
+    <string name="plan_bar_due_tomorrow">내일 복습</string>
+    <string name="plan_bar_start_tomorrow">내일 시작</string>
+    <plurals name="plan_bar_due_days">
+        <item quantity="other">%1$d일 후 복습</item>
+    </plurals>
+    <plurals name="plan_bar_start_days">
+        <item quantity="other">%1$d일 후 시작</item>
+    </plurals>
+    <string name="plan_bar_enroll">계획에 추가</string>
     <string name="reader_read_minutes">읽음: %1$d분</string>
     <string name="reader_read_less_minute">읽음: 1분 미만</string>
     <string name="reader_finished">다 읽음</string>
@@ -984,6 +1085,34 @@
     <string name="reader_prev_section">이전 섹션</string>
     <string name="reader_full_text">전체</string>
     <string name="reader_next_section">다음 섹션</string>
+    <string name="reader_select_copy">복사</string>
+    <string name="reader_select_highlight">밑줄</string>
+    <string name="reader_select_unhighlight">밑줄 취소</string>
+    <string name="reader_select_note">주석</string>
+    <string name="reader_select_edit_note">주석 편집</string>
+    <string name="reader_note_title">주석</string>
+    <string name="reader_note_hint">메모를 입력하세요…</string>
+    <string name="reader_mark_copied">복사됨</string>
+    <string name="reader_marks_title">밑줄과 주석</string>
+    <string name="reader_marks_empty">아직 밑줄이나 주석이 없습니다. 본문을 길게 눌러 밑줄을 그을 수 있습니다.</string>
+    <string name="reader_marks_count">총 %1$d개</string>
+    <string name="reader_marks_entry">밑줄과 주석</string>
+    <string name="reader_marks_entry_hint">본문을 길게 눌러 밑줄·주석</string>
+    <string name="reader_marks_entry_count">%1$d개</string>
+    <string name="reader_speed_title">읽기 속도</string>
+    <string name="reader_speed_value">약 %1$d자/분</string>
+    <string name="reader_speed_basis_personal">읽기 기록으로 추정(누적 %1$d분)</string>
+    <string name="reader_speed_basis_default">아직 읽기 기록이 없어 기본 속도를 사용합니다</string>
+    <string name="reader_speed_reset">다시 측정</string>
+    <string name="reader_remaining_hours">약 %1$d시간 %2$d분 남음</string>
+    <string name="reader_remaining_hours_only">약 %1$d시간 남음</string>
+    <string name="reader_idle_title">아직 읽고 있나요?</string>
+    <string name="reader_idle_body">이 화면에서 %1$d분째 멈춰 있어요</string>
+    <string name="reader_idle_yes">읽는 중</string>
+    <string name="reader_idle_no">나중에</string>
+    <string name="reader_idle_cheer">좋아요!</string>
+    <string name="reader_idle_cheer_detail">%1$d분 더 읽었어요. 이어서 가요</string>
+    <string name="reader_idle_paused">그럼 이따 봐요. 이어서 읽으면 됩니다</string>
     <!-- ── 학습 데이터 백업/복원 (backup_*): 오류 유형은 BackupManager, 문구는 여기에 ── -->
     <string name="backup_export_done">백업 파일을 내보냈습니다. 잘 보관하세요.</string>
     <string name="backup_export_failed">내보내기 실패: %1$s</string>
@@ -1023,7 +1152,8 @@
     <string name="data_archive_none">아직 아카이브할 만큼 기록이 많지 않습니다</string>
     <string name="flow_title">학습 작업 흐름</string>
     <string name="flow_summary_title">현재 계획</string>
-    <string name="flow_summary_due_now">개 지금 복습 가능</string>
+    <string name="flow_summary_due_now">개 지금 연습 가능</string>
+    <string name="flow_summary_due_new">그중 %1$d개는 아직 연습 전</string>
     <string name="flow_summary_active">계획 중</string>
     <string name="flow_summary_overdue">기한 지남</string>
     <string name="flow_summary_paused">일시중지됨</string>
@@ -1043,6 +1173,8 @@
     <string name="flow_done_resumed_all">일시중지된 작업을 모두 재개했습니다</string>
     <string name="flow_done_paused_all">모든 작업을 일시중지했습니다</string>
     <string name="flow_done_plan">복습 강도를 변경했습니다</string>
+    <string name="flow_undo">되돌리기</string>
+    <string name="flow_undone">되돌렸습니다</string>
     <string name="flow_filter_all">전체 %1$d</string>
     <string name="flow_filter_due">오늘 %1$d</string>
     <string name="flow_filter_paused">일시중지 %1$d</string>
@@ -1054,13 +1186,16 @@
     <string name="flow_group_later">나중</string>
     <string name="flow_group_paused">일시중지됨</string>
     <string name="plan_paused">일시중지됨</string>
-    <string name="flow_task_meta">복습 %1$d회 · 유지율 %2$d%%</string>
+    <string name="flow_task_meta">연습 %1$d회 · 유지율 %2$d%%</string>
+    <string name="flow_task_meta_no_retention">연습 %1$d회</string>
+    <string name="flow_task_meta_new">아직 연습 전</string>
     <string name="flow_sentence_due">복습 예정 문장 카드 %1$d</string>
     <string name="flow_due_overdue">기한 지남</string>
     <string name="flow_due_today">오늘</string>
     <string name="flow_due_tomorrow">내일</string>
     <string name="flow_resume_on">%1$s에 재개</string>
     <string name="flow_start_review">복습 시작</string>
+    <string name="flow_start_learning">학습 시작</string>
     <string name="flow_adjust_schedule">일정 조정</string>
     <string name="flow_pause">일시중지</string>
     <string name="flow_resume">재개</string>
@@ -1096,12 +1231,15 @@
     <string name="flow_now">지금</string>
     <string name="flow_detail_title">작업 상세</string>
     <string name="flow_detail_retention_label">현재 유지율</string>
-    <string name="flow_detail_reviews_label">복습 횟수</string>
     <string name="flow_detail_sentences_label">학습한 문장</string>
     <string name="flow_detail_started_label">학습 시작</string>
     <string name="flow_detail_advice_label">다음 제안</string>
     <string name="flow_advice_paused_title">계획이 일시중지되었습니다</string>
     <string name="flow_advice_paused_body">일시중지는 계획과 알림에서만 제외하며 수동 연습은 막지 않습니다. 준비되면 언제든 재개할 수 있고 남은 간격은 그때부터 이어집니다.</string>
+    <string name="flow_advice_not_started_title">아직 시작 전</string>
+    <string name="flow_advice_not_started_body">이 글은 계획에 있지만 아직 한 번도 연습하지 않았습니다. 한 번 연습하면 여기에 기억 곡선과 복습 주기가 표시됩니다.</string>
+    <string name="flow_advice_legacy_body">이 글에는 연습 기록이 있지만 기억 상태가 아직 없습니다. 한 번 연습하면 여기에 기억 곡선과 복습 리듬이 표시됩니다.</string>
+    <string name="flow_advice_legacy_title">이전 연습 기록으로 예정</string>
     <string name="flow_advice_overdue_title">기한이 지났습니다</string>
     <string name="flow_advice_overdue_body">기다릴수록 유지율이 떨어집니다. 오늘 한 번 복습하면 리듬을 되찾을 수 있습니다.</string>
     <string name="flow_advice_low_retention_title">유지율이 낮습니다</string>
@@ -1128,6 +1266,8 @@
     <string name="flow_detail_mistakes_title">오류 유형</string>
     <string name="flow_detail_schedule_title">일정</string>
     <string name="flow_detail_next_due">다음 복습</string>
+    <string name="flow_detail_plan_start">학습 시작 예정</string>
+    <string name="flow_detail_practices_label">연습 횟수</string>
     <string name="flow_detail_interval">이번 간격(일)</string>
     <string name="flow_detail_records_title">최근 연습</string>
     <string name="flow_detail_view_all_stats">전체 데이터 보기</string>
@@ -1187,7 +1327,7 @@
 
     <!-- ── 统计：目标与弱点建议 ── -->
     <string name="stats_article_line">글 %1$d개 · 연습 %2$d회 · 정확도 %3$d%%</string>
-    <string name="daily_goal_achieved">🎯 오늘 목표 달성</string>
+    <string name="daily_goal_achieved">오늘 목표 달성</string>
     <string name="daily_goal_progress">%1$d / %2$d회</string>
     <string name="weakness_profile_title">약점 프로필</string>
     <string name="weakness_total_mistakes">총 %1$d개 오류</string>
@@ -1353,7 +1493,6 @@
     <string name="retry">다시 시도</string>
     <string name="ai_difficulty_intro">선택한 난이도와 전략으로 「%1$s」의 빈칸을 생성합니다.</string>
     <string name="ai_start_generating">생성 시작</string>
-    <string name="start_action">시작</string>
 
     <!-- ── Pro AI 运行时状态 ── -->
     <string name="ai_cross_title">교차 AI · %1$d개 글</string>
@@ -1416,10 +1555,33 @@
 
     <!-- ── 使用帮助正文 ── -->
     <string name="help_001">도움말</string>
+    <string name="help_flow_title">전체 흐름</string>
+    <string name="help_flow_intro">가져오기부터 복습까지 하나의 순환</string>
+    <string name="help_flow_1_t">글 가져오기</string>
+    <string name="help_flow_1_d">홈의 「글 추가」 또는 「내 글 → 가져오기」에서 추가합니다. 붙여넣기, 파일, 콘텐츠 팩을 지원합니다</string>
+    <string name="help_flow_2_t">오늘의 계획</string>
+    <string name="help_flow_2_d">홈 카드에 오늘 가장 중요한 세 가지를 보여 줍니다. 오른쪽 위 \'설정\'에서 학습 시간과 시험 날짜를 조정합니다</string>
+    <string name="help_flow_3_t">학습 작업 흐름</string>
+    <string name="help_flow_3_d">데이터 탭을 아래로 당겨 엽니다. 일시 중지, 날짜 변경, 복습 계획 전환이 가능하며 \'내일로 미루기\'는 되돌릴 수 있습니다</string>
+    <string name="help_flow_4_t">연습</string>
+    <string name="help_flow_4_d">문장 빈칸 / 단어 빈칸 / 역받아쓰기 / 사용자 지정 빈칸. 문장 카드는 탭하거나 밀어서 넘깁니다</string>
+    <string name="help_flow_5_t">기록과 복습</string>
+    <string name="help_flow_5_d">평가할 때마다 FSRS에 저장됩니다. 기한이 되면 오늘의 계획으로 자동 복귀하고 진행 상황은 데이터 탭에 모입니다</string>
+    <string name="help_flow_loop">기한이 되면 \'오늘의 계획\'으로 돌아와 순환이 닫힙니다</string>
+    <string name="help_shared_title">공통 데이터</string>
+    <string name="help_shared_intro">아래 값은 하나뿐이며, 어느 입구에서 바꿔도 다른 입구에 함께 반영됩니다</string>
+    <string name="help_shared_1_t">하루 학습 시간</string>
+    <string name="help_shared_1_d">오늘의 계획 설정 ↔ 설정 · 기억 계획. 오늘 계획의 총 시간을 정합니다</string>
+    <string name="help_shared_2_t">하루 연습 횟수</string>
+    <string name="help_shared_2_d">오늘의 계획 설정 ↔ 설정 · 알림 ↔ 데이터 탭 \'오늘의 목표\'. 알림의 남은 횟수 기준이기도 합니다</string>
+    <string name="help_shared_3_t">시험 날짜</string>
+    <string name="help_shared_3_d">오늘의 계획 설정 ↔ 설정. 카운트다운 안내와 속도에만 영향을 주며 복습 일정은 바꾸지 않습니다</string>
+    <string name="help_shared_4_t">복습 계획</string>
+    <string name="help_shared_4_d">설정 · 기억 계획 ↔ 학습 작업 흐름. 홈 알림과 작업 흐름이 같은 템플릿을 씁니다</string>
     <string name="help_002">연습 시작</string>
     <string name="help_003">글을 선택하고 "연습 시작"을 탭한 뒤 모드를 고르면 암기를 시작할 수 있습니다.</string>
     <string name="help_004">세 가지 진입점(하나 선택)</string>
-    <string name="help_005">읽기 페이지 하단의 "연습 시작": 먼저 글을 연 뒤 시작합니다.</string>
+    <string name="help_005">글 상세 페이지 하단의 "연습 시작": 먼저 글을 연 뒤 시작합니다.</string>
     <string name="help_006">홈 카드의 "연습" 버튼: 최근 사용, 글 카드, 이어서 하기 등의 카드에서 바로 시작합니다.</string>
     <string name="help_007">홈의 "이어서 하기" 카드: 미완료 연습을 원래 진행 상태로 이어서 합니다.</string>
     <string name="help_008">연습 흐름</string>
@@ -1452,7 +1614,7 @@
     <string name="help_035">단락을 섞어 받아쓰기 — 전체 복원</string>
     <string name="help_036">적합: 시험 전 점검과 모의고사</string>
     <string name="help_037">사용자 지정 빈칸</string>
-    <string name="help_038">미리 지정한 위치만 빈칸으로 만듭니다. 읽기 페이지에서 가리기 단위를 "사용자 지정"으로 바꾸고 문장/단어/글자별로 표시하세요. 연습에서는 사용자 지정 설정을 선택하면 됩니다. 연습 전에 새로 만들거나 편집할 수도 있습니다.</string>
+    <string name="help_038">미리 지정한 위치만 빈칸으로 만듭니다. 글 상세 페이지에서 가리기 단위를 "사용자 지정"으로 바꾸고 문장/단어/글자별로 표시하세요. 연습에서는 사용자 지정 설정을 선택하면 됩니다. 연습 전에 새로 만들거나 편집할 수도 있습니다.</string>
     <string name="help_039">적합: 매우 집중적인 개인 암기</string>
     <string name="help_040">교차 혼합 연습</string>
     <string name="help_041">"내 글"에서 길게 눌러 다중 선택 모드로 들어간 뒤 2개 이상 선택하고 "연습 시작"을 탭하면 여러 글의 빈칸이 섞입니다. 혼합 연습은 스마트 빈칸을 사용하며 단일 글의 사용자 지정 설정은 적용하지 않습니다.</string>
@@ -1537,14 +1699,14 @@
     <string name="help_120">왼쪽 위 아이콘을 탭해 로고를 바꿀 수 있습니다(사용자 지정 이모지 포함).</string>
     <string name="help_121">부제목 글자를 탭해 직접 바꿀 수 있습니다.</string>
     <string name="help_122">내 글</string>
-    <string name="help_123">글을 탭해 읽기 페이지로 갑니다.</string>
+    <string name="help_123">글을 탭해 글 상세 페이지로 갑니다.</string>
     <string name="help_124">길게 눌러 다중 선택: 일괄 삭제, 2개 이상 선택해 교차 혼합 연습, AI로 보내기.</string>
-    <string name="help_125">읽기 페이지</string>
+    <string name="help_125">글 상세 페이지</string>
     <string name="help_126">하단 버튼: 학습 통계/읽기 모드/사용자 지정/연습 시작. Pro 버전에는 AI도 있습니다.</string>
     <string name="help_127">"읽기 모드"에서 글자 크기, 줄 간격, 글꼴, 굵기, 색상, 가리기 단위(균형/단어/사용자 지정)를 조절합니다.</string>
     <string name="help_128">본문을 두 손가락으로 집으면 글자 크기가 바로 조절됩니다.</string>
     <string name="help_129">오른쪽 위: 글 삭제/편집.</string>
-    <string name="help_130">사용자 지정 가리기(읽기 페이지)</string>
+    <string name="help_130">사용자 지정 가리기(글 상세 페이지)</string>
     <string name="help_131">가리기 단위를 "사용자 지정"으로 바꾸면 설정 목록이 열립니다. 항목을 탭하면 바로 사용하고, 행 끝의 "편집"으로 표시 페이지에 들어가며, 길게 누르면 이름 변경/삭제할 수 있습니다.</string>
     <string name="help_132">사용자 지정 단위를 선택하면 버튼에 현재 사용 중인 설정 이름이 표시됩니다.</string>
     <string name="help_133">표시 페이지: 문장을 탭하면 문장 전체를 가리고, 문장을 길게 누르면 단어로 나뉘며 단어를 탭하면 가립니다. 단어를 길게 누르면 글자로 나뉘고, 다시 길게 누르면 단계적으로 복원됩니다.</string>
@@ -1555,7 +1717,7 @@
     <string name="help_138">완료 후 성적 카드에서 정확도와 소요 시간을 보고 바로 공유할 수 있습니다.</string>
     <string name="help_139">사용자 지정 빈칸(연습 중)</string>
     <string name="help_140">설정 목록: 탭하면 편집, 길게 누르면 연습 시작/이름 변경/삭제, 선택 모드에서는 탭으로 바로 연습을 시작합니다.</string>
-    <string name="help_141">편집 페이지: 탭으로 빈칸을 선택하고 길게 누르면 단위가 바뀝니다(읽기 페이지 표시와 동일).</string>
+    <string name="help_141">편집 페이지: 탭으로 빈칸을 선택하고 길게 누르면 단위가 바뀝니다(글 상세 페이지 표시와 동일).</string>
     <string name="help_142">가져오기 페이지의 "저장 후 빈칸 만들기"로 바로 새로 만들 수 있습니다. 글을 가져온 직후 핵심을 표시하세요.</string>
     <string name="help_143">글 가져오기</string>
     <string name="help_144">두 가지 방법: 텍스트 붙여넣기, 파일 가져오기(txt, PDF, Word 등; PDF 미리보기 가능).</string>
@@ -1564,16 +1726,16 @@
     <string name="help_147">하단 두 버튼: "저장만"은 저장 후 돌아가고, "저장 후 빈칸 만들기"는 저장 후 바로 해당 글의 사용자 지정 빈칸 편집으로 갑니다.</string>
     <string name="help_148">공통</string>
     <string name="help_149">모든 페이지 왼쪽 위 흰 원형 버튼으로 돌아가며 시스템 뒤로 가기 제스처/키도 사용할 수 있습니다.</string>
-    <string name="help_150">읽기 페이지가 표시/편집 상태이면 먼저 편집을 끝낸 뒤 페이지를 나갑니다.</string>
+    <string name="help_150">글 상세 페이지가 표시/편집 상태이면 먼저 편집을 끝낸 뒤 페이지를 나갑니다.</string>
     <string name="help_151">주요 조작에는 진동 피드백이 있습니다: 기준을 넘는 당기기, 길게 눌러 카드 편집, 카드 끌기/크기 조절, 길게 누르기 메뉴 등.</string>
-    <string name="help_152">글 삭제는 되돌릴 수 없습니다: 읽기 페이지 오른쪽 위 "삭제" 또는 "내 글"의 일괄 삭제를 사용하세요.</string>
+    <string name="help_152">글 삭제는 되돌릴 수 없습니다: 글 상세 페이지 오른쪽 위 "삭제" 또는 "내 글"의 일괄 삭제를 사용하세요.</string>
     <string name="help_153">설정의 "데이터": 한 번 탭 내보내기로 글 보관함과 연습 진행을 하나의 백업 파일로 묶습니다. 한 번 탭 가져오기로 새 설치에 복원합니다(현재 데이터를 덮어쓰며 완료 후 앱이 종료되어 다시 시작됩니다).</string>
     <string name="help_154">AI를 켜면 글을 AI에 넘겨 어려운 부분 설명, 연습 문제 생성, 자주 틀리는 내용 분석을 받을 수 있습니다.</string>
     <string name="help_155">활성화 및 설정</string>
     <string name="help_156">"설정 → AI → AI 기능 사용"에서 켜고 API 주소, API Key, 모델명을 입력하세요. OpenAI 호환 API(DeepSeek/Qwen/GLM/Kimi 등)를 지원합니다.</string>
     <string name="help_157">웹 검색: 설정에서 "웹 검색"을 켜고 tavily.com에서 이메일로 무료 가입한 뒤 콘솔에서 API Key(tvly-xxx, 월 1000회 무료)를 복사해 "Tavily API Key" 입력란에 붙여넣으세요.</string>
     <string name="help_158">진입점 위치</string>
-    <string name="help_159">읽기 페이지의 "AI" 버튼</string>
+    <string name="help_159">글 상세 페이지의 "AI" 버튼</string>
     <string name="help_160">글을 읽는 중 하단 버튼 줄의 "AI"를 탭하면 현재 글을 가지고 대화가 열립니다.</string>
     <string name="help_161">글 목록의 "AI로 보내기"</string>
     <string name="help_162">글을 길게 눌러 다중 선택한 뒤 "AI로 보내기"를 탭하면 여러 글을 넘나드는 대화를 할 수 있습니다.</string>
@@ -1617,16 +1779,16 @@
     <string name="notebook_drill_empty">본문이 바뀌어 이 묶음을 연습할 수 없습니다.</string>
     <string name="notebook_drill_name">오답 재연습</string>
     <string name="notebook_drill_partial">%1$d개는 본문 변경으로 찾지 못해 나머지만 연습합니다.</string>
-    <string name="review_timeline_title">실제 복습 기록</string>
+    <string name="review_timeline_title">실제 연습 기록</string>
     <string name="review_timeline_local_only">이 기기에서만</string>
-    <string name="review_timeline_none">아직 복습 로그가 없습니다. 다음 복습부터 기록됩니다.</string>
+    <string name="review_timeline_none">아직 연습 기록이 없습니다. 첫 연습 후 기록이 시작됩니다</string>
     <string name="review_timeline_one">한 번만 기록되어 아직 추세가 없습니다.</string>
-    <string name="review_timeline_steady_start">첫 복습부터 안정적입니다</string>
-    <string name="review_timeline_steady_after">%1$d번째 복습 후 안정</string>
+    <string name="review_timeline_steady_start">첫 연습부터 안정</string>
+    <string name="review_timeline_steady_after">%1$d번째 연습 후 안정</string>
     <string name="review_timeline_shaky">최근 복습에서 다시 흔들렸습니다</string>
-    <string name="review_timeline_interval_hint">복습 간 실제 간격</string>
+    <string name="review_timeline_interval_hint">연습 간 실제 간격</string>
     <string name="review_timeline_review_no">%1$d번째</string>
-    <string name="review_timeline_first">첫 복습</string>
+    <string name="review_timeline_first">첫 연습</string>
     <string name="review_timeline_gap">%1$s일 후</string>
     <string name="rating_again">잊음</string>
     <string name="rating_hard">어려움</string>
@@ -1643,8 +1805,8 @@
     <string name="reader_practice_sheet_title">이 단락 연습</string>
     <string name="reader_practice_sheet_hint">빈칸 방식을 고르면 바로 시작합니다.</string>
     <string name="reader_practice_mode_section">전체 글을 빈칸으로 연습</string>
-    <string name="reason_first">첫 복습</string>
     <string name="reason_lapsed">%1$d번 잊었습니다</string>
+    <string name="reason_first_practice">첫 연습</string>
     <string name="reason_long_gap">지난 복습에서 %1$d일 지남</string>
     <string name="reason_overdue">%1$d일 지연</string>
     <string name="reason_stable">%1$d번 안정적</string>
@@ -1654,12 +1816,20 @@
     <string name="today_plan_subtitle_exam">시험까지 %1$d일 · 약 %2$d분</string>
     <string name="today_plan_subtitle_exam_due">시험까지 %1$d일 · 만기 %2$d개 · 약 %3$d분</string>
     <string name="today_plan_minutes">오늘 약 %1$d분</string>
-    <string name="today_plan_budget">%1$d분</string>
     <string name="today_plan_exam_behind">지금 속도로는 시험 전에 다 끝내지 못할 수 있습니다.</string>
     <string name="today_plan_empty">지금 복습할 내용이 없습니다. 시간을 고르거나 글을 복습하세요.</string>
     <string name="today_plan_paused_hint">일시중지 %1$d개 · 학습 작업 흐름에서 재개</string>
     <string name="today_plan_empty_paused">%1$d개 글이 일시중지되었습니다. 학습 작업 흐름에서 재개하세요.</string>
     <string name="today_plan_item_minutes">%1$d분</string>
+    <string name="plan_settings_title">오늘 계획 설정</string>
+    <string name="plan_settings_subtitle">오늘 계획에만 영향을 주며 복습 일정은 바뀌지 않습니다</string>
+    <string name="plan_settings_exam_hint">학습 속도 안내에만 쓰이며 복습 일정은 바뀌지 않습니다</string>
+    <string name="plan_settings_duration_label">하루 학습 시간</string>
+    <string name="plan_settings_duration_hint">오늘 계획의 총 시간을 정합니다</string>
+    <string name="plan_settings_estimate">오늘 약 %1$d분이 필요합니다</string>
+    <string name="plan_settings_show_on_card">오늘 계획 카드에 목표 진행률 표시</string>
+    <string name="plan_settings_show_on_card_hint">끄면 카드에 목표 진행률을 표시하지 않습니다</string>
+    <string name="today_plan_goal_progress">오늘 목표 %1$d회 · 완료 %2$d회</string>
     <string name="today_plan_exam_set">시험일: %1$s</string>
     <string name="today_plan_set_exam">시험일 설정</string>
     <string name="today_plan_clear_exam">해제</string>
@@ -1668,18 +1838,13 @@
     <string name="today_plan_sentence_cards">문장 카드</string>
     <string name="today_plan_daily_goal">오늘 목표</string>
     <string name="today_plan_resume_detail">%2$d문제 중 %1$d문제 완료</string>
+    <string name="today_plan_start_article">%1$s 학습 시작</string>
+    <string name="today_plan_start_detail">아직 연습 전 · 오늘 시작</string>
     <string name="today_plan_review_detail">복습 시기</string>
     <string name="today_plan_weak_detail">취약 글 · 오답 %1$d개</string>
     <string name="today_plan_mistake_detail">미해결 오답 %1$d개</string>
     <string name="today_plan_sentence_detail">%1$d문장 만기</string>
     <string name="today_plan_goal_detail">%1$d회 더</string>
-    <string name="today_plan_budget_title">사용할 수 있는 시간은?</string>
-    <string name="today_plan_budget_hint">시간을 고르면 그 안에 들어가는 내용만 고릅니다.</string>
-    <string name="today_plan_minutes_unit">%1$d분</string>
-    <string name="today_plan_budget_empty">이 시간에 들어가는 내용이 없습니다.</string>
-    <string name="today_plan_budget_result_articles">%1$d개 글 · 약 %2$d분</string>
-    <string name="today_plan_budget_result_cards">%1$d개 문장 · 약 %2$d분</string>
-    <string name="today_plan_budget_start">시작</string>
     <string name="budget_remaining">%1$d분 남음</string>
     <string name="budget_end_title">시간이 되었습니다</string>
     <string name="budget_end_body">예정한 시간이 지났습니다. 답한 것을 제출하거나 계속하세요.</string>
@@ -1701,6 +1866,10 @@
     <string name="exam_paper_start">시험지 만들기(%1$d개 글)</string>
     <string name="exam_paper_title">시험지 · %1$d개 글</string>
     <string name="notif_action_start">복습 시작</string>
+    <string name="notif_action_start_learning">학습 시작</string>
+    <string name="notif_action_resume">연습 계속</string>
+    <string name="notif_action_view_task">작업 보기</string>
+    <string name="notif_action_sentence">문장 연습</string>
     <string name="open">열기</string>
     <string name="content_pack_title">콘텐츠 팩</string>
     <string name="content_pack_settings_desc">txt / md 모음 가져오기</string>
@@ -1757,9 +1926,24 @@
     <string name="widget_sentence_due">%1$d문장 만기</string>
     <string name="ov_notebook_count">미해결 %1$d개</string>
     <string name="ov_next_step_due_article_title">“%1$s” 복습</string>
+    <string name="ov_next_step_start_article_title">“%1$s” 학습 시작</string>
     <string name="ov_next_step_scope_article">글 연습 · 문장 빈칸</string>
     <string name="ov_next_step_action_start">복습 시작</string>
+    <string name="ov_next_step_action_start_learning">학습 시작</string>
     <string name="ov_next_step_go_mistakes">오답 노트로</string>
     <string name="ov_next_step_go_articles">내 글 보기</string>
     <string name="content_pack_disclaimer">콘텐츠 팩은 사용자가 제공한 것입니다. 해당 텍스트를 사용하고 공유할 권리가 있는지 확인하세요.</string>
+    <string name="view_tag">태그 보기</string>
+    <string name="tag_detail_articles">글</string>
+    <string name="sentence_scope_this_article">이 글만</string>
+    <string name="sentence_scope_this_tag">「%1$s」만</string>
+    <string name="sentence_scope_empty">이 범위에 복습할 문장이 없습니다</string>
+    <string name="practice_history_sources">출처 글</string>
+    <string name="practice_history_no_sources">오래된 기록에는 출처 글이 없습니다</string>
+    <string name="practice_history_empty_day">이 날은 연습 기록이 없습니다</string>
+    <string name="practice_history_view_all">전체 연습 기록 보기</string>
+    <string name="import_tags_label">태그(선택)</string>
+    <string name="search_sentences">일치한 문장</string>
+    <string name="search_practice_sentence">이 문장 연습</string>
+    <string name="view_article">원문 읽기</string>
 </resources>

@@ -115,6 +115,7 @@ import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.PullReleaseDirection
 import com.ilyskyo.blancall.ui.common.PullReleaseIndicator
 import com.ilyskyo.blancall.ui.common.StatItem
+import com.ilyskyo.blancall.ui.common.UndoToast
 import com.ilyskyo.blancall.ui.common.animateListItem
 import com.ilyskyo.blancall.ui.common.heroElement
 import com.ilyskyo.blancall.ui.common.rememberAutoHideNavBarOnScroll
@@ -173,6 +174,26 @@ private val FLOW_EXIT_PULL_OVERSHOOT = 8.dp
 /** 满格后继续上拉的阻尼系数（1 = 跟手，0 = 完全推不动）。 */
 private const val FLOW_EXIT_PULL_OVERSHOOT_RATIO = 0.08f
 
+/**
+ * 底部浮条的两档停留时长。
+ *
+ * 可撤销的那一档给 5 秒：读一句话、想清楚要不要点「撤销」，五秒是普通人来得及的；
+ * 只是告知（已撤销 / 已切换复习强度）沿用原来的 2.4 秒 —— 没有动作可做，就该赶紧让位。
+ */
+private const val FLOW_NOTE_HOLD_MS = 2400L
+private const val FLOW_NOTE_UNDO_MS = 5200L
+
+/**
+ * 任务流里的一条底部浮条：文案 +（可选）撤销所需的现场快照。
+ *
+ * 快照跟着提示走，而不是存在别处：浮条消失的那一刻，这次操作就不再可撤销，
+ * 两件事共用一个生命周期，就不会出现「提示没了还能撤」的幽灵状态。
+ */
+private data class FlowNote(
+    val message: String,
+    val undo: List<FsrsStateStore.UndoSnapshot>? = null,
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StudyFlowScreen(navController: NavController) {
@@ -185,15 +206,22 @@ fun StudyFlowScreen(navController: NavController) {
         ArticleRepository.getInstance(context.filesDir.resolve("articles.json").absolutePath)
     }
     val articles by articleRepo.allArticles.collectAsState(initial = emptyList())
+    // 旧版/CSV 回灌只有练习记录、没有 FSRS 状态；判断「练过没有」必须把记录带上
+    val recordRepo = remember {
+        RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath)
+    }
+    val allRecords by recordRepo.records.collectAsState()
     var states by remember { mutableStateOf(fsrsStore.allStates()) }
     var pauses by remember { mutableStateOf(fsrsStore.pausedArticles()) }
     var sentenceStates by remember { mutableStateOf(fsrsStore.allSentenceStates()) }
+    var enrolled by remember { mutableStateOf(fsrsStore.enrolledArticles()) }
     val fsrsRevision by fsrsStore.revision.collectAsState()
     LaunchedEffect(fsrsRevision) {
         fsrsStore.awaitLoaded()
         states = fsrsStore.allStates()
         pauses = fsrsStore.pausedArticles()
         sentenceStates = fsrsStore.allSentenceStates()
+        enrolled = fsrsStore.enrolledArticles()
     }
 
     // 跨午夜自动换桶：与统计页同款分钟 ticker
@@ -205,11 +233,15 @@ fun StudyFlowScreen(navController: NavController) {
         }
     }
 
-    val tasks = remember(articles, states, pauses, sentenceStates, nowTick) {
-        buildTasks(articles, states, pauses, sentenceStates, nowTick)
+    val tasks = remember(articles, states, pauses, sentenceStates, enrolled, allRecords, nowTick) {
+        buildTasks(articles, states, pauses, sentenceStates, enrolled, nowTick, records = allRecords)
     }
-    // 「现在可复习」只认精确到期（含逾期）；今天晚些时候到期的单独标注，不混进大数字
+    // 「现在可练」只认精确到期（含逾期）；今天晚些时候到期的单独标注，不混进大数字。
+    // 未开始的成员也算「可练」，但必须单独报数：不能把「开始第一遍」混称成复习。
     val dueNowCount = tasks.count { it.phase != StudyFlow.Phase.PAUSED && it.due <= nowTick }
+    val dueNowNewCount = tasks.count {
+        it.phase != StudyFlow.Phase.PAUSED && it.due <= nowTick && !it.hasPractice
+    }
     val todayDueNow = tasks.count { it.phase == StudyFlow.Phase.TODAY && it.due <= nowTick }
     val laterTodayCount = tasks.count {
         it.phase == StudyFlow.Phase.TODAY && it.due > nowTick
@@ -232,38 +264,62 @@ fun StudyFlowScreen(navController: NavController) {
     var sheetTaskId by rememberSaveable { mutableLongStateOf(0L) }
     var scheduleExpanded by rememberSaveable { mutableStateOf(false) }
     var showPauseAllConfirm by remember { mutableStateOf(false) }
-    var actionNote by remember { mutableStateOf<String?>(null) }
-    var actionSeq by remember { mutableIntStateOf(0) }
-    LaunchedEffect(actionSeq) {
-        if (actionSeq > 0) {
-            delay(2400L)
-            actionNote = null
-        }
+    var flowNote by remember { mutableStateOf<FlowNote?>(null) }
+    var noteSeq by remember { mutableIntStateOf(0) }
+    LaunchedEffect(noteSeq) {
+        if (noteSeq <= 0) return@LaunchedEffect
+        delay(if (flowNote?.undo != null) FLOW_NOTE_UNDO_MS else FLOW_NOTE_HOLD_MS)
+        flowNote = null
     }
     val haptic = rememberHaptic(HapticTier.Confirm)
     val toggleHaptic = rememberHaptic(HapticTier.Toggle)
     val scope = rememberCoroutineScope()
 
-    fun note(message: String) {
-        actionNote = message
-        actionSeq++
+    /** 换一条浮条：序号 +1 让上一条的计时作废，连点两次不会出现「先来的先消失」。 */
+    fun note(message: String, undo: List<FsrsStateStore.UndoSnapshot>? = null) {
+        flowNote = FlowNote(message, undo)
+        noteSeq++
     }
 
-    fun writeThenNote(message: String, block: () -> Unit) {
+    /**
+     * 先取快照、再落盘、最后报一条可撤销的浮条。
+     *
+     * 快照必须在 [block] 之前：撤的是「按下按钮之前」的样子，
+     * 慢一步取到的是操作后的状态，撤销就变成原地不动。
+     */
+    fun writeThenNote(
+        message: String,
+        undoIds: Collection<Long> = emptyList(),
+        block: () -> Unit,
+    ) {
         scope.launch {
+            val snapshot = if (undoIds.isEmpty()) null else withContext(Dispatchers.IO) {
+                fsrsStore.snapshotArticles(undoIds)
+            }
             withContext(Dispatchers.IO) { block() }
-            note(message)
+            note(message, snapshot)
+        }
+    }
+
+    /** 撤销上一条：文案与按钮先换掉（防连点），数据再写回盘。 */
+    fun undoLastNote() {
+        val snapshot = flowNote?.undo ?: return
+        toggleHaptic()
+        note(resources.getString(R.string.flow_undone))
+        scope.launch {
+            withContext(Dispatchers.IO) { fsrsStore.restoreArticles(snapshot) }
         }
     }
 
     fun togglePause(task: FlowTask) {
         toggleHaptic()
+        val one = listOf(task.articleId)
         if (task.pause != null) {
-            writeThenNote(resources.getString(R.string.flow_done_resumed)) {
+            writeThenNote(resources.getString(R.string.flow_done_resumed), one) {
                 fsrsStore.resumeArticle(task.articleId)
             }
         } else {
-            writeThenNote(resources.getString(R.string.flow_done_paused)) {
+            writeThenNote(resources.getString(R.string.flow_done_paused), one) {
                 fsrsStore.pauseArticle(task.articleId)
             }
         }
@@ -271,7 +327,7 @@ fun StudyFlowScreen(navController: NavController) {
 
     fun reschedule(task: FlowTask, targetDue: Long) {
         haptic()
-        writeThenNote(resources.getString(R.string.flow_done_rescheduled)) {
+        writeThenNote(resources.getString(R.string.flow_done_rescheduled), listOf(task.articleId)) {
             fsrsStore.rescheduleArticle(task.articleId, targetDue)
         }
     }
@@ -433,7 +489,7 @@ fun StudyFlowScreen(navController: NavController) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })
@@ -484,6 +540,7 @@ fun StudyFlowScreen(navController: NavController) {
                         FlowSummaryCard(
                             activeCount = activeCount,
                             dueNowCount = dueNowCount,
+                            dueNowNewCount = dueNowNewCount,
                             laterTodayCount = laterTodayCount,
                             overdueCount = overdueCount,
                             pausedCount = pausedCount,
@@ -502,7 +559,6 @@ fun StudyFlowScreen(navController: NavController) {
                             dueCount = todayGroupCount,
                             pausedCount = pausedCount,
                             activeCount = activeCount,
-                            actionNote = actionNote,
                             onPlanChange = { id ->
                                 toggleHaptic()
                                 AppPrefs.reviewTemplateId = id
@@ -514,14 +570,14 @@ fun StudyFlowScreen(navController: NavController) {
                                 val dueIds = tasks
                                     .filter { it.phase == StudyFlow.Phase.OVERDUE || it.phase == StudyFlow.Phase.TODAY }
                                     .map { it.articleId }
-                                writeThenNote(resources.getString(R.string.flow_done_postponed)) {
+                                writeThenNote(resources.getString(R.string.flow_done_postponed), dueIds) {
                                     dueIds.forEach { fsrsStore.rescheduleArticle(it, target, nowTick) }
                                 }
                             },
                             onResumeAll = {
                                 haptic()
                                 val ids = tasks.filter { it.phase == StudyFlow.Phase.PAUSED }.map { it.articleId }
-                                writeThenNote(resources.getString(R.string.flow_done_resumed_all)) {
+                                writeThenNote(resources.getString(R.string.flow_done_resumed_all), ids) {
                                     ids.forEach { fsrsStore.resumeArticle(it, nowTick) }
                                 }
                             },
@@ -601,6 +657,22 @@ fun StudyFlowScreen(navController: NavController) {
                 }
             }
         }
+
+        // 底部浮条：贴着悬浮底栏上沿，不参与列表滚动，也不会被「滑到底再上拉」挤出屏幕。
+        // 抬 92dp = 底栏 64 + 底边距 14 + 与底栏之间留 14；底栏自己带了导航栏 inset，这里不重复加。
+        UndoToast(
+            message = flowNote?.message.orEmpty(),
+            visible = flowNote != null,
+            undoLabel = if (flowNote?.undo != null) stringResource(R.string.flow_undo) else null,
+            onUndo = if (flowNote?.undo != null) ({ undoLastNote() }) else null,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                // 先限宽再填满：反过来写 fillMaxWidth().widthIn(max=…) 会因 minWidth 已被撑到父宽而失效
+                .widthIn(max = 560.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 92.dp)
+        )
     }
 
     val sheetTask = tasks.firstOrNull { it.articleId == sheetTaskId }
@@ -624,7 +696,7 @@ fun StudyFlowScreen(navController: NavController) {
                 TextButton(onClick = {
                     showPauseAllConfirm = false
                     haptic()
-                    writeThenNote(resources.getString(R.string.flow_done_paused_all)) {
+                    writeThenNote(resources.getString(R.string.flow_done_paused_all), ids) {
                         ids.forEach { fsrsStore.pauseArticle(it, nowTick) }
                     }
                 }) {
@@ -653,6 +725,10 @@ internal data class FlowTask(
     val due: Long,
     val phase: StudyFlow.Phase,
     val retention: Float,
+    /** 是否练过：FSRS 状态或历史练习记录任一存在 */
+    val hasPractice: Boolean,
+    /** 展示用练习次数：FSRS reviewCount 与历史记录条数取大者 */
+    val practiceCount: Int,
     val sentenceDue: Int,
     val sentenceLearned: Int,
 )
@@ -669,9 +745,18 @@ internal fun buildTasks(
     states: Map<Long, FsrsEngine.CardState>,
     pauses: Map<Long, StudyFlow.Pause>,
     sentenceStates: Map<String, FsrsEngine.CardState>,
+    enrolled: Map<Long, Long> = emptyMap(),
     now: Long,
+    records: List<PracticeRecord> = emptyList(),
 ): List<FlowTask> {
     val byId = articles.associateBy { it.id }
+    // 旧版/CSV 回灌可能只有 records、没有 FSRS 状态；这些也算练过
+    val practicesByArticle = HashMap<Long, Int>()
+    records.forEach { record ->
+        if (record.articleId > 0L) {
+            practicesByArticle[record.articleId] = (practicesByArticle[record.articleId] ?: 0) + 1
+        }
+    }
     val learnedByArticle = HashMap<Long, Int>()
     val dueByArticle = HashMap<Long, Int>()
     sentenceStates.forEach { (key, state) ->
@@ -682,10 +767,26 @@ internal fun buildTasks(
         }
     }
 
-    val out = ArrayList<FlowTask>(states.size)
-    states.forEach { (id, state) ->
-        if (state.reviewCount <= 0) return@forEach
+    // 成员 = 练过的（reviewCount > 0）∪ 主动加入计划的（v3 enrolled 表）。
+    // 用集合去重：练过之后再"加入"一次不会出现两张卡。
+    val memberIds = LinkedHashSet<Long>(states.size + enrolled.size)
+    states.forEach { (id, state) -> if (state.reviewCount > 0) memberIds += id }
+    memberIds += enrolled.keys
+
+    val out = ArrayList<FlowTask>(memberIds.size)
+    memberIds.forEach { id ->
         val article = byId[id] ?: return@forEach
+        val stored = states[id]
+        val trained = stored != null && stored.reviewCount > 0
+        val recordPractices = practicesByArticle[id] ?: 0
+        val hasPractice = trained || recordPractices > 0
+        // 还没练过的成员：临时造一个空状态只用于展示，due 取「加入时刻」。
+        // 故意不写盘 —— states 保持干净，统计、提醒、待复习判定仍把「没练过」当没练过。
+        val state = if (trained) {
+            stored
+        } else {
+            FsrsEngine.CardState(due = enrolled[id] ?: 0L)
+        }
         val pause = pauses[id]
         val due = StudyFlow.projectedDue(state, pause, now)
         out += FlowTask(
@@ -695,7 +796,11 @@ internal fun buildTasks(
             pause = pause,
             due = due,
             phase = StudyFlow.phase(due, pause != null, now),
-            retention = FsrsEngine.retentionRate(state, now).toFloat(),
+            // 没练过就没有留存率可言：0f 在这里表示「未开始」，不是「马上要忘光」
+            retention = if (trained) FsrsEngine.retentionRate(state, now).toFloat() else 0f,
+            hasPractice = hasPractice,
+            // 旧记录没有 FSRS 次数：用记录条数兜底，避免详情显示 0 次
+            practiceCount = maxOf(state.reviewCount, recordPractices),
             sentenceDue = dueByArticle[id] ?: 0,
             sentenceLearned = learnedByArticle[id] ?: 0,
         )
@@ -745,6 +850,7 @@ private fun tomorrowStart(now: Long): Long {
 private fun FlowSummaryCard(
     activeCount: Int,
     dueNowCount: Int,
+    dueNowNewCount: Int,
     laterTodayCount: Int,
     overdueCount: Int,
     pausedCount: Int,
@@ -777,6 +883,14 @@ private fun FlowSummaryCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+            if (dueNowNewCount > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.flow_summary_due_new, dueNowNewCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Macaron.info().accent
                 )
             }
             if (laterTodayCount > 0) {
@@ -947,7 +1061,6 @@ private fun FlowScheduleCard(
     dueCount: Int,
     pausedCount: Int,
     activeCount: Int,
-    actionNote: String?,
     onPlanChange: (String) -> Unit,
     onPostponeDue: () -> Unit,
     onResumeAll: () -> Unit,
@@ -1043,18 +1156,6 @@ private fun FlowScheduleCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    AnimatedVisibility(
-                        visible = actionNote != null,
-                        enter = expandVertically(Motion.contentSize()) + fadeIn(MotionFade.alpha(MotionFade.enter)),
-                        exit = shrinkVertically(Motion.contentSize()) + fadeOut(MotionFade.alpha(MotionFade.exit))
-                    ) {
-                        Text(
-                            actionNote.orEmpty(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Macaron.continueP().accent,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
                     Spacer(Modifier.height(6.dp))
                 }
             }
@@ -1259,6 +1360,11 @@ internal fun FlowTaskRow(
     onOpen: () -> Unit,
     onAdjust: () -> Unit,
     onTogglePause: () -> Unit,
+    /**
+     * false = 只读清单（首页「今日计划」展开页）：不渲染行内的「调整时间 / 暂停」。
+     * 那两个动作属于「管理」，留给学习任务流，别让只想来做任务的页面背上管理负担。
+     */
+    showManagement: Boolean = true,
 ) {
     val accent = phaseAccent(task.phase)
     val paused = task.phase == StudyFlow.Phase.PAUSED
@@ -1315,11 +1421,20 @@ internal fun FlowTaskRow(
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            stringResource(
-                                R.string.flow_task_meta,
-                                task.state.reviewCount,
-                                (task.retention * 100).toInt()
-                            ),
+                            // 0 次练习没有留存率可言；「练习 0 次 · 留存 0%」会把未开始读成已遗忘。
+                            // 旧记录有练习次数但没有 FSRS 留存，只报练习次数。
+                            when {
+                                !task.hasPractice -> stringResource(R.string.flow_task_meta_new)
+                                task.state.reviewCount <= 0 -> stringResource(
+                                    R.string.flow_task_meta_no_retention,
+                                    task.practiceCount
+                                )
+                                else -> stringResource(
+                                    R.string.flow_task_meta,
+                                    task.practiceCount,
+                                    (task.retention * 100).toInt()
+                                )
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1327,7 +1442,7 @@ internal fun FlowTaskRow(
                         // 没有这一行，用户看到到期只会怀疑算法在乱推，然后开始无视提醒。
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            schedulingReasonText(StudyCoach.reasonOf(task.state, now)),
+                            schedulingReasonText(StudyCoach.reasonOf(task.state, now, task.hasPractice)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.tertiary
                         )
@@ -1364,24 +1479,26 @@ internal fun FlowTaskRow(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FlowInlineAction(
-                        label = stringResource(R.string.flow_adjust_schedule),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        onClick = onAdjust,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    FlowInlineAction(
-                        label = stringResource(if (paused) R.string.flow_resume else R.string.flow_pause),
-                        color = if (paused) Macaron.continueP().accent else MaterialTheme.colorScheme.error,
-                        onClick = onTogglePause,
-                    )
+                if (showManagement) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FlowInlineAction(
+                            label = stringResource(R.string.flow_adjust_schedule),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = onAdjust,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FlowInlineAction(
+                            label = stringResource(if (paused) R.string.flow_resume else R.string.flow_pause),
+                            color = if (paused) Macaron.continueP().accent else MaterialTheme.colorScheme.error,
+                            onClick = onTogglePause,
+                        )
+                    }
                 }
             }
         }
@@ -1430,7 +1547,7 @@ internal fun FlowDetailStat(label: String, value: String) {
 /** 调度理由的展示文案：纯事实、无算法术语。 */
 @Composable
 internal fun schedulingReasonText(reason: StudyCoach.Reason): String = when (reason.kind) {
-    StudyCoach.ReasonKind.FIRST -> stringResource(R.string.reason_first)
+    StudyCoach.ReasonKind.FIRST_PRACTICE -> stringResource(R.string.reason_first_practice)
     StudyCoach.ReasonKind.LAPSED -> stringResource(R.string.reason_lapsed, reason.count)
     StudyCoach.ReasonKind.LONG_GAP -> stringResource(R.string.reason_long_gap, reason.days)
     StudyCoach.ReasonKind.OVERDUE -> stringResource(R.string.reason_overdue, reason.days)
@@ -1548,6 +1665,20 @@ internal fun FlowAdjustSheet(
     var showPicker by remember { mutableStateOf(false) }
     val pickerState = rememberDatePickerState(initialSelectedDateMillis = task.due)
     val paused = task.phase == StudyFlow.Phase.PAUSED
+    // 年份下拉 / 日历滚到尽头后，剩下那点位移不要再交给外层 sheet ——
+    // 否则继续滑会把整个底部面板拖起来，页面跟着抖。只吞「没人要的余量」，列表自己的滚动不受影响。
+    val pickerScrollGuard = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset = available
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+                available
+        }
+    }
 
     fun closeWithAnimation() {
         scope.launch {
@@ -1634,14 +1765,20 @@ internal fun FlowAdjustSheet(
                 enter = expandVertically(Motion.contentSize()) + fadeIn(MotionFade.alpha(MotionFade.enter)),
                 exit = shrinkVertically(Motion.contentSize()) + fadeOut(MotionFade.alpha(MotionFade.exit))
             ) {
-                Column {
+                Column(Modifier.nestedScroll(pickerScrollGuard)) {
                     DatePicker(
                         state = pickerState,
                         showModeToggle = false,
                         title = null,
                         headline = null,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = DatePickerDefaults.colors(containerColor = Color.Transparent)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp)),
+                        // 必须是实底：年份下拉沿用同一个 containerColor，
+                        // 透明时它会和下面的日历叠在一起，两层文字完全分不开（真机反馈）。
+                        colors = DatePickerDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),

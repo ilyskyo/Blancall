@@ -89,7 +89,9 @@ class RecordRepository(private val filePath: String) {
                         // 旧记录无此字段 → -1（逐空轻重分不出来，只能看会话级均值）
                         similarity = m.optDouble("similarity", -1.0).toFloat(),
                         // 旧记录无此字段 → 空串（错题本退回句索引/答案对照，不假装知道原句）
-                        sentenceText = m.optString("sentenceText", "")
+                        sentenceText = m.optString("sentenceText", ""),
+                        // 旧记录/单篇记录无此字段 → -1，错题本回退整条记录的 articleId
+                        articleId = m.optLong("articleId", -1L)
                     )
                 )
             }
@@ -105,13 +107,18 @@ class RecordRepository(private val filePath: String) {
                         errorType = a.optString("errorType", ""),
                         sentenceIndex = a.optInt("sentenceIndex", -1),
                         sentenceText = a.optString("sentenceText", ""),
-                        similarity = a.optDouble("similarity", -1.0).toFloat()
+                        similarity = a.optDouble("similarity", -1.0).toFloat(),
+                        articleId = a.optLong("articleId", -1L)
                     )
                 )
             }
             PracticeRecord(
                 id = id,
                 articleId = obj.optLong("articleId", 0L),
+                // 旧记录（含旧跨文记录）无此字段 → 空列表：无法追溯来源，宁可不算也不冒充
+                sourceArticleIds = obj.optJSONArray("sourceArticleIds")
+                    ?.let { arr -> List(arr.length()) { arr.optLong(it, -1L) }.filter { it > 0L } }
+                    ?: emptyList(),
                 mode = obj.optString("mode", ""),
                 totalBlanks = obj.optInt("totalBlanks", 0),
                 correctCount = obj.optInt("correctCount", 0),
@@ -312,6 +319,10 @@ class RecordRepository(private val filePath: String) {
         val obj = JSONObject()
         obj.put("id", record.id)
         obj.put("articleId", record.articleId)
+        // 只有跨文记录才有来源集合；单篇不写键，保持既有文件形状
+        if (record.sourceArticleIds.isNotEmpty()) {
+            obj.put("sourceArticleIds", JSONArray(record.sourceArticleIds))
+        }
         obj.put("mode", record.mode)
         obj.put("totalBlanks", record.totalBlanks)
         obj.put("correctCount", record.correctCount)
@@ -335,6 +346,8 @@ class RecordRepository(private val filePath: String) {
             if (m.sentenceIndex >= 0) mObj.put("sentenceIndex", m.sentenceIndex)
             if (m.similarity >= 0f) mObj.put("similarity", m.similarity.toDouble())
             if (m.sentenceText.isNotEmpty()) mObj.put("sentenceText", m.sentenceText)
+            // 跨文练习才需要逐空来源；单篇记录不写，读侧回退整条记录的 articleId
+            if (m.articleId > 0L) mObj.put("articleId", m.articleId)
             mistakesArr.put(mObj)
         }
         obj.put("mistakes", mistakesArr)
@@ -351,6 +364,7 @@ class RecordRepository(private val filePath: String) {
                 if (a.sentenceIndex >= 0) aObj.put("sentenceIndex", a.sentenceIndex)
                 if (a.similarity >= 0f) aObj.put("similarity", a.similarity.toDouble())
                 if (a.sentenceText.isNotEmpty()) aObj.put("sentenceText", a.sentenceText)
+                if (a.articleId > 0L) aObj.put("articleId", a.articleId)
                 answeredArr.put(aObj)
             }
             obj.put("answeredBlanks", answeredArr)

@@ -75,6 +75,40 @@ class MistakeNotebookTest {
     }
 
     @Test
+    fun `跨文练习的错处按逐空来源文章分组`() {
+        val cross = PracticeRecord(
+            id = 7,
+            articleId = -1,
+            mode = "SENTENCE",
+            totalBlanks = 2,
+            correctCount = 0,
+            timestamp = 1000,
+            sourceArticleIds = listOf(1, 2),
+            answeredBlanks = listOf(
+                AnsweredBlank(
+                    0, "名", "各", "TYPO", 0, "山不在高，有仙则名。", 0.4f,
+                    articleId = 1,
+                ),
+                AnsweredBlank(
+                    1, "灵", "临", "TYPO", 0, "水不在深，有龙则灵。", 0.4f,
+                    articleId = 2,
+                ),
+            ),
+        )
+        val entries = MistakeNotebook.entries(listOf(cross))
+        assertEquals(2, entries.size)
+        assertEquals(setOf(1L, 2L), entries.map { it.articleId }.toSet())
+        // 每条都能回到自己的文章正文重练，而不是落进「文章 #-1」
+        val drill = MistakeNotebook.buildDrill(
+            "山不在高，有仙则名。水不在深，有龙则灵。",
+            1L,
+            entries,
+        )
+        assertEquals(1, drill.blanks.size)
+        assertEquals(0, drill.unresolved)
+    }
+
+    @Test
     fun `未攻克按最近错误排序`() {
         val records = listOf(
             record(1, 1000, answered = listOf(wrong(0, "名", "各"))),

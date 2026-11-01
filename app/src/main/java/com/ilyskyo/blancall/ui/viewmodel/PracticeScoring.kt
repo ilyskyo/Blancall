@@ -41,7 +41,7 @@ import java.io.File
                     val now = System.currentTimeMillis()
                     val newState = FsrsEngine.review(prev, rating, now)
                     store.save(articleId, newState)
-                    // 复习事件日志（B3-4）：与状态更新同批落盘；写失败不阻断状态保存
+                    // 练习事件日志（B3-4）：每次提交都写，含第一次；与状态更新同批落盘
                     ReviewLogStore.append(
                         reviewLogFile(), "a:$articleId", now, rating.value,
                         elapsedMs = if (prev.lastReview > 0) now - prev.lastReview else 0L,
@@ -104,6 +104,6 @@ import java.io.File
         }
     }
 
-/** 复习事件日志文件（B3-4）：filesDir 根，命名与 [ReviewLogStore] 同源 */
+/** 练习事件日志文件（B3-4）：filesDir 根，命名与 [ReviewLogStore] 同源 */
 private fun PracticeViewModel.reviewLogFile(): File =
     getApplication<Application>().filesDir.resolve(ReviewLogStore.FILE_NAME)

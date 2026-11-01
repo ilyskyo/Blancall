@@ -7,6 +7,7 @@ import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -45,6 +46,12 @@ object StudyCoach {
         val estimatedBlanks: Int = 0,
         /** 最近一次练习实际耗时（毫秒，0 = 无数据） */
         val lastDurationMs: Long = 0L,
+        /**
+         * 是否已经练过。真源有两份：FSRS 状态（reviewCount>0）或历史练习记录
+         * （旧版/CSV 导入可能只有 records、没有 FSRS 状态）。不能只看 reviewCount，
+         * 否则有记录的老文章会被误称「还没练过 / 第一次练习」。
+         */
+        val hasPractice: Boolean = reviewCount > 0,
     )
 
     /** 未完成练习（扫描 practice_state_*.json 得到）。 */
@@ -90,6 +97,9 @@ object StudyCoach {
 
         /** 到期文章复习 */
         REVIEW_ARTICLE,
+
+        /** 已加入计划但还没练过：今天该开始第一遍 */
+        START_ARTICLE,
 
         /** 薄弱篇训练 */
         WEAK_ARTICLE,
@@ -168,7 +178,9 @@ object StudyCoach {
             .firstOrNull { it.articleId !in usedArticleIds }
             ?.let { a ->
                 out += Item(
-                    kind = Kind.REVIEW_ARTICLE,
+                    // 没练过的计划成员换一种措辞（「开始学习」而不是「复习」），
+                    // 但它和复习走同一条练习入口 —— 都是一次整篇练习
+                    kind = if (a.hasPractice) Kind.REVIEW_ARTICLE else Kind.START_ARTICLE,
                     articleId = a.articleId,
                     title = a.title,
                     count = a.estimatedBlanks,
@@ -246,6 +258,11 @@ object StudyCoach {
         val records: List<PracticeRecord> = emptyList(),
         val states: Map<Long, FsrsEngine.CardState> = emptyMap(),
         val pauses: Map<Long, StudyFlow.Pause> = emptyMap(),
+        /**
+         * 计划成员表（`fsrs_state.json` v3 的 `enrolled`）：articleId → 加入时刻。
+         * 还没练过的文章靠它进入今日计划；练过的仍以 `states` 的 due 为准。
+         */
+        val enrolled: Map<Long, Long> = emptyMap(),
         val sentenceStates: Map<String, FsrsEngine.CardState> = emptyMap(),
         val template: ReviewTemplate = ReviewTemplate.STANDARD,
         val resumables: List<InProgressPractice> = emptyList(),
@@ -318,6 +335,9 @@ object StudyCoach {
             val state = source.states[article.id]
             val dueAt = when {
                 state != null && state.reviewCount > 0 -> state.due
+                // v3：主动加入计划、一次还没练 —— 「加入时刻」就是该开始的时间。
+                // 少了这一条，详情页加的「加入计划」就只在任务流可见，首页今日计划永远看不到它。
+                source.enrolled.containsKey(article.id) -> source.enrolled.getValue(article.id)
                 else -> EbbinghausScheduler.nextReviewAt(source.template, records) ?: return@forEach
             }
             val last = records.maxByOrNull { it.timestamp }
@@ -331,6 +351,8 @@ object StudyCoach {
                 estimatedBlanks = last?.totalBlanks
                     ?: (article.content.length / 25).coerceIn(3, 80),
                 lastDurationMs = last?.duration ?: 0L,
+                // FSRS 状态缺失但仍有历史记录：旧版/CSV 回灌的文章也算练过
+                hasPractice = (state?.reviewCount ?: 0) > 0 || records.isNotEmpty(),
             )
         }
 
@@ -353,10 +375,11 @@ object StudyCoach {
             .filter { it.articleId <= 0L || it.articleId !in pausedIds }
         val weakest = weakestOf(source.articles, recordsByArticle, mistakeEntries, pausedIds)
 
-        val scheduledIds = source.states
-            .filterValues { it.reviewCount > 0 }
-            .keys
-            .filter { it in articleIds }
+        // 「已排进计划」= 练过的 ∪ 主动加入的：两者都要参与「是否全部暂停」的判定，
+        // 否则只加了计划还没练的文章会让这句结论漏掉它
+        val scheduledIds = (
+            source.states.filterValues { it.reviewCount > 0 }.keys + source.enrolled.keys
+            ).filter { it in articleIds }
         val allScheduledPaused = scheduledIds.isNotEmpty() && scheduledIds.all { it in pausedIds }
 
         val sentenceDue = source.sentenceStates.asSequence()
@@ -599,8 +622,8 @@ object StudyCoach {
     // ── 调度理由 ──
 
     enum class ReasonKind {
-        /** 第一次练 */
-        FIRST,
+        /** 一次都没练过：这不是复习，是第一次练习 */
+        FIRST_PRACTICE,
 
         /** 忘过多次 */
         LAPSED,
@@ -626,18 +649,30 @@ object StudyCoach {
      * 不吐术语（S/D/lapse 一律不出现）：用户要的是「凭什么今天轮到它」，
      * 不是算法参数。这些数字在单个状态里都能直接读到，零新数据。
      */
-    fun reasonOf(state: FsrsEngine.CardState?, now: Long): Reason {
-        if (state == null || state.reviewCount <= 0) return Reason(ReasonKind.FIRST)
+    fun reasonOf(
+        state: FsrsEngine.CardState?,
+        now: Long,
+        hasPractice: Boolean = (state?.reviewCount ?: 0) > 0,
+    ): Reason {
+        // 真源不只看 reviewCount：旧版/CSV 回灌只有 records、没有 FSRS 状态。
+        // 没有任何练习记录才是「第一次练习」。
+        if (!hasPractice) return Reason(ReasonKind.FIRST_PRACTICE)
+        if (state == null) return Reason(ReasonKind.SCHEDULED)
+        // 有记录但没有 FSRS 状态：按计划/加入时刻给出到期事实，不伪造复习次数或留存
+        if (state.reviewCount <= 0) {
+            val overdueDays = overdueCalendarDays(state.due, now)
+            return if (overdueDays > 0) {
+                Reason(ReasonKind.OVERDUE, days = overdueDays)
+            } else {
+                Reason(ReasonKind.SCHEDULED)
+            }
+        }
         val gapDays = if (state.lastReview > 0L && now > state.lastReview) {
             ((now - state.lastReview) / MILLIS_PER_DAY).toInt()
         } else {
             0
         }
-        val overdueDays = if (state.due > 0L && now > state.due) {
-            ((now - state.due) / MILLIS_PER_DAY).toInt().coerceAtLeast(1)
-        } else {
-            0
-        }
+        val overdueDays = overdueCalendarDays(state.due, now)
         return when {
             state.lapses >= LAPSE_REASON_THRESHOLD -> Reason(ReasonKind.LAPSED, state.lapses)
             gapDays >= LONG_GAP_THRESHOLD_DAYS -> Reason(ReasonKind.LONG_GAP, days = gapDays)
@@ -646,6 +681,16 @@ object StudyCoach {
                 Reason(ReasonKind.STABLE, state.reviewCount)
             else -> Reason(ReasonKind.SCHEDULED, days = gapDays)
         }
+    }
+
+    /** 逾期按日历日算：今天早些时候到期仍属于「今天」，不能报「逾期 1 天」。 */
+    private fun overdueCalendarDays(due: Long, now: Long): Int {
+        if (due <= 0L) return 0
+        val days = ChronoUnit.DAYS.between(
+            DayBucket.localDate(due),
+            DayBucket.localDate(now),
+        ).toInt()
+        return days.coerceAtLeast(0)
     }
 
     // ── 内部 ──

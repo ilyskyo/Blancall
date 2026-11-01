@@ -85,7 +85,7 @@ class NavLiquidPhysicsTest {
     }
 
     @Test
-    fun `点击切 tab 会先按下再缩回`() {
+    fun `切 tab 只滑动不放大`() {
         val physics = physics(initialTab = 1)
         physics.animateToTab(3)
         var now = 0L
@@ -98,10 +98,23 @@ class NavLiquidPhysicsTest {
             frames++
         }
 
-        assertTrue("点击切页应出现按压放大：实际 $maxPress", maxPress > 0.9f)
+        // 2026-10-26 用户要求：切页不许出现「胶囊膨胀到栏边」那一帧
+        assertEquals("切页不应出现按压放大：实际 $maxPress", 0f, maxPress, 0.001f)
         assertEquals("位置应滑到第 3 格", 3f, physics.position, 0.01f)
-        assertEquals("松手后按压应归零", 0f, physics.pressProgress, 0.01f)
-        assertEquals("缩放应回位", 1f, physics.visualScaleX, 0.01f)
+        assertEquals("缩放应保持 1", 1f, physics.visualScaleX, 0.01f)
+    }
+
+    @Test
+    fun `按住时胶囊放大到 78 比 56`() {
+        val physics = physics(initialTab = 1)
+        physics.press()
+        var now = 0L
+        repeat(60) {
+            now += FRAME_MS
+            physics.step(FRAME_SECONDS, now)
+        }
+        assertEquals("按住时按压进度应到 1", 1f, physics.pressProgress, 0.01f)
+        assertEquals("按住时胶囊应放大到 78/56", 78f / 56f, physics.visualScaleX, 0.02f)
     }
 
     @Test

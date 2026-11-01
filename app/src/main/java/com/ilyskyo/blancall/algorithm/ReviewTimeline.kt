@@ -4,10 +4,13 @@
 package com.ilyskyo.blancall.algorithm
 
 /**
- * 把复习事件日志翻成「真实间隔演化」。
+ * 把**每次练习**的事件日志翻成「真实间隔演化」。
+ *
+ * 日志在每次练习提交时写入（含第一次），所以它统计的是练习次数，不是「第二次起的复习」。
+ * 界面因此叫「真实练习轨迹」；第一次的点是首次练习，不能写成首次复习。
  *
  * 记录里原本只有**预测**（FSRS 算出来的下次到期），没有**事实**（这次到底隔了几天、
- * 复习之后稳不稳定）。日志一直在写，但没有任何读取方 —— 这里只做纯计算，
+ * 练习之后稳不稳定）。日志一直在写，但没有任何读取方 —— 这里只做纯计算，
  * 由统计页把结果画出来并注明「仅本机」（日志不进备份，换机归零）。
  *
  * 判定「稳住」用评级而不是术语：评级 <= HARD 视为还没稳住，之后连续 GOOD/EASY
@@ -15,7 +18,7 @@ package com.ilyskyo.blancall.algorithm
  */
 object ReviewTimeline {
 
-    /** 单条复习事件（由调用方从 ReviewLogStore 映射，保持本层无存储依赖）。 */
+    /** 单条练习事件（由调用方从 ReviewLogStore 映射，保持本层无存储依赖）。 */
     data class Event(
         val ts: Long,
         val rating: Int,
@@ -24,13 +27,13 @@ object ReviewTimeline {
     )
 
     data class Point(
-        /** 第几次复习（1 起） */
+        /** 第几次练习（1 起，含第一次） */
         val review: Int,
         val ts: Long,
         val rating: Int,
-        /** 距上一次复习的天数；首次为 0 */
+        /** 距上一次练习的天数；首次为 0 */
         val intervalDays: Double,
-        /** 复习之后的稳定度（天） */
+        /** 练习之后的稳定度（天） */
         val stabilityDays: Double,
     )
 
@@ -54,7 +57,7 @@ object ReviewTimeline {
     data class Series(
         val points: List<Point>,
         val summary: Summary,
-        /** 从第几次复习开始连续稳住（1 起）；没有该时刻为 null */
+        /** 从第几次练习开始连续稳住（1 起）；没有该时刻为 null */
         val steadyFromReview: Int?,
         /** 最近一次间隔相对前一次的变化（天）；不足两次为 null */
         val latestIntervalDeltaDays: Double?,
@@ -77,7 +80,7 @@ object ReviewTimeline {
         if (sorted.size == 1) {
             return Series(sorted, Summary.ONLY_ONE, null, null)
         }
-        // 评级 1/2 = 没稳住；找最后一次「没稳住」，它之后的第一次复习就是稳住的起点
+        // 评级 1/2 = 没稳住；找最后一次「没稳住」，它之后的第一次练习就是稳住的起点
         val lastShaky = sorted.indexOfLast { it.rating <= RATING_HARD }
         val summary: Summary
         val steadyFrom: Int?

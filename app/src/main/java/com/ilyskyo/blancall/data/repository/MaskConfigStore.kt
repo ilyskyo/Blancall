@@ -40,9 +40,9 @@ class MaskConfigStore private constructor(private val file: File) {
 
     private val lock = Any()
 
-    /** 内存修订号：任何写操作自增。阅读页用它做重算 key，配置变更后遮挡立即刷新 */
+    /** 内存修订号：任何写操作自增。文章详情页用它做重算 key，配置变更后遮挡立即刷新 */
     private var revision = 0L
-    // 响应式修订号：阅读页此前每 300ms 轮询 getRevision，白白唤醒 CPU；这里仅供观察
+    // 响应式修订号：文章详情页此前每 300ms 轮询 getRevision，白白唤醒 CPU；这里仅供观察
     private val _revisionFlow = MutableStateFlow(0L)
     val revisionFlow: StateFlow<Long> = _revisionFlow.asStateFlow()
 

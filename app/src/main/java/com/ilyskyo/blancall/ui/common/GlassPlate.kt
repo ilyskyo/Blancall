@@ -9,25 +9,61 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ilyskyo.blancall.R
+import com.ilyskyo.blancall.ui.theme.AppearanceStore
+import com.ilyskyo.blancall.ui.theme.ColorMath
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
 import com.qmdeve.liquidglass.widget.LiquidGlassView
 import java.util.concurrent.atomic.AtomicReference
 
 /**
+ * 把「中性白光斑」染上当前主题色（**玻璃染色**）。
+ *
+ * 只改 RGB、保留原 alpha，且**四颗光斑用同一个颜色** —— 上一轮之所以把彩色光斑
+ * 全部改成纯白，是因为当时每颗光斑色相不同（左上靛蓝、右下蓝），玻璃放大折射后
+ * 变成「一边挂着色块、一边什么都没有」。整族同色就不会再出现这个问题：
+ * 玻璃只是整体偏了一点主题色，不再有局部色块。
+ *
+ * 开关在设置 → 外观 → 玻璃染色（[AppearanceStore] 的 glassTint）。
+ */
+@Composable
+private fun tintedSpots(isDark: Boolean, spots: List<LiquidBackdropCanvas.Spot>): List<LiquidBackdropCanvas.Spot> {
+    val appearance by AppearanceStore.state.collectAsState()
+    val accent = MaterialTheme.colorScheme.primary
+    if (!appearance.glassTint) return spots
+    // 浅色：主题色压到 30%（主题色本身偏深，直接上会把白玻璃染脏）
+    // 深色：放到 55%（深色主题色本来就亮，权重低了完全看不出）
+    val weight = if (isDark) 0.55f else 0.30f
+    val tinted = ColorMath.blend(accent.toArgb(), ColorMath.WHITE, weight)
+    return remember(spots, tinted) {
+        spots.map { it.copy(color = (it.color and 0x00FFFFFF) or (tinted and 0xFFFFFF)) }
+    }
+}
+
+/**
  * 弹窗兜底玻璃板：半透明底色 + 高光描边（液态玻璃的标志性边缘）。
  *
- * @param glassActive 真实液态玻璃是否存在。存在时底色压到极淡（质感交给折射层，
- *                    底色过重会把折射效果盖死）；不存在时（API<33）用较实底色撑住可读性。
+ * @param glassActive 真实液态玻璃是否存在。存在时底色压薄一点（质感交给折射层），
+ *                    不存在时（API<33）用更实的底色撑住可读性。
+ *
+ * **2026-10-26/27 两次把不透明度提上来**：原先真实玻璃在场时只铺 40% 白，叠上 14% 的
+ * tint 也只有约 48% —— 用户反馈「这个还是有点透」，弹窗背后的正文会直接透出来。
+ * 第一次提到 72% + 45% ≈ 85%，模拟器实测截图里，弹窗下方那颗饱和的蓝色按钮仍能看见轮廓，
+ * 于是再抬一档到 91% + 50% ≈ 95.5%：只剩一层极淡的底层色透出来（保住「这是玻璃」的暗示），
+ * 任何高饱和度元素都不会再窜上来。系统级 ActionSheet 的材质同样在 95% 量级。
  */
 @Composable
 fun PopupGlassPlate(
@@ -43,8 +79,8 @@ fun PopupGlassPlate(
             .clip(shape)
             .background(
                 when {
-                    isDark -> if (glassActive) Color(0x331C1C1E) else Color(0xE61A1A1A)
-                    else -> if (glassActive) Color(0x66FFFFFF) else Color(0xF2FFFFFF)
+                    isDark -> if (glassActive) Color(0xE81C1C1E) else Color(0xF21A1A1A)
+                    else -> if (glassActive) Color(0xE8FFFFFF) else Color(0xFAFFFFFF)
                 }
             )
             .border(
@@ -81,8 +117,10 @@ fun LiquidGlassPopupBackdrop(
     dispersion: Float = 0.45f,
     refractionHeightDp: Float = 26f,
     refractionOffsetDp: Float = 80f,
-    tintAlphaDark: Float = 0.30f,
-    tintAlphaLight: Float = 0.14f,
+    // 弹窗配方：tint 比页面内的玻璃条重得多。页面条只需要「一层薄玻璃」，
+    // 弹窗要在任何正文之上保证选项可读 —— 而且用户已经两次反馈「透」。
+    tintAlphaDark: Float = 0.55f,
+    tintAlphaLight: Float = 0.50f,
     // plate=false：跳过「底色+描边」兜底玻璃板（操作栏等纯玻璃观感场景传 false）
     plate: Boolean = true
 ) {
@@ -104,7 +142,7 @@ fun LiquidGlassPopupBackdrop(
     // 2) 位置：左右 x 严格镜像、alpha 左右完全一致，杜绝「一边有、一边没有」。
     // 上下给一点点差（上略亮）保留"顶面受光"的立体感，但左右同值，残色感消失。
     // 浅色下白斑几乎不可见（玻璃读作统一的磨砂白），深色下是柔和的环境高光。
-    val spots = remember(isDark) {
+    val baseSpots = remember(isDark) {
         if (isDark) {
             listOf(
                 LiquidBackdropCanvas.Spot(0x18FFFFFF, 0.20f, 0.16f, 0.62f),   // 左上 — 冷白
@@ -121,6 +159,7 @@ fun LiquidGlassPopupBackdrop(
             )
         }
     }
+    val spots = tintedSpots(isDark, baseSpots)
 
     Box(modifier) {
         // ── a) 采样源：自绘氛围光斑（最底层，供玻璃折射）──
@@ -230,28 +269,28 @@ fun LiquidGlassPageBar(
     val sourceRef = remember { AtomicReference<LiquidBackdropCanvas?>(null) }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        // 采样源：中性白光斑（可被「玻璃染色」开关整族染成主题色），
+        // 只在 update 里 setSpots，避免开关切换时画布保持旧色。
+        val barSpots = tintedSpots(
+            isDark,
+            if (isDark) listOf(
+                LiquidBackdropCanvas.Spot(0x1AFFFFFF, 0.15f, 0.30f, 0.60f),
+                LiquidBackdropCanvas.Spot(0x12FFFFFF, 0.50f, 0.55f, 0.45f),
+                LiquidBackdropCanvas.Spot(0x14FFFFFF, 0.85f, 0.80f, 0.50f)
+            ) else listOf(
+                LiquidBackdropCanvas.Spot(0x10FFFFFF, 0.15f, 0.30f, 0.60f),
+                LiquidBackdropCanvas.Spot(0x0CFFFFFF, 0.50f, 0.55f, 0.45f),
+                LiquidBackdropCanvas.Spot(0x0EFFFFFF, 0.85f, 0.80f, 0.50f)
+            )
+        )
         Box(modifier) {
             // ── a) 采样源：自绘中性光斑（无色相，仅供玻璃折射，不产生彩色底色）──
             AndroidView(
                 factory = { ctx ->
-                    LiquidBackdropCanvas(ctx).apply {
-                        sourceRef.set(this)
-                        // 白色低透明度光斑：浅色背景下几乎不可见（纯透明观感），
-                        // 深色背景下呈现柔和环境光，玻璃折射后保持无色透明
-                        setSpots(
-                            if (isDark) listOf(
-                                LiquidBackdropCanvas.Spot(0x1AFFFFFF, 0.15f, 0.30f, 0.60f),
-                                LiquidBackdropCanvas.Spot(0x12FFFFFF, 0.50f, 0.55f, 0.45f),
-                                LiquidBackdropCanvas.Spot(0x14FFFFFF, 0.85f, 0.80f, 0.50f)
-                            ) else listOf(
-                                LiquidBackdropCanvas.Spot(0x10FFFFFF, 0.15f, 0.30f, 0.60f),
-                                LiquidBackdropCanvas.Spot(0x0CFFFFFF, 0.50f, 0.55f, 0.45f),
-                                LiquidBackdropCanvas.Spot(0x0EFFFFFF, 0.85f, 0.80f, 0.50f)
-                            )
-                        )
-                    }
+                    LiquidBackdropCanvas(ctx).apply { sourceRef.set(this) }
                 },
-                modifier = Modifier.matchParentSize()
+                modifier = Modifier.matchParentSize(),
+                update = { canvas -> canvas.setSpots(barSpots) }
             )
 
             // ── b) 真实液态玻璃：折射 + 色散 + 模糊（bind 兄弟画布，非祖先）──

@@ -7,27 +7,36 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.ilyskyo.blancall.notification.ReminderSchedule
 import com.ilyskyo.blancall.util.AtomicFiles
 import org.json.JSONObject
 import java.io.File
+import java.time.DayOfWeek
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 学习提醒频率
+ * 学习提醒频率。
+ *
+ * 只保留「每天 / 每周 5 天 / 每周 3 天 / 自定义」四个预设：
+ * 开关本身负责「关」，不再用一个 OFF 档和总开关表达同一件事
+ * （旧版本确实存在「已开启 + 频率关闭」的自相矛盾状态）。
+ * 旧盘上的 `OFF` 会在 [ReminderPrefs.init] 迁移成「关闭 + 每天」。
  */
-enum class ReminderFrequency(val labelRes: Int, val daysPerWeek: Int) {
-    DAILY(com.ilyskyo.blancall.R.string.reminder_freq_daily, 7),
-    WEEKLY_FIVE(com.ilyskyo.blancall.R.string.reminder_freq_five, 5),
-    WEEKLY_THREE(com.ilyskyo.blancall.R.string.reminder_freq_three, 3),
-    OFF(com.ilyskyo.blancall.R.string.reminder_off_state, 0)
+enum class ReminderFrequency(val labelRes: Int) {
+    DAILY(com.ilyskyo.blancall.R.string.reminder_freq_daily),
+    WEEKLY_FIVE(com.ilyskyo.blancall.R.string.reminder_freq_five),
+    WEEKLY_THREE(com.ilyskyo.blancall.R.string.reminder_freq_three),
+    CUSTOM(com.ilyskyo.blancall.R.string.custom),
 }
 
 /**
  * 学习提醒设置持久化存储
  */
 object ReminderPrefs {
+    private const val MINUTES_PER_DAY = 24 * 60
+
     private lateinit var prefs: SharedPreferences
     private lateinit var filesDir: File
 
@@ -56,6 +65,12 @@ object ReminderPrefs {
     private val _frequencyFlow = MutableStateFlow(ReminderFrequency.DAILY)
     val frequencyFlow: StateFlow<ReminderFrequency> = _frequencyFlow.asStateFlow()
 
+    // ── 提醒日（真正参与调度的那份集合）──
+    // 与 frequency 分开存：frequency 只决定界面上选中哪个预设，
+    // 自定义星期必须有一份独立数据，否则「改成自定义」时用户刚选的日期会被预设覆盖。
+    private val _reminderDaysFlow = MutableStateFlow(ReminderSchedule.ALL_DAYS)
+    val reminderDaysFlow: StateFlow<Set<DayOfWeek>> = _reminderDaysFlow.asStateFlow()
+
     // ── 学习连续天数 ──
     private val _studyStreakDays = MutableStateFlow(0)
     val studyStreakDaysFlow: StateFlow<Int> = _studyStreakDays.asStateFlow()
@@ -68,40 +83,73 @@ object ReminderPrefs {
     private val _dailyPracticeGoalFlow = MutableStateFlow(3)
     val dailyPracticeGoalFlow: StateFlow<Int> = _dailyPracticeGoalFlow.asStateFlow()
 
+    /**
+     * 今日计划卡是否显示「今日目标」进度行（默认显示）。
+     *
+     * 与目标值本身分开存：用户可能想保留目标（通知仍按它算），只是不想让首页多一行。
+     */
+    private val _showDailyGoalOnCardFlow = MutableStateFlow(true)
+    val showDailyGoalOnCardFlow: StateFlow<Boolean> = _showDailyGoalOnCardFlow.asStateFlow()
+
     // ── 免打扰时段（默认 22:00–08:00，可整体关闭）──
     // 默认**开启**：免打扰的价值在于「默认就对」，要用户先手动打开才生效等于默认不生效。
     // 默认窗口 22–08 不覆盖默认提醒时间 20:00，因此对未改动默认值的用户零影响。
     private val _quietHoursEnabledFlow = MutableStateFlow(true)
     val quietHoursEnabledFlow: StateFlow<Boolean> = _quietHoursEnabledFlow.asStateFlow()
 
-    private val _quietStartHourFlow = MutableStateFlow(22)
-    val quietStartHourFlow: StateFlow<Int> = _quietStartHourFlow.asStateFlow()
+    // 存「当天第几分钟」而不是小时：设置页的时间选择器本来就是分钟级，
+    // 只存小时会让用户选 07:30 却按 07:00 判定，边界上差半小时。
+    private val _quietStartMinutesFlow = MutableStateFlow(22 * 60)
+    val quietStartMinutesFlow: StateFlow<Int> = _quietStartMinutesFlow.asStateFlow()
 
-    private val _quietEndHourFlow = MutableStateFlow(8)
-    val quietEndHourFlow: StateFlow<Int> = _quietEndHourFlow.asStateFlow()
-
-    // ── 「尽量准时」开关（默认关，见 punctualEnabled 的说明）──
-    private val _punctualEnabledFlow = MutableStateFlow(false)
-    val punctualEnabledFlow: StateFlow<Boolean> = _punctualEnabledFlow.asStateFlow()
+    private val _quietEndMinutesFlow = MutableStateFlow(8 * 60)
+    val quietEndMinutesFlow: StateFlow<Int> = _quietEndMinutesFlow.asStateFlow()
 
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("reminder_prefs", Context.MODE_PRIVATE)
         filesDir = context.applicationContext.filesDir
-        _enabledFlow.value = prefs.getBoolean("reminder_enabled", false)
+
+        // 旧版本的 OFF 频率与总开关表达同一件事，且能组合出「已开启 + 频率关闭」的矛盾状态。
+        // 迁移时直接落到「关闭」，避免升级后出现一个开着却永不提醒的开关。
+        val rawFrequency = prefs.getString("reminder_frequency", "DAILY") ?: "DAILY"
+        val legacyOff = rawFrequency == "OFF"
+        if (legacyOff) {
+            prefs.edit {
+                putBoolean("reminder_enabled", false)
+                putString("reminder_frequency", ReminderFrequency.DAILY.name)
+            }
+        }
+        val frequency = if (legacyOff) {
+            ReminderFrequency.DAILY
+        } else {
+            runCatching { ReminderFrequency.valueOf(rawFrequency) }
+                .getOrDefault(ReminderFrequency.DAILY)
+        }
+
+        _enabledFlow.value = if (legacyOff) false else prefs.getBoolean("reminder_enabled", false)
         _hourFlow.value = prefs.getInt("reminder_hour", 20)
         _minuteFlow.value = prefs.getInt("reminder_minute", 0)
         _goalMinutesFlow.value = prefs.getInt("reminder_goal_minutes", 10)
         _examEpochDayFlow.value = readExamGoalFromFile() ?: prefs.getLong("exam_epoch_day", 0L)
-        val freqName = prefs.getString("reminder_frequency", "DAILY") ?: "DAILY"
-        _frequencyFlow.value = try { ReminderFrequency.valueOf(freqName) } catch (_: Exception) { ReminderFrequency.DAILY }
+        _frequencyFlow.value = frequency
+        // 提醒日缺失（旧版本只有三档预设）时按频率现推，升级后第一次调度就能用。
+        _reminderDaysFlow.value = ReminderSchedule.parseDays(prefs.getString("reminder_days", null))
+            .ifEmpty { ReminderSchedule.daysFor(frequency) }
         _studyStreakDays.value = prefs.getInt("study_streak_days", 0)
         _longestStreakDays.value = prefs.getInt("longest_streak_days", 0)
         _dailyPracticeGoalFlow.value = prefs.getInt("daily_practice_goal", 3)
+        _showDailyGoalOnCardFlow.value = prefs.getBoolean("show_daily_goal_on_card", true)
         _quietHoursEnabledFlow.value = prefs.getBoolean("quiet_hours_enabled", true)
-        _quietStartHourFlow.value = prefs.getInt("quiet_start_hour", 22)
-        _quietEndHourFlow.value = prefs.getInt("quiet_end_hour", 8)
-        _punctualEnabledFlow.value = prefs.getBoolean("punctual_enabled", false)
+        // 分钟级键优先；旧版本只有小时键，按整点迁移
+        _quietStartMinutesFlow.value = prefs.getInt(
+            "quiet_start_minutes",
+            prefs.getInt("quiet_start_hour", 22) * 60,
+        ).coerceIn(0, MINUTES_PER_DAY - 1)
+        _quietEndMinutesFlow.value = prefs.getInt(
+            "quiet_end_minutes",
+            prefs.getInt("quiet_end_hour", 8) * 60,
+        ).coerceIn(0, MINUTES_PER_DAY - 1)
     }
 
     var enabled: Boolean
@@ -190,12 +238,37 @@ object ReminderPrefs {
         get() {
             if (!::prefs.isInitialized) return ReminderFrequency.DAILY
             val name = prefs.getString("reminder_frequency", "DAILY") ?: "DAILY"
+            // 旧盘上的 OFF 已由 init 迁移；这里再兜一次，避免异常数据让枚举解析失败
+            if (name == "OFF") return ReminderFrequency.DAILY
             return try { ReminderFrequency.valueOf(name) } catch (_: Exception) { ReminderFrequency.DAILY }
         }
         set(value) {
             if (::prefs.isInitialized) {
                 prefs.edit { putString("reminder_frequency", value.name) }
                 _frequencyFlow.value = value
+                // 选预设时同步提醒日；自定义必须保留用户已经勾好的集合
+                if (value != ReminderFrequency.CUSTOM) {
+                    reminderDays = ReminderSchedule.daysFor(value)
+                }
+            }
+        }
+
+    /**
+     * 真正参与调度的提醒日集合。
+     *
+     * 空集合一律回落到频率预设：偏好损坏时宁可多提醒一次，也不要让用户从此收不到提醒。
+     */
+    var reminderDays: Set<DayOfWeek>
+        get() {
+            if (!::prefs.isInitialized) return ReminderSchedule.daysFor(frequency)
+            return ReminderSchedule.parseDays(prefs.getString("reminder_days", null))
+                .ifEmpty { ReminderSchedule.daysFor(frequency) }
+        }
+        set(value) {
+            if (::prefs.isInitialized) {
+                val normalized = value.ifEmpty { ReminderSchedule.daysFor(frequency) }
+                prefs.edit { putString("reminder_days", ReminderSchedule.encodeDays(normalized)) }
+                _reminderDaysFlow.value = normalized
             }
         }
 
@@ -228,6 +301,16 @@ object ReminderPrefs {
             }
         }
 
+    /** 今日计划卡是否显示「今日目标」进度行（默认显示，只影响首页展示，不影响提醒口径） */
+    var showDailyGoalOnCard: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("show_daily_goal_on_card", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("show_daily_goal_on_card", value) }
+                _showDailyGoalOnCardFlow.value = value
+            }
+        }
+
     /** 免打扰时段是否启用（默认开启，窗口默认 22:00–08:00） */
     var quietHoursEnabled: Boolean
         get() = if (::prefs.isInitialized) prefs.getBoolean("quiet_hours_enabled", true) else true
@@ -238,44 +321,38 @@ object ReminderPrefs {
             }
         }
 
-    /** 免打扰起始小时（0–23，默认 22） */
-    var quietStartHour: Int
-        get() = if (::prefs.isInitialized) prefs.getInt("quiet_start_hour", 22) else 22
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putInt("quiet_start_hour", value) }
-                _quietStartHourFlow.value = value
-            }
+    /** 免打扰起始（当天第几分钟，默认 22:00 = 1320） */
+    var quietStartMinutes: Int
+        get() = if (::prefs.isInitialized) {
+            prefs.getInt("quiet_start_minutes", prefs.getInt("quiet_start_hour", 22) * 60)
+                .coerceIn(0, MINUTES_PER_DAY - 1)
+        } else {
+            22 * 60
         }
-
-    /** 免打扰结束小时（0–23，默认 8；起=止 视为不静默，见 ReminderPlan.isQuietHour） */
-    var quietEndHour: Int
-        get() = if (::prefs.isInitialized) prefs.getInt("quiet_end_hour", 8) else 8
         set(value) {
             if (::prefs.isInitialized) {
-                prefs.edit { putInt("quiet_end_hour", value) }
-                _quietEndHourFlow.value = value
+                val v = value.coerceIn(0, MINUTES_PER_DAY - 1)
+                prefs.edit { putInt("quiet_start_minutes", v) }
+                _quietStartMinutesFlow.value = v
             }
         }
 
     /**
-     * 「尽量准时」开关（默认关）。
-     *
-     * **当前刻意只保留开关位，不实现精确路径。** 理由：
-     * 学习提醒不属于「闹钟 / 日历 / 通话」这类 Google Play 认可的精确闹钟正当用途，
-     * 为此声明 `SCHEDULE_EXACT_ALARM` 属高风险类别、上架审核会被打回；
-     * 而不声明权限时 `AlarmManager.setExactAndAllowWhileIdle` 在 API 31+ 会抛
-     * `SecurityException`，还得额外接 `canScheduleExactAlarms()` 降级、注册
-     * `ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED` 接收器并改 Manifest ——
-     * 收益（提醒准几分钟）远小于改动面与合规风险。因此维持纯 WorkManager 自调度。
-     * 留这个开关位是为了：将来若定位变化（如用户可选「用作闹钟」），UI 与存储已就位。
+     * 免打扰结束（当天第几分钟，默认 08:00 = 480）。
+     * 起 = 止 视为不静默，见 [com.ilyskyo.blancall.notification.ReminderPlan.isQuietMinute]。
      */
-    var punctualEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("punctual_enabled", false) else false
+    var quietEndMinutes: Int
+        get() = if (::prefs.isInitialized) {
+            prefs.getInt("quiet_end_minutes", prefs.getInt("quiet_end_hour", 8) * 60)
+                .coerceIn(0, MINUTES_PER_DAY - 1)
+        } else {
+            8 * 60
+        }
         set(value) {
             if (::prefs.isInitialized) {
-                prefs.edit { putBoolean("punctual_enabled", value) }
-                _punctualEnabledFlow.value = value
+                val v = value.coerceIn(0, MINUTES_PER_DAY - 1)
+                prefs.edit { putInt("quiet_end_minutes", v) }
+                _quietEndMinutesFlow.value = v
             }
         }
 

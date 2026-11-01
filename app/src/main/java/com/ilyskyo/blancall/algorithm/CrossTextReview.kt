@@ -160,6 +160,35 @@ object CrossTextReview {
     }
 
     /**
+     * 把「默写分句」映射回「混合句」。
+     *
+     * 反向默写的 clauses 比 SentenceSplitter 的句子更细（还会按逗号/顿号切），
+     * 所以不能拿 clause index 直接当 sentence index。生成器保证了每个 clause 是
+     * 某一句的连续子串；按顺序推进游标即可，不需要复制它的私有切分逻辑。
+     *
+     * @return 与 [clauses] 等长；-1 = 找不到归属（调用方按旧数据降级）
+     */
+    fun clauseSentenceIndices(clauses: List<String>, sentences: List<String>): List<Int> {
+        val out = ArrayList<Int>(clauses.size)
+        var sentenceIndex = 0
+        clauses.forEach { clause ->
+            val target = clause.trim()
+            while (sentenceIndex < sentences.size &&
+                target.isNotEmpty() &&
+                !sentences[sentenceIndex].contains(target)
+            ) {
+                sentenceIndex++
+            }
+            if (target.isNotEmpty() && sentenceIndex < sentences.size) {
+                out += sentenceIndex
+            } else {
+                out += -1
+            }
+        }
+        return out
+    }
+
+    /**
      * 交替排列：轮流从各文章取一句，保持原文内部顺序
      */
     private fun interleave(tagged: List<TaggedSentence>, articleCount: Int): List<TaggedSentence> {

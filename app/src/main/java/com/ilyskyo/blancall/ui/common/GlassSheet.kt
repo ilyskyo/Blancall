@@ -4,13 +4,19 @@
 package com.ilyskyo.blancall.ui.common
 
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -21,7 +27,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
@@ -29,21 +37,26 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
- * 底部面板容器（无渐变版）：半透明染色 + 28dp 顶部圆角 + 黑色 32% scrim。
+ * 底部面板容器（无渐变版）：半透明染色 + 16dp 顶部圆角 + 黑色 32% scrim。
  * 已移除顶部高光 verticalGradient 装饰，回归纯色面板。
  *
  * 面板颜色只来自 containerColor 的染色，不做真实 backdrop 模糊（Compose 的 RenderEffect 只能模糊
  * 自己的图层内容，模糊不到身后那页；要"透过面板看见内容"得用 AndroidView 采样，见 LiquidGlassView）。
  *
- * 替换点：PracticeScreen×3 / ModePickerPopup / ReadingModeScreen 设置面板。
+ * 形态全局统一（原导出面板定稿后回灌成默认值）：
+ * - 顶部圆角 16dp —— iOS sheet 的圆角明显小于 M3 默认 28dp，沿用大圆角一眼就看出是 Android；
+ * - 抓手是 36×5 的短横线（[GlassSheetGrabber]），全应用只有这一种，调用方不再自绘；
+ * - 浅色底为菜单级白（0.93），深色为 #1C1C1E（0.68）。
+ *
+ * 替换点：PracticeScreen×3 / ModePickerPopup / ReadingModeScreen 设置面板 等全部弹出面板。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlassModalBottomSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    dragHandle: @Composable (() -> Unit)? = null,
+    shape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+    dragHandle: @Composable (() -> Unit)? = { GlassSheetGrabber() },
     scrimColor: Color = Color.Black.copy(alpha = 0.32f),
     // 可外部持有的 sheetState：调用方需要「程序化收起后再执行动作」时传入。
     // 本组件已经把「先 hide() 播完退场、再通知调用方」做在内部（见 requestDismiss），
@@ -59,11 +72,14 @@ fun GlassModalBottomSheet(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val isDark = isBlancallDark()
-    // 容器染色：浅色用菜单级 0.93（面板常叠在内容页上，太透会干扰阅读）；深色沿用卡片级 0.68
+    // 容器染色：面板常叠在正文上，只要透一点点，底下的字就会从面板里窜上来。
+    // 用户已经连着几轮反馈「透」，这一版压到几乎不透：浅色 0.98、深色 0.92。
+    // 深色原来是卡片级 0.68 —— 叠在蓝色文章卡上会整体发蓝（实测），一并压住。
+    // 剩下那 2%~8% 只为了保住「面板是一层材质」的暗示，任何高饱和度底色都不会再透出来。
     val stain = if (isDark) {
-        Color(0xFF1C1C1E).copy(alpha = GLASS_ALPHA_DARK)
+        Color(0xFF1C1C1E).copy(alpha = 0.92f)
     } else {
-        Color.White.copy(alpha = GLASS_MENU_ALPHA_LIGHT)
+        Color.White.copy(alpha = 0.98f)
     }
 
     // ── 退场要真的播 ──
@@ -149,4 +165,27 @@ fun GlassModalBottomSheet(
             )
         }
     )
+}
+
+/**
+ * 面板顶部抓手：36×5 的短横线，上下留白 6 / 11。
+ *
+ * 全应用唯一形态（原先各面板自绘 36×4、留白 10 的细条，或干脆不画），
+ * 由 [GlassModalBottomSheet] 作为默认 dragHandle 统一供给；不承担读屏语义，关闭仍走下滑 / 遮罩 / 返回。
+ */
+@Composable
+fun GlassSheetGrabber() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp, bottom = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 36.dp, height = 5.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+        )
+    }
 }

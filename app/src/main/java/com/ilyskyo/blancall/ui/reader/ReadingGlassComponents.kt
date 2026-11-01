@@ -39,7 +39,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.qmdeve.liquidglass.widget.LiquidGlassView
 
 /**
- * 阅读页液态玻璃组件（图标按钮 / 玻璃胶囊 / 降级玻璃板 / 进度胶囊；从 ReadingModeScreen.kt 拆出）。
+ * 文章详情页液态玻璃组件（图标按钮 / 玻璃胶囊 / 降级玻璃板 / 进度胶囊；从 ReadingModeScreen.kt 拆出）。
  */
 
 /** dp → px（液态玻璃参数用） */

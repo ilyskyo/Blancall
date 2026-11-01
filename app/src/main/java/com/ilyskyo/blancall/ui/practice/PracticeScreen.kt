@@ -374,7 +374,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
         else 600.dp
 
     Box(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
-        Column(modifier = Modifier.fillMaxSize().widthIn(max = practiceMaxWidth).padding(horizontal = 16.dp, vertical = 16.dp)) {
+        Column(modifier = Modifier.fillMaxSize().widthIn(max = practiceMaxWidth).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)) {
         // ── 顶部导航：返回 + 文章标题 + 操作 ──
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -837,9 +837,6 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🔗", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer)
-                        Spacer(Modifier.width(8.dp))
                         Text(
                             stringResource(com.ilyskyo.blancall.R.string.reader_cross_cloze),
                             style = MaterialTheme.typography.labelMedium,
@@ -856,13 +853,6 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             modifier = Modifier.weight(1f)
                         )
                     }
-                    Spacer(Modifier.height(2.dp))
-                    // 跨文不使用单篇自定义配置：预期落差在此显式说明
-                    Text(
-                        stringResource(com.ilyskyo.blancall.R.string.mixed_smart_only),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f)
-                    )
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -1187,12 +1177,13 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                         )
                         Spacer(Modifier.height(20.dp))
 
-                        // 四项合进一个圆角分组，与锚点浮窗里的模式选项卡同一套视觉，
-                        // 只留模式名：不带图标、不带解释性副标题（试一次就懂，不需要预先讲）
+                        // 四行 + 贯穿的不透明分隔线，与锚点浮窗里的模式选项卡同一套视觉；
+                        // 只留模式名 + 自绘图形：不带 emoji、不带解释性副标题
                         ModeOptionGroup {
                             // 句子挖空
                             ModeOptionRow(
                                 label = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_sentence),
+                                glyph = ModeGlyph.SENTENCE,
                                 onClick = {
                                     vm.onModeChosen(BlancallMode.SENTENCE)
                                     modeSelected = true
@@ -1202,6 +1193,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             // 字词挖空
                             ModeOptionRow(
                                 label = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_word),
+                                glyph = ModeGlyph.WORD,
                                 onClick = {
                                     vm.onModeChosen(BlancallMode.WORD)
                                     modeSelected = true
@@ -1211,6 +1203,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                             // 反向默写
                             ModeOptionRow(
                                 label = stringResource(com.ilyskyo.blancall.R.string.cloze_mode_reverse),
+                                glyph = ModeGlyph.REVERSE,
                                 onClick = {
                                     vm.onModeChosen(BlancallMode.REVERSE)
                                     modeSelected = true
@@ -1221,6 +1214,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
                                 ModeOptionDivider()
                                 ModeOptionRow(
                                     label = stringResource(com.ilyskyo.blancall.R.string.custom_cloze),
+                                    glyph = ModeGlyph.CUSTOM,
                                     onClick = { showCrossCustomSheet = true }
                                 )
                             }
@@ -1273,9 +1267,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     AnimatedOverlayPresence(visible = showModeSheet) {
         GlassModalBottomSheet(
             onDismissRequest = { showModeSheet = false },
-            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
-            } }
+            // 抓手用 GlassModalBottomSheet 的全局默认短横线，不再各面板自绘。
         ) {
             Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 36.dp)) {
                 Text(stringResource(com.ilyskyo.blancall.R.string.switch_practice_mode), style = MaterialTheme.typography.titleMedium,
@@ -1375,9 +1367,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     AnimatedOverlayPresence(visible = showStrategySheet) {
         GlassModalBottomSheet(
             onDismissRequest = { showStrategySheet = false },
-            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
-            } }
+            // 抓手用 GlassModalBottomSheet 的全局默认短横线，不再各面板自绘。
         ) {
             Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 36.dp)) {
                 Text(stringResource(com.ilyskyo.blancall.R.string.pick_strategy), style = MaterialTheme.typography.titleMedium,
@@ -1410,9 +1400,7 @@ fun PracticeScreen(navController: NavController, articleIds: List<Long>, initial
     AnimatedOverlayPresence(visible = showSectionSheet) {
         GlassModalBottomSheet(
             onDismissRequest = { showSectionSheet = false },
-            dragHandle = { Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(if (isBlancallDark()) Color(0x66FFFFFF) else Color(0x33000000)))
-            } }
+            // 抓手用 GlassModalBottomSheet 的全局默认短横线，不再各面板自绘。
         ) {
             SectionPickerContent(
                 sectionMode = sectionMode,

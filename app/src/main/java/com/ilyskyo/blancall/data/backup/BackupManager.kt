@@ -79,12 +79,17 @@ object BackupManager {
         "home_layout.json",
         "sentence_card.json",
         "reader_prefs.json",
+        // 划线 / 批注（ReadingMarkStore）：用户逐篇写下的东西，丢了没法重建
+        "reading_marks.json",
         "tags.json",
         // 成就解锁时刻（AchievementTimelineStore）：徽章本身是派生的，但「何时拿到」只有这一份，
         // 备份里没有它，恢复之后统计页就答不出「这周新得了几枚」
         "achievements.json",
         // 考试倒排目标（ReminderPrefs 镜像文件）：只存 pref 会在一键备份里静默丢失
         "exam_goal.json",
+        // 主题 / 强调色 / 米黄底 / 玻璃染色 / 界面字体字号（AppearanceStore 镜像文件）：
+        // 用户调了半天的外观，换机恢复不该回到出厂默认
+        "appearance.json",
     )
 
     /** 单条目解压上限，防异常压缩包拖垮内存（正常学习数据远小于此值）。 */

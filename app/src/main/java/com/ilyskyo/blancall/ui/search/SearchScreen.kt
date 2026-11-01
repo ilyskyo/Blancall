@@ -4,6 +4,9 @@
 package com.ilyskyo.blancall.ui.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.ilyskyo.blancall.ui.theme.isBlancallDark
@@ -28,11 +31,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -44,20 +49,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.SentenceSplitter
 import com.ilyskyo.blancall.algorithm.TagOps
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.TagStore
+import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
+import com.ilyskyo.blancall.ui.common.GlassButton
+import com.ilyskyo.blancall.ui.common.GlassCard
 import com.ilyskyo.blancall.ui.common.animateListItem
 import com.ilyskyo.blancall.ui.common.heroElement
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -68,6 +81,10 @@ import com.ilyskyo.blancall.ui.common.toChipUis
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_DARK
 import com.ilyskyo.blancall.ui.common.GLASS_ALPHA_LIGHT
 import com.ilyskyo.blancall.ui.common.pressClick
+import com.ilyskyo.blancall.ui.practice.AdaptiveModePicker
+import com.ilyskyo.blancall.ui.practice.PickerSelection
+import com.ilyskyo.blancall.ui.tag.TagPickerSheet
+import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.ArticleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -81,7 +98,7 @@ import kotlinx.coroutines.withContext
  * - 实时过滤：输入即搜
  * - 命中样式：标题命中高亮；正文命中显示含关键词的上下文片段；标签命中就列出该文章
  * - 添加日期命中（如 "2026-08-23" / "2026/8/23" / 年份）也会列出对应文章
- * - 点结果进入阅读页
+ * - 点结果进入文章详情页
  */
 @Composable
 fun SearchScreen(navController: NavController) {
@@ -89,6 +106,7 @@ fun SearchScreen(navController: NavController) {
     val articles by viewModel.articles.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
 
     // ── 文章标签：标签名进命中维度 + 结果卡展示 chips ──
     val tagStore = remember { TagStore.getInstance(context.filesDir) }
@@ -120,6 +138,32 @@ fun SearchScreen(navController: NavController) {
             }.sortedByDescending { it.updatedAt }
         }
     }
+    // 句子级命中：文章结果只回答「在哪篇」，用户搜一句话时真正想找的是那一句。
+    // 句子切分只随文章表重算一次；每次输入只做包含判断。
+    val articleSentences = remember(articles) {
+        articles.map { article ->
+            article to SentenceSplitter.splitWithPositions(article.content)
+        }
+    }
+    val sentenceHits = remember(articleSentences, trimmed) {
+        if (trimmed.isEmpty()) {
+            emptyList()
+        } else {
+            articleSentences.flatMap { (article, sentences) ->
+                sentences.mapIndexedNotNull { index, sentence ->
+                    if (sentence.text.contains(trimmed, ignoreCase = true)) {
+                        SentenceHit(article, index, sentence.text)
+                    } else null
+                }
+            }.take(MAX_SENTENCE_HITS)
+        }
+    }
+
+    val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
+    var pendingPracticeArticleId by remember { mutableLongStateOf(0L) }
+    var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
+    var showModePicker by remember { mutableStateOf(false) }
+    var tagTarget by remember { mutableStateOf<Article?>(null) }
 
     Box(
         modifier = Modifier
@@ -129,15 +173,17 @@ fun SearchScreen(navController: NavController) {
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // ── 顶栏：返回 + 搜索框 ──
-            // 左右 20dp 与其它页对齐；上距 12dp：本行高由 56dp 输入框决定，
-            // 使 40dp 返回圆的圆心落到与其它页一致的 40dp 基线（20..60）
+            // 左右 20dp 与其它页对齐；上距 12dp = 全应用顶栏基线。
+            // 返回键与搜索框垂直居中：搜索框会随字号/设备变高，钉死 Top 会让返回键越显偏高。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BackButton(onClick = { navController.popBackStack() })
+                BackButton(
+                    onClick = { navController.popBackStack() },
+                )
                 Spacer(Modifier.width(12.dp))
                 SearchField(
                     query = query,
@@ -153,28 +199,96 @@ fun SearchScreen(navController: NavController) {
             )
 
             // ── 结果区（空态不在此占位，见下方覆盖层） ──
-            if (trimmed.isNotEmpty() && results.isNotEmpty()) {
-                Text(
-                    pluralStringResource(com.ilyskyo.blancall.R.plurals.search_result_count, results.size, results.size),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 4.dp)
-                )
+            if (trimmed.isNotEmpty() && (results.isNotEmpty() || sentenceHits.isNotEmpty())) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 16.dp,
+                        vertical = 6.dp,
+                    )
                 ) {
-                    items(results, key = { it.id }) { article ->
-                        // 结果集在每次输入后整体增减：改造前 item 出现/消失都是瞬时的，
-                        // 列表像被抖了一下。入场淡入 tween + 换位弹簧 + 退场淡出（词表见 animateListItem）。
-                        Box(modifier = animateListItem()) {
-                            SearchResultCard(
-                                article = article,
-                                tags = chipTagsByArticle[article.id].orEmpty(),
-                                query = trimmed,
-                                dateFmt = dateFmtDash,
-                                onClick = { navController.navigate("reader/${article.id}") }
+                    if (results.isNotEmpty()) {
+                        item(key = "article_header") {
+                            Text(
+                                pluralStringResource(
+                                    com.ilyskyo.blancall.R.plurals.search_result_count,
+                                    results.size,
+                                    results.size,
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp),
                             )
+                        }
+                        items(results, key = { "a_${it.id}" }) { article ->
+                            // 结果集在每次输入后整体增减：改造前 item 出现/消失都是瞬时的，
+                            // 列表像被抖了一下。入场淡入 tween + 换位弹簧 + 退场淡出（词表见 animateListItem）。
+                            Box(modifier = animateListItem()) {
+                                SearchResultCard(
+                                    article = article,
+                                    tags = chipTagsByArticle[article.id].orEmpty(),
+                                    query = trimmed,
+                                    dateFmt = dateFmtDash,
+                                    onClick = { navController.navigate("reader/${article.id}") },
+                                    onTagClick = { tagId -> navController.navigate("tag/$tagId") },
+                                    onPractice = {
+                                        // 搜索框还聚焦时弹模式选择，键盘会盖住下半张选项卡
+                                        focusManager.clearFocus()
+                                        pendingPracticeArticleId = article.id
+                                        practiceButtonRect = Rect.Zero
+                                        showModePicker = true
+                                    },
+                                    onAi = if (aiEnabled) {
+                                        { navController.navigate("ai?ids=${article.id}") }
+                                    } else null,
+                                    onTag = {
+                                        focusManager.clearFocus()
+                                        tagTarget = article
+                                    },
+                                    practiceModifier = if (article.id == pendingPracticeArticleId) {
+                                        Modifier.onGloballyPositioned { coords ->
+                                            val pos = coords.positionInWindow()
+                                            practiceButtonRect = Rect(
+                                                pos.x,
+                                                pos.y,
+                                                pos.x + coords.size.width,
+                                                pos.y + coords.size.height,
+                                            )
+                                        }
+                                    } else Modifier,
+                                )
+                            }
+                        }
+                    }
+                    if (sentenceHits.isNotEmpty()) {
+                        item(key = "sentence_header") {
+                            Text(
+                                stringResource(com.ilyskyo.blancall.R.string.search_sentences),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(
+                                    start = 4.dp,
+                                    top = if (results.isEmpty()) 4.dp else 12.dp,
+                                    bottom = 4.dp,
+                                ),
+                            )
+                        }
+                        items(
+                            sentenceHits,
+                            key = { "s_${it.article.id}_${it.sentenceIndex}" },
+                        ) { hit ->
+                            Box(modifier = animateListItem()) {
+                                SentenceHitCard(
+                                    hit = hit,
+                                    query = trimmed,
+                                    onOpen = { navController.navigate("reader/${hit.article.id}") },
+                                    onPractice = {
+                                        navController.navigate(
+                                            "practice/${hit.article.id}?mode=SENTENCE&focusSentence=${hit.sentenceIndex}"
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -186,7 +300,7 @@ fun SearchScreen(navController: NavController) {
         StateSwap(
             targetState = when {
                 trimmed.isEmpty() -> 0
-                results.isEmpty() -> 1
+                results.isEmpty() && sentenceHits.isEmpty() -> 1
                 else -> 2
             },
             label = "searchHintSwap",
@@ -200,6 +314,33 @@ fun SearchScreen(navController: NavController) {
                 }
             }
         }
+    }
+
+    AdaptiveModePicker(
+        visible = showModePicker,
+        anchorRect = practiceButtonRect.takeIf { it != Rect.Zero },
+        onDismiss = { showModePicker = false },
+        onModeSelected = { selection ->
+            showModePicker = false
+            if (pendingPracticeArticleId > 0L) {
+                when (selection) {
+                    is PickerSelection.Base -> navController.navigate(
+                        "practice/$pendingPracticeArticleId?mode=${selection.mode.name}"
+                    )
+                    PickerSelection.Custom -> navController.navigate(
+                        "custom_cloze_list/$pendingPracticeArticleId?pick=true"
+                    )
+                }
+            }
+        },
+    )
+
+    AnimatedOverlayPresence(target = tagTarget) { target ->
+        TagPickerSheet(
+            targets = listOf(target),
+            onDismiss = { tagTarget = null },
+            onApplied = { tagTarget = null },
+        )
     }
 }
 
@@ -220,21 +361,51 @@ private fun SearchField(
         focusRequester.requestFocus()
     }
 
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier
-            .focusRequester(focusRequester),
-        singleLine = true,
-        leadingIcon = {
+    // 高度与首页搜索栏一致（46dp）：OutlinedTextField 的最小高度约 56dp，在顶栏里显得「肥」。
+    // 自绘容器还顺手解决了「页面底色与卡片同色时输入框整个消失」的问题（有描边）。
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = container,
+        border = androidx.compose.foundation.BorderStroke(
+            0.5.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        ),
+        modifier = modifier.height(46.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             AppIcon(
                 kind = AppIconKind.SearchHint,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        },
-        trailingIcon = {
+            Spacer(Modifier.width(8.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+                decorationBox = { innerTextField ->
+                    Box(
+                        Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart
+                    ) { innerTextField() }
+                }
+            )
             if (query.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
                 Box(
                     modifier = Modifier
                         .size(26.dp)
@@ -250,20 +421,8 @@ private fun SearchField(
                     )
                 }
             }
-        },
-        shape = RoundedCornerShape(14.dp),
-        colors = TextFieldDefaults.colors(
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            focusedContainerColor = container,
-            unfocusedContainerColor = container,
-            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-            cursorColor = MaterialTheme.colorScheme.primary
-        ),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSubmit() })
-    )
+        }
+    }
 }
 
 /** 结果卡片：标题 + 标签 chips（≤2 + 「+N」）+ 命中片段 + 添加日期 */
@@ -273,7 +432,12 @@ private fun SearchResultCard(
     tags: List<TagChipUi> = emptyList(),
     query: String,
     dateFmt: SimpleDateFormat,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onTagClick: ((Long) -> Unit)? = null,
+    onPractice: () -> Unit,
+    onAi: (() -> Unit)? = null,
+    onTag: () -> Unit,
+    practiceModifier: Modifier = Modifier,
 ) {
     val isDark = isBlancallDark()
     val bgAlpha = if (isDark) GLASS_ALPHA_DARK else GLASS_ALPHA_LIGHT
@@ -288,22 +452,26 @@ private fun SearchResultCard(
             .clip(shape)
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
             .background(bgColor)
-            .pressClick { onClick() }
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
+            // 卡片不再整块可点：父级 click 会和「开始练习 / 打标签」抢事件，
+            // 真机上表现为点子按钮却打开了文章详情页。让标题与摘要各自承担「打开原文」。
             Text(
                 text = snippet(article.title, query, maxLen = 34),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressClick { onClick() },
             )
             if (tags.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                TagChipRow(tags = tags, maxChips = 2)
+                TagChipRow(tags = tags, maxChips = 2, onTagClick = onTagClick)
             }
             Spacer(Modifier.height(3.dp))
             Text(
@@ -311,7 +479,10 @@ private fun SearchResultCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressClick { onClick() },
             )
             Spacer(Modifier.height(6.dp))
             Row(
@@ -335,13 +506,118 @@ private fun SearchResultCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                 )
             }
+            Spacer(Modifier.height(2.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = onPractice,
+                    modifier = Modifier.height(30.dp).then(practiceModifier),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.reader_start_practice),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                onAi?.let { action ->
+                    TextButton(
+                        onClick = action,
+                        modifier = Modifier.height(30.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Text(
+                            "AI",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = onTag,
+                    modifier = Modifier.height(30.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.add_tags),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 句子级命中：用户搜一句话时，直接给出那一句和「练这一句」。 */
+private data class SentenceHit(
+    val article: Article,
+    val sentenceIndex: Int,
+    val text: String,
+)
+
+private const val MAX_SENTENCE_HITS = 40
+
+@Composable
+private fun SentenceHitCard(
+    hit: SentenceHit,
+    query: String,
+    onOpen: () -> Unit,
+    onPractice: () -> Unit,
+) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(
+                text = "《${hit.article.title.ifBlank { stringResource(com.ilyskyo.blancall.R.string.untitled_article) }}》",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressClick { onOpen() },
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = snippet(hit.text, query, maxLen = 110),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressClick { onOpen() },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    onClick = onPractice,
+                    modifier = Modifier.height(30.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        stringResource(com.ilyskyo.blancall.R.string.search_practice_sentence),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
         }
     }
 }
 
 /** 从文本中截取命中关键词前后的上下文片段 */
 private fun snippet(text: String, query: String, maxLen: Int): String {
-    val flat = text.replace("\n", " ").replace(" ", "").takeIf { it.isNotBlank() } ?: return text
+    // 只压平换行/连续空白，不能像旧版那样把所有空格删掉：
+    // 中文没有词间空格看不出问题，英文会变成 "Learningisnot..." 一整串。
+    val flat = text.replace(Regex("\\s+"), " ").trim().takeIf { it.isNotBlank() } ?: return text
     val q = query.takeIf { it.isNotBlank() } ?: return flat.take(maxLen)
     val idx = flat.indexOf(q, ignoreCase = true).let { pos ->
         if (pos >= 0) pos else flat.lowercase(Locale.getDefault()).indexOf(q)

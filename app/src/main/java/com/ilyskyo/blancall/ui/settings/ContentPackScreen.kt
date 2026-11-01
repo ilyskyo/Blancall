@@ -52,6 +52,7 @@ import com.ilyskyo.blancall.algorithm.ContentFingerprint
 import com.ilyskyo.blancall.data.contentpack.ContentPackStore
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.ArticleRepository
+import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.AmbientBackground
 import com.ilyskyo.blancall.ui.common.AnimatedOverlayPresence
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -154,7 +155,12 @@ fun ContentPackScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BackButton(onClick = { navController.popBackStack() })
+                // 行高被右侧按钮撑到 44dp，40dp 圆居中会下沉 2dp：钉在顶栏上沿，
+                // 与全应用其它页面的返回键同一条基线（距状态栏 12dp）
+                BackButton(
+                    onClick = { navController.popBackStack() },
+                    modifier = Modifier.align(Alignment.Top),
+                )
                 Spacer(Modifier.width(12.dp))
                 Text(
                     stringResource(R.string.content_pack_title),
@@ -352,16 +358,21 @@ fun ContentPackScreen(navController: NavController) {
             items = batchItems,
             importing = batchImporting,
             onDismissRequest = { if (!batchImporting) batchPack = null },
-            onConfirm = { keys ->
+            onConfirm = { keys, tagIds ->
                 batchImporting = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
-                        importPackSelection(
+                        val imported = importPackSelection(
                             articleRepo,
                             store,
                             pack,
                             keys.mapNotNull { it.toIntOrNull() }.toSet()
                         )
+                        if (tagIds.isNotEmpty() && imported.articleIds.isNotEmpty()) {
+                            TagStore.getInstance(context.filesDir)
+                                .applyBatchToggle(imported.articleIds, tagIds, emptySet())
+                        }
+                        imported
                     }
                     batchImporting = false
                     batchPack = null
@@ -369,8 +380,8 @@ fun ContentPackScreen(navController: NavController) {
                         context,
                         context.getString(
                             R.string.content_pack_import_result,
-                            result.first,
-                            result.second
+                            result.imported,
+                            result.skipped
                         ),
                         Toast.LENGTH_LONG
                     ).show()
@@ -462,19 +473,27 @@ internal suspend fun buildPackBatchItems(
     }
 }
 
-/** 按篇目索引导入所选项；重复内容跳过。返回（导入数, 跳过数）。 */
+/** 批量导入结果：计数给 Toast，articleIds 给「导入后打标签」用（文章 id 只有写入后才知道）。 */
+internal data class BatchImportResult(
+    val imported: Int,
+    val skipped: Int,
+    val articleIds: List<Long> = emptyList(),
+)
+
+/** 按篇目索引导入所选项；重复内容跳过。返回（导入数, 跳过数, 新建文章 id）。 */
 internal suspend fun importPackSelection(
     repo: ArticleRepository,
     store: ContentPackStore,
     pack: ContentPackStore.PackMeta,
     indices: Set<Int>,
-): Pair<Int, Int> {
+): BatchImportResult {
     val existingHashes = runCatching {
         repo.awaitLoaded()
         repo.allArticles.first().mapTo(HashSet()) { ContentFingerprint.md5Hex(it.content) }
     }.getOrElse { HashSet() }
     var imported = 0
     var skipped = 0
+    val articleIds = mutableListOf<Long>()
     indices.sorted().forEach { index ->
         val meta = pack.entries.getOrNull(index)
         val body = store.readEntry(pack.id, index)
@@ -483,13 +502,18 @@ internal suspend fun importPackSelection(
         } else if (!existingHashes.add(ContentFingerprint.md5Hex(body))) {
             skipped++
         } else {
-            val ok = runCatching {
+            val newId = runCatching {
                 repo.insert(Article(title = meta.title, content = body, author = meta.author))
-            }.isSuccess
-            if (ok) imported++ else skipped++
+            }.getOrNull()
+            if (newId != null) {
+                imported++
+                articleIds += newId
+            } else {
+                skipped++
+            }
         }
     }
-    return imported to skipped
+    return BatchImportResult(imported, skipped, articleIds)
 }
 
 @Composable

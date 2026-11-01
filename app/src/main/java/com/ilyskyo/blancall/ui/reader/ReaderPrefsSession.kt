@@ -8,7 +8,7 @@ import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 
 /**
- * 阅读设置「按文章独立」的共用入口（阅读页 / 遮挡配置列表与编辑器 / 首页卡片都走这里）。
+ * 阅读设置「按文章独立」的共用入口（文章详情页 / 遮挡配置列表与编辑器 / 首页卡片都走这里）。
  *
  * 设计见 [ReaderPrefsStore]：有存档用存档；没有则以全局 AppPrefs 当前值作为基线。
  * 所有入口的改动**只写当前文章的存档**，不再污染全局（真机反馈：A 文章调完 B 也跟着变）。

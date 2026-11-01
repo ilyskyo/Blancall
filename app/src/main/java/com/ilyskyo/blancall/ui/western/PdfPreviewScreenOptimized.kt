@@ -244,6 +244,7 @@ fun PdfPreviewScreenOptimized(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(top = 4.dp)
                 .height(56.dp)
                 .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically

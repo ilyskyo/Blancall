@@ -32,6 +32,18 @@
     <string name="continue_import">Продолжить импорт</string>
     <string name="view_details">Подробнее</string>
     <string name="due_tasks">Задания на повторение</string>
+    <string name="today_plan_all_title">План на сегодня</string>
+    <string name="today_plan_all_manage">Управление планом</string>
+    <string name="today_plan_all_ready">Готово сейчас: %1$d</string>
+    <string name="today_plan_all_empty">Сегодня нечего повторять</string>
+    <string name="today_plan_board_summary">Продолжить: %1$d · К повторению: %2$d · Предложения: %3$d · Ошибки: %4$d</string>
+    <string name="section_overdue">Просрочено</string>
+    <string name="section_today">Сегодня</string>
+    <string name="due_tasks_today_only">К повторению сегодня: %1$d</string>
+    <string name="due_tasks_overdue_only">Просрочено: %1$d</string>
+    <string name="due_tasks_split">Сегодня %1$d · просрочено %2$d</string>
+    <string name="due_list_title">К повторению</string>
+    <string name="due_list_empty">Нет статей к повторению</string>
     <string name="resume_tasks">Незавершённые</string>
     <string name="recently_used">Недавно открытые</string>
     <string name="no_due_today">На сегодня повторений нет</string>
@@ -65,6 +77,43 @@
         <item quantity="few">%1$d симв.</item>
         <item quantity="many">%1$d симв.</item>
         <item quantity="other">%1$d симв.</item>
+    </plurals>
+    <string name="text_stats_title">Статистика текста</string>
+    <string name="text_stats_open">Посмотреть статистику текста</string>
+    <string name="text_stats_chars_with_spaces">Символы (с пробелами)</string>
+    <string name="text_stats_chars_no_spaces">Символы (без пробелов)</string>
+    <string name="text_stats_punctuation">Пунктуация</string>
+    <string name="text_stats_spaces">Пробелы</string>
+    <string name="text_stats_paragraphs">Абзацы</string>
+    <string name="text_stats_digits">Цифры</string>
+    <string name="text_stats_letters">Буквы</string>
+    <string name="text_stats_han">Иероглифы</string>
+    <string name="text_stats_kana">Кана</string>
+    <string name="text_stats_hangul">Хангыль</string>
+    <string name="text_stats_words">Слова</string>
+    <plurals name="text_count_han">
+        <item quantity="one">%1$d иероглиф</item>
+        <item quantity="few">%1$d иероглифа</item>
+        <item quantity="many">%1$d иероглифов</item>
+        <item quantity="other">%1$d иероглифов</item>
+    </plurals>
+    <plurals name="text_count_kana">
+        <item quantity="one">%1$d знак каны</item>
+        <item quantity="few">%1$d знака каны</item>
+        <item quantity="many">%1$d знаков каны</item>
+        <item quantity="other">%1$d знаков каны</item>
+    </plurals>
+    <plurals name="text_count_word">
+        <item quantity="one">%1$d слово</item>
+        <item quantity="few">%1$d слова</item>
+        <item quantity="many">%1$d слов</item>
+        <item quantity="other">%1$d слов</item>
+    </plurals>
+    <plurals name="text_count_char">
+        <item quantity="one">%1$d символ</item>
+        <item quantity="few">%1$d символа</item>
+        <item quantity="many">%1$d символов</item>
+        <item quantity="other">%1$d символов</item>
     </plurals>
     <string name="new_tag">Новый тег</string>
     <string name="edit_tag">Изменить тег</string>
@@ -141,6 +190,8 @@
     <string name="ui_language_desc">Меняется язык только этого приложения — системный остаётся как был</string>
     <string name="beige_background">Бежевый фон</string>
     <string name="beige_background_desc">В светлой теме интерфейс получит бежевый фон. На тёмную тему это не влияет.</string>
+    <string name="flat_background">Серый фон страницы</string>
+    <string name="flat_background_desc">Фон страницы темнее карточек, поэтому карточки выглядят объёмнее</string>
     <string name="nav_glass">Жидкое стекло панели</string>
     <string name="nav_glass_desc">Настоящий эффект жидкого стекла внизу экрана. С выключенным — однотонный фон, расход заряда меньше.</string>
     <string name="haptic_strength">Сила вибрации</string>
@@ -148,11 +199,29 @@
     <string name="home_subtitle">Подзаголовок главной</string>
     <string name="home_subtitle_desc">Слоган под шапкой главной страницы; нажмите, чтобы изменить</string>
     <string name="theme_color">Акцентный цвет</string>
+    <string name="theme_color_custom">Свой цвет темы</string>
+    <string name="theme_color_custom_desc">Любой оттенок на цветовом круге вместо шести наборов выше.</string>
+    <string name="material_you">Цвета системы</string>
+    <string name="material_you_desc">Берёт цвета обоев в Android 12 и новее и перекрывает все цвета темы выше.</string>
+    <string name="ui_font">Шрифт интерфейса</string>
+    <string name="ui_font_desc">Гарнитура заголовков и текста; у страницы чтения своя вёрстка.</string>
+    <string name="ui_font_serif">Системный с засечками</string>
+    <string name="ui_font_sans">Системный без засечек</string>
+    <string name="ui_font_xwwk">LXGW WenKai</string>
+    <string name="ui_font_scale">Размер текста</string>
+    <string name="ui_font_scale_desc">Масштабирует весь текст интерфейса; чтение и тренировка настраиваются отдельно.</string>
+    <string name="glass_tint">Тонированное стекло</string>
+    <string name="glass_tint_desc">Стекло принимает цвет темы; при выключении остаётся нейтрально белым.</string>
     <string name="export_backup_desc">Собирает библиотеку статей и прогресс упражнений в один файл резервной копии; настройки интерфейса не входят</string>
     <string name="keep_wrong_ink_desc">Рукописные ответы к ошибкам сохраняются — их можно посмотреть в истории упражнений («как я писал тогда»). Хранится только на устройстве</string>
     <string name="import_backup_desc">Восстанавливает данные из резервной копии: текущие данные будут перезаписаны, после импорта нужен перезапуск</string>
     <string name="indent_first_line_desc">Если включено, при вставке или импорте простого текста в начале каждого абзаца добавляются два пробела; в PDF, Word и других документах оформление остаётся как есть</string>
     <string name="clear_saved_ink">Очистить сохранённые чернила</string>
+    <string name="sentence_card_anim_title">Анимация перелистывания по нажатию</string>
+    <string name="sentence_card_anim_desc">Анимация улетающей карточки при нажатии кнопки оценки; свайпы вверх и вниз не затрагиваются</string>
+    <string name="sentence_card_anim_speed">Скорость вылета</string>
+    <string name="sentence_card_anim_speed_value">Около %1$d мс</string>
+    <string name="sentence_card_anim_preview_hint">Нажмите на превью, чтобы повторить с текущей скоростью</string>
     <string name="keep_wrong_ink">Сохранять чернила ошибочных ответов</string>
     <string name="article_tags_desc">Группирует статьи и задаёт цвет; показывается бейджем на карточке</string>
     <string name="western_thoughts">Материалы по западной мысли</string>
@@ -193,11 +262,28 @@
     <string name="reminder_enable">Включить напоминание</string>
     <string name="notification_permission_required">Для напоминаний требуется разрешение на уведомления. Включите его в настройках системы и вернитесь в приложение.</string>
     <string name="reminder_time">Время напоминания</string>
-    <string name="daily_goal">Дневная цель</string>
+    <string name="daily_goal">Время учёбы в день</string>
     <string name="custom">Настроить</string>
     <string name="reminder_frequency">Частота напоминаний</string>
     <string name="custom_daily_goal_title">Своя длительность занятий</string>
     <string name="minutes_field_label">Минуты</string>
+    <string name="reminder_days">Дни напоминаний</string>
+    <string name="reminder_keep_one_day">Оставьте хотя бы один день</string>
+    <string name="reminder_quiet_hours">Тихие часы</string>
+    <string name="reminder_time_in_quiet_hours">Время напоминания попадает в тихие часы, поэтому в этот день уведомление не придёт.</string>
+    <string name="reminder_quiet_same">Начало и конец совпадают, поэтому тихие часы не действуют.</string>
+    <string name="reminder_on_blocked">Вкл. · Уведомления выкл.</string>
+    <string name="reminder_on_channel_blocked">Вкл. · Часть каналов выкл.</string>
+    <string name="reminder_notifications_off">Уведомления отключены, поэтому напоминания не придут.</string>
+    <string name="reminder_channels_some_off">Некоторые каналы напоминаний отключены в настройках системы.</string>
+    <string name="reminder_open_settings">Открыть настройки</string>
+    <string name="reminder_system_notification_settings">Системные настройки уведомлений</string>
+    <string name="reminder_test_notification">Отправить тестовое уведомление</string>
+    <string name="reminder_test_title">Тестовое уведомление</string>
+    <string name="reminder_test_body">Напоминания работают. Следующее: %1$s</string>
+    <string name="reminder_test_sent">Тестовое уведомление отправлено</string>
+    <string name="reminder_schedule_note">Напоминания планируются системой и могут задерживаться в режиме энергосбережения.</string>
+    <string name="reminder_daily_goal_hint">Строка «осталось N раз» в уведомлениях рассчитывается по этой цели.</string>
     <string name="set_reminder_time">Установить время</string>
     <string name="preset_8am">8:00 утра</string>
     <string name="preset_1230pm">12:30 дня</string>
@@ -263,7 +349,7 @@
     <string name="clear_filter">Сбросить фильтр</string>
     <string name="delete_selected">Удалить выбранное</string>
     <string name="add_tags">Добавить теги</string>
-    <string name="cross_review">🔗 Повтор между статьями</string>
+    <string name="cross_review">Повтор между статьями</string>
     <string name="delete_article_confirm">Удалить «%1$s»?\nОтменить будет нельзя.</string>
     <plurals name="delete_articles_confirm">
         <item quantity="one">Удалить выбранную %1$d статью?\nОтменить будет нельзя.</item>
@@ -285,6 +371,7 @@
         <item quantity="other">Повтор через %1$d дней</item>
     </plurals>
     <string name="mastered">Освоено</string>
+    <string name="plan_todo">К началу</string>
     <string name="urgency_not_started">Не начато</string>
     <string name="practice">Упражнения</string>
     <string name="sentence_cards">Карточки предложений</string>
@@ -359,8 +446,8 @@
     <string name="parsing_file">Разбор файла…</string>
     <string name="save_failed">Не удалось сохранить</string>
     <string name="doc_images_dropped">Изображения из документа импортировать нельзя — сохранён только текст</string>
-    <string name="due_tasks_count">Задания на повторение (%1$d)</string>
     <string name="resume_tasks_count">Незавершённые (%1$d)</string>
+    <string name="start_action">Начать</string>
     <string name="review_action">Повторить</string>
     <string name="continue_action">Продолжить</string>
     <string name="cloze_mode_sentence">Пропуски в предложениях</string>
@@ -760,7 +847,7 @@
     <string name="analysis_dialog_title">Разбор · %1$s</string>
     <string name="analysis_hints_line">%1$s · слабых подсказок %2$d, сильных %3$d</string>
     <string name="learned_sentences_label">Запомнено предложений</string>
-    <string name="stat_total_reviews">Всего повторов</string>
+    <string name="stat_total_reviews">Всего запоминаний</string>
     <plurals name="sentence_round_reviewed">
         <item quantity="one">Повторено %1$d предложение</item>
         <item quantity="few">Повторено %1$d предложения</item>
@@ -841,7 +928,6 @@
     <string name="section_selected">Фрагменты: свой выбор (%1$d/%2$d)</string>
     <string name="section_focus">Фокус: эта фраза и рядом</string>
     <string name="share_note">Поделиться заметкой</string>
-    <string name="mixed_smart_only">В смешанной практике пропуски подбираются автоматически — настройки одной статьи не применяются</string>
     <string name="ai_cloze_failed_local">ИИ не расставил пропуски —использован локальный алгоритм: %1$s</string>
     <string name="ai_cloze_no_profile">Пропуски от ИИ включены, но в «Настройки → ИИ» нет включённого профиля диалога. Сейчас работает локальный алгоритм.</string>
     <string name="generating_blanks">Генерируем пропуски…</string>
@@ -910,7 +996,7 @@
     <string name="custom_goal_title">Своя дневная цель</string>
     <string name="custom_goal_label">Практик в день</string>
     <string name="goal_times_unit">раз</string>
-    <string name="due_soon_title">⏰ Скоро забудется</string>
+    <string name="due_soon_title">Скоро забудется</string>
     <string name="prediction_item_desc">%1$s, удержание %2$d%%, %3$s</string>
     <string name="decay_expanded">кривая забывания раскрыта</string>
     <string name="decay_collapsed">нажмите, чтобы раскрыть кривую забывания</string>
@@ -1028,8 +1114,8 @@
         <item quantity="other">Цвет после %1$d ответов; цвет = текущее удержание — чем краснее, тем ближе забывание</item>
     </plurals>
     <!-- ── Каналы уведомлений и напоминания (notif_*): соответствуют NotificationChannels / NotificationHelper ── -->
-    <string name="notif_channel_due_name">Пора повторить</string>
-    <string name="notif_channel_due_desc">Напоминает о наступившем или близком сроке повторения и риске забывания</string>
+    <string name="notif_channel_due_name">Сроки и начало</string>
+    <string name="notif_channel_due_desc">Напоминает о сроке повторения, начале работы над запланированными статьями и риске забывания</string>
     <string name="notif_channel_sentence_name">Карточки-предложения</string>
     <string name="notif_channel_sentence_desc">Напоминания о предложении дня и карточках к повторению</string>
     <string name="notif_channel_goal_name">Доделать и цель дня</string>
@@ -1050,7 +1136,7 @@
     <string name="notif_mode_word">Пропуски в словах</string>
     <string name="notif_mode_reverse">Диктант</string>
     <string name="notif_no_study_title">📖 Пора позаниматься</string>
-    <string name="notif_no_study_body">Сегодня вы ещё не занимались. Нескольких минут хватит, чтобы не потерять серию.</string>
+    <string name="notif_no_study_body">Сегодняшняя практика ещё не завершена. Не прерывайте серию из %1$d дней.</string>
     <string name="notif_no_study_body_first">Сегодня вы ещё не занимались. Начните первое занятие!</string>
     <string name="notif_weak_title">🎯 Повторите слабые места</string>
     <plurals name="notif_weak_body">
@@ -1082,6 +1168,20 @@
         <item quantity="other">Пора повторить %1$d материала. Быстрое повторение сохранит их в памяти.</item>
     </plurals>
     <string name="notif_due_review_named_one">«%1$s» пора повторить. Начните сейчас.</string>
+    <string name="notif_start_article_title">📖 Готово к первому проходу</string>
+    <string name="notif_start_article_named_one">«%1$s» уже в плане. Начните первую практику.</string>
+    <plurals name="notif_start_article_named">
+        <item quantity="one">«%1$s» ещё не начата. Начните её.</item>
+        <item quantity="few">«%1$s» и ещё %2$d не начаты. Выберите одну и начните.</item>
+        <item quantity="many">«%1$s» и ещё %2$d не начаты. Выберите одну и начните.</item>
+        <item quantity="other">«%1$s» и ещё %2$d не начаты. Выберите одну и начните.</item>
+    </plurals>
+    <plurals name="notif_start_article_body">
+        <item quantity="one">%1$d статья из плана ещё не начата. Начните первый проход сегодня.</item>
+        <item quantity="few">%1$d статьи из плана ещё не начаты. Начните первый проход сегодня.</item>
+        <item quantity="many">%1$d статей из плана ещё не начаты. Начните первый проход сегодня.</item>
+        <item quantity="other">%1$d статей из плана ещё не начаты. Начните первый проход сегодня.</item>
+    </plurals>
     <plurals name="notif_due_review_named">
         <item quantity="one">Пора повторить: «%1$s» и другие материалы (всего %2$d).</item>
         <item quantity="few">Пора повторить: «%1$s» и другие материалы (всего %2$d).</item>
@@ -1146,6 +1246,34 @@
     <string name="blank_warn_suggestion">Рекомендуем: %1$d (не максимум, а оптимум для практики)</string>
     <string name="blank_use_suggested">Использовать %1$d</string>
     <!-- ── Экран чтения: статус и управление (reader_*) ── -->
+    <!-- ── 文章详情页计划状态条（plan_bar_*）── -->
+    <plurals name="plan_bar_practices">
+        <item quantity="one">Пройдено %1$d раз</item>
+        <item quantity="few">Пройдено %1$d раза</item>
+        <item quantity="many">Пройдено %1$d раз</item>
+        <item quantity="other">Пройдено %1$d раз</item>
+    </plurals>
+    <string name="plan_bar_accuracy">Точность %1$d%%</string>
+    <string name="plan_bar_not_started">Не начато</string>
+    <string name="plan_bar_overdue">Просрочено</string>
+    <string name="plan_bar_due_today">Повтор сегодня</string>
+    <string name="plan_bar_start_today">Начать сегодня</string>
+    <string name="plan_bar_start_overdue">Пора начинать</string>
+    <string name="plan_bar_due_tomorrow">Повтор завтра</string>
+    <string name="plan_bar_start_tomorrow">Начать завтра</string>
+    <plurals name="plan_bar_due_days">
+        <item quantity="one">Повтор через %1$d день</item>
+        <item quantity="few">Повтор через %1$d дня</item>
+        <item quantity="many">Повтор через %1$d дней</item>
+        <item quantity="other">Повтор через %1$d дней</item>
+    </plurals>
+    <plurals name="plan_bar_start_days">
+        <item quantity="one">Начало через %1$d день</item>
+        <item quantity="few">Начало через %1$d дня</item>
+        <item quantity="many">Начало через %1$d дней</item>
+        <item quantity="other">Начало через %1$d дней</item>
+    </plurals>
+    <string name="plan_bar_enroll">В план</string>
     <string name="reader_read_minutes">Прочитано: %1$d мин</string>
     <string name="reader_read_less_minute">Прочитано: меньше 1 мин</string>
     <string name="reader_finished">Дочитано</string>
@@ -1157,6 +1285,34 @@
     <string name="reader_prev_section">Предыдущий раздел</string>
     <string name="reader_full_text">Весь текст</string>
     <string name="reader_next_section">Следующий раздел</string>
+    <string name="reader_select_copy">Копировать</string>
+    <string name="reader_select_highlight">Выделить</string>
+    <string name="reader_select_unhighlight">Убрать</string>
+    <string name="reader_select_note">Заметка</string>
+    <string name="reader_select_edit_note">Изменить заметку</string>
+    <string name="reader_note_title">Заметка</string>
+    <string name="reader_note_hint">Введите заметку…</string>
+    <string name="reader_mark_copied">Скопировано</string>
+    <string name="reader_marks_title">Выделения и заметки</string>
+    <string name="reader_marks_empty">Пока нет выделений. Нажмите и удерживайте предложение, чтобы выделить его.</string>
+    <string name="reader_marks_count">Всего: %1$d</string>
+    <string name="reader_marks_entry">Выделения и заметки</string>
+    <string name="reader_marks_entry_hint">Удерживайте текст, чтобы выделить или добавить заметку</string>
+    <string name="reader_marks_entry_count">%1$d</string>
+    <string name="reader_speed_title">Скорость чтения</string>
+    <string name="reader_speed_value">Около %1$d симв./мин</string>
+    <string name="reader_speed_basis_personal">По вашей истории чтения (всего %1$d мин)</string>
+    <string name="reader_speed_basis_default">Истории пока нет — используется скорость по умолчанию</string>
+    <string name="reader_speed_reset">Пересчитать</string>
+    <string name="reader_remaining_hours">Осталось около %1$d ч %2$d мин</string>
+    <string name="reader_remaining_hours_only">Осталось около %1$d ч</string>
+    <string name="reader_idle_title">Ещё читаете?</string>
+    <string name="reader_idle_body">Эта страница не менялась %1$d мин</string>
+    <string name="reader_idle_yes">Читаю</string>
+    <string name="reader_idle_no">Не сейчас</string>
+    <string name="reader_idle_cheer">Отлично!</string>
+    <string name="reader_idle_cheer_detail">Ещё %1$d мин в копилку — продолжайте</string>
+    <string name="reader_idle_paused">Хорошо. Вернитесь, когда будет время</string>
     <!-- ── Резервное копирование данных (backup_*): типы ошибок — в BackupManager, текст — здесь ── -->
     <string name="backup_export_done">Резервная копия сохранена. Храните её бережно.</string>
     <string name="backup_export_failed">Ошибка экспорта: %1$s</string>
@@ -1199,7 +1355,8 @@
     <string name="data_archive_none">Пока недостаточно записей для архивации</string>
     <string name="flow_title">Поток обучения</string>
     <string name="flow_summary_title">Текущий план</string>
-    <string name="flow_summary_due_now">к повторению сейчас</string>
+    <string name="flow_summary_due_now">к практике сейчас</string>
+    <string name="flow_summary_due_new">из них не начато: %1$d</string>
     <string name="flow_summary_active">В плане</string>
     <string name="flow_summary_overdue">Просрочено</string>
     <string name="flow_summary_paused">На паузе</string>
@@ -1219,6 +1376,8 @@
     <string name="flow_done_resumed_all">Все приостановленные задания возобновлены</string>
     <string name="flow_done_paused_all">Все задания приостановлены</string>
     <string name="flow_done_plan">Интенсивность повторения изменена</string>
+    <string name="flow_undo">Отменить</string>
+    <string name="flow_undone">Отменено</string>
     <string name="flow_filter_all">Все %1$d</string>
     <string name="flow_filter_due">Сегодня %1$d</string>
     <string name="flow_filter_paused">На паузе %1$d</string>
@@ -1230,13 +1389,16 @@
     <string name="flow_group_later">Позже</string>
     <string name="flow_group_paused">На паузе</string>
     <string name="plan_paused">На паузе</string>
-    <string name="flow_task_meta">Повторений: %1$d · Удержание: %2$d%%</string>
+    <string name="flow_task_meta">Практик: %1$d · Удержание: %2$d%%</string>
+    <string name="flow_task_meta_no_retention">Практик: %1$d</string>
+    <string name="flow_task_meta_new">Ещё не начато</string>
     <string name="flow_sentence_due">Карточек предложений к повторению: %1$d</string>
     <string name="flow_due_overdue">Просрочено</string>
     <string name="flow_due_today">Сегодня</string>
     <string name="flow_due_tomorrow">Завтра</string>
     <string name="flow_resume_on">Возобновится %1$s</string>
     <string name="flow_start_review">Начать повторение</string>
+    <string name="flow_start_learning">Начать изучение</string>
     <string name="flow_adjust_schedule">Изменить срок</string>
     <string name="flow_pause">Пауза</string>
     <string name="flow_resume">Возобновить</string>
@@ -1278,12 +1440,15 @@
     <string name="flow_now">Сейчас</string>
     <string name="flow_detail_title">Детали задания</string>
     <string name="flow_detail_retention_label">Текущее удержание</string>
-    <string name="flow_detail_reviews_label">Повторений</string>
     <string name="flow_detail_sentences_label">Выучено предложений</string>
     <string name="flow_detail_started_label">Начало обучения</string>
     <string name="flow_detail_advice_label">Следующий шаг</string>
     <string name="flow_advice_paused_title">План на паузе</string>
     <string name="flow_advice_paused_body">Пауза только убирает статью из плана и напоминаний; ручная практика остаётся доступной. Возобновите, когда будете готовы: оставшийся интервал продолжится с этого момента.</string>
+    <string name="flow_advice_not_started_title">Ещё не начато</string>
+    <string name="flow_advice_not_started_body">Статья в плане, но ещё ни разу не отработана. После первой практики здесь появятся кривая памяти и ритм повторений.</string>
+    <string name="flow_advice_legacy_body">У этой статьи есть история практики, но ещё нет состояния памяти. После одной практики здесь появятся кривая памяти и ритм повторения.</string>
+    <string name="flow_advice_legacy_title">По истории практики</string>
     <string name="flow_advice_overdue_title">Просрочено</string>
     <string name="flow_advice_overdue_body">Чем дольше ждать, тем сильнее падает удержание. Одно повторение сегодня вернёт ритм.</string>
     <string name="flow_advice_low_retention_title">Удержание низкое</string>
@@ -1313,6 +1478,8 @@
     <string name="flow_detail_mistakes_title">Типы ошибок</string>
     <string name="flow_detail_schedule_title">Расписание</string>
     <string name="flow_detail_next_due">Следующее повторение</string>
+    <string name="flow_detail_plan_start">Начало по плану</string>
+    <string name="flow_detail_practices_label">Практик</string>
     <string name="flow_detail_interval">Интервал (дней)</string>
     <string name="flow_detail_records_title">Недавняя практика</string>
     <string name="flow_detail_view_all_stats">Полная статистика</string>
@@ -1372,7 +1539,7 @@
 
     <!-- ── 统计：目标与弱点建议 ── -->
     <string name="stats_article_line">%1$d статей · %2$d практик · точность %3$d%%</string>
-    <string name="daily_goal_achieved">🎯 Цель дня достигнута</string>
+    <string name="daily_goal_achieved">Цель дня достигнута</string>
     <string name="daily_goal_progress">%1$d / %2$d раз</string>
     <string name="weakness_profile_title">Профиль слабых мест</string>
     <string name="weakness_total_mistakes">Всего ошибок: %1$d</string>
@@ -1538,7 +1705,6 @@
     <string name="retry">Повторить</string>
     <string name="ai_difficulty_intro">AI создаст пропуски для «%1$s» с выбранной сложностью и стратегией.</string>
     <string name="ai_start_generating">Начать генерацию</string>
-    <string name="start_action">Начать</string>
 
     <!-- ── Pro AI 运行时状态 ── -->
     <string name="ai_cross_title">Межтекстовый AI · %1$d</string>
@@ -1601,10 +1767,33 @@
 
     <!-- ── 使用帮助正文 ── -->
     <string name="help_001">Помощь</string>
+    <string name="help_flow_title">Весь путь</string>
+    <string name="help_flow_intro">От импорта до повторения — замкнутый цикл</string>
+    <string name="help_flow_1_t">Импорт статей</string>
+    <string name="help_flow_1_d">Через карточку «Добавить статью» на главной или «Мои статьи → Импорт»; поддерживаются вставка, файлы и наборы контента</string>
+    <string name="help_flow_2_t">План на сегодня</string>
+    <string name="help_flow_2_d">Карточка на главной показывает три главных дела дня; «Настройки» справа сверху задают время и дату экзамена</string>
+    <string name="help_flow_3_t">Поток задач</string>
+    <string name="help_flow_3_d">Откройте свайпом вниз на вкладке «Данные»; можно приостановить, перенести дату или сменить план. «Перенести на завтра» можно отменить</string>
+    <string name="help_flow_4_t">Практика</string>
+    <string name="help_flow_4_d">Пропуски в предложениях, словах, обратный диктант и свои пропуски; карточки перелистываются нажатием или свайпом</string>
+    <string name="help_flow_5_t">Записи и повторение</string>
+    <string name="help_flow_5_d">Каждая оценка сохраняется в FSRS; когда срок подходит, материал возвращается в план на сегодня, а прогресс собирается на вкладке «Данные»</string>
+    <string name="help_flow_loop">Когда срок наступает, элемент возвращается в план на сегодня — цикл замыкается</string>
+    <string name="help_shared_title">Общие данные</string>
+    <string name="help_shared_intro">Эти значения существуют в одном экземпляре: изменение в любом месте обновляет все остальные</string>
+    <string name="help_shared_1_t">Время учёбы в день</string>
+    <string name="help_shared_1_d">Настройки плана на сегодня ↔ Настройки · План запоминания; задаёт общую длительность плана</string>
+    <string name="help_shared_2_t">Число подходов в день</string>
+    <string name="help_shared_2_d">Настройки плана на сегодня ↔ Настройки · Напоминания ↔ вкладка «Данные», «Цель дня»; это же основа для «сколько осталось» в напоминаниях</string>
+    <string name="help_shared_3_t">Дата экзамена</string>
+    <string name="help_shared_3_d">Настройки плана на сегодня ↔ Настройки; влияет только на обратный отсчёт и темп, но не на расписание повторений</string>
+    <string name="help_shared_4_t">План повторения</string>
+    <string name="help_shared_4_d">Настройки · План запоминания ↔ Поток задач; напоминания на главной и поток используют один шаблон</string>
     <string name="help_002">Начать практику</string>
     <string name="help_003">Выберите статью, нажмите «Начать практику» и выберите режим.</string>
     <string name="help_004">Три точки входа (выберите одну)</string>
-    <string name="help_005">«Начать практику» внизу страницы чтения: сначала откройте статью.</string>
+    <string name="help_005">«Начать практику» внизу страницы статьи: сначала откройте статью.</string>
     <string name="help_006">Кнопка «Практика» на карточках главной: запуск с карточек «Недавние», «Статья», «Продолжить».</string>
     <string name="help_007">Карточка «Продолжить» возобновляет незавершённую практику с сохранённым прогрессом.</string>
     <string name="help_008">Ход практики</string>
@@ -1637,7 +1826,7 @@
     <string name="help_035">Перемешанные абзацы — восстановите весь текст</string>
     <string name="help_036">Подходит: проверка перед экзаменом и пробный экзамен</string>
     <string name="help_037">Свои пропуски</string>
-    <string name="help_038">Пропуски только в отмеченных местах. В режиме чтения переключите гранулярность на «Свои» и отметьте по предложениям, словам или символам; на практике выберите свой профиль. Можно создать или изменить его заранее.</string>
+    <string name="help_038">Пропуски только в отмеченных местах. На странице статьи переключите гранулярность на «Свои» и отметьте по предложениям, словам или символам; на практике выберите свой профиль. Можно создать или изменить его заранее.</string>
     <string name="help_039">Подходит: точечное персональное заучивание</string>
     <string name="help_040">Межтекстовая смешанная практика</string>
     <string name="help_041">В разделе «Мои статьи» удерживайте для выбора. Отметьте две и более статьи и нажмите «Начать практику» — пропуски перемешаются между текстами. Смешанная практика использует умные пропуски и не применяет профиль одной статьи.</string>
@@ -1722,14 +1911,14 @@
     <string name="help_120">Нажмите значок слева сверху, чтобы сменить логотип, в том числе на своё эмодзи.</string>
     <string name="help_121">Нажмите на подзаголовок, чтобы изменить его.</string>
     <string name="help_122">Мои статьи</string>
-    <string name="help_123">Нажмите статью, чтобы открыть страницу чтения.</string>
+    <string name="help_123">Нажмите статью, чтобы открыть страницу статьи.</string>
     <string name="help_124">Удерживайте для выбора: массовое удаление, две и более статьи для микса или отправка в AI.</string>
-    <string name="help_125">Страница чтения</string>
+    <string name="help_125">Страница статьи</string>
     <string name="help_126">Кнопки внизу: статистика, режим чтения, свои настройки, начать практику. В Pro также есть AI.</string>
     <string name="help_127">Режим чтения настраивает размер, межстрочный интервал, шрифт, насыщенность, цвета и гранулярность маски: равномерно, слова или свои.</string>
     <string name="help_128">Сведите два пальца на тексте, чтобы сразу изменить размер шрифта.</string>
     <string name="help_129">Справа сверху: удалить или изменить статью.</string>
-    <string name="help_130">Своя маска (страница чтения)</string>
+    <string name="help_130">Своя маска (страница статьи)</string>
     <string name="help_131">Переключите гранулярность на «Свои», чтобы открыть список профилей. Нажмите профиль для использования, «Изменить» в конце строки откроет разметку, долгое нажатие — переименование или удаление.</string>
     <string name="help_132">При выборе своих настроек кнопка показывает имя используемого профиля.</string>
     <string name="help_133">Разметка: нажмите предложение — маскируется целиком; удерживайте — делится на слова, нажмите слово — маскируется; удерживайте слово — делится на символы; ещё удержание — пошаговое восстановление.</string>
@@ -1740,7 +1929,7 @@
     <string name="help_138">Карточка результатов показывает точность и время; ею можно сразу поделиться.</string>
     <string name="help_139">Свои пропуски (во время практики)</string>
     <string name="help_140">Список профилей: нажатие — изменение, удержание — начать практику, переименовать или удалить; в режиме выбора нажатие сразу начинает практику.</string>
-    <string name="help_141">Страница редактирования: нажатие выбирает пропуски, удержание меняет гранулярность, как в разметке чтения.</string>
+    <string name="help_141">Страница редактирования: нажатие выбирает пропуски, удержание меняет гранулярность, как в разметке на странице статьи.</string>
     <string name="help_142">Кнопка «Сохранить и разметить» на странице импорта сразу открывает создание профиля — отметьте ключевые места после импорта.</string>
     <string name="help_143">Импорт статей</string>
     <string name="help_144">Два способа: вставить текст или импортировать файл (txt, PDF, Word и другие; PDF можно просмотреть).</string>
@@ -1749,16 +1938,16 @@
     <string name="help_147">Две кнопки внизу: «Только сохранить» сохраняет и возвращает; «Сохранить и разметить» сохраняет и открывает свои пропуски статьи.</string>
     <string name="help_148">Общее</string>
     <string name="help_149">Белая круглая кнопка слева сверху на каждой странице возвращает назад; также работают системный жест и кнопка «Назад».</string>
-    <string name="help_150">Если страница чтения в режиме разметки или редактирования, сначала выйдите из него, затем покиньте страницу.</string>
+    <string name="help_150">Если страница статьи в режиме разметки или редактирования, сначала выйдите из него, затем покиньте страницу.</string>
     <string name="help_151">Ключевые действия дают виброотклик: вытягивание за порог, долгое нажатие для редактирования карточки, перетаскивание и изменение размера, меню долгого нажатия и другое.</string>
-    <string name="help_152">Удаление статьи необратимо: используйте «Удалить» справа сверху в чтении или массовое удаление в «Моих статьях».</string>
+    <string name="help_152">Удаление статьи необратимо: используйте «Удалить» справа сверху на странице статьи или массовое удаление в «Моих статьях».</string>
     <string name="help_153">«Данные» в настройках: экспорт одним нажатием упаковывает библиотеку статей и прогресс практики в один файл; импорт восстанавливает на новой установке (перезаписывает текущие данные; после завершения приложение закрывается для перезапуска).</string>
     <string name="help_154">С включённым AI можно передать статьи AI для объяснения сложных мест, создания упражнений и анализа частых ошибок.</string>
     <string name="help_155">Включение и настройка</string>
     <string name="help_156">Включите в «Настройки → AI → Включить AI» и укажите URL API, ключ и модель. Поддерживаются совместимые с OpenAI сервисы (DeepSeek, Qwen, GLM, Kimi и другие).</string>
     <string name="help_157">Веб-поиск: включите в настройках, бесплатно зарегистрируйтесь на tavily.com по почте, скопируйте ключ API из консоли (tvly-xxx, 1000 бесплатных запросов в месяц) и вставьте в поле Tavily API Key.</string>
     <string name="help_158">Где находятся входы</string>
-    <string name="help_159">Кнопка «AI» на странице чтения</string>
+    <string name="help_159">Кнопка «AI» на странице статьи</string>
     <string name="help_160">Во время чтения нажмите «AI» в нижнем ряду кнопок, чтобы открыть чат с текущей статьёй.</string>
     <string name="help_161">«Отправить в AI» в списке статей</string>
     <string name="help_162">Удерживайте статью для выбора, затем нажмите «Отправить в AI», чтобы общаться по нескольким статьям.</string>
@@ -1802,16 +1991,16 @@
     <string name="notebook_drill_empty">Эти ошибки не найдены в текущем тексте, подборку нельзя начать.</string>
     <string name="notebook_drill_name">Тренировка ошибок</string>
     <string name="notebook_drill_partial">%1$d не найдено из-за изменений текста; тренируем остальные.</string>
-    <string name="review_timeline_title">Фактическая история повторений</string>
+    <string name="review_timeline_title">Реальная история практики</string>
     <string name="review_timeline_local_only">Только это устройство</string>
-    <string name="review_timeline_none">Журнала повторений пока нет. Запись начнётся после следующего повторения.</string>
+    <string name="review_timeline_none">Записей о практике пока нет. Запись начнётся после первой практики</string>
     <string name="review_timeline_one">Записано одно повторение — динамики пока нет.</string>
-    <string name="review_timeline_steady_start">Стабильно с первого повторения</string>
-    <string name="review_timeline_steady_after">Стабильно после повторения %1$d</string>
+    <string name="review_timeline_steady_start">Стабильно с первой практики</string>
+    <string name="review_timeline_steady_after">Стабильно после практики №%1$d</string>
     <string name="review_timeline_shaky">Последнее повторение снова нестабильно</string>
-    <string name="review_timeline_interval_hint">Фактический интервал между повторениями</string>
+    <string name="review_timeline_interval_hint">Фактический интервал между практиками</string>
     <string name="review_timeline_review_no">Повторение %1$d</string>
-    <string name="review_timeline_first">Первое повторение</string>
+    <string name="review_timeline_first">Первая практика</string>
     <string name="review_timeline_gap">Через %1$s дн.</string>
     <string name="rating_again">Забыл</string>
     <string name="rating_hard">Трудно</string>
@@ -1828,8 +2017,8 @@
     <string name="reader_practice_sheet_title">Тренировать абзац</string>
     <string name="reader_practice_sheet_hint">Выберите тип пропусков и начинайте сразу.</string>
     <string name="reader_practice_mode_section">Вся статья по типу пропусков</string>
-    <string name="reason_first">Первое повторение</string>
     <string name="reason_lapsed">Забыто раз: %1$d</string>
+    <string name="reason_first_practice">Первая практика</string>
     <string name="reason_long_gap">С прошлого раза прошло дней: %1$d</string>
     <string name="reason_overdue">Просрочено дней: %1$d</string>
     <string name="reason_stable">Стабильно повторений: %1$d</string>
@@ -1839,12 +2028,20 @@
     <string name="today_plan_subtitle_exam">До экзамена: %1$d дн. · список ≈ %2$d мин</string>
     <string name="today_plan_subtitle_exam_due">До экзамена: %1$d дн. · к повторению: %2$d · список ≈ %3$d мин</string>
     <string name="today_plan_minutes">Сегодня примерно %1$d мин</string>
-    <string name="today_plan_budget">%1$d мин</string>
     <string name="today_plan_exam_behind">При таком темпе можно не успеть до экзамена.</string>
     <string name="today_plan_empty">Сейчас повторять нечего. Выберите время или повторите статью.</string>
     <string name="today_plan_paused_hint">На паузе: %1$d · восстановить в потоке</string>
     <string name="today_plan_empty_paused">На паузе: %1$d. Восстановите в потоке обучения.</string>
     <string name="today_plan_item_minutes">%1$d мин</string>
+    <string name="plan_settings_title">План на сегодня</string>
+    <string name="plan_settings_subtitle">Влияют только на план на сегодня, расписание повторений не меняется</string>
+    <string name="plan_settings_exam_hint">Используется только для подсказок о темпе, расписание повторений не меняет</string>
+    <string name="plan_settings_duration_label">Время учёбы в день</string>
+    <string name="plan_settings_duration_hint">Определяет общую длительность плана на сегодня</string>
+    <string name="plan_settings_estimate">Сегодня потребуется около %1$d мин</string>
+    <string name="plan_settings_show_on_card">Показывать прогресс цели на карточке плана</string>
+    <string name="plan_settings_show_on_card_hint">Выключите, чтобы скрыть прогресс цели на карточке</string>
+    <string name="today_plan_goal_progress">Цель %1$d раз · сделано %2$d</string>
     <string name="today_plan_exam_set">Экзамен: %1$s</string>
     <string name="today_plan_set_exam">Указать дату экзамена</string>
     <string name="today_plan_clear_exam">Убрать</string>
@@ -1853,18 +2050,13 @@
     <string name="today_plan_sentence_cards">Карточки предложений</string>
     <string name="today_plan_daily_goal">Цель на день</string>
     <string name="today_plan_resume_detail">Отвечено %1$d из %2$d</string>
+    <string name="today_plan_start_article">Начать: %1$s</string>
+    <string name="today_plan_start_detail">Ещё не пройдено · начните сегодня</string>
     <string name="today_plan_review_detail">Пора повторить</string>
     <string name="today_plan_weak_detail">Слабая статья · ошибок: %1$d</string>
     <string name="today_plan_mistake_detail">Неисправленных ошибок: %1$d</string>
     <string name="today_plan_sentence_detail">Предложений к повторению: %1$d</string>
     <string name="today_plan_goal_detail">Ещё %1$d раз</string>
-    <string name="today_plan_budget_title">Сколько у вас времени?</string>
-    <string name="today_plan_budget_hint">Выберите длительность — подберём только то, что успеете.</string>
-    <string name="today_plan_minutes_unit">%1$d мин</string>
-    <string name="today_plan_budget_empty">В этот бюджет сейчас ничего не помещается.</string>
-    <string name="today_plan_budget_result_articles">Статей: %1$d · около %2$d мин</string>
-    <string name="today_plan_budget_result_cards">Предложений: %1$d · около %2$d мин</string>
-    <string name="today_plan_budget_start">Начать</string>
     <string name="budget_remaining">Осталось %1$d мин</string>
     <string name="budget_end_title">Время вышло</string>
     <string name="budget_end_body">Запланированное время истекло. Отправьте отвеченное или продолжите.</string>
@@ -1886,6 +2078,10 @@
     <string name="exam_paper_start">Составить вариант (%1$d ст.)</string>
     <string name="exam_paper_title">Вариант · статей: %1$d</string>
     <string name="notif_action_start">Начать повторение</string>
+    <string name="notif_action_start_learning">Начать изучение</string>
+    <string name="notif_action_resume">Продолжить практику</string>
+    <string name="notif_action_view_task">Открыть задачу</string>
+    <string name="notif_action_sentence">Практика предложений</string>
     <string name="open">Открыть</string>
     <string name="content_pack_title">Наборы контента</string>
     <string name="content_pack_settings_desc">Импорт подборки txt / md</string>
@@ -1942,9 +2138,24 @@
     <string name="widget_sentence_due">предложений: %1$d</string>
     <string name="ov_notebook_count">Не исправлено: %1$d</string>
     <string name="ov_next_step_due_article_title">Повторить «%1$s»</string>
+    <string name="ov_next_step_start_article_title">Начать изучение «%1$s»</string>
     <string name="ov_next_step_scope_article">Практика статьи · пропуски в предложениях</string>
     <string name="ov_next_step_action_start">Начать повторение</string>
+    <string name="ov_next_step_action_start_learning">Начать изучение</string>
     <string name="ov_next_step_go_mistakes">К ошибкам</string>
     <string name="ov_next_step_go_articles">Мои статьи</string>
     <string name="content_pack_disclaimer">Наборы контента предоставляются пользователем. Убедитесь, что у вас есть право использовать и распространять эти тексты.</string>
+    <string name="view_tag">Открыть тег</string>
+    <string name="tag_detail_articles">Статьи</string>
+    <string name="sentence_scope_this_article">Только эта статья</string>
+    <string name="sentence_scope_this_tag">Только «%1$s»</string>
+    <string name="sentence_scope_empty">В этом диапазоне нет предложений для повторения</string>
+    <string name="practice_history_sources">Исходные статьи</string>
+    <string name="practice_history_no_sources">В старой записи нет исходных статей</string>
+    <string name="practice_history_empty_day">В этот день нет тренировок</string>
+    <string name="practice_history_view_all">Вся история тренировок</string>
+    <string name="import_tags_label">Теги (необязательно)</string>
+    <string name="search_sentences">Совпадения в предложениях</string>
+    <string name="search_practice_sentence">Тренировать предложение</string>
+    <string name="view_article">Читать статью</string>
 </resources>

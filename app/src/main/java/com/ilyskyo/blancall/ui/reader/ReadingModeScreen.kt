@@ -3,12 +3,15 @@
 
 package com.ilyskyo.blancall.ui.reader
 
+import android.content.ClipData
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +45,7 @@ import androidx.compose.material.icons.outlined.FormatLineSpacing
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.*
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -74,10 +78,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ilyskyo.blancall.algorithm.ReadingSelection
+import com.ilyskyo.blancall.algorithm.ReadingSpeed
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.MaskConfigStore
 import com.ilyskyo.blancall.data.repository.ReaderPrefs
 import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
+import com.ilyskyo.blancall.data.repository.ReadingMark
+import com.ilyskyo.blancall.data.repository.ReadingMarkStore
 import com.ilyskyo.blancall.ui.common.GlassModalBottomSheet
 import com.ilyskyo.blancall.ui.common.GlassSwitch
 import com.ilyskyo.blancall.ui.common.ImmersiveSystemBarsEffect
@@ -90,7 +98,7 @@ import com.ilyskyo.blancall.ui.common.pinchZoomByTouch
 import com.ilyskyo.blancall.ui.common.tapGesturesPenAware
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
-import com.ilyskyo.blancall.ui.theme.ThemeManager
+import com.ilyskyo.blancall.ui.theme.rememberAppIsDark
 import com.ilyskyo.blancall.ui.theme.ThemeMode
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
 import com.qmdeve.liquidglass.widget.LiquidGlassView
@@ -152,15 +160,13 @@ fun ReadingModeScreen(
     val pageHaptic = rememberHaptic(HapticTier.Toggle)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-
-    // ── 主题明暗（与 BlancallTheme 一致的路由）──
-    val themeMode by ThemeManager.themeMode.collectAsState()
-    val systemDark = isSystemInDarkTheme()
-    val isDark = when (themeMode) {
-        ThemeMode.SYSTEM -> systemDark
-        ThemeMode.DARK -> true
-        ThemeMode.LIGHT -> false
+    // 长按选区的「复制」：直接写系统剪贴板（Android 13+ 系统自带复制提示，低版本补 Toast）
+    val clipboard = remember(context) {
+        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
     }
+
+    // ── 主题明暗：统一走 rememberAppIsDark（三处复制的路由已收口，新增模式不用改这里）──
+    val isDark = rememberAppIsDark()
     val appBeige by AppPrefs.lightBeigeBackgroundFlow.collectAsState()
 
     // ── 排版设置：**按文章独立保存**（ReaderPrefsStore）──
@@ -231,11 +237,10 @@ fun ReadingModeScreen(
         bgMode == 1 || (bgMode == 0 && appBeige) -> PaperBeigeSub
         else -> PaperWhiteSub
     }
-    // 强调色：浅色用主题主色，深色用柔和提亮蓝灰，保证纯黑底上可读
-    val accentColor = when {
-        isDark -> Color(0xFF7C9ED1)
-        else -> MaterialTheme.colorScheme.primary
-    }
+    // 强调色：直接用主题主色（深色下 primaryDark 本身就是提亮版，在纯黑上够亮）。
+    // 旧版这里写死了一个偏蓝的 #7C9ED1，导致阅读设置里选了暖橙/翠绿主题，
+    // 选中态仍然是蓝的 —— 主题色在阅读页整套断链，根因就在这一行。
+    val accentColor = MaterialTheme.colorScheme.primary
 
     // ── 章节分页（按段落聚合，字号变化不影响章节划分）──
     val sections = remember(article.content) { buildReadingSections(article.content) }
@@ -249,6 +254,93 @@ fun ReadingModeScreen(
     val pagerState = rememberPagerState(initialPage = initialPage) { sections.size }
     // 整篇滚动模式的滚动状态（翻页模式下闲置）
     val scrollState = rememberScrollState()
+
+    // ── 划线与批注 ──
+    // 段落口径与遮挡/存储一致：全文段落文本列表，既用于渲染时把页内段号映射回全局段号，
+    // 也用于列表里取摘录（存储只存坐标，不存文本 —— 改文章也不会留下两份正文）。
+    val allParagraphs = remember(article.content) {
+        ReaderOcclusion.splitParagraphs(article.content).map { it.text }
+    }
+    val markStore = remember { ReadingMarkStore.getInstance(context.filesDir) }
+    val markRevision by markStore.revisionFlow.collectAsState()
+    var marks by remember(article.id) { mutableStateOf<List<ReadingMark>>(emptyList()) }
+    LaunchedEffect(article.id, markRevision) {
+        marks = withContext(Dispatchers.IO) { markStore.getMarks(article.id) }
+    }
+    // 当前选区：null = 没在选。选区与操作条画在正文组合内的覆盖层上 ——
+    // 正文是 AndroidView，它永远压在外部 Compose 之上，覆盖层必须和正文同一个组合。
+    var selection by remember { mutableStateOf<ReadingSelectionRange?>(null) }
+    var selectionAnchor by remember { mutableStateOf<ParagraphAnchor?>(null) }
+    // 「有没有选区」单独抽成 derivedState：拖动时 selection 每帧都在变，
+    // 外层若直接读 selection，整页（所有段落 + 悬浮控件）都会跟着每帧重组。
+    val hasSelection by remember { derivedStateOf { selection != null } }
+    // 长按生效时刻：外层「点一下切换控件」在手指抬起时还会触发一次，得让这一下失效
+    var lastSelectAt by remember { mutableLongStateOf(0L) }
+    // 批注编辑目标（null = 没打开）
+    var noteTarget by remember { mutableStateOf<NoteEditTarget?>(null) }
+    var marksSheetVisible by remember { mutableStateOf(false) }
+    // 段落顶部位置（段索引 → 滚动内容坐标）：从划线列表跳转时精确滚动用。
+    // 普通 MutableMap 而不是 State —— 滚动时每帧都在写，进重组会掉帧。
+    val paragraphTops = remember(article.id) { mutableMapOf<Int, Float>() }
+
+    // ── 阅读速度与剩余时间 ──
+    // 标准字总量：汉字 1 字、英文整词 ≈ 2 字（换算见 ReadingSpeed.standardChars）
+    val stdTotalChars = remember(article.content) { ReadingSpeed.standardChars(article.content) }
+    // 个人速度（标准字/分钟）；未校准时用默认值
+    var speedCpm by remember {
+        mutableFloatStateOf(
+            AppPrefs.getReadingSpeedCpm().takeIf { it > 0f } ?: ReadingSpeed.DefaultCpm
+        )
+    }
+    // 已累计的有效阅读秒数（设置面板里显示"依据：你的阅读记录（x 分钟）"）
+    var speedSampleSec by remember { mutableLongStateOf(AppPrefs.getReadingSpeedSampleSeconds()) }
+    // 本次会话统计：每秒都在动，只放普通引用，不进重组
+    val sessionChars = remember(article.id) { Ref(0f) }
+    val sessionActiveSec = remember(article.id) { Ref(0L) }
+    val lastProgressRef = remember(article.id) { Ref(0f) }
+    // 上一次进度变化的时刻：有效阅读时长按「两次进度变化之间」结算（见 ReadingSpeed.SilenceGapSeconds）
+    val lastProgressAtRef = remember(article.id) { Ref(SystemClock.uptimeMillis()) }
+    // 五分钟没翻页就问一句「还在读吗」：确认了就把这五分钟算进阅读时长，
+    // 说「先去忙」就放行（这五分钟不计时，也不批评）
+    var idleStage by remember { mutableStateOf(IdlePromptStage.Hidden) }
+    var idleMinutes by remember { mutableIntStateOf(5) }
+    // 本轮「进度周期」里已经问过一次了：翻页/滚动之前不再重复问。
+    // 读一屏二十分钟不动手是正常的，每五分钟弹一次会从"关心"变成"骚扰"。
+    val idleAskedRef = remember(article.id) { Ref(false) }
+    // 确认框已挂起的轮数（5 秒一轮）：30 秒没人应答就静默收起，别一直糊在正文上
+    var idlePromptTicks by remember { mutableIntStateOf(0) }
+
+    /** 把「上次进度变化到现在」按有效阅读结算掉（封顶 SilenceGapSeconds），并重置起点 */
+    fun settleActiveReading() {
+        val now = SystemClock.uptimeMillis()
+        sessionActiveSec.value +=
+            ReadingSpeed.effectiveSeconds((now - lastProgressAtRef.value) / 1000L)
+        lastProgressAtRef.value = now
+    }
+
+    fun endSelection() {
+        selection = null
+        selectionAnchor = null
+    }
+
+    /** 把本次会话的抽样并进个人速度（退出时调用一次；样本不可信则原样不动） */
+    fun commitSpeedSample(updateUi: Boolean = true) {
+        val sec = sessionActiveSec.value
+        val chars = sessionChars.value
+        val sample = ReadingSpeed.cpmOf(chars, sec) ?: return
+        val prevCpm = AppPrefs.getReadingSpeedCpm().takeIf { it > 0f }
+        val blended = ReadingSpeed.blend(prevCpm, sample, sec)
+        AppPrefs.setReadingSpeed(
+            cpm = blended,
+            sampleSeconds = AppPrefs.getReadingSpeedSampleSeconds() + sec,
+            sampleChars = AppPrefs.getReadingSpeedSampleChars() + chars
+        )
+        // onDispose 里不要再写组合内的 State（组合已在拆除）
+        if (updateUi) {
+            speedCpm = blended
+            speedSampleSec = AppPrefs.getReadingSpeedSampleSeconds()
+        }
+    }
 
     var controlsVisible by remember { mutableStateOf(true) }
     var settingsVisible by remember { mutableStateOf(false) }
@@ -324,7 +416,7 @@ fun ReadingModeScreen(
         } else ""
     }
     // 浮层（列表/编辑器）开启/关闭/切换会话时，从 store 重读本文章阅读设置：
-    // 浮层内的写入（使用配置 / 保存新建 / 删除清指向）落在 store + 磁盘，阅读页内存态
+    // 浮层内的写入（使用配置 / 保存新建 / 删除清指向）落在 store + 磁盘，文章详情页内存态
     // 不会自动感知 —— 不同步则正文仍按旧 id/粒度解析（自定义遮挡不生效）、chip 显示旧
     // 配置名或不显示。store.get 读缓存，浮层写入立即可见；值相同则不动状态（防抖）。
     LaunchedEffect(maskOverlay, maskEditSession) {
@@ -361,8 +453,9 @@ fun ReadingModeScreen(
         lastSavedFraction = progressFraction
         AppPrefs.setReadingPos(article.id, progressFraction)
     }
-    // 预计剩余阅读时间：按当前位置到文末的剩余字数估算（约 350 字/分钟），随滚动/翻页实时联动
-    val totalChars = article.content.length.coerceAtLeast(1)
+    // 预计剩余阅读时间：剩余**标准字** ÷ 个人速度（见 ReadingSpeed），随滚动/翻页实时联动。
+    // 旧实现是「剩余字符数 ÷ 固定 350」：英文段落的字符数远大于它的阅读量，
+    // 中英混排的文章会把时间估到实际的两三倍。
     // 累计已阅读时长：只显示分钟（向下取整，不做四舍五入）；数值照旧，文案按语言在组合层组装
     val elapsedMinutes by remember { derivedStateOf { liveSeconds / 60 } }
     val elapsedMinText = if (elapsedMinutes >= 1) {
@@ -371,7 +464,7 @@ fun ReadingModeScreen(
         stringResource(com.ilyskyo.blancall.R.string.reader_read_less_minute)
     }
     // 剩余比例 = 1 - 当前进度：滑回（进度后退）剩余时间随之变多，不依赖累计已读时长。
-    // 该计算与文案已下沉到 ReadingRemainingLabel：组合期读取滚动进度会让整个阅读页每帧重组。
+    // 该计算与文案已下沉到 ReadingRemainingLabel：组合期读取滚动进度会让整个文章详情页每帧重组。
     // 每 20 秒自动落盘计时（防异常退出丢时间）
     LaunchedEffect(article.id) {
         while (true) {
@@ -391,11 +484,63 @@ fun ReadingModeScreen(
             liveSeconds = baseSeconds + (System.currentTimeMillis() - startTime) / 1000L
         }
     }
+    // 五分钟没翻页 → 问一句「还在读吗」。
+    // 用 5 秒轮询而不是精确闹钟：弹窗早几秒晚几秒无所谓，却省掉一个 Handler 的生命周期管理。
+    LaunchedEffect(article.id, layoutMode) {
+        while (true) {
+            delay(5_000)
+            when (idleStage) {
+                IdlePromptStage.Hidden -> {
+                    if (!idleAskedRef.value) {
+                        val idleSec = (SystemClock.uptimeMillis() - lastProgressAtRef.value) / 1000L
+                        if (idleSec >= ReadingSpeed.SilenceGapSeconds) {
+                            idleMinutes = (idleSec / 60L).toInt().coerceAtLeast(1)
+                            idlePromptTicks = 0
+                            idleStage = IdlePromptStage.Confirm
+                        }
+                    }
+                }
+                IdlePromptStage.Confirm -> {
+                    idlePromptTicks++
+                    // 30 秒没人应答：多半是手机搁在桌上了，静默按「先去忙」处理 ——
+                    // 弹窗一直挂着比不弹更糟（它会一直挡着正文，还占着"在读"这个判断）
+                    if (idlePromptTicks >= 6) {
+                        idleAskedRef.value = true
+                        lastProgressAtRef.value = SystemClock.uptimeMillis()
+                        idleStage = IdlePromptStage.Hidden
+                    }
+                }
+                IdlePromptStage.Cheer -> Unit
+            }
+        }
+    }
     // 页面切换即保存断点
     LaunchedEffect(pagerState.currentPage) { persistPosition() }
     // 滚动模式：滚动即更新待落盘进度（dispose/定时器统一回写，避免频繁写盘）
+    // 同时结算「有效阅读时长」与「已读标准字」：
+    // - 时长 = 这次进度变化距上次变化的间隔（单次封顶 SilenceGapSeconds，超出的当走开）
+    // - 字数只计前进量，滑回不扣
+    // 按进度结算而不是按触摸结算：读一屏文字常常一两分钟不碰屏幕，
+    // 触摸法会把这段全丢掉，分母偏小 → 个人速度被抬到离谱，剩余时间反而更不准。
     LaunchedEffect(scrollState) {
-        snapshotFlow { progressFraction }.collect { lastSavedFraction = it }
+        snapshotFlow { progressFraction }.collect { p ->
+            lastSavedFraction = p
+            val delta = p - lastProgressRef.value
+            val now = SystemClock.uptimeMillis()
+            // 翻页/滚动 = 新的进度周期：下次静默五分钟可以再问一次
+            if (delta != 0f) idleAskedRef.value = false
+            // 进度一动就证明人在：确认弹窗自动当「在读」处理（不需要再点一次）
+            if (delta != 0f && idleStage == IdlePromptStage.Confirm) {
+                settleActiveReading()
+                idleStage = IdlePromptStage.Hidden
+            } else if (delta != 0f) {
+                sessionActiveSec.value +=
+                    ReadingSpeed.effectiveSeconds((now - lastProgressAtRef.value) / 1000L)
+            }
+            if (delta > 0f) sessionChars.value += delta * stdTotalChars
+            lastProgressRef.value = p
+            lastProgressAtRef.value = now
+        }
     }
     // 整篇滚动模式：进入时按断点比例恢复滚动位置（等首帧布局完成，maxValue 才有值）
     LaunchedEffect(Unit) {
@@ -410,6 +555,8 @@ fun ReadingModeScreen(
             val gain = (now - lastTickRef.value) / 1000L
             if (gain > 0) AppPrefs.addReadingSeconds(article.id, gain)
             AppPrefs.setReadingPos(article.id, lastSavedFraction)
+            // 退出时把本次抽样并进个人阅读速度（样本不足 90 秒会原样返回，不污染历史值）
+            commitSpeedSample(updateUi = false)
         }
     }
 
@@ -423,7 +570,15 @@ fun ReadingModeScreen(
     BackHandler(enabled = maskOverlay != null) {
         if (maskOverlay == "edit") maskOverlay = "list" else maskOverlay = null
     }
+    // 有选区时返回键先收起选区（不然这一下直接变成"退出阅读"，选中的内容全丢）
+    BackHandler(enabled = hasSelection) { endSelection() }
     BackHandler(enabled = settingsVisible) { settingsVisible = false }
+
+    // 排版/布局一变，选区的锚点（段落坐标 + layout 快照）就失效了 —— 直接收起来，
+    // 不留下一个"位置对不上字"的假选区。
+    LaunchedEffect(layoutMode, fontPx, lineHeight, readerPrefs.fontId, readerPrefs.fontWeight) {
+        endSelection()
+    }
 
     // 进入后 3 秒自动隐藏控件，营造沉浸感
     LaunchedEffect(Unit) {
@@ -456,13 +611,9 @@ fun ReadingModeScreen(
                                 // ── 正文组合直接订阅阅读设置流 ──
                                 // ComposeView 内部是独立组合，不随外层重组重跑；
                                 // 这里直接订阅 AppPrefs 流，任何设置变更（含遮挡开关）都即时驱动正文重组
-                                val bodyThemeMode by ThemeManager.themeMode.collectAsState()
-                                val bodySystemDark = isSystemInDarkTheme()
-                                val bodyIsDark = when (bodyThemeMode) {
-                                    ThemeMode.SYSTEM -> bodySystemDark
-                                    ThemeMode.DARK -> true
-                                    ThemeMode.LIGHT -> false
-                                }
+                                // 正文是独立 ComposeView 组合，CompositionLocal 传不进来，
+                                // 只能靠 rememberAppIsDark() 重新订阅（同一份实现，不再复制路由）
+                                val bodyIsDark = rememberAppIsDark()
                                 val bodyAppBeige by AppPrefs.lightBeigeBackgroundFlow.collectAsState()
                                 // 正文组合订阅「本文章的阅读设置」桥接 State：
                                 // 旧实现直接订阅 AppPrefs 全局流 —— 改文章后所有文章跟着变（真机反馈）；
@@ -499,9 +650,9 @@ fun ReadingModeScreen(
                                 var bodyCustomResolver by remember {
                                     mutableStateOf<((String) -> List<MaskConfigStore.MaskSpan>)?>(null)
                                 }
-                                // 以 store 修订号参与 key：编辑器里重存配置后回阅读页，遮挡立即刷新
+                                // 以 store 修订号参与 key：编辑器里重存配置后回文章详情页，遮挡立即刷新
                                 val maskStore = remember { MaskConfigStore.getInstance(context.filesDir) }
-                                // 修订号用 StateFlow 订阅：旧实现每 300ms 轮询一次，阅读页常亮期间持续唤醒 CPU
+                                // 修订号用 StateFlow 订阅：旧实现每 300ms 轮询一次，文章详情页常亮期间持续唤醒 CPU
                                 val maskRevision by maskStore.revisionFlow.collectAsState()
                                 LaunchedEffect(bodyOcclusionMode, bodyCustomConfigId, article.id, maskRevision) {
                                     if (bodyOcclusionMode != "custom") {
@@ -592,6 +743,12 @@ fun ReadingModeScreen(
                                     }
                                     return@setContent
                                 }
+                                // 正文 + 选区覆盖层同一个根 Box：
+                                // 覆盖层必须和正文同处一个组合 —— 正文是 AndroidView（ComposeView），
+                                // 外部 Compose 声明的浮层永远会被它盖住（本项目已多次踩到）。
+                                // 正文 + 选区覆盖层同一个根 Box（覆盖层必须和正文同处一个组合，
+                                // 外部 Compose 声明的浮层会被 AndroidView 盖住）
+                                Box(Modifier.fillMaxSize()) {
                                 if (bodyLayoutMode == 0) {
                                     // 整篇滚动：一屏滚到底，全文完整可达（默认模式）。
                                     // 遮挡模式下正文段落接管点按（揭示遮块/切换控件），容器不再抢手势
@@ -606,7 +763,10 @@ fun ReadingModeScreen(
                                             .align(Alignment.TopCenter)
                                             .then(
                                                 if (!bodyOcclusionActive) Modifier.tapGesturesPenAware {
-                                                        controlsVisible = !controlsVisible
+                                                        // 长按刚开完选择：这一下抬起不能再切控件
+                                                        if (SystemClock.uptimeMillis() - lastSelectAt > 700L) {
+                                                            controlsVisible = !controlsVisible
+                                                        }
                                                     } else Modifier
                                             )
                                     ) {
@@ -631,7 +791,38 @@ fun ReadingModeScreen(
                                                 lineHeight = bodyLineHeight,
                                                 textColor = bodyTextColor,
                                                 fontFamily = bodyFontFamily,
-                                                indent = bodyIndent
+                                                indent = bodyIndent,
+                                                marks = marks,
+                                                accent = accentColor,
+                                                selectable = true,  // 选择态由覆盖层接管触摸，段落侧无需关长按
+                                                paragraphOffsetHint = 0,
+                                                allParagraphs = allParagraphs,
+                                                onLongPress = { p, offset, anchor ->
+                                                    val r = ReadingSelection.rangeAt(anchor.text, offset)
+                                                    if (ReadingSelection.isSelectable(anchor.text, r)) {
+                                                        selection = ReadingSelectionRange(p, r.first, r.last + 1)
+                                                        selectionAnchor = anchor
+                                                        lastSelectAt = SystemClock.uptimeMillis()
+                                                    }
+                                                },
+                                                onMarkClick = { m ->
+                                                    // 延后一帧再开对话框：这次 up 还没分发完，
+                                                    // 新窗口在同一轮输入里出现会被当成"点外面"瞬间关掉
+                                                    scope.launch {
+                                                        delay(80)
+                                                        noteTarget = noteTargetOf(m, allParagraphs)
+                                                    }
+                                                },
+                                                onHandledTap = { lastSelectAt = SystemClock.uptimeMillis() },
+                                                onParagraphPositioned = { p, top ->
+                                                    if (layoutMode == 0) {
+                                                        val contentTop = top + scrollState.value
+                                                        val prev = paragraphTops[p]
+                                                        if (prev == null || kotlin.math.abs(prev - contentTop) > 1f) {
+                                                            paragraphTops[p] = contentTop
+                                                        }
+                                                    }
+                                                }
                                             )
                                         }
                                     }
@@ -651,12 +842,14 @@ fun ReadingModeScreen(
                                             .align(Alignment.TopCenter)
                                             .then(
                                                 if (!bodyOcclusionActive) Modifier.tapGesturesPenAware {
-                                                        controlsVisible = !controlsVisible
+                                                        if (SystemClock.uptimeMillis() - lastSelectAt > 700L) {
+                                                            controlsVisible = !controlsVisible
+                                                        }
                                                     } else Modifier
                                             )
                                     ) { page ->
                                         ReadingSectionPage(
-                                            text = sections[page],
+                                            text = sections[page].text,
                                             fontPx = bodyFontPx,
                                             lineHeight = bodyLineHeight,
                                             textColor = bodyTextColor,
@@ -666,6 +859,28 @@ fun ReadingModeScreen(
                                             maskColor = bodyMaskColor,
                                             occlusion = bodyOcclusion,
                                             customSpansResolver = bodyCustomResolver,
+                                            marks = marks,
+                                            accent = accentColor,
+                                            selectable = true,  // 选择态由覆盖层接管触摸，段落侧无需关长按
+                                            paragraphOffsetHint = sections[page].firstPara,
+                                            allParagraphs = allParagraphs,
+                                            onLongPress = { p, offset, anchor ->
+                                                val r = ReadingSelection.rangeAt(anchor.text, offset)
+                                                if (ReadingSelection.isSelectable(anchor.text, r)) {
+                                                    selection = ReadingSelectionRange(p, r.first, r.last + 1)
+                                                    selectionAnchor = anchor
+                                                    lastSelectAt = SystemClock.uptimeMillis()
+                                                }
+                                            },
+                                            onMarkClick = { m ->
+                                                // 同上：延后一帧，避免新窗口在同一次 up 里被关掉
+                                                scope.launch {
+                                                    delay(80)
+                                                    noteTarget = noteTargetOf(m, allParagraphs)
+                                                }
+                                            },
+                                            onHandledTap = { lastSelectAt = SystemClock.uptimeMillis() },
+                                            onParagraphPositioned = null,
                                             header = if (page == 0 && article.author.isNotBlank()) {
                                                 {
                                                     Text(
@@ -684,6 +899,87 @@ fun ReadingModeScreen(
                                         )
                                     }
                                     }
+                                }
+
+                                // ── 选区覆盖层 ──
+                                val sel = selection
+                                val anchor = selectionAnchor
+                                if (sel != null && anchor != null && !sel.isEmpty && anchor.p == sel.p) {
+                                    // 「被覆盖」而非「完全重合」：在已划线句子上多选一个字也算命中。
+                                    // 工具条据此给「取消划线/编辑批注」，点划线则由存储层并成一条（不叠层）。
+                                    val covering = marks
+                                        .filter { it.p == sel.p && it.a <= sel.a && it.e >= sel.e }
+                                        .let { list -> list.firstOrNull { it.hasNote } ?: list.firstOrNull() }
+                                    val quote = anchor.text.substring(
+                                        sel.a.coerceIn(0, anchor.text.length),
+                                        sel.e.coerceIn(0, anchor.text.length)
+                                    )
+                                    ReadingSelectionOverlay(
+                                        anchor = anchor,
+                                        selection = sel,
+                                        accent = accentColor,
+                                        isDark = bodyIsDark,
+                                        coveringMark = covering,
+                                        onRangeChange = { a, e ->
+                                            selection = ReadingSelectionRange(sel.p, a, e)
+                                        },
+                                        onDismiss = { endSelection() },
+                                        onCopy = {
+                                            if (quote.isNotBlank()) {
+                                                clipboard?.setPrimaryClip(
+                                                    ClipData.newPlainText("Blancall", quote)
+                                                )
+                                                Toast.makeText(
+                                                    context,
+                                                    context.getString(com.ilyskyo.blancall.R.string.reader_mark_copied),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                            endSelection()
+                                        },
+                                        onHighlight = {
+                                            val s = sel
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    markStore.addMark(article.id, s.p, s.a, s.e)
+                                                }
+                                                endSelection()
+                                            }
+                                        },
+                                        onUnhighlight = {
+                                            val id = covering?.id
+                                            if (id != null) {
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        markStore.removeMark(article.id, id)
+                                                    }
+                                                    endSelection()
+                                                }
+                                            } else {
+                                                endSelection()
+                                            }
+                                        },
+                                        onNote = {
+                                            val cover = covering
+                                            val np = cover?.p ?: sel.p
+                                            val na = cover?.a ?: sel.a
+                                            val ne = cover?.e ?: sel.e
+                                            val noteQuote = anchor.text.substring(
+                                                na.coerceIn(0, anchor.text.length),
+                                                ne.coerceIn(0, anchor.text.length)
+                                            )
+                                            noteTarget = NoteEditTarget(
+                                                p = np,
+                                                a = na,
+                                                e = ne,
+                                                quote = noteQuote,
+                                                note = cover?.note.orEmpty(),
+                                                markId = cover?.id
+                                            )
+                                            endSelection()
+                                        }
+                                    )
+                                }
                                 }
                             }
                         },
@@ -789,7 +1085,9 @@ fun ReadingModeScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                 )
-                if (controlsVisible && occlusionEnabled) {
+                // 练习入口常驻：面板第二出口（句子/字词/反向 三种挖空）本来就不依赖遮挡，
+                // 早前误写成 occlusionEnabled 门控 → 没开遮挡的文章整个入口消失（用户报障）。
+                if (controlsVisible) {
                     GlassIconButton(
                         onClick = { showPracticeSheet = true },
                         buttonSize = 38.dp
@@ -881,7 +1179,8 @@ fun ReadingModeScreen(
                 ) {
                     ReadingRemainingLabel(
                         progress = { progressFraction },
-                        totalChars = totalChars,
+                        totalStdChars = stdTotalChars,
+                        cpm = speedCpm,
                         color = textColor
                     )
                     Text(
@@ -973,8 +1272,127 @@ fun ReadingModeScreen(
             maskOverlay = "list"
         },
         maskConfigName = maskConfigName,
+        marksCount = marks.size,
+        onOpenMarks = {
+            // 设置面板立即收起、列表同时挂上。这里不做延时：延时窗口内用户再点一下，
+            // 列表就永远不会出现（实测），而"两个 sheet 短暂同屏"只是一帧的层级问题 ——
+            // 设置面板的退场动画播完就没了，用户看到的仍是列表从底部滑上来。
+            settingsVisible = false
+            marksSheetVisible = true
+        },
+        speedCpm = speedCpm,
+        speedSampleSeconds = speedSampleSec,
+        onResetSpeed = {
+            AppPrefs.resetReadingSpeed()
+            speedCpm = ReadingSpeed.DefaultCpm
+            speedSampleSec = 0L
+        },
         isDark = isDark,
         accent = accentColor
+    )
+
+    // ── 划线与批注：列表 / 批注编辑 ──
+    // 摘录在组合期从全文段落切（存储只存坐标）：文章正文被改过时，越界部分会自然退化成空串。
+    val markRows = remember(marks, allParagraphs) {
+        marks.map { m ->
+            val para = allParagraphs.getOrNull(m.p).orEmpty()
+            val a = m.a.coerceIn(0, para.length)
+            val e = m.e.coerceIn(a, para.length)
+            val raw = para.substring(a, e)
+            val clipped = raw.length > 120
+            ReadingMarkRow(mark = m, quote = if (clipped) raw.take(120) else raw, clipped = clipped)
+        }
+    }
+    ReadingMarksSheet(
+        visible = marksSheetVisible,
+        rows = markRows,
+        onDismiss = { marksSheetVisible = false },
+        onJump = { row ->
+            marksSheetVisible = false
+            if (layoutMode == 0) {
+                val top = paragraphTops[row.mark.p]
+                scope.launch {
+                    if (top != null) {
+                        scrollState.animateScrollTo((top - 96f).toInt().coerceAtLeast(0))
+                    } else {
+                        // 还没量到位置（刚打开文章就点列表）：按段落比例落一个大致位置
+                        val ratio = (row.mark.p + 0.5f) / allParagraphs.size.coerceAtLeast(1)
+                        scrollState.animateScrollTo((scrollState.maxValue * ratio).toInt())
+                    }
+                }
+            } else {
+                val page = sections.indexOfFirst {
+                    row.mark.p >= it.firstPara && row.mark.p < it.firstPara + it.paraCount
+                }
+                if (page >= 0) scope.launch { pagerState.animateScrollToPage(page) }
+            }
+        },
+        onDelete = { row ->
+            scope.launch {
+                withContext(Dispatchers.IO) { markStore.removeMark(article.id, row.mark.id) }
+            }
+        }
+    )
+
+    // 五分钟无操作确认 / 庆祝
+    ReadingIdlePrompt(
+        stage = idleStage,
+        idleMinutes = idleMinutes,
+        accent = accentColor,
+        isDark = isDark,
+        onStillReading = {
+            settleActiveReading()
+            idleAskedRef.value = true
+            idleStage = IdlePromptStage.Cheer
+        },
+        onBusy = {
+            // 放行：这五分钟不计入（人确实不在读），起点重设，下次进度变化重新开始算
+            lastProgressAtRef.value = SystemClock.uptimeMillis()
+            idleAskedRef.value = true
+            idleStage = IdlePromptStage.Hidden
+            Toast.makeText(
+                context,
+                context.getString(com.ilyskyo.blancall.R.string.reader_idle_paused),
+                Toast.LENGTH_SHORT
+            ).show()
+        },
+        onCheerDone = { idleStage = IdlePromptStage.Hidden }
+    )
+
+    // 批注编辑：新建（选区来的）与编辑（点已有划线）共用同一个对话框
+    val editingNote = noteTarget
+    NoteEditorDialog(
+        visible = editingNote != null,
+        quote = editingNote?.quote.orEmpty(),
+        initialNote = editingNote?.note.orEmpty(),
+        canDelete = editingNote?.markId != null,
+        onDismiss = { noteTarget = null },
+        onSave = { text ->
+            val target = noteTarget
+            noteTarget = null
+            if (target != null) {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        val id = target.markId
+                        if (id != null) {
+                            markStore.updateNote(article.id, id, text)
+                        } else {
+                            markStore.addMark(article.id, target.p, target.a, target.e, text)
+                        }
+                    }
+                }
+            }
+        },
+        onDelete = {
+            val target = noteTarget
+            noteTarget = null
+            val id = target?.markId
+            if (id != null) {
+                scope.launch {
+                    withContext(Dispatchers.IO) { markStore.removeMark(article.id, id) }
+                }
+            }
+        }
     )
 
     // ── 遮挡自定义浮层：配置列表 / 编辑器（覆盖整个阅读界面，系统返回逐级退出）──
@@ -985,7 +1403,7 @@ fun ReadingModeScreen(
     // 改为 Dialog 后本浮层也是独立 window，且创建时间晚于 sheet 的 Dialog，层级天然更高、立即显示。
     // ── 遮罩配置浮层：入场与退场都要播 ──
     // 改造前这块是全 app 最大的零动效面积：打开＝整屏瞬间换成配置页，关闭＝瞬间换回正文。
-    // 窗口存活条件带上「退场还在播」那一项（与阅读页的全屏编辑对话框同一处理）；
+    // 窗口存活条件带上「退场还在播」那一项（与文章详情页的全屏编辑对话框同一处理）；
     // 减动效时 alpha 走 snap 同帧归零，条件同帧失效 —— 是跳过动画，不是延后 dismiss。
     MaskOverlayWindow(
         shown = maskOverlay != null,
@@ -1071,6 +1489,8 @@ internal fun MaskOverlayWindow(
                 decorFitsSystemWindows = false       // 沉浸式：内容自己处理 insets
             )
         ) {
+            // 入场缩放/淡入在这里用 graphicsLayer 做，窗口层不要再叠一份
+            com.ilyskyo.blancall.ui.common.SuppressDialogWindowAnimation()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1101,17 +1521,37 @@ private fun ReadingPercentLabel(progress: () -> Float, color: Color) {
     )
 }
 
-/** 预计剩余阅读时间：由进度实时折算，读取与重组都限制在本组合内 */
+/**
+ * 预计剩余阅读时间：由进度实时折算，读取与重组都限制在本组合内。
+ *
+ * 折算走 [ReadingSpeed]：剩余**标准字** ÷ 个人速度。旧实现是「剩余字符 ÷ 350」，
+ * 中英混排时英文段落的字符量是它真实阅读量的两倍以上，时间会被高估到离谱。
+ */
 @Composable
-private fun ReadingRemainingLabel(progress: () -> Float, totalChars: Int, color: Color) {
+private fun ReadingRemainingLabel(
+    progress: () -> Float,
+    totalStdChars: Float,
+    cpm: Float,
+    color: Color
+) {
     val remainRatio = (1f - progress()).coerceIn(0f, 1f)
-    val remainSec = (totalChars * remainRatio / 350f * 60f).toLong()
+    val remainSec = ReadingSpeed.remainingSeconds(totalStdChars * remainRatio, cpm)
+    val minutes = ReadingSpeed.displayMinutes(remainSec)
     val text = when {
         remainRatio <= 0.005f -> stringResource(com.ilyskyo.blancall.R.string.reader_finished)
-        remainSec < 60L -> stringResource(com.ilyskyo.blancall.R.string.reader_remaining_less_minute)
+        minutes <= 0L -> stringResource(com.ilyskyo.blancall.R.string.reader_remaining_less_minute)
+        minutes >= 60L -> if (minutes % 60L == 0L) {
+            stringResource(com.ilyskyo.blancall.R.string.reader_remaining_hours_only, minutes / 60L)
+        } else {
+            stringResource(
+                com.ilyskyo.blancall.R.string.reader_remaining_hours,
+                minutes / 60L,
+                minutes % 60L
+            )
+        }
         else -> stringResource(
             com.ilyskyo.blancall.R.string.reader_remaining_minutes,
-            (remainSec / 60).coerceAtLeast(1)
+            minutes.coerceAtLeast(1L)
         )
     }
     Text(text = text, style = MaterialTheme.typography.labelSmall, color = color)
@@ -1119,6 +1559,31 @@ private fun ReadingRemainingLabel(progress: () -> Float, totalChars: Int, color:
 
 /** 轻量可变引用（供闭包写入共享状态） */
 internal class Ref<T>(var value: T)
+
+/** 批注编辑目标：位置（写回存储）+ 引用文本（给人看）+ 已有记录 id（null = 新建） */
+internal data class NoteEditTarget(
+    val p: Int,
+    val a: Int,
+    val e: Int,
+    val quote: String,
+    val note: String,
+    val markId: Long?
+)
+
+/** 由一条记录生成编辑目标（段文本被改过/越界时摘录退化成空串，不崩） */
+internal fun noteTargetOf(mark: ReadingMark, allParagraphs: List<String>): NoteEditTarget {
+    val para = allParagraphs.getOrNull(mark.p).orEmpty()
+    val a = mark.a.coerceIn(0, para.length)
+    val e = mark.e.coerceIn(a, para.length)
+    return NoteEditTarget(
+        p = mark.p,
+        a = mark.a,
+        e = mark.e,
+        quote = para.substring(a, e),
+        note = mark.note,
+        markId = mark.id
+    )
+}
 
 /** 单节目标字符数（分割太碎翻页频繁，太大失去章节感） */
 internal const val ReadingSectionTarget = 420

@@ -18,6 +18,9 @@ internal sealed interface NextStep {
     /** 到期文章复习 */
     data class DueArticle(val articleId: Long) : NextStep
 
+    /** 计划中还没练过的文章：开始第一遍，不是复习 */
+    data class StartArticle(val articleId: Long) : NextStep
+
     /** 薄弱篇训练 */
     data class WeaknessDrill(val articleId: Long) : NextStep
 
@@ -47,6 +50,8 @@ internal object NextStepDecider {
     fun fromItem(item: StudyCoach.Item?): NextStep = when (item?.kind) {
         StudyCoach.Kind.RESUME -> NextStep.Resume(item.articleId)
         StudyCoach.Kind.REVIEW_ARTICLE -> NextStep.DueArticle(item.articleId)
+        // 新加入计划是「开始第一遍」：入口相同，但文案不能共用「复习」
+        StudyCoach.Kind.START_ARTICLE -> NextStep.StartArticle(item.articleId)
         StudyCoach.Kind.WEAK_ARTICLE -> NextStep.WeaknessDrill(item.articleId)
         StudyCoach.Kind.SENTENCE_CARDS -> NextStep.SentenceCards(item.count)
         StudyCoach.Kind.MISTAKE_DRILL -> NextStep.MistakeDrill(item.count)

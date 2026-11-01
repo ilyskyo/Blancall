@@ -34,6 +34,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,6 +51,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -68,6 +71,8 @@ import androidx.compose.ui.unit.sp
 import com.ilyskyo.blancall.algorithm.FsrsEngine
 import com.ilyskyo.blancall.algorithm.SentenceCloze
 import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
+import com.ilyskyo.blancall.ui.common.PressTier
+import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassCard
@@ -107,6 +112,10 @@ internal fun SentenceCardFace(
     clozeEnabled: Boolean = true,
     /** 首次见到的句子（没评过级的新句）是否也遮挡（见 AppPrefs.sentenceClozeNewEnabled）：关 = 新句先给全文 */
     clozeNewEnabled: Boolean = false,
+    /** 点来源文章标题 → 回到原文 */
+    onOpenArticle: ((Long) -> Unit)? = null,
+    /** 点来源文章的标签 → 打开标签主页 */
+    onTagClick: ((Long) -> Unit)? = null,
     modifier: Modifier,
 ){
     val context = LocalContext.current
@@ -145,10 +154,23 @@ internal fun SentenceCardFace(
                 Text(
                     if (item.title.isNotBlank()) "《${item.title}》" else stringResource(com.ilyskyo.blancall.R.string.sentence_cards),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    // 可点回原文时用主色：灰色小字看起来只是来源标注，没人会去点
+                    color = if (onOpenArticle != null) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(
+                            if (onOpenArticle != null && item.articleId > 0L) {
+                                Modifier
+                                    .semantics { role = Role.Button }
+                                    .pressClick(tier = PressTier.Plain) { onOpenArticle(item.articleId) }
+                            } else Modifier
+                        ),
                 )
                 if (item.isToday) {
                     // 今日句角标：仅队列置顶的当天句子出现
@@ -169,7 +191,7 @@ internal fun SentenceCardFace(
             }
             if (tags.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                TagChipRow(tags = tags, maxChips = 2)
+                TagChipRow(tags = tags, maxChips = 2, onTagClick = onTagClick)
             }
             // 正文区垂直手势的归属（切卡热区扩展的关键）：
             // - 文本溢出需滚动时：正文区滑动 = 滚动文本（保持原行为，不冲突）；
@@ -426,7 +448,48 @@ internal fun SentenceRevealButton(onClick: () -> Unit, modifier: Modifier = Modi
 
 /** 队列为空（无文章 / 无合格句）时的空态 */
 @Composable
-internal fun SentenceEmptyView(onBack: () -> Unit) {
+internal fun SentenceEmptyView(
+    onBack: () -> Unit,
+    onImport: () -> Unit,
+    onOpenFlow: () -> Unit,
+    onClearScope: (() -> Unit)?,
+    noArticles: Boolean,
+    allPaused: Boolean,
+    pausedCount: Int,
+) {
+    // 空态必须说清「为什么空」并给出真的能解决它的那一条路：
+    // 旧版无论没文章、全暂停还是筛不出句子，都写「先去导入一篇文章吧」，按钮却是「返回」——
+    // 用户照做也解决不了，等于把死路包装成了建议。
+    val primaryIsClear = !noArticles && !allPaused && onClearScope != null
+    val body = when {
+        noArticles -> stringResource(com.ilyskyo.blancall.R.string.import_one_first)
+        allPaused -> stringResource(
+            com.ilyskyo.blancall.R.string.flow_filter_paused,
+            pausedCount,
+        )
+        else -> stringResource(com.ilyskyo.blancall.R.string.sentence_scope_empty)
+    }
+    val primaryLabel: String?
+    val primaryAction: (() -> Unit)?
+    when {
+        noArticles -> {
+            primaryLabel = stringResource(com.ilyskyo.blancall.R.string.import_first_article)
+            primaryAction = onImport
+        }
+        allPaused -> {
+            primaryLabel = stringResource(com.ilyskyo.blancall.R.string.flow_title)
+            primaryAction = onOpenFlow
+        }
+        onClearScope != null -> {
+            primaryLabel = stringResource(com.ilyskyo.blancall.R.string.clear_filter)
+            primaryAction = onClearScope
+        }
+        else -> {
+            // 已有文章却没有可抽的句子：补一篇新文章仍是最直接的出路
+            primaryLabel = stringResource(com.ilyskyo.blancall.R.string.import_first_article)
+            primaryAction = onImport
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -455,19 +518,31 @@ internal fun SentenceEmptyView(onBack: () -> Unit) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            stringResource(com.ilyskyo.blancall.R.string.import_one_first),
+            body,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = onBack,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(14.dp),
-        ) {
-            Text(stringResource(com.ilyskyo.blancall.R.string.back), style = MaterialTheme.typography.labelLarge)
+        if (primaryLabel != null && primaryAction != null) {
+            Spacer(Modifier.height(24.dp))
+            Button(
+                onClick = primaryAction,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text(primaryLabel, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        if (onClearScope != null && !primaryIsClear) {
+            TextButton(onClick = onClearScope) {
+                Text(stringResource(com.ilyskyo.blancall.R.string.clear_filter))
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onBack) {
+            Text(stringResource(com.ilyskyo.blancall.R.string.back))
         }
     }
 }

@@ -33,13 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -89,8 +88,10 @@ import com.ilyskyo.blancall.ui.statistics.StatisticsScreen
 import com.ilyskyo.blancall.ui.statistics.StudyFlowScreen
 import com.ilyskyo.blancall.ui.statistics.StudyTaskDetailScreen
 import com.ilyskyo.blancall.ui.statistics.MistakeNotebookScreen
+import com.ilyskyo.blancall.ui.statistics.PracticeHistoryScreen
 import com.ilyskyo.blancall.ui.onboarding.OnboardingScreen
 import com.ilyskyo.blancall.ui.search.SearchScreen
+import com.ilyskyo.blancall.ui.tag.TagDetailScreen
 import com.ilyskyo.blancall.ui.tag.TagManagerScreen
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.viewmodel.BlancallMode
@@ -130,10 +131,10 @@ fun AppNavigation() {
         currentRoute == "list" || currentRoute?.startsWith("list/") == true -> 1
         currentRoute == "overview" || currentRoute?.startsWith("statistics/") == true ||
             currentRoute == "study_flow" || currentRoute?.startsWith("study_task/") == true -> 2
-        // 仅素材库卡片页（philo，纯 Compose）显示底部导航栏；
+        // 仅素材库卡片页与内容包页（纯 Compose）显示底部导航栏；
         // WebView 内容页（philo_content）不归 tab——隐藏玻璃条，避免液态玻璃
         // 持续折射 WebView 导致的闪烁（与 settings/reader 子页同策略）
-        currentRoute == "philo" -> 3
+        currentRoute == "philo" || currentRoute == "philo_packs" -> 3
         else -> -1
     }
     // 首页不再显示左下角入口按钮（入口已迁移到底部导航栏，导航栏固定启用）
@@ -144,12 +145,22 @@ fun AppNavigation() {
         // ⚠️ 原实现放任 navigateToTab 走一遍（依赖 launchSingleTop “幂等”），
         // 真机实测同 tab 点击仍会出现一次「白色遮挡刷新」（页面重建/转场中间帧）；
         // 同 tab 点击本就不应有任何视觉变化，直接短路最稳。
-        if (index == currentTab) return
+        // 点击**当前 tab**：已经在根页面时直接忽略（不做任何导航）；
+        // 若当前在该 tab 的子页面（统计子页 / 学习任务 / 素材库内容包），回到该 tab 根页——
+        // 否则「点底栏回列表」在子页上会完全没反应。
+        if (index == currentTab && currentRoute == rootRoutes.getOrNull(index)) return
         val route = rootRoutes.getOrNull(index) ?: return
         navController.navigateToTab(route)
     }
 
-    // tab 根页返回＝退出应用：4 个根页面真正平级，返回键不退回上一 tab、也不回启动页
+    // tab 根页返回＝退出应用：4 个根页面真正平级，返回键不退回上一 tab、也不回启动页。
+    //
+    // ⚠️ 这是全应用**唯一**的「根页返回」注册点。各根页（我的文章 / 数据 / 素材库）
+    // 曾经在各自文件里又写了一份无条件 BackHandler{finish()}：旧版 BackHandler 走
+    // OnBackPressedDispatcher，重复注册结果相同、无害；activity 1.13 起 BackHandler
+    // 改投 NavigationEventDispatcher（与 NavHost 同一套，按注册顺序响应），
+    // 多出来的那份会抢在 NavHost 前面把 Activity 结束掉——转场中途按返回尤其明显。
+    // 新增根 tab 时只在这里登记路由，不要在页面里再注册。
     val navContext = LocalContext.current
     BackHandler(enabled = currentRoute in rootRoutes) {
         val activity = navContext as? Activity
@@ -269,6 +280,52 @@ fun AppNavigation() {
     val noneExitTransition: (AnimatedContentTransitionScope<*>.() -> ExitTransition) =
         { fadeOut(MotionFade.alpha(MotionFade.tabCross)) }
 
+    // ── 预测性返回手势进行中（跟手阶段）的 pop 转场 ──
+    //
+    // navigation-compose 2.10 起，手势期间只认 NavHost 上的两个 predictivePop* 参数，
+    // 各 composable 里声明的 popExit / popEnter 在手势中**完全不参与**。
+    // 已核 2.10.2 字节码：NavHostKt 在 inPredictiveBack 分支里先查 destination 的
+    // predictive 字段，而 composable() 从未暴露该字段（ComposeNavigatorDestinationBuilder
+    // 连对应属性都没有）⇒ 恒为 null；随后落到 NavHost 同名参数，其默认值来自
+    // DefaultNavTransitions：popExit = scaleOut(targetScale = 0.7f)、popEnter = fadeIn(spring)，
+    // 且缩放原点固定为屏幕中心。
+    //
+    // 于是升级后所有页面在手势里都「从屏幕中心缩到 70%」：首页文章卡 / 最近使用 / 句子卡
+    // 不再缩回点击处、设置页不再淡回、学习任务流不再垂直收回——用户 2026-10-26 报的就是这个。
+    //
+    // 这里按各页既有规则显式分发一次，让「跟手时」和「松手后」保持同一套动效语言。
+    // ⚠️ 新增或修改路由的 pop 转场时，必须同步这两个分支，否则手势与松手会长得不一样。
+    val predictivePopExitTransition:
+        AnimatedContentTransitionScope<NavBackStackEntry>.(Int) -> ExitTransition = { _ ->
+        when (RevealNav.baseRoute(initialState.destination.route ?: "")) {
+            // 根部 tab 页：本来就没有 pop 动画（返回等于退出应用，由 BackHandler 接管）
+            "home", "list", "overview", "philo" -> noneExitTransition()
+            // 下拉出来的任务流：向上收回
+            "study_flow" -> slideOutVertically(
+                targetOffsetY = { -it },
+                animationSpec = Motion.pageExit()
+            )
+            // 任务详情：整页只淡，位移留给共享元素
+            "study_task" -> fadeOut(MotionFade.alpha(MotionFade.exit))
+            // 触点浮起页：缩回点击处（原点来自登记表，不是屏幕中心）
+            "reader", "sentence_cards" -> revealPopExit(popExitSlide())
+            else -> popExitSlide()
+        }
+    }
+
+    val predictivePopEnterTransition:
+        AnimatedContentTransitionScope<NavBackStackEntry>.(Int) -> EnterTransition = { _ ->
+        when (RevealNav.baseRoute(targetState.destination.route ?: "")) {
+            "home", "list", "overview", "philo" -> noneTransition()
+            "study_flow" -> EnterTransition.None
+            "study_task" -> fadeIn(MotionFade.alpha(MotionFade.enter))
+            "reader", "sentence_cards" -> revealPopEnter(popEnterSlide())
+            // 设置系的父页：下层不位移、只淡回（与 popEnterFade 同一条）
+            "settings" -> popEnterFade()
+            else -> popEnterSlide()
+        }
+    }
+
     // ── 大屏适配：宽度 ≥600dp（平板竖屏 / 折叠屏展开 / 手机与平板横屏）改用侧边导航栏 ──
     // 依据 Material 3 规范：Compact(<600) 底栏 / Medium(600–839) 侧栏 / Expanded(≥840) 侧栏。
     // 横屏用侧栏的实质理由：横屏竖向空间稀缺而横向富余，底栏会再切掉 64dp。
@@ -317,58 +374,18 @@ fun AppNavigation() {
                 if (needsPageBackdrop) Modifier.layerBackdrop(pageBackdrop) else Modifier
             )
     ) {
-                            // 侧栏让位区的「氛围底」：纯色上液态玻璃无内容可折射 = 不液态
-                            // （真机反馈）。在让位条（左 76dp）铺柔和的色彩层次（竖向色阶
-                            // + 两个色斑），为玻璃的折射形变提供可见纹理；屏幕上它只在
-                            // 侧栏下方露出（窄屏/子页被页面背景完全覆盖，无副作用）。
-                            if (isLargeScreen && currentTab >= 0) {
-                                val ambientAccent = MaterialTheme.colorScheme.primary
-                                Box(
-                                    modifier = Modifier
-                                        .width(NavRailWidth)
-                                        .fillMaxHeight()
-                                        .drawBehind {
-                                            drawRect(
-                                                brush = Brush.verticalGradient(
-                                                    listOf(
-                                                        ambientAccent.copy(alpha = 0.12f),
-                                                        Color.Transparent,
-                                                        ambientAccent.copy(alpha = 0.06f)
-                                                    )
-                                                )
-                                            )
-                                            drawCircle(
-                                                brush = Brush.radialGradient(
-                                                    listOf(
-                                                        ambientAccent.copy(alpha = 0.16f),
-                                                        Color.Transparent
-                                                    ),
-                                                    center = Offset(size.width * 0.5f, size.height * 0.22f),
-                                                    radius = size.height * 0.35f
-                                                ),
-                                                center = Offset(size.width * 0.5f, size.height * 0.22f),
-                                                radius = size.height * 0.35f
-                                            )
-                                            drawCircle(
-                                                brush = Brush.radialGradient(
-                                                    listOf(
-                                                        ambientAccent.copy(alpha = 0.12f),
-                                                        Color.Transparent
-                                                    ),
-                                                    center = Offset(size.width * 0.5f, size.height * 0.78f),
-                                                    radius = size.height * 0.30f
-                                                ),
-                                                center = Offset(size.width * 0.5f, size.height * 0.78f),
-                                                radius = size.height * 0.30f
-                                            )
-                                        }
-                                )
-                            }
+                            // 侧栏让位区不再铺「氛围底」：侧栏已从通栏长条改成
+                            // 按内容高度收缩的悬浮坞，通栏色阶会在坞的上下露出成一条
+                            // 无主的淡紫色带；而 Kotlin UI 也不允许渐变装饰。
                             HeroTransitionHost {
                             NavHost(
         // 大屏时给悬浮侧栏让位（内容整体右移 76dp；窄屏为 0 不加边距）
         modifier = Modifier.padding(start = railReserved),
         navController = navController,
+        // 手势跟手阶段用的 pop 转场：不传则落到 2.10 的内建默认值（从屏幕中心缩到 70%），
+        // 各页自己的 popExit / popEnter 在手势中会被完全忽略。详见上方两个 lambda 的说明。
+        predictivePopExitTransition = predictivePopExitTransition,
+        predictivePopEnterTransition = predictivePopEnterTransition,
         // 恒以 home 为导航栈底（四个根 tab 平级、无上下级）：首启引导页是
         // 压入 home 之上的子页（见上方 LaunchedEffect），完成后 popBackStack 归位。
         // 若以 onboarding 为 startDestination，findStartDestination/popUpTo 锚点
@@ -638,6 +655,32 @@ fun AppNavigation() {
             SettingsScreen(navController)
         }
 
+        // 今日计划：首页计划卡点开后的全部清单（数组只在清单里看，首页仍只给三条）
+        composable(
+            "today_plan",
+            enterTransition = { fadeIn(MotionFade.alpha(MotionFade.enter)) },
+            exitTransition = { fadeOut(MotionFade.alpha(MotionFade.exit)) },
+            popExitTransition = { fadeOut(MotionFade.alpha(MotionFade.exit)) },
+            popEnterTransition = { fadeIn(MotionFade.alpha(MotionFade.enter)) }
+        ) {
+            HeroEntry(this) {
+                com.ilyskyo.blancall.ui.home.TodayPlanScreen(navController)
+            }
+        }
+
+        // 待复习清单：首页「要复习的任务」卡点开，分「今日到期 / 已逾期」两组
+        composable(
+            "due_list",
+            enterTransition = { fadeIn(MotionFade.alpha(MotionFade.enter)) },
+            exitTransition = { fadeOut(MotionFade.alpha(MotionFade.exit)) },
+            popExitTransition = { fadeOut(MotionFade.alpha(MotionFade.exit)) },
+            popEnterTransition = { fadeIn(MotionFade.alpha(MotionFade.enter)) }
+        ) {
+            HeroEntry(this) {
+                com.ilyskyo.blancall.ui.home.DueListScreen(navController)
+            }
+        }
+
         // 首页搜索页（搜索标题 / 正文 / 添加日期）
         composable(
             "search",
@@ -651,25 +694,58 @@ fun AppNavigation() {
             }
         }
 
-        // 文章标签管理页（设置 → 内容管理 → 文章标签）
+        // 文章标签管理页（设置 → 内容管理 → 文章标签；?tagId= 时直接打开该标签的文章管理）
         composable(
-            "tag_manager",
+            route = "tag_manager?tagId={tagId}",
+            arguments = listOf(
+                navArgument("tagId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            ),
             enterTransition = enterSlide,
             exitTransition = exitSlide,
             popExitTransition = popExitSlide,
             popEnterTransition = popEnterSlide
-        ) {
-            TagManagerScreen(navController)
+        ) { backStackEntry ->
+            TagManagerScreen(
+                navController,
+                initialTagId = backStackEntry.arguments?.getLong("tagId") ?: -1L,
+            )
+        }
+
+        // 标签主页：统计 / 跨文复习 / 句子卡 / 文章列表 / 管理文章
+        composable(
+            route = "tag/{tagId}",
+            arguments = listOf(
+                navArgument("tagId") { type = NavType.LongType }
+            ),
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) { backStackEntry ->
+            val tagId = backStackEntry.arguments?.getLong("tagId") ?: -1L
+            TagDetailScreen(navController, tagId)
         }
 
         // 句子卡片大卡片界面（首页小卡片点入；华为堆叠形态：划卡 + 三键评级）
         // limit：时长预算入口按分钟折算的本次句数上限；0 = 不限（日常进入与「复习全部」）
+        // articleId / tagId：从文章详情页/任务详情/标签主页进入时的来源限定（-1 = 不限定）
         composable(
-            "sentence_cards?limit={limit}",
+            route = "sentence_cards?limit={limit}&articleId={articleId}&tagId={tagId}",
             arguments = listOf(
                 navArgument("limit") {
                     type = NavType.IntType
                     defaultValue = 0
+                },
+                navArgument("articleId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                },
+                navArgument("tagId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
                 }
             ),
             enterTransition = { revealEnter(enterSlide()) },
@@ -678,9 +754,16 @@ fun AppNavigation() {
             popEnterTransition = { revealPopEnter(popEnterSlide()) }
         ) { backStackEntry ->
             val limit = backStackEntry.arguments?.getInt("limit") ?: 0
+            val articleId = backStackEntry.arguments?.getLong("articleId") ?: -1L
+            val tagId = backStackEntry.arguments?.getLong("tagId") ?: -1L
             RevealPageShell(backStackEntry.id) {
                 HeroEntry(this) {
-                    SentenceCardScreen(navController, queueLimit = limit)
+                    SentenceCardScreen(
+                        navController,
+                        queueLimit = limit,
+                        scopeArticleId = articleId,
+                        scopeTagId = tagId,
+                    )
                 }
             }
         }
@@ -740,6 +823,18 @@ fun AppNavigation() {
             WesternThoughtScreen(navController)
         }
 
+        // 素材库内容包页：从素材库根 tab 进入，保留底部导航并高亮素材库；
+        // 设置里的「内容包」仍走 content_packs（设置子页，不显示底栏）。
+        composable(
+            "philo_packs",
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) {
+            ContentPackScreen(navController)
+        }
+
         // 素材库内容页（点卡片进入对应库 WebView）
         composable(
             route = "philo_content/{libraryId}",
@@ -772,6 +867,31 @@ fun AppNavigation() {
             PdfPreviewScreen(navController, asset, title.takeIf { it.isNotBlank() })
         }
 
+        // 全部练习记录：日历按日 / 弱点画像按错误类型下钻；也承载跨文记录
+        composable(
+            route = "practice_history?day={day}&errorType={errorType}",
+            arguments = listOf(
+                navArgument("day") {
+                    type = NavType.LongType
+                    defaultValue = 0L
+                },
+                navArgument("errorType") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            ),
+            enterTransition = enterSlide,
+            exitTransition = exitSlide,
+            popExitTransition = popExitSlide,
+            popEnterTransition = popEnterSlide
+        ) { backStackEntry ->
+            PracticeHistoryScreen(
+                navController,
+                initialDayEpoch = backStackEntry.arguments?.getLong("day") ?: 0L,
+                initialErrorType = backStackEntry.arguments?.getString("errorType").orEmpty(),
+            )
+        }
+
         composable(
             route = "statistics/{articleId}",
             arguments = listOf(
@@ -786,13 +906,17 @@ fun AppNavigation() {
             StatisticsScreen(navController, articleId)
         }
 
-        // 错题本：文章统计页 / 总览页进入；articleId=-1 表示全部文章
+        // 错题本：文章统计页 / 总览页 / 弱点画像进入；articleId=-1 表示全部文章
         composable(
-            route = "mistakes?articleId={articleId}",
+            route = "mistakes?articleId={articleId}&errorType={errorType}",
             arguments = listOf(
                 navArgument("articleId") {
                     type = NavType.LongType
                     defaultValue = -1L
+                },
+                navArgument("errorType") {
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             ),
             enterTransition = enterSlide,
@@ -802,7 +926,8 @@ fun AppNavigation() {
         ) { backStackEntry ->
             MistakeNotebookScreen(
                 navController,
-                initialArticleId = backStackEntry.arguments?.getLong("articleId") ?: -1L
+                initialArticleId = backStackEntry.arguments?.getLong("articleId") ?: -1L,
+                initialErrorType = backStackEntry.arguments?.getString("errorType").orEmpty(),
             )
         }
 

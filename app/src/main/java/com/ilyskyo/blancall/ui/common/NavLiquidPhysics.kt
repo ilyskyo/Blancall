@@ -215,31 +215,32 @@ class NavLiquidPhysics(
     }
 
     /**
-     * 外部切 tab（点击/返回/通知）：先按下，等位置滑到位再缩回。
-     * 这是「点击 tab 也像被按了一下」的来源，不是额外装饰。
+     * 外部切 tab（点击 / 返回 / 通知）：**只滑动，不放大**。
+     *
+     * 2026-10-26 用户明确要求关掉「切页那一下的胶囊膨胀到栏边」：放大只属于手指按下那一瞬
+     * （[press] / [drag]），切页本身只是位置动画。这里原来会一并 press()，于是每次点 tab
+     * 都能看到胶囊先胀到栏高再滑走 —— 用户把那一帧读成「方框先冒出来把选中处标出来」。
      */
     fun animateToTab(index: Int) {
         val target = index.coerceIn(0, tabCount - 1).toFloat()
-        // 已经在该格且没有未完成的动画：首帧/重复调用不播按压
+        // 已经在该格且没有未完成的动画：首帧/重复调用直接返回
         val alreadyThere = positionSpring.target == target &&
             abs(positionSpring.value - target) <= 0.001f &&
             !isActive
         if (alreadyThere) return
-        // 拖动松手已经设置过同一目标：不要重复按下
-        if (positionSpring.target == target && (isDragging || pendingClickRelease)) return
-        // 已经被拖动松手接管（目标一致且正在回弹）：不要再按一次
-        if (positionSpring.target == target && isActive) return
         positionSpring.target = target
         velocitySpring.target = 0f
         if (reducedMotion) {
             snapToRest(index.coerceIn(0, tabCount - 1))
             return
         }
-        pressSpring.target = 1f
-        scaleXSpring.target = PRESSED_SCALE
-        scaleYSpring.target = PRESSED_SCALE
-        pendingClickRelease = true
-        isDragging = false
+        // 点按抬手后可能还残留一次按下态，这里一起放行；
+        // 拖动松手的滑行（pendingClickRelease）不打断 —— 那是手指给的手感。
+        if (!isDragging && !pendingClickRelease) {
+            pressSpring.target = 0f
+            scaleXSpring.target = 1f
+            scaleYSpring.target = 1f
+        }
         syncStates()
         wake()
     }

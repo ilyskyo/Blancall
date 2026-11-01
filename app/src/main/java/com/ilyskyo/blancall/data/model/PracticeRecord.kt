@@ -54,6 +54,15 @@ fun String.toErrorType(): ErrorType = runCatching { ErrorType.valueOf(this) }.ge
 data class PracticeRecord(
     val id: Long = 0,
     val articleId: Long,
+    /**
+     * 跨文练习本次实际覆盖的文章（去重、按首次出现顺序）。
+     *
+     * 跨文记录的 [articleId] 刻意保持 -1（混合内容无单篇归属，不能冒充某一篇）：
+     * 文章级统计、FSRS 都不该把整场练习塞给第一篇。但标签统计与全局练习历史需要知道
+     * 这次练习涉及了哪些文章 —— 否则一次标签发起的跨文复习会从所有聚合里消失。
+     * 单篇练习为空列表。
+     */
+    val sourceArticleIds: List<Long> = emptyList(),
     // 保持 String 以兼容旧 JSON 数据；推荐通过 toPracticeMode() 转换为枚举使用
     val mode: String,         // "SENTENCE" | "WORD" | "REVERSE"，见 PracticeMode
     val totalBlanks: Int,
@@ -104,9 +113,16 @@ data class AnsweredBlank(
     val userAnswer: String,
     // 空串 = 答对；其余见 [ErrorType]
     val errorType: String = "",
+    /**
+     * 所属句在该空来源文章内的索引。
+     * 单篇练习 = 全文切句索引；跨文练习 = 该句在原文章内的索引（-1 = 旧记录/无法定位）。
+     * 自从逐空带上 [articleId] 后，这个索引不再需要在混合文本里解释。
+     */
     val sentenceIndex: Int = -1,
     val sentenceText: String = "",
     val similarity: Float = -1f,
+    /** 这个空所属的来源文章；-1 = 旧记录，回退到整条记录的 articleId */
+    val articleId: Long = -1L,
 ) {
     val correct: Boolean get() = errorType.isEmpty()
 }
@@ -134,5 +150,11 @@ data class MistakeDetail(
     // 判分当时的完整原句。句索引会随文章编辑整体错位，文字不会：
     // 错题本用它显示「这句到底长什么样」、重练时用它在新正文里重新定位。
     // 旧记录为空串 → 展示层退回句索引或只显示答案对照，绝不跳到可能错误的句子。
-    val sentenceText: String = ""
+    val sentenceText: String = "",
+    /**
+     * 这一处错所属的来源文章；-1 = 旧记录/单篇（回退到整条记录的 articleId）。
+     * 跨文练习的每个空都可能来自不同文章，错题本必须按这个字段分组，
+     * 否则一次跨文复习的错处会全落进一个没有文章可打开的「文章 #-1」组。
+     */
+    val articleId: Long = -1L
 )

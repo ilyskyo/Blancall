@@ -3,8 +3,6 @@
 
 package com.ilyskyo.blancall.ui.home
 
-import android.app.DatePickerDialog
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,20 +11,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,13 +26,11 @@ import com.ilyskyo.blancall.R
 import com.ilyskyo.blancall.algorithm.StudyCoach
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
-import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
-import com.ilyskyo.blancall.ui.common.GlassButton
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.heroElement
 import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.theme.Macaron
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -53,19 +42,27 @@ import java.time.ZoneId
  */
 @Composable
 internal fun TodayPlanCard(
-    input: StudyCoach.Input,
     plan: StudyCoach.Plan,
     dueArticleCount: Int,
     pausedArticleCount: Int,
     allScheduledPaused: Boolean,
     onOpenFlow: () -> Unit,
     onStartItem: (StudyCoach.Item) -> Unit,
-    onStartBudget: (Int) -> Unit,
-    onExamEpochDayChange: (Long) -> Unit,
+    /** 点卡片主体（标题区/空白处）→ 英雄转场打开「今日计划」全部清单；卡内条目仍是直接开练 */
+    onOpenAll: () -> Unit,
+    /** 今天已完成的练习次数（按本地日）；与刷次数的目标一起决定是否显示进度行 */
+    todayPracticeCount: Int,
+    dailyPracticeGoal: Int,
+    /** 面板里的「在今日计划卡上显示目标进度」，关掉后这一行不渲染（目标本身仍参与提醒口径） */
+    showDailyGoal: Boolean,
 ) {
-    val context = LocalContext.current
-    var showBudget by remember { mutableStateOf(false) }
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 一镜到底的源节点：key 与「今日计划」展开页头部一致
+            .heroElement(TODAY_PLAN_HERO_KEY, renderInOverlay = false),
+        onClick = onOpenAll,
+    ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -114,13 +111,6 @@ internal fun TodayPlanCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                GlassButton(onClick = { showBudget = true }, modifier = Modifier.height(34.dp)) {
-                    Text(
-                        stringResource(R.string.today_plan_budget, input.goalMinutes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
             }
             if (plan.examPace == StudyCoach.ExamPace.BEHIND) {
                 Spacer(Modifier.height(6.dp))
@@ -128,6 +118,23 @@ internal fun TodayPlanCard(
                     stringResource(R.string.today_plan_exam_behind),
                     style = MaterialTheme.typography.labelSmall,
                     color = Macaron.warn().accent
+                )
+            }
+            // 今日目标进度：只有非零目标才显示，达成后换成强调色（不加新图标，保持一行）
+            if (showDailyGoal && dailyPracticeGoal > 0) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(
+                        R.string.today_plan_goal_progress,
+                        dailyPracticeGoal,
+                        todayPracticeCount
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (todayPracticeCount >= dailyPracticeGoal) {
+                        MaterialTheme.colorScheme.tertiary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -207,57 +214,7 @@ internal fun TodayPlanCard(
                     )
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val examDay = input.examEpochDay
-                TextButton(onClick = {
-                    val now = LocalDate.now()
-                    val initial = examDay?.takeIf { it > 0 }?.let { LocalDate.ofEpochDay(it) } ?: now.plusMonths(1)
-                    DatePickerDialog(
-                        context,
-                        { _, year, month, dayOfMonth ->
-                            onExamEpochDayChange(LocalDate.of(year, month + 1, dayOfMonth).toEpochDay())
-                        },
-                        initial.year,
-                        initial.monthValue - 1,
-                        initial.dayOfMonth,
-                    ).show()
-                }) {
-                    Text(
-                        if (examDay != null && examDay > 0L) {
-                            stringResource(
-                                R.string.today_plan_exam_set,
-                                LocalDate.ofEpochDay(examDay).toString()
-                            )
-                        } else {
-                            stringResource(R.string.today_plan_set_exam)
-                        },
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-                if (examDay != null && examDay > 0L) {
-                    TextButton(onClick = { onExamEpochDayChange(0L) }) {
-                        Text(
-                            stringResource(R.string.today_plan_clear_exam),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
         }
-    }
-
-    if (showBudget) {
-        TimeBudgetDialog(
-            defaultMinutes = input.goalMinutes,
-            input = input,
-            onDismiss = { showBudget = false },
-            onStart = { minutes ->
-                showBudget = false
-                onStartBudget(minutes)
-            }
-        )
     }
 }
 
@@ -280,6 +237,8 @@ private fun SurfaceIndex(index: Int) {
 private fun itemTitle(item: StudyCoach.Item): String = when (item.kind) {
     StudyCoach.Kind.RESUME -> stringResource(R.string.today_plan_resume, item.title)
     StudyCoach.Kind.REVIEW_ARTICLE -> item.title
+    // 加入计划但一次没练：措辞换成「开始学习」，别对没读过的文章说「复习」
+    StudyCoach.Kind.START_ARTICLE -> stringResource(R.string.today_plan_start_article, item.title)
     StudyCoach.Kind.WEAK_ARTICLE -> item.title
     StudyCoach.Kind.MISTAKE_DRILL -> stringResource(R.string.today_plan_mistakes)
     StudyCoach.Kind.SENTENCE_CARDS -> stringResource(R.string.today_plan_sentence_cards)
@@ -292,78 +251,11 @@ private fun itemDetail(item: StudyCoach.Item): String = when (item.kind) {
         R.string.today_plan_resume_detail, item.answered, item.total
     )
     StudyCoach.Kind.REVIEW_ARTICLE -> stringResource(R.string.today_plan_review_detail)
+    StudyCoach.Kind.START_ARTICLE -> stringResource(R.string.today_plan_start_detail)
     StudyCoach.Kind.WEAK_ARTICLE ->
         if (item.count > 0) stringResource(R.string.today_plan_weak_detail, item.count)
         else stringResource(R.string.weak_articles_title)
     StudyCoach.Kind.MISTAKE_DRILL -> stringResource(R.string.today_plan_mistake_detail, item.count)
     StudyCoach.Kind.SENTENCE_CARDS -> stringResource(R.string.today_plan_sentence_detail, item.count)
     StudyCoach.Kind.DAILY_GOAL -> stringResource(R.string.today_plan_goal_detail, item.count)
-}
-
-/**
- * 时长选择：默认值来自设置里的「今日目标时长」（此前只存不用），
- * 选项按该值就近生成，避免出现用户没设过的奇怪数字。
- */
-@Composable
-private fun TimeBudgetDialog(
-    defaultMinutes: Int,
-    input: StudyCoach.Input,
-    onDismiss: () -> Unit,
-    onStart: (Int) -> Unit,
-) {
-    val options = remember(defaultMinutes) {
-        val base = defaultMinutes.coerceIn(1, 180)
-        (listOf(5, 10, 15, 20, 30) + base).distinct().sorted()
-    }
-    var selected by remember(defaultMinutes) { mutableIntStateOf(defaultMinutes.coerceIn(1, 180)) }
-    val budget = remember(selected, input) { StudyCoach.budget(input, selected) }
-    BlancallAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.today_plan_budget_title)) },
-        text = {
-            Column {
-                Text(
-                    stringResource(R.string.today_plan_budget_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    options.forEach { minutes ->
-                        FilterChip(
-                            selected = selected == minutes,
-                            onClick = { selected = minutes },
-                            label = { Text(stringResource(R.string.today_plan_minutes_unit, minutes)) }
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    when {
-                        budget.empty -> stringResource(R.string.today_plan_budget_empty)
-                        budget.articleIds.isNotEmpty() -> stringResource(
-                            R.string.today_plan_budget_result_articles,
-                            budget.articleIds.size,
-                            budget.estimatedMinutes
-                        )
-                        else -> stringResource(
-                            R.string.today_plan_budget_result_cards,
-                            budget.sentenceCardCount,
-                            budget.estimatedMinutes
-                        )
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onStart(selected) }, enabled = !budget.empty) {
-                Text(stringResource(R.string.today_plan_budget_start))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        }
-    )
 }

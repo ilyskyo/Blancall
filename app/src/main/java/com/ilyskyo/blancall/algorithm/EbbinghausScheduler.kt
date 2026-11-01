@@ -132,15 +132,23 @@ object EbbinghausScheduler {
      * 获取复习状态（FSRS 优先）：
      * 文章已有 FSRS 记忆状态时，到期判断完全由 FSRS 自适应调度决定；
      * 无 FSRS 状态（升级前的存量练习）时回退到模板间隔调度。
+     *
+     * [inPlan] 是「主动加入计划」（`fsrs_state.json` v3 的 enrolled）的标记：
+     * 没练过但已加入的文章要给出「待开始」，而不是和从没碰过的文章一样什么都不显示 ——
+     * 首页今日计划、任务流、提醒都已经把它当成今天的任务，列表不能是唯一看不见它的地方。
      */
     fun getReviewStatus(
         fsrsState: FsrsEngine.CardState?,
         records: List<PracticeRecord>,
         template: ReviewTemplate = ReviewTemplate.STANDARD,
         paused: Boolean = false,
+        inPlan: Boolean = false,
     ): ReviewStatus {
-        // 暂停优先于到期：暂停的文章不该在任何界面被读成「待复习」
-        if (paused && fsrsState != null && fsrsState.reviewCount > 0) {
+        // 练过的自动算在计划里（历史口径），enrolled 是 v3 增补的另一半
+        val planned = inPlan || (fsrsState != null && fsrsState.reviewCount > 0)
+        // 暂停优先于一切：v3 起「加入计划但还没练」也能暂停，不能再要求 reviewCount > 0，
+        // 否则暂停一个新成员，列表上什么都不会变（用户会以为暂停没生效）
+        if (paused && planned) {
             return ReviewStatus.PAUSED
         }
         // FSRS 状态存在且已有练习 → 完全采用 FSRS 调度
@@ -151,11 +159,19 @@ object EbbinghausScheduler {
             val remainingDays = ceil(remainingMs.toDouble() / MILLIS_PER_DAY).toInt().coerceAtLeast(0)
             return ReviewStatus.PENDING(remainingDays)
         }
-        return getReviewStatus(template, records)
+        // 升级前的存量练习（有记录、没 FSRS 状态）仍按旧口径算 —— 别把有历史的文章说成「待开始」
+        if (records.isNotEmpty()) {
+            return getReviewStatus(template, records)
+        }
+        return if (planned) ReviewStatus.PLANNED else ReviewStatus.NOT_STARTED
     }
 
     sealed class ReviewStatus {
         data object NOT_STARTED : ReviewStatus()
+
+        /** 已加入计划、一次还没练：今天该开始第一遍 */
+        data object PLANNED : ReviewStatus()
+
         data object DUE : ReviewStatus()
         data class PENDING(val daysLeft: Int) : ReviewStatus()
         data object COMPLETED : ReviewStatus()

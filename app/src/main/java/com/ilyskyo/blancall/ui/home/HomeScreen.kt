@@ -337,6 +337,11 @@ fun HomeScreen(
     // ── 文章标签：首页「最近使用 / 文章卡片」徽标展示 ──
     val tagStore = remember { TagStore.getInstance(context.filesDir) }
     val tagData by tagStore.data.collectAsState()
+    // 首帧 priming：TagStore 的内存快照初始为空，首页不读盘就永远不显示标签
+    // （设置/搜索/句子卡都会自行 priming，首页原先漏了这一步）。
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { tagStore.snapshot() }
+    }
     // 首次进入 priming：IO 读盘 → 发布 StateFlow（跨页面改动即时反映）
     LaunchedEffect(Unit) { withContext(Dispatchers.IO) { tagStore.snapshot() } }
     val chipTagsByArticle = remember(tagData) {
@@ -354,22 +359,31 @@ fun HomeScreen(
     val reviewTemplate = remember(reviewTemplateId) { ReviewTemplate.fromId(reviewTemplateId) }
     // FSRS 状态后台加载：首帧先渲染，加载完成后刷新，避免同步读文件卡顿
     var fsrsStates by remember { mutableStateOf(fsrsStore.allStates()) }
+    // 计划成员表（v3）：加入计划但还没练的文章也要进今日计划，否则「加入计划」只在任务流可见
+    var fsrsEnrolled by remember { mutableStateOf(fsrsStore.enrolledArticles()) }
     // 暂停快照：任务流里暂停/改期后首页必须立刻按新状态重算（revision 驱动刷新）
     var pauses by remember { mutableStateOf(fsrsStore.pausedArticles()) }
     var sentenceStates by remember { mutableStateOf(fsrsStore.allSentenceStates()) }
     val pausedArticleIds = remember(pauses) { pauses.keys }
+    val allArticlesPaused = articles.isNotEmpty() && articles.all { it.id in pausedArticleIds }
+    val sentenceEmptyHint = if (allArticlesPaused) {
+        stringResource(com.ilyskyo.blancall.R.string.today_plan_empty_paused, articles.size)
+    } else null
     val fsrsRevision by fsrsStore.revision.collectAsState()
     LaunchedEffect(fsrsRevision) {
         fsrsStore.awaitLoaded()
         fsrsStates = fsrsStore.allStates()
         pauses = fsrsStore.pausedArticles()
         sentenceStates = fsrsStore.allSentenceStates()
+        fsrsEnrolled = fsrsStore.enrolledArticles()
     }
 
     // ── 今日计划：唯一判定来自 StudyCoach.Snapshot，本页只取数与执行 ──
     val examEpochDay by ReminderPrefs.examEpochDayFlow.collectAsState()
     val goalMinutes by ReminderPrefs.goalMinutesFlow.collectAsState()
     val dailyPracticeGoal by ReminderPrefs.dailyPracticeGoalFlow.collectAsState()
+    // 计划卡上的「今日目标」进度行是否显示（面板里可关；关掉不影响提醒口径）
+    val showDailyGoalOnCard by ReminderPrefs.showDailyGoalOnCardFlow.collectAsState()
     var planNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -424,7 +438,7 @@ fun HomeScreen(
 
     // 静态部分按数据变化重算；分钟 tick 只重跑时间相关计数（不在 tick 里重扫记录）
     val prepared = remember(
-        articles, allRecords, fsrsStates, pauses, reviewTemplate,
+        articles, allRecords, fsrsStates, fsrsEnrolled, pauses, reviewTemplate,
         rawResumables, sentenceUi?.key,
     ) {
         StudyCoach.prepare(
@@ -437,6 +451,7 @@ fun HomeScreen(
                 template = reviewTemplate,
                 resumables = rawResumables,
                 todaySentenceKey = sentenceUi?.key,
+                enrolled = fsrsEnrolled,
             )
         )
     }
@@ -455,6 +470,10 @@ fun HomeScreen(
     val dueArticles = remember(snapshot, articles) {
         val dueIds = snapshot.input.dueArticles.mapTo(HashSet()) { it.articleId }
         articles.filter { it.id in dueIds }
+    }
+    // 其中「加入计划但一次没练过」的：卡片标题和行尾动作要换成「开始」，不能叫「复习」
+    val dueNewArticleIds = remember(snapshot) {
+        snapshot.input.dueArticles.filter { !it.hasPractice }.mapTo(HashSet()) { it.articleId }
     }
     val resumables = remember(snapshot) {
         snapshot.resumables.map {
@@ -693,7 +712,6 @@ fun HomeScreen(
 
             // ── 今日计划：一个入口、最多三件事，点第一条直接开练 ──
             TodayPlanCard(
-                input = snapshot.input,
                 plan = todayPlan,
                 dueArticleCount = snapshot.dueArticleCount,
                 pausedArticleCount = snapshot.pausedArticleCount,
@@ -704,6 +722,9 @@ fun HomeScreen(
                         StudyCoach.Kind.RESUME ->
                             navController.navigate("practice/${item.articleId}?resume=true")
                         StudyCoach.Kind.REVIEW_ARTICLE ->
+                            navController.navigate("practice/${item.articleId}?mode=SENTENCE")
+                        // 加入计划但没练过：和复习同一个入口，都是一次整篇练习
+                        StudyCoach.Kind.START_ARTICLE ->
                             navController.navigate("practice/${item.articleId}?mode=SENTENCE")
                         StudyCoach.Kind.WEAK_ARTICLE ->
                             navController.navigate(
@@ -719,21 +740,11 @@ fun HomeScreen(
                             navController.navigateToTab("list")
                     }
                 },
-                onStartBudget = { minutes ->
-                    val budget = StudyCoach.budget(snapshot.input, minutes)
-                    when {
-                        budget.articleIds.size > 1 -> navController.navigate(
-                            "cross/${budget.articleIds.joinToString(",")}?budget=$minutes"
-                        )
-                        budget.articleIds.size == 1 -> navController.navigate(
-                            "practice/${budget.articleIds.first()}?mode=SENTENCE&budget=$minutes"
-                        )
-                        budget.sentenceCardCount > 0 -> navController.navigate(
-                            "sentence_cards?limit=${budget.sentenceCardCount}"
-                        )
-                    }
-                },
-                onExamEpochDayChange = { ReminderPrefs.examEpochDay = it },
+                // 点卡片主体 → 英雄转场展开全部计划
+                onOpenAll = { navController.navigate("today_plan") },
+                todayPracticeCount = snapshot.input.todayPracticeCount,
+                dailyPracticeGoal = dailyPracticeGoal,
+                showDailyGoal = showDailyGoalOnCard,
             )
             // 与下方卡片画布的间距 = 卡片与卡片的视觉间距（画布横向卡距 12dp）：
             // 7dp + 首行卡片槽位的纵向内缩 5dp（HomeCardCanvas.SLOT_INSET）= 12dp。
@@ -844,6 +855,11 @@ fun HomeScreen(
                             articles = articles,
                             tagsByArticle = chipTagsByArticle,
                             dueArticles = dueArticles,
+                            dueNewArticleIds = dueNewArticleIds,
+                            dueOverdueCount = snapshot.overdueArticleCount,
+                            dueTodayCount = (snapshot.dueArticleCount - snapshot.overdueArticleCount)
+                                .coerceAtLeast(0),
+                            onOpenDueList = { navController.navigate("due_list") },
                             resumables = resumables,
                             recentArticles = recentArticles,
                             dateFormat = dateFormat,
@@ -867,6 +883,7 @@ fun HomeScreen(
                             onOpenArticle = { article, anchor ->
                                 navController.navigateReveal("reader/${article.id}", anchor)
                             },
+                            onOpenTag = { tagId -> navController.navigate("tag/$tagId") },
                             onViewAllArticles = { navController.navigateToTab("list") },
                             onAddArticle = { navController.navigate("import") },
                             onOpenClozeConfig = { articleId, configId ->
@@ -880,8 +897,17 @@ fun HomeScreen(
                             sentenceUi = sentenceUi?.copy(
                                 pendingDueCount = snapshot.sentenceOtherDue
                             ),
+                            sentenceEmptyHint = sentenceEmptyHint,
                             onOpenSentenceCard = { anchor ->
-                                navController.navigateReveal("sentence_cards", anchor)
+                                // 空态把用户直接送到真正能解决它的地方：
+                                // 没文章 → 导入；全暂停 → 任务流恢复；其余 → 句子卡空态会解释范围。
+                                when {
+                                    sentenceUi == null && articles.isEmpty() ->
+                                        navController.navigate("import")
+                                    sentenceUi == null && allArticlesPaused ->
+                                        navController.navigate("study_flow")
+                                    else -> navController.navigateReveal("sentence_cards", anchor)
+                                }
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -1332,22 +1358,7 @@ private fun HomeAddCardSheet(
     GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        dragHandle = {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    Modifier
-                        .width(36.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                )
-            }
-        }
+        // 抓手用 GlassModalBottomSheet 的全局默认短横线，不再各面板自绘。
     ) {
         Column(
             Modifier
@@ -1416,22 +1427,7 @@ private fun HomeArticlePickerSheet(
     GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        dragHandle = {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    Modifier
-                        .width(36.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                )
-            }
-        }
+        // 抓手用 GlassModalBottomSheet 的全局默认短横线，不再各面板自绘。
     ) {
         Column(
             Modifier

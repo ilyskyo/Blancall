@@ -8,9 +8,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.ilyskyo.blancall.MainActivity
 import com.ilyskyo.blancall.R
 import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.Date
 
 /**
@@ -61,6 +65,9 @@ object NotificationHelper {
     /** 分组摘要 ID（与各 reason 的 ID 不重叠） */
     private const val GROUP_SUMMARY_ID = 2000
 
+    /** 测试通知 ID：不与任何 reason / 摘要重叠，重复点「发送测试通知」只更新这一条 */
+    private const val TEST_NOTIFICATION_ID = 3000
+
     /** 通知分组键 */
     private const val GROUP_KEY = "study"
 
@@ -89,9 +96,9 @@ object NotificationHelper {
         when (reason) {
             ReminderReason.NoStudyToday -> {
                 title = context.getString(R.string.notif_no_study_title)
-                // count = 连续天数；有连续记录才说「复习一下」，否则说「开始第一次」
+                // count = 连续天数；有记录时把天数写进正文，否则用「第一次」的说法
                 body = if (item.count > 0) {
-                    context.getString(R.string.notif_no_study_body)
+                    context.getString(R.string.notif_no_study_body, item.count)
                 } else {
                     context.getString(R.string.notif_no_study_body_first)
                 }
@@ -149,6 +156,27 @@ object NotificationHelper {
                 }
                 // 有具体文章就直接进练习；只有句子到期时去句子卡
                 navAction = if (item.articleId > 0) NAV_PRACTICE else NAV_SENTENCE_CARDS
+                articleId = item.articleId
+            }
+
+            ReminderReason.StartArticle -> {
+                title = context.getString(R.string.notif_start_article_title)
+                val name = item.articleTitle.ifBlank { context.getString(R.string.untitled_article) }
+                body = if (item.articleTitle.isNotBlank()) {
+                    if (item.count <= 1) {
+                        context.getString(R.string.notif_start_article_named_one, name)
+                    } else {
+                        res.getQuantityString(
+                            R.plurals.notif_start_article_named, item.count, name, item.count
+                        )
+                    }
+                } else {
+                    res.getQuantityString(
+                        R.plurals.notif_start_article_body, item.count, item.count
+                    )
+                }
+                // 未开始直接进第一次练习，不是去复习
+                navAction = NAV_PRACTICE
                 articleId = item.articleId
             }
 
@@ -214,9 +242,19 @@ object NotificationHelper {
         // 语义影响远大于一个按钮的收益。只有已经指向具体内容（文章/句子卡）时才挂
         // ——首页类提醒没有明确的第一件，挂上去只会多一次无效点击。
         if (navAction != NAV_HOME) {
+            // 动作词必须跟提醒语义一致：继续练习 / 开始学习 / 开始复习 / 查看任务
+            val actionLabel = when (reason) {
+                ReminderReason.StartArticle -> R.string.notif_action_start_learning
+                ReminderReason.IncompletePractice -> R.string.notif_action_resume
+                ReminderReason.PracticeAccuracy -> R.string.go_practice
+                ReminderReason.TaskDueSoon, ReminderReason.ForgettingSoon ->
+                    R.string.notif_action_view_task
+                ReminderReason.SentenceCardDue -> R.string.notif_action_sentence
+                else -> R.string.notif_action_start
+            }
             builder.addAction(
                 R.drawable.ic_notification,
-                context.getString(R.string.notif_action_start),
+                context.getString(actionLabel),
                 actionIntent(context, navAction, articleId, reason)
             )
         }
@@ -244,6 +282,67 @@ object NotificationHelper {
             .build()
 
         manager(context)?.notify(GROUP_SUMMARY_ID, summary)
+    }
+
+    /**
+     * 发一条测试通知，返回是否真的投递出去。
+     *
+     * 与每日提醒共用同一套权限/渠道判断：系统通知被关、或所有提醒渠道都被关时返回 false，
+     * 由设置页明确提示「去开启」，而不是制造「已发送」的假象。
+     * 不参与 [ReminderStateStore] 去重，也不受免打扰限制——这是用户主动点的即时反馈。
+     */
+    fun showTest(context: Context, nextAtText: String): Boolean {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
+        val channelId = NotificationChannels.firstEnabledReminderChannel(context) ?: return false
+        val nm = manager(context) ?: return false
+        val body = context.getString(R.string.reminder_test_body, nextAtText)
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.reminder_test_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(contentIntent(context, NAV_HOME, -1L, null))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        nm.notify(TEST_NOTIFICATION_ID, builder.build())
+        return true
+    }
+
+    /**
+     * 「下次提醒」的本地化时间。
+     *
+     * 用系统推荐的日期骨架而不是硬编码 pattern：12/24 小时制跟着语言走
+     * （英文 8:00 PM、中文 20:00），星期与月份名也不会混进另一种语言。
+     */
+    fun formatReminderTime(context: Context, at: LocalDateTime): String {
+        val locale = context.resources.configuration.locales[0]
+        // 跟随系统的 12/24 小时制；只靠骨架里的 j 会按语言默认走，
+        // 出现「英文界面 + 系统 24 小时制」时与设置页的时间行不一致。
+        val skeleton = if (android.text.format.DateFormat.is24HourFormat(context)) {
+            "MMMdEEHmm"
+        } else {
+            "MMMdEEhm"
+        }
+        val pattern = android.text.format.DateFormat.getBestDateTimePattern(locale, skeleton)
+        val millis = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        return SimpleDateFormat(pattern, locale).format(Date(millis))
+    }
+
+    /**
+     * 只显示「几点」时的格式化（提醒时间行、免打扰起止）。
+     *
+     * 用 [android.text.format.DateFormat.getTimeFormat] 而不是手写 `%02d:%02d`：
+     * 它与「下次提醒」一样跟随系统 12/24 小时制。否则英文界面上方写着 8:00 PM、
+     * 下面一行却是 20:00，同一时刻出现两种写法。
+     */
+    fun formatTimeOfDay(context: Context, minutesOfDay: Int): String {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, (minutesOfDay / 60).coerceIn(0, 23))
+            set(java.util.Calendar.MINUTE, (minutesOfDay % 60).coerceIn(0, 59))
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return android.text.format.DateFormat.getTimeFormat(context).format(calendar.time)
     }
 
     private fun contentIntent(

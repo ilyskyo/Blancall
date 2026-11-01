@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.util.SecurePrefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,17 +24,15 @@ object AppPrefs {
     /** 段落首行自动缩进开关（导入时给未缩进段落补两格；关闭后不再新增缩进） */
     val autoIndentEnabledFlow: StateFlow<Boolean> = _autoIndentEnabledFlow.asStateFlow()
 
-    private val _accentColorFlow = MutableStateFlow(0)
-    /** 主题色索引（0=靛蓝 1=海蓝 2=翠绿 3=暖橙 4=玫红 5=石墨） */
-    val accentColorFlow: StateFlow<Int> = _accentColorFlow.asStateFlow()
+    /** 主题色索引（0=靛蓝 … 5=石墨）：权威来源已迁到 [AppearanceStore]（要能被备份带走） */
+    val accentColorFlow: StateFlow<Int> get() = AppearanceStore.accentColorFlow
 
     private val _subtitleFlow = MutableStateFlow("Fill the blank, recall the knowledge.")
     /** 首页副标题（默认品牌标语，可自定义） */
     val subtitleFlow: StateFlow<String> = _subtitleFlow.asStateFlow()
 
-    private val _lightBeigeBackgroundFlow = MutableStateFlow(false)
-    /** 浅色模式米黄底色开关：开启使用暖米黄底色，关闭使用纯白底色（深色模式不受影响） */
-    val lightBeigeBackgroundFlow: StateFlow<Boolean> = _lightBeigeBackgroundFlow.asStateFlow()
+    /** 浅色模式米黄底色开关：权威来源已迁到 [AppearanceStore] */
+    val lightBeigeBackgroundFlow: StateFlow<Boolean> get() = AppearanceStore.lightBeigeBackgroundFlow
 
     private val _navLiquidGlassFlow = MutableStateFlow(true)
     /** 底部导航栏液态玻璃开关：关闭后玻璃层隐藏，回退纯色底（性能/功耗优先） */
@@ -178,13 +177,23 @@ object AppPrefs {
     /** 句子卡片抽句范围文章筛选：选中的文章 id 集合（空 = 文章维度不限；与标签维度组合见 resolveSentencePool） */
     val sentenceArticleFilterFlow: StateFlow<Set<Long>> = _sentenceArticleFilterFlow.asStateFlow()
 
+    // ── 句子卡片的「点按翻页」动效（特性设置）──
+    // 只作用于**点评级按钮换卡**那一下；上下滑动翻卡是手势本体，不可关也不可调 ——
+    // 关掉它等于把「滑走一张」这件事本身去掉（见 SentenceCardScreen 的 dragY 那一套）。
+
+    private val _sentenceTapExitEnabledFlow = MutableStateFlow(true)
+    /** 点按评级换卡时是否播放「旧卡向上飞出」的动画；关 = 直接换成下一张 */
+    val sentenceTapExitEnabledFlow: StateFlow<Boolean> = _sentenceTapExitEnabledFlow.asStateFlow()
+
+    private val _sentenceTapExitSpeedFlow = MutableStateFlow(Motion.TAP_EXIT_DEFAULT_SPEED)
+    /** 点按飞出速率：0f 最慢 … 1f 最快（映射见 Motion.cardTapExitSeconds） */
+    val sentenceTapExitSpeedFlow: StateFlow<Float> = _sentenceTapExitSpeedFlow.asStateFlow()
+
     @SuppressLint("ApplySharedPref")
     fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         _autoIndentEnabledFlow.value = prefs.getBoolean("auto_indent_enabled", true)
-        _accentColorFlow.value = prefs.getInt("accent_color", 0)
         _subtitleFlow.value = prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge."
-        _lightBeigeBackgroundFlow.value = prefs.getBoolean("light_beige_background", false)
         _navLiquidGlassFlow.value = prefs.getBoolean("nav_liquid_glass", true)
         _practiceBackWarningDisabledFlow.value = prefs.getBoolean("practice_back_warning_disabled", false)
         _reviewTemplateFlow.value = prefs.getString("review_template", "standard") ?: "standard"
@@ -212,6 +221,9 @@ object AppPrefs {
             ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         _sentenceClozeEnabledFlow.value = prefs.getBoolean("sentence_cloze_enabled", true)
         _sentenceClozeNewEnabledFlow.value = prefs.getBoolean("sentence_cloze_new_enabled", false)
+        _sentenceTapExitEnabledFlow.value = prefs.getBoolean("sentence_tap_exit_enabled", true)
+        _sentenceTapExitSpeedFlow.value =
+            prefs.getFloat("sentence_tap_exit_speed", Motion.TAP_EXIT_DEFAULT_SPEED).coerceIn(0f, 1f)
         _hintLengthEnabledFlow.value = prefs.getBoolean("hint_length_enabled", true)
         _hintContentEnabledFlow.value = prefs.getBoolean("hint_content_enabled", true)
         _hintPunctuationEnabledFlow.value = prefs.getBoolean("hint_punctuation_enabled", false)
@@ -247,13 +259,8 @@ object AppPrefs {
         }
 
     var accentColorIndex: Int
-        get() = if (::prefs.isInitialized) prefs.getInt("accent_color", 0) else 0
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putInt("accent_color", value) }
-                _accentColorFlow.value = value
-            }
-        }
+        get() = AppearanceStore.state.value.accentIndex
+        set(value) { AppearanceStore.setAccentIndex(value) }
 
     var subtitle: String
         get() = if (::prefs.isInitialized) prefs.getString("subtitle", "Fill the blank, recall the knowledge.") ?: "Fill the blank, recall the knowledge." else "Fill the blank, recall the knowledge."
@@ -289,6 +296,37 @@ object AppPrefs {
                 _sentenceClozeNewEnabledFlow.value = value
             }
         }
+
+    /**
+     * 点按评级换卡时是否播放「旧卡向上飞出」的动画。
+     * 只影响点击 → 不影响上下滑动翻卡（那是手势本体，没有开关）。
+     */
+    var sentenceTapExitEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean("sentence_tap_exit_enabled", true) else true
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit { putBoolean("sentence_tap_exit_enabled", value) }
+                _sentenceTapExitEnabledFlow.value = value
+            }
+        }
+
+    /** 点按飞出速率读数（0f 最慢 … 1f 最快）；落盘请用 [previewSentenceTapExitSpeed] + [flushSentenceTapExitSpeed] */
+    val sentenceTapExitSpeed: Float
+        get() = if (::prefs.isInitialized) _sentenceTapExitSpeedFlow.value else Motion.TAP_EXIT_DEFAULT_SPEED
+
+    /**
+     * 拖动中只改内存：每帧落盘会把 UI 卡住（AtomicFiles 每次 fsync + rename），
+     * 与 [AppearanceStore.preview] 同一套纪律。松手时调 [flushSentenceTapExitSpeed]。
+     */
+    fun previewSentenceTapExitSpeed(speed: Float) {
+        _sentenceTapExitSpeedFlow.value = speed.coerceIn(0f, 1f)
+    }
+
+    /** 把拖动期间的速率写回磁盘（只在 onValueChangeFinished 调一次） */
+    fun flushSentenceTapExitSpeed() {
+        if (!::prefs.isInitialized) return
+        prefs.edit { putFloat("sentence_tap_exit_speed", _sentenceTapExitSpeedFlow.value.coerceIn(0f, 1f)) }
+    }
 
     /** 挖空旁是否标出字数 */
     var hintLengthEnabled: Boolean
@@ -335,15 +373,14 @@ object AppPrefs {
         _coachSeenFlow.value = emptySet()
     }
 
-    /** 浅色模式米黄底色开关（深色模式始终纯黑） */
+    /**
+     * 浅色模式米黄底色开关（深色模式始终纯黑）。
+     *
+     * ⚠️ 已迁至 [AppearanceStore]（要能被一键备份带走），这里保留转发只为不打断旧调用点。
+     */
     var lightBeigeBackgroundEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("light_beige_background", false) else false
-        set(value) {
-            if (::prefs.isInitialized) {
-                prefs.edit { putBoolean("light_beige_background", value) }
-                _lightBeigeBackgroundFlow.value = value
-            }
-        }
+        get() = AppearanceStore.state.value.beigeBackground
+        set(value) { AppearanceStore.update { it.copy(beigeBackground = value) } }
 
     /** 底部导航栏液态玻璃开关（关闭后回退纯色底） */
     var navLiquidGlassEnabled: Boolean
@@ -803,6 +840,43 @@ object AppPrefs {
     fun addReadingSeconds(articleId: Long, seconds: Long) {
         if (::prefs.isInitialized && seconds > 0) {
             prefs.edit { putLong("reading_sec_$articleId", getReadingSeconds(articleId) + seconds) }
+        }
+    }
+
+    // ── 个人阅读速度（剩余时间估算的依据）──
+    // 存"速度 + 样本量"而不是只存速度：样本量决定这个速度值有多可信（UI 要据此
+    // 区分「默认值」与「按你的阅读记录」），也是下次融合新样本时的权重依据。
+    // 这三项属于设备侧行为统计，不进一键备份的固定清单（备份里带的是学习数据本身）。
+
+    /** 个人阅读速度（标准字/分钟）；<= 0 = 尚未校准，调用方落到 350 默认值 */
+    fun getReadingSpeedCpm(): Float =
+        if (::prefs.isInitialized) prefs.getFloat("reading_speed_cpm", 0f) else 0f
+
+    /** 累计有效阅读秒数（只统计"正在读"的时间） */
+    fun getReadingSpeedSampleSeconds(): Long =
+        if (::prefs.isInitialized) prefs.getLong("reading_speed_sample_sec", 0L) else 0L
+
+    /** 累计已读标准字数 */
+    fun getReadingSpeedSampleChars(): Float =
+        if (::prefs.isInitialized) prefs.getFloat("reading_speed_sample_chars", 0f) else 0f
+
+    /** 写回融合后的速度与累计样本量 */
+    fun setReadingSpeed(cpm: Float, sampleSeconds: Long, sampleChars: Float) {
+        if (!::prefs.isInitialized) return
+        prefs.edit {
+            putFloat("reading_speed_cpm", cpm.coerceAtLeast(0f))
+            putLong("reading_speed_sample_sec", sampleSeconds.coerceAtLeast(0L))
+            putFloat("reading_speed_sample_chars", sampleChars.coerceAtLeast(0f))
+        }
+    }
+
+    /** 重置阅读速度统计（回到默认速度，样本清零） */
+    fun resetReadingSpeed() {
+        if (!::prefs.isInitialized) return
+        prefs.edit {
+            remove("reading_speed_cpm")
+            remove("reading_speed_sample_sec")
+            remove("reading_speed_sample_chars")
         }
     }
 }

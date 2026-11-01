@@ -36,7 +36,7 @@ import com.ilyskyo.blancall.ui.theme.isBlancallDark
  *
  * 交互：indication 设为 null，彻底取消点击矩形波纹/焦点框，像系统原生开关那样点按只切换状态。
  *
- * @param accent 开启态轨道色（阅读页等深色场景传强调色，默认主题主色）
+ * @param accent 开启态轨道色（文章详情页等深色场景传强调色，默认主题主色）
  */
 @Composable
 fun GlassSwitch(

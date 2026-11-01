@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -160,6 +161,7 @@ object PracticeLiveUpdate {
     }
 
     /** Android 16：用 ProgressStyle 参与 Live Updates 提升；默写没有逐空进度，用文字卡 */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
     private fun buildLiveUpdate(
         context: Context,
         snapshot: ExitSnapshot,

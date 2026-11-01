@@ -437,10 +437,15 @@ fun CustomClozeEditScreen(
             )
             // ── 顶栏：返回 + 标题 + 保存（常驻右上角，SettingsScreen 同款规范）──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BackButton(onClick = { requestBack() })
+                // 行高被「标题+计数」两行文字撑到 46dp，40dp 圆居中会往下沉 3dp：
+                // 贴顶钉住，键顶边才和全应用其它顶栏一样落在 12dp
+                BackButton(
+                    onClick = { requestBack() },
+                    modifier = Modifier.align(Alignment.Top),
+                )
                 Spacer(Modifier.width(12.dp))
                 // 标题 + 计数：计数放进权重列（宽度随空数变化），不会挤动右侧按钮组
                 Column(Modifier.weight(1f)) {

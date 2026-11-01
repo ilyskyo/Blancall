@@ -96,7 +96,7 @@ import com.ilyskyo.blancall.ui.common.combinedPress
 import com.ilyskyo.blancall.ui.practice.pinchZoom
 import com.ilyskyo.blancall.ui.theme.AppPrefs
 import com.ilyskyo.blancall.ui.theme.Macaron
-import com.ilyskyo.blancall.ui.theme.ThemeManager
+import com.ilyskyo.blancall.ui.theme.rememberAppIsDark
 import com.ilyskyo.blancall.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -132,13 +132,7 @@ fun MaskConfigEditScreen(
     val bodyAnchor = rememberCoachAnchor()
 
     // ── 主题明暗与阅读排版（与 ReadingModeScreen 同一路由，保证"像阅读界面"）──
-    val themeMode by ThemeManager.themeMode.collectAsState()
-    val systemDark = isSystemInDarkTheme()
-    val isDark = when (themeMode) {
-        ThemeMode.SYSTEM -> systemDark
-        ThemeMode.DARK -> true
-        ThemeMode.LIGHT -> false
-    }
+    val isDark = rememberAppIsDark()
     val appBeige by AppPrefs.lightBeigeBackgroundFlow.collectAsState()
     val fontPx by AppPrefs.readingFontFlow.collectAsState()
     val lineHeight by AppPrefs.readingLineHeightFlow.collectAsState()
@@ -467,7 +461,7 @@ fun MaskConfigEditScreen(
         ) {
             // ── 顶栏：返回 + 标题 + N 块遮挡 + 清空 + 保存 ──
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { requestBack() })
@@ -583,7 +577,7 @@ fun MaskConfigEditScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    // 双指捏合调整字号（与阅读页 / 练习页同款手势）：字号写共享的
+                    // 双指捏合调整字号（与文章详情页 / 练习页同款手势）：字号写共享的
                     // AppPrefs.readingFont，本页用 readingFontFlow 实时渲染，捏合即所见即所得；
                     // pinchZoom 从不消费单指事件，滚动交给下层 LazyColumn，互不冲突。
                     .pinchZoom { zoom ->

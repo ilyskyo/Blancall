@@ -23,7 +23,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -216,7 +219,9 @@ fun DailyTrendChart(
 fun CalendarHeatmap(
     range: DateRange,
     countOn: (LocalDate) -> Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 点按某一天：用于从日历下钻到当日练习记录；null = 纯展示 */
+    onDayClick: ((LocalDate) -> Unit)? = null,
 ) {
     // 一周从哪天开始由**界面语言**决定（中/日/韩/俄从周一、英文从周日）。
     // 必须读 LocalConfiguration 而不是 Locale.getDefault()：低版本的 app 语言是按
@@ -325,10 +330,21 @@ fun CalendarHeatmap(
                     }
                 }
                 Spacer(Modifier.width(2.dp))
+                val stepPx = with(LocalDensity.current) { (cell + spacing).toPx() }
                 Canvas(
                     modifier = Modifier
                         .width(gridW)
                         .height(gridH)
+                        .then(
+                            if (onDayClick == null) Modifier
+                            else Modifier.pointerInput(grid, stepPx, onDayClick) {
+                                detectTapGestures { offset ->
+                                    val col = (offset.x / stepPx).toInt()
+                                    val row = (offset.y / stepPx).toInt()
+                                    grid.getOrNull(col)?.getOrNull(row)?.let { onDayClick(it.date) }
+                                }
+                            }
+                        )
                 ) {
                     val sp = spacing.toPx()
                     val side = cell.toPx()

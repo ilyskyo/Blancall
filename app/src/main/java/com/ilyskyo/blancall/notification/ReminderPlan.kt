@@ -34,6 +34,8 @@ enum class ReminderReason {
     ForgettingSoon,
     /** 最近一次练习正确率偏低，提醒尽快复习错题 */
     PracticeAccuracy,
+    /** 计划中还没练过的文章：提醒开始第一遍，不是复习 */
+    StartArticle,
 }
 
 /**
@@ -47,6 +49,9 @@ internal const val PRACTICE_ACCURACY_REVIEW_THRESHOLD = 80
 
 /** 最近一次练习超过该时长就不再拿它说事：提醒的是「刚刚那次」，不是陈年旧账。 */
 internal const val PRACTICE_ACCURACY_FRESH_MS: Long = 24L * 60 * 60 * 1000
+
+/** 一天的分钟数：免打扰窗口的坐标系。 */
+internal const val MINUTES_PER_DAY: Int = 24 * 60
 
 /** 即将到期的一篇任务（由 Worker 取数，判定层只负责选中最早的那篇）。 */
 data class ReminderUpcomingTask(
@@ -78,7 +83,7 @@ data class ReminderLastPractice(
  *
  * @param articleId 有具体文章时给出，用于深链（无则为 -1）
  * @param count 相关数量：到期项数 / 到期句数 / 还差几次 / 连续天数 / 薄弱条数（含义随 reason 而定）
- * @param articleTitle 具体到哪一篇：到期复习取最早到期的一篇，未完成 / 预测 / 正确率取对应文章
+ * @param articleTitle 具体到哪一篇：到期复习取最早到期的一篇，未开始取最早到计划开始时间的一篇；未完成 / 预测 / 正确率取对应文章
  * @param dueAt [ReminderReason.TaskDueSoon] 的到期时间戳
  * @param retentionPercent [ReminderReason.ForgettingSoon] 的当前保留率（0-100）
  * @param accuracyPercent [ReminderReason.PracticeAccuracy] 的正确率（0-100）
@@ -99,8 +104,8 @@ data class ReminderPlanItem(
  * 「此刻该发哪些提醒」的唯一判定处：纯函数、无 Android 依赖，供 JVM 单测直接覆盖。
  *
  * ## 优先级（从高到低）
- * `IncompletePractice > DueReview > PracticeAccuracy > ForgettingSoon > TaskDueSoon >
- *  DailyGoalMissed > NoStudyToday > WeakContent > SentenceCardDue > StreakContinue`
+ * `IncompletePractice > DueReview > StartArticle > PracticeAccuracy > ForgettingSoon >
+ * TaskDueSoon > DailyGoalMissed > NoStudyToday > WeakContent > SentenceCardDue > StreakContinue`
  *
  * 拆成三层理解：
  * - **行动召唤层**（前三 + 目标/未学习）：都指向「现在去做点什么」，互斥，最多产出一条；
@@ -112,7 +117,7 @@ data class ReminderPlanItem(
  * ## 去重 / 互斥规则与理由
  * - **R1 今天已练过 → 不发 `NoStudyToday`**：状态自相矛盾，用户明明练了还被告知「今天没练」。
  * - **R2 有到期复习 → 不发 `NoStudyToday`**：两者语义重叠（都等于「去练习」），同时发是双重打扰；
- *   且到期复习信息量更大，留下它、丢掉泛化的那条。
+ *   且到期复习信息量更大，留下它、丢掉泛化的那条。只有未开始文章时同理，由 `StartArticle` 顶掉泛化提醒。
  * - **R3 有未完成练习 → 不发 `NoStudyToday` 与 `DailyGoalMissed`**：用户已有一个明确、成本更低的
  *   进行中目标，再叠加泛化召唤只会造成选择困难；先把开了头的做完。
  * - **R4 `DailyGoalMissed` 仅在今天已练过、且目标 >0、且未达标时产出**：没练过时 `NoStudyToday`
@@ -147,14 +152,15 @@ object ReminderPlan {
     private val PRIORITY: Map<ReminderReason, Int> = mapOf(
         ReminderReason.IncompletePractice to 0,
         ReminderReason.DueReview to 1,
-        ReminderReason.PracticeAccuracy to 2,
-        ReminderReason.ForgettingSoon to 3,
-        ReminderReason.TaskDueSoon to 4,
-        ReminderReason.DailyGoalMissed to 5,
-        ReminderReason.NoStudyToday to 6,
-        ReminderReason.WeakContent to 7,
-        ReminderReason.SentenceCardDue to 8,
-        ReminderReason.StreakContinue to 9,
+        ReminderReason.StartArticle to 2,
+        ReminderReason.PracticeAccuracy to 3,
+        ReminderReason.ForgettingSoon to 4,
+        ReminderReason.TaskDueSoon to 5,
+        ReminderReason.DailyGoalMissed to 6,
+        ReminderReason.NoStudyToday to 7,
+        ReminderReason.WeakContent to 8,
+        ReminderReason.SentenceCardDue to 9,
+        ReminderReason.StreakContinue to 10,
     )
 
     /**
@@ -164,9 +170,11 @@ object ReminderPlan {
      * @param hasStudiedToday 今天是否已练过
      * @param todayCount 今天已练习次数
      * @param dailyGoal 每日练习次数目标（<=0 视为未设置）
-     * @param dueArticleCount 到期文章数
+     * @param dueArticleCount 已练过、到期待复习的文章数（不含未开始成员）
+     * @param dueNewArticleCount 计划中还没练过、已到计划开始时间的文章数
      * @param dueSentenceCount 到期句子数
-     * @param firstDueArticleId 最早到期的那篇文章 id（无则 -1），用于深链
+     * @param firstDueArticleId 最早到期的复习文章 id（无则 -1），用于深链
+     * @param firstNewArticleId 最早到计划开始时间的未练文章 id（无则 -1），用于深链
      * @param sentenceCardPracticedToday 句子卡今天是否已练
      * @param hasIncompletePractice 是否有未完成的练习
      * @param incompleteArticleId 未完成练习所属文章 id（无则 -1）
@@ -186,8 +194,10 @@ object ReminderPlan {
         todayCount: Int,
         dailyGoal: Int,
         dueArticleCount: Int,
+        dueNewArticleCount: Int = 0,
         dueSentenceCount: Int,
         firstDueArticleId: Long = -1L,
+        firstNewArticleId: Long = -1L,
         sentenceCardPracticedToday: Boolean,
         hasIncompletePractice: Boolean,
         incompleteArticleId: Long = -1L,
@@ -195,6 +205,7 @@ object ReminderPlan {
         weakCount: Int = 0,
         streakDays: Int = 0,
         dueArticleTitle: String = "",
+        firstNewArticleTitle: String = "",
         incompleteArticleTitle: String = "",
         upcomingTasks: List<ReminderUpcomingTask> = emptyList(),
         forgettingRisks: List<ReminderForgettingRisk> = emptyList(),
@@ -203,7 +214,7 @@ object ReminderPlan {
     ): List<ReminderPlanItem> {
         // now 只用于「最近一次练习是否还新鲜」：跨天去重由 ReminderStateStore 用 DayBucket 负责。
         // 时钟由调用方传入，测试完全不依赖真实时间。
-        val dueCount = dueArticleCount + dueSentenceCount
+        val dueReviewCount = dueArticleCount + dueSentenceCount
         val out = ArrayList<ReminderPlanItem>(2)
         val freshLowAccuracy = lastPractice?.takeIf {
             it.accuracyPercent < PRACTICE_ACCURACY_REVIEW_THRESHOLD &&
@@ -221,12 +232,21 @@ object ReminderPlan {
                     articleTitle = incompleteArticleTitle,
                 )
 
-            dueCount > 0 && ReminderReason.DueReview in allowReasons ->
+            dueReviewCount > 0 && ReminderReason.DueReview in allowReasons ->
                 out += ReminderPlanItem(
                     ReminderReason.DueReview,
                     articleId = firstDueArticleId,
-                    count = dueCount,
+                    count = dueReviewCount,
                     articleTitle = dueArticleTitle,
+                )
+
+            // 未开始不是复习：单独一条原因，避免「第一次复习」和错误的「到期」计数
+            dueNewArticleCount > 0 && ReminderReason.StartArticle in allowReasons ->
+                out += ReminderPlanItem(
+                    ReminderReason.StartArticle,
+                    articleId = firstNewArticleId,
+                    count = dueNewArticleCount,
+                    articleTitle = firstNewArticleTitle,
                 )
 
             // R4b：刚练砸了的那一篇，比「再练几次凑目标」更具体、更该先做
@@ -298,17 +318,20 @@ object ReminderPlan {
     }
 
     /**
-     * 免打扰判定：当前小时是否落在 [startHour, endHour) 的静默窗口内（纯函数，便于单测）。
+     * 免打扰判定：当前时刻是否落在 [startMinute, endMinute) 的静默窗口内（纯函数，便于单测）。
      *
-     * 支持跨午夜（如 22 → 8 表示 22:00 到次日 08:00 静默）：`start > end` 时窗口是两段之并。
+     * 参数都是「当天第几分钟」（0–1439）。用分钟而不是小时：设置页的时间选择器是分钟级，
+     * 只判到小时会让 07:30 落进 08:00 结束的窗口，边界上差半小时。
+     *
+     * 支持跨午夜（如 1320 → 480 表示 22:00 到次日 08:00 静默）：`start > end` 时窗口是两段之并。
      * `start == end` 视为**不静默**（而不是静默一整天）：配置写坏时宁可多提醒一次，
      * 也不要让用户从此再也收不到提醒。
      */
-    fun isQuietHour(hour: Int, startHour: Int, endHour: Int): Boolean {
-        val h = hour.coerceIn(0, 23)
-        val s = startHour.coerceIn(0, 23)
-        val e = endHour.coerceIn(0, 23)
+    fun isQuietMinute(minuteOfDay: Int, startMinute: Int, endMinute: Int): Boolean {
+        val m = minuteOfDay.coerceIn(0, MINUTES_PER_DAY - 1)
+        val s = startMinute.coerceIn(0, MINUTES_PER_DAY - 1)
+        val e = endMinute.coerceIn(0, MINUTES_PER_DAY - 1)
         if (s == e) return false
-        return if (s < e) h in s until e else h >= s || h < e
+        return if (s < e) m in s until e else m >= s || m < e
     }
 }

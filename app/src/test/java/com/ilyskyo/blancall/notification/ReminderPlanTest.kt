@@ -22,8 +22,10 @@ class ReminderPlanTest {
         todayCount: Int = 0,
         dailyGoal: Int = 0,
         dueArticleCount: Int = 0,
+        dueNewArticleCount: Int = 0,
         dueSentenceCount: Int = 0,
         firstDueArticleId: Long = -1L,
+        firstNewArticleId: Long = -1L,
         sentenceCardPracticedToday: Boolean = true,
         hasIncompletePractice: Boolean = false,
         incompleteArticleId: Long = -1L,
@@ -31,6 +33,7 @@ class ReminderPlanTest {
         weakCount: Int = 0,
         streakDays: Int = 0,
         dueArticleTitle: String = "",
+        firstNewArticleTitle: String = "",
         incompleteArticleTitle: String = "",
         upcomingTasks: List<ReminderUpcomingTask> = emptyList(),
         forgettingRisks: List<ReminderForgettingRisk> = emptyList(),
@@ -42,8 +45,10 @@ class ReminderPlanTest {
         todayCount = todayCount,
         dailyGoal = dailyGoal,
         dueArticleCount = dueArticleCount,
+        dueNewArticleCount = dueNewArticleCount,
         dueSentenceCount = dueSentenceCount,
         firstDueArticleId = firstDueArticleId,
+        firstNewArticleId = firstNewArticleId,
         sentenceCardPracticedToday = sentenceCardPracticedToday,
         hasIncompletePractice = hasIncompletePractice,
         incompleteArticleId = incompleteArticleId,
@@ -51,6 +56,7 @@ class ReminderPlanTest {
         weakCount = weakCount,
         streakDays = streakDays,
         dueArticleTitle = dueArticleTitle,
+        firstNewArticleTitle = firstNewArticleTitle,
         incompleteArticleTitle = incompleteArticleTitle,
         upcomingTasks = upcomingTasks,
         forgettingRisks = forgettingRisks,
@@ -96,6 +102,62 @@ class ReminderPlanTest {
         val plans = decide(hasStudiedToday = false, dueSentenceCount = 3)
         assertEquals(listOf(ReminderReason.DueReview), plans.map { it.reason })
         assertEquals(3, plans.single().count)
+    }
+
+    @Test
+    fun `只有未开始文章时发开始第一遍而不是到期复习`() {
+        val plans = decide(
+            hasStudiedToday = false,
+            dueNewArticleCount = 2,
+            firstNewArticleId = 8L,
+            firstNewArticleTitle = "还没练过",
+        )
+        assertEquals(listOf(ReminderReason.StartArticle), plans.map { it.reason })
+        val item = plans.single()
+        assertEquals("未开始数量应原样带出", 2, item.count)
+        assertEquals("最早到计划开始时间的一篇要带出去做深链", 8L, item.articleId)
+        assertEquals("还没练过", item.articleTitle)
+    }
+
+    @Test
+    fun `未开始不会退化成今日未学习`() {
+        val plans = decide(
+            hasStudiedToday = false,
+            dueNewArticleCount = 1,
+            firstNewArticleId = 8L,
+            firstNewArticleTitle = "还没练过",
+        )
+        assertTrue(
+            "已经有一篇明确可以开始，泛化提醒只会让人多选一次：$plans",
+            plans.none { it.reason == ReminderReason.NoStudyToday },
+        )
+    }
+
+    @Test
+    fun `复习到期优先于未开始`() {
+        val plans = decide(
+            hasStudiedToday = false,
+            dueArticleCount = 1,
+            firstDueArticleId = 7L,
+            dueArticleTitle = "该复习",
+            dueNewArticleCount = 2,
+            firstNewArticleId = 8L,
+            firstNewArticleTitle = "还没练过",
+        )
+        assertEquals(listOf(ReminderReason.DueReview), plans.map { it.reason })
+        assertEquals(7L, plans.single().articleId)
+        assertEquals("复习通知的 count 不应混入未开始文章", 1, plans.single().count)
+    }
+
+    @Test
+    fun `开始第一遍被禁用时回退今日未学习`() {
+        val plans = decide(
+            hasStudiedToday = false,
+            dueNewArticleCount = 1,
+            firstNewArticleId = 8L,
+            allowReasons = ReminderReason.entries.toSet() - ReminderReason.StartArticle,
+        )
+        assertEquals(listOf(ReminderReason.NoStudyToday), plans.map { it.reason })
     }
 
     // ── R3 有未完成练习 → 不发 NoStudyToday / DailyGoalMissed ──
@@ -515,26 +577,38 @@ class ReminderPlanTest {
 
     @Test
     fun `跨午夜的免打扰窗口`() {
-        // 22 → 8：22 点后与 8 点前静默
-        assertTrue(ReminderPlan.isQuietHour(hour = 22, startHour = 22, endHour = 8))
-        assertTrue(ReminderPlan.isQuietHour(hour = 3, startHour = 22, endHour = 8))
-        assertTrue(ReminderPlan.isQuietHour(hour = 0, startHour = 22, endHour = 8))
-        assertFalse(ReminderPlan.isQuietHour(hour = 8, startHour = 22, endHour = 8))
-        assertFalse(ReminderPlan.isQuietHour(hour = 20, startHour = 22, endHour = 8))
-        assertFalse(ReminderPlan.isQuietHour(hour = 12, startHour = 22, endHour = 8))
+        // 22:00 → 08:00：22 点后与 8 点前静默
+        assertTrue(ReminderPlan.isQuietMinute(minuteOfDay = 22 * 60, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertTrue(ReminderPlan.isQuietMinute(minuteOfDay = 3 * 60, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertTrue(ReminderPlan.isQuietMinute(minuteOfDay = 0, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 8 * 60, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 20 * 60, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 12 * 60, startMinute = 22 * 60, endMinute = 8 * 60))
+    }
+
+    /**
+     * 以前只判到小时，07:30 会被当成 07:00 落进 08:00 结束的窗口。
+     * 这三条专门钉住「分钟级」这个契约。
+     */
+    @Test
+    fun `免打扰按分钟判定而不是整点`() {
+        assertTrue(ReminderPlan.isQuietMinute(minuteOfDay = 7 * 60 + 59, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 8 * 60, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 21 * 60 + 59, startMinute = 22 * 60, endMinute = 8 * 60))
+        assertTrue(ReminderPlan.isQuietMinute(minuteOfDay = 22 * 60, startMinute = 22 * 60, endMinute = 8 * 60))
     }
 
     @Test
     fun `不跨午夜的免打扰窗口`() {
-        assertTrue(ReminderPlan.isQuietHour(hour = 13, startHour = 12, endHour = 14))
-        assertFalse(ReminderPlan.isQuietHour(hour = 14, startHour = 12, endHour = 14))
-        assertFalse(ReminderPlan.isQuietHour(hour = 11, startHour = 12, endHour = 14))
+        assertTrue(ReminderPlan.isQuietMinute(minuteOfDay = 13 * 60, startMinute = 12 * 60, endMinute = 14 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 14 * 60, startMinute = 12 * 60, endMinute = 14 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 11 * 60, startMinute = 12 * 60, endMinute = 14 * 60))
     }
 
     @Test
     fun `起止相同时视为不静默`() {
         // 配置写坏时宁可多提醒一次，也不要让用户从此收不到提醒
-        assertFalse(ReminderPlan.isQuietHour(hour = 3, startHour = 8, endHour = 8))
-        assertFalse(ReminderPlan.isQuietHour(hour = 8, startHour = 8, endHour = 8))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 3 * 60, startMinute = 8 * 60, endMinute = 8 * 60))
+        assertFalse(ReminderPlan.isQuietMinute(minuteOfDay = 8 * 60, startMinute = 8 * 60, endMinute = 8 * 60))
     }
 }

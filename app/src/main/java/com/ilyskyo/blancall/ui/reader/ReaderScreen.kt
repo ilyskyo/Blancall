@@ -18,6 +18,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,10 +31,12 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import com.ilyskyo.blancall.ui.common.BlancallAlertDialog
+import com.ilyskyo.blancall.ui.common.HapticTier
 import com.ilyskyo.blancall.ui.common.Motion
 import com.ilyskyo.blancall.ui.common.MotionFade
 import com.ilyskyo.blancall.ui.common.PressTier
 import com.ilyskyo.blancall.ui.common.pressFeedback
+import com.ilyskyo.blancall.ui.common.rememberHaptic
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
@@ -48,6 +51,8 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -58,11 +63,18 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.MaskToCloze
+import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.algorithm.SentenceSplitter
+import com.ilyskyo.blancall.algorithm.StudyFlow
 import com.ilyskyo.blancall.algorithm.TagOps
+import com.ilyskyo.blancall.algorithm.TextStatistics
 import com.ilyskyo.blancall.data.model.Article
 import com.ilyskyo.blancall.data.repository.CustomClozeStore
+import com.ilyskyo.blancall.data.repository.FsrsStateStore
+import com.ilyskyo.blancall.data.repository.RecordRepository
+import com.ilyskyo.blancall.data.repository.StatsRepository
 import com.ilyskyo.blancall.data.repository.OneShotCloze
 import com.ilyskyo.blancall.data.repository.TagStore
 import com.ilyskyo.blancall.ui.common.BackButton
@@ -83,6 +95,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 @Composable
 fun ReaderScreen(navController: NavController, articleId: Long) {
@@ -92,6 +106,10 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     // AI 功能开关（关闭时隐藏 AI 入口）
     val aiEnabled by AppPrefs.aiEnabledFlow.collectAsState()
     var article by remember { mutableStateOf<Article?>(null) }
+    // 正文统计只在内容变化时算一次：顶栏主计数与长按弹窗共用同一份口径
+    val textStats = remember(article?.content) {
+        TextStatistics.analyze(article?.content.orEmpty())
+    }
     // 加载失败标记：articleId 无对应文章时展示“文章不存在”而非永久转圈
     var loadFailed by remember { mutableStateOf(false) }
     var isEditing by remember { mutableStateOf(false) }
@@ -104,6 +122,9 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
     // 顶栏 ⋮ 菜单（编辑 / 删除收进菜单，避免并排按钮挤没标题）
     var showMoreMenu by remember { mutableStateOf(false) }
     var showFullscreenEdit by remember { mutableStateOf(false) }
+    var showTextStats by remember { mutableStateOf(false) }
+    // 顶栏右侧两行的实测高度：作者行始终占位，标题字号才不会随作者有无跳变
+    var headerMetaHeightPx by remember { mutableIntStateOf(0) }
     var practiceButtonRect by remember { mutableStateOf(Rect.Zero) }
     // 预测性返回跟手进度：编辑模式下侧滑返回时驱动编辑界面缩放/淡出动画
     // 用 Animatable 而不是 mutableStateOf —— 手势**取消**时要弹簧回位，
@@ -170,6 +191,48 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
         }
     }
 
+    // ── 计划状态条：练习次数 / 正确率 / 下次复习 ──
+    // 数据源与统计页、任务流完全同源（RecordRepository + FsrsStateStore），不在这里另算一套口径。
+    // initialValue 故意是 null：首帧不画，等存储加载完再出现，避免「0 次 → 12 次」的数字跳变。
+    val fsrsStore = remember {
+        FsrsStateStore.getInstance(context.filesDir.resolve("fsrs_state.json").absolutePath)
+    }
+    val recordRepo = remember {
+        RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath)
+    }
+    val allRecords by recordRepo.records.collectAsState()
+    val articleRecords = remember(allRecords, articleId) {
+        allRecords.filter { it.articleId == articleId }
+    }
+    val articleStats = remember(articleRecords) { StatsRepository.aggregateArticle(articleRecords) }
+    val reviewTemplateId by AppPrefs.reviewTemplateFlow.collectAsState()
+    val reviewTemplate = remember(reviewTemplateId) { ReviewTemplate.fromId(reviewTemplateId) }
+    val fsrsRevision by fsrsStore.revision.collectAsState()
+    val planSnapshot by produceState<ArticlePlanState?>(
+        initialValue = null,
+        articleId, fsrsRevision, articleRecords, articleStats, reviewTemplate,
+    ) {
+        fsrsStore.awaitLoaded()
+        val state = fsrsStore.get(articleId)
+        val hasFsrs = state != null && state.reviewCount > 0
+        // 旧版/CSV 回灌只有记录、没有 FSRS 状态的文章也算练过
+        val hasPractice = hasFsrs || articleRecords.isNotEmpty()
+        value = ArticlePlanState(
+            practiceCount = articleStats.totalPractices,
+            accuracy = if (articleStats.totalBlanks > 0) articleStats.overallRate else null,
+            inPlan = fsrsStore.isInPlan(articleId) || articleRecords.isNotEmpty(),
+            // 没练过的计划成员：「到期」就是加入时刻（与今日计划、任务流同口径）。
+            // 只有旧记录的文章没有 FSRS due，按复习模板兜底，不能缺省成 0。
+            due = when {
+                hasFsrs -> state!!.due
+                else -> fsrsStore.enrolledArticles()[articleId]
+                    ?: EbbinghausScheduler.nextReviewAt(reviewTemplate, articleRecords)
+                    ?: 0L
+            },
+            hasPractice = hasPractice,
+        )
+    }
+
     // 编辑保存后若清掉了失效的句子记忆状态，明确告诉用户一句 —— 那些句子的学习进度
     // 是真被删了（不是「迁移」），不说就等于静默扣掉用户的数据。消费后归零，避免重复弹。
     val orphanPruned by articleViewModel.orphanStatesPruned.collectAsState()
@@ -196,7 +259,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
-                .padding(horizontal = 20.dp, vertical = 20.dp)
+                .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp)
         ) {
         // 顶部导航（沉浸阅读模式下隐藏）
         if (!readingMode) {
@@ -251,17 +314,22 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
-                    // 非编辑态：返回键右侧展示标题 +（作者 / 字符数 上下堆叠），最右是 ⋮ 菜单（编辑/自定义挖空/删除）。
-                    // 标题字号 = 右侧两行总高度（上下边缘与作者/字符数对齐）
-                    var metaHeightPx by remember { mutableIntStateOf(0) }
-                    val titleFontSize = if (metaHeightPx > 0) {
+                    // 非编辑态：返回键右侧展示标题 +（作者 / 字数 上下堆叠），最右是 ⋮ 菜单（编辑/自定义挖空/删除）。
+                    // 标题字号 = 右侧两行总高度（上下边缘与作者/字数对齐）。
+                    // 作者行必须始终占位：未填作者时若省掉这一行，右侧只剩一行，标题会突然缩小。
+                    val titleFontSize = if (headerMetaHeightPx > 0) {
                         // 标题字号 ≈ 右侧两行总高的 80%：视觉上与两行高度接近但不过大，
-                        // 且不把顶栏 Row 撑高（保证作者/字符数与按钮中心线对齐）
+                        // 且不把顶栏 Row 撑高（保证作者/字数与按钮中心线对齐）
                         val d = LocalDensity.current
-                        (metaHeightPx / (d.density * d.fontScale) * 0.8f).sp
+                        (headerMetaHeightPx / (d.density * d.fontScale) * 0.8f).sp
                     } else {
                         MaterialTheme.typography.titleLarge.fontSize
                     }
+                    val countText = pluralStringResource(
+                        textStats.unit.countPluralRes(),
+                        textStats.primaryCount,
+                        textStats.primaryCount
+                    )
                     Row(
                         modifier = Modifier
                             .weight(1f)
@@ -282,26 +350,12 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
-                        Column(
-                            modifier = Modifier.onGloballyPositioned { metaHeightPx = it.size.height },
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            if (art.author.isNotBlank()) {
-                                Text(
-                                    text = art.author.trim(),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = pluralStringResource(
-                                    com.ilyskyo.blancall.R.plurals.char_count,
-                                    art.content.length, art.content.length
-                                ),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        ReaderHeaderMeta(
+                            author = art.author,
+                            countText = countText,
+                            onMeasured = { headerMetaHeightPx = it },
+                            onOpenStats = { showTextStats = true }
+                        )
                     }
                     // ⋮ 三点菜单（顶部栏唯一操作按钮）：编辑 / 自定义挖空 / 删除 ——
                     // 按钮铺在顶部栏会占宽挤没标题（真机反馈），全部操作收进菜单；
@@ -393,6 +447,21 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                 ) {
                     // 正文区顶部留白：让正文蓝色卡片从分割线下方开始（适度下移，避免整屏空洞）
                     Spacer(modifier = Modifier.height(32.dp))
+
+                    // 计划状态条：已练几次 / 正确率 / 下次复习；没进计划时这里就是「加入计划」的入口。
+                    // 放正文上方而不是顶栏：顶栏标题字号由右侧两行 meta 的动态测量决定，塞进去会挤压标题。
+                    planSnapshot?.let { plan ->
+                        ArticlePlanBar(
+                            plan = plan,
+                            onEnroll = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        fsrsStore.enroll(articleId, System.currentTimeMillis())
+                                    }
+                                }
+                            }
+                        )
+                    }
 
                     val readingFontId by com.ilyskyo.blancall.ui.theme.AppPrefs.readingFontIdFlow.collectAsState()
                     val readingFontWeight by com.ilyskyo.blancall.ui.theme.AppPrefs.readingFontWeightFlow.collectAsState()
@@ -617,7 +686,7 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
                     // 句子卡：进入句子卡片大卡片界面（沿用既有 sentence_cards 全局入口路由；
                     // 无触点锚点时浮起转场自动回退默认动画，不会错乱）
                     GlassActionItem(stringResource(com.ilyskyo.blancall.R.string.reader_sentence_cards), Modifier.weight(1f), enabled = barVisible) {
-                        navController.navigate("sentence_cards")
+                        navController.navigate("sentence_cards?articleId=${art.id}")
                     }
                     // AI 对话入口（设置中启用 AI 功能后才显示）
                     if (aiEnabled) {
@@ -733,6 +802,15 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
         )
     }
 
+    // 顶栏字数详情：长按（或点一下）字数打开，口径与顶栏主计数共用 TextStatistics
+    AnimatedOverlayPresence(target = article?.takeIf { showTextStats }) { art ->
+        TextStatsDialog(
+            articleTitle = art.title,
+            stats = textStats,
+            onDismiss = { showTextStats = false }
+        )
+    }
+
     // 模式选择弹窗：常驻组件，内部状态控制显隐，保证退场动画完整播放
     AdaptiveModePicker(
         visible = showModePicker,
@@ -818,6 +896,169 @@ fun ReaderScreen(navController: NavController, articleId: Long) {
 }
 
 /**
+ * 顶栏右侧的作者 + 字数两行。
+ *
+ * 作者为空时仍画一个透明空格占位：这是「标题字号 = 两行高度」的测量前提，
+ * 省掉它会让标题在填写作者前小一号、保存作者后又突然变大。
+ * 这里同时接管长按（点一下也可以）打开字数详情，是顶栏上唯一能容纳这个入口的位置。
+ */
+@Composable
+private fun ReaderHeaderMeta(
+    author: String,
+    countText: String,
+    onMeasured: (Int) -> Unit,
+    onOpenStats: () -> Unit,
+) {
+    val authorText = author.trim()
+    val hasAuthor = authorText.isNotEmpty()
+    val interaction = remember { MutableInteractionSource() }
+    val openLabel = stringResource(com.ilyskyo.blancall.R.string.text_stats_open)
+    val confirmHaptic = rememberHaptic(HapticTier.Confirm)
+    Column(
+        modifier = Modifier
+            .onGloballyPositioned { onMeasured(it.size.height) }
+            .pressFeedback(interaction, PressTier.Plain)
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClickLabel = openLabel,
+                onLongClickLabel = openLabel,
+                onClick = onOpenStats,
+                onLongClick = {
+                    confirmHaptic()
+                    onOpenStats()
+                }
+            )
+            .padding(horizontal = 4.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            // 透明空格只负责撑住行高；读屏不该把「空白作者」念出来
+            text = if (hasAuthor) authorText else " ",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (hasAuthor) MaterialTheme.colorScheme.onSurfaceVariant else Color.Transparent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (hasAuthor) Modifier else Modifier.clearAndSetSemantics {}
+        )
+        Text(
+            text = countText,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+    }
+}
+
+/** 字数详情弹窗：Word 式的一屏统计，主计数与顶栏使用同一个 [TextStatistics] 口径。 */
+@Composable
+private fun TextStatsDialog(
+    articleTitle: String,
+    stats: TextStatistics.Stats,
+    onDismiss: () -> Unit,
+) {
+    BlancallAlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(com.ilyskyo.blancall.R.string.text_stats_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 大字号/小屏时让内容自己滚，而不是把弹窗撑出屏幕
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = pluralStringResource(
+                        stats.unit.countPluralRes(),
+                        stats.primaryCount,
+                        stats.primaryCount
+                    ),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = articleTitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_chars_with_spaces), stats.charsWithSpaces)
+                StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_chars_no_spaces), stats.charsNoSpaces)
+                StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_punctuation), stats.punctuation)
+                StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_spaces), stats.spaces)
+                StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_paragraphs), stats.paragraphs)
+                if (stats.digits > 0) {
+                    StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_digits), stats.digits)
+                }
+                if (stats.han > 0 && stats.unit != TextStatistics.CountUnit.HAN) {
+                    StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_han), stats.han)
+                }
+                if (stats.kana > 0) {
+                    StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_kana), stats.kana)
+                }
+                if (stats.hangul > 0) {
+                    StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_hangul), stats.hangul)
+                }
+                if (stats.letters > 0) {
+                    StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_letters), stats.letters)
+                }
+                if (stats.nonCjkWords > 0 && stats.unit != TextStatistics.CountUnit.WORD) {
+                    StatsRow(stringResource(com.ilyskyo.blancall.R.string.text_stats_words), stats.nonCjkWords)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(com.ilyskyo.blancall.R.string.close))
+            }
+        },
+        textBottomSpacing = 12.dp
+    )
+}
+
+@Composable
+private fun StatsRow(label: String, value: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+/** 主计数单位 → 本地化的数量词；四个单位各有一条 plurals，俄语的量档由资源自己管。 */
+private fun TextStatistics.CountUnit.countPluralRes(): Int = when (this) {
+    TextStatistics.CountUnit.HAN -> com.ilyskyo.blancall.R.plurals.text_count_han
+    TextStatistics.CountUnit.KANA -> com.ilyskyo.blancall.R.plurals.text_count_kana
+    TextStatistics.CountUnit.WORD -> com.ilyskyo.blancall.R.plurals.text_count_word
+    TextStatistics.CountUnit.CHARACTER -> com.ilyskyo.blancall.R.plurals.text_count_char
+}
+
+/**
  * 玻璃操作栏内的单个操作项：透明底、无涟漪克制反馈，文字居中自适应缩放。
  * @param emphasized true 时文字用主色（「开始练习」主 CTA）。
  */
@@ -876,4 +1117,152 @@ private fun AdaptiveButtonLabel(text: String) {
             }
         }
     )
+}
+
+// ────────────────────────────────────────────────
+// 计划状态条（文章详情页）
+// ────────────────────────────────────────────────
+
+/**
+ * 状态条要展示的最小事实集。
+ *
+ * [hasPractice] 与 [inPlan] 必须分开：练过的文章自动算在计划里，只看 [inPlan]
+ * 无法区分「还没开始」和「练过几次」这两种完全不同的文案。
+ */
+private data class ArticlePlanState(
+    val practiceCount: Int,
+    val accuracy: Float?,
+    val inPlan: Boolean,
+    val due: Long,
+    val hasPractice: Boolean,
+)
+
+/**
+ * 一行计划状态：左边「练了多少 / 练得怎么样」，右边「什么时候该再练」。
+ *
+ * 刻意不做成卡片：正文卡片已经是一块面，上面再叠一块面会抢正文的视觉重量。
+ * 这一行只需要「扫一眼」，所以用 labelMedium + 低对比色；唯一的强调留给逾期（error 色）
+ * 和「加入计划」（accent 文字 + 细描边）。
+ */
+@Composable
+private fun ArticlePlanBar(
+    plan: ArticlePlanState,
+    onEnroll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 到期文案只要日级精度：进页面时取一次，不为它挂一个每秒重组的时间源
+    val now = remember { System.currentTimeMillis() }
+    val leftText = if (plan.hasPractice) {
+        val base = pluralStringResource(
+            com.ilyskyo.blancall.R.plurals.plan_bar_practices, plan.practiceCount, plan.practiceCount
+        )
+        val rate = plan.accuracy
+        if (rate != null) {
+            base + " · " + stringResource(
+                com.ilyskyo.blancall.R.string.plan_bar_accuracy, (rate * 100f).roundToInt()
+            )
+        } else {
+            base
+        }
+    } else {
+        stringResource(com.ilyskyo.blancall.R.string.plan_bar_not_started)
+    }
+    val dueText = planDueLabel(plan, now)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = leftText,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            // 左侧让出空间：右侧的到期文案/加入按钮永远完整可见，长数字只省略左侧
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(12.dp))
+        if (dueText == null) {
+            PlanEnrollChip(onClick = onEnroll)
+        } else {
+            Text(
+                text = dueText,
+                style = MaterialTheme.typography.labelMedium,
+                color = planDueColor(plan.due, now),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** 到期文案；返回 null 表示「还没进计划」，由调用方换成加入按钮 */
+@Composable
+private fun planDueLabel(plan: ArticlePlanState, now: Long): String? {
+    if (!plan.inPlan && !plan.hasPractice) return null
+    // 没练过：这是计划开始时间，不是下一次复习
+    val isNew = !plan.hasPractice
+    return when (StudyFlow.phase(plan.due, false, now)) {
+        StudyFlow.Phase.OVERDUE -> stringResource(
+            if (isNew) com.ilyskyo.blancall.R.string.plan_bar_start_overdue
+            else com.ilyskyo.blancall.R.string.plan_bar_overdue
+        )
+        StudyFlow.Phase.TODAY -> stringResource(
+            if (isNew) com.ilyskyo.blancall.R.string.plan_bar_start_today
+            else com.ilyskyo.blancall.R.string.plan_bar_due_today
+        )
+        StudyFlow.Phase.TOMORROW -> stringResource(
+            if (isNew) com.ilyskyo.blancall.R.string.plan_bar_start_tomorrow
+            else com.ilyskyo.blancall.R.string.plan_bar_due_tomorrow
+        )
+        else -> {
+            // THIS_WEEK / LATER（PAUSED 在传 false 时不会出现，落到这里也无害）
+            val days = ceil((plan.due - now).toDouble() / StudyFlow.MILLIS_PER_DAY)
+                .toInt().coerceAtLeast(2)
+            if (isNew) {
+                pluralStringResource(
+                    com.ilyskyo.blancall.R.plurals.plan_bar_start_days, days, days
+                )
+            } else {
+                pluralStringResource(
+                    com.ilyskyo.blancall.R.plurals.plan_bar_due_days, days, days
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun planDueColor(due: Long, now: Long): Color =
+    when (StudyFlow.phase(due, false, now)) {
+        StudyFlow.Phase.OVERDUE -> MaterialTheme.colorScheme.error
+        StudyFlow.Phase.TODAY -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+/**
+ * 「加入计划」：详情页唯一「不练习也能进计划」的入口。
+ *
+ * 用细描边胶囊而不是实心按钮 —— 本页的主 CTA 是底部那颗「开始练习」，
+ * 这里再放一颗实心按钮会和它抢注意力。
+ */
+@Composable
+private fun PlanEnrollChip(onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            // 项目统一手感：关掉 Material 涟漪，走 pressFeedback 的缩放反馈
+            .pressClick { onClick() }
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = stringResource(com.ilyskyo.blancall.R.string.plan_bar_enroll),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
 }

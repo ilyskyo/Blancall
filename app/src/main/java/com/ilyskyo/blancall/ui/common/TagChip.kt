@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,11 +46,11 @@ import com.ilyskyo.blancall.ui.theme.isBlancallDark
  * - 矮卡（1 行高）零高度增量方案：[TagColorDots] 纯色点 ≤3 枚。
  */
 
-/** chip 展示数据（name + 0xRRGGBB） */
-data class TagChipUi(val name: String, val color: Int)
+/** chip 展示数据（name + 0xRRGGBB + 可选标签 id；id > 0 时才能作为导航/筛选入口） */
+data class TagChipUi(val name: String, val color: Int, val id: Long = -1L)
 
 /** [Tag] → [TagChipUi]（列表/首页/搜索/句子卡统一用） */
-fun Tag.toChipUi(): TagChipUi = TagChipUi(name = name, color = color)
+fun Tag.toChipUi(): TagChipUi = TagChipUi(name = name, color = color, id = id)
 
 /** [Tag] 列表 → [TagChipUi] 列表 */
 fun List<Tag>.toChipUis(): List<TagChipUi> = map { it.toChipUi() }
@@ -69,7 +71,11 @@ fun TagDot(tag: TagChipUi, modifier: Modifier = Modifier, size: androidx.compose
 
 /** 单个标签徽标 */
 @Composable
-fun TagChipView(tag: TagChipUi, modifier: Modifier = Modifier) {
+fun TagChipView(
+    tag: TagChipUi,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
     val isDark = isBlancallDark()
     val surfaceArgb = MaterialTheme.colorScheme.surface.toArgb()
     val chip = remember(tag.color, isDark, surfaceArgb) {
@@ -81,6 +87,12 @@ fun TagChipView(tag: TagChipUi, modifier: Modifier = Modifier) {
             .widthIn(max = 76.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(opaqueColor(chip.bg))
+            .then(
+                if (onClick == null) Modifier
+                else Modifier
+                    .semantics { role = Role.Button }
+                    .pressClick(tier = PressTier.Plain, onClick = onClick)
+            )
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -126,6 +138,7 @@ fun TagChipRow(
     modifier: Modifier = Modifier,
     maxChips: Int = 2,
     showOverflow: Boolean = true,
+    onTagClick: ((Long) -> Unit)? = null,
 ) {
     if (tags.isEmpty()) return
     val shown = tags.take(maxChips.coerceAtLeast(1))
@@ -133,7 +146,12 @@ fun TagChipRow(
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         shown.forEachIndexed { i, t ->
             if (i > 0) Spacer(Modifier.width(4.dp))
-            TagChipView(t)
+            TagChipView(
+                tag = t,
+                onClick = if (onTagClick != null && t.id > 0L) {
+                    { onTagClick(t.id) }
+                } else null,
+            )
         }
         if (showOverflow && overflow > 0) {
             Spacer(Modifier.width(4.dp))

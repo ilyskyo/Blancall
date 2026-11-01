@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,6 +63,7 @@ import com.ilyskyo.blancall.data.repository.ReaderPrefsStore
 import com.ilyskyo.blancall.ui.common.AppIcon
 import com.ilyskyo.blancall.ui.common.AppIconKind
 import com.ilyskyo.blancall.ui.common.GlassCard
+import com.ilyskyo.blancall.ui.common.heroElement
 import com.ilyskyo.blancall.ui.common.PressTier
 import com.ilyskyo.blancall.ui.common.pressFeedback
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -103,6 +106,20 @@ import kotlinx.coroutines.withContext
 
 /** 窄卡阈值：宽度小于该值（典型为 colSpan=1）时收紧内边距、隐藏次要信息 */
 private val NARROW_CARD_WIDTH = 168.dp
+
+/**
+ * 空态光学下沉比例：空态在自己的「舞台」（标题以下的剩余区）里几何居中后，再按舞台高度的
+ * 3% 往下压一点（1~8dp 封顶）。
+ *
+ * 依据两条：
+ * - 排版上的光学居中：文字块的视觉重心高于它的行盒中心（行盒上下各留了 ascender/descender
+ *   的空隙，而字墨只占中间一段），纯几何居中在眼睛里会偏上，需要往下补偿一点。
+ * - Material 空状态规范：插图/说明放在**内容区**的中心，而不是连标题一起的整卡中心；
+ *   标题是独立的一条信息带，把说明按整卡居中会让它顶在标题下方。
+ *
+ * 比例不取更大：高卡的舞台本身就高，3% 已足够把行盒补偿回来；再大就会读成「内容掉到下半张」。
+ */
+private const val EMPTY_STATE_DROP_RATIO = 0.03f
 
 /**
  * 首页「句子卡片」的数据快照。
@@ -187,6 +204,17 @@ fun HomeCardContent(
     tagsByArticle: Map<Long, List<TagChipUi>> = emptyMap(),
     /** 今日待复习（宿主用 FSRS + 记录算好后传入） */
     dueArticles: List<Article>,
+    /**
+     * 其中「已加入计划但一次没练过」的文章 id。
+     * 这些文章在列表里今天是「该开始」而不是「该复习」，卡片标题与行尾动作都要跟着变，
+     * 否则会把从没读过的文章说成「复习」。
+     */
+    dueNewArticleIds: Set<Long> = emptySet(),
+    /** 到期里已逾期的篇数与今天到期的篇数（与「待复习」清单页同一口径） */
+    dueOverdueCount: Int = 0,
+    dueTodayCount: Int = 0,
+    /** 点「要复习的任务」卡 → 英雄转场打开待复习清单 */
+    onOpenDueList: () -> Unit = {},
     /** 未完成的练习进度（宿主扫描 practice_state_*.json 得到） */
     resumables: List<ResumableItem>,
     /** 最近文章（宿主已过滤 homepage 隐藏项并倒序） */
@@ -201,15 +229,17 @@ fun HomeCardContent(
     onPracticeArticle: (articleId: Long) -> Unit,
     /** 点「继续」→ 宿主按 mode 恢复练习 */
     onResumePractice: (item: ResumableItem) -> Unit,
-    /** 点最近文章卡 → 打开阅读页（第二参为点击时的触点锚点，供页面浮起转场定位） */
+    /** 点最近文章卡 → 打开文章详情页（第二参为点击时的触点锚点，供页面浮起转场定位） */
     onOpenArticle: (article: Article, anchor: TouchAnchor?) -> Unit,
+    /** 点卡片上的标签 → 打开标签主页 */
+    onOpenTag: (tagId: Long) -> Unit = {},
     /** 「查看全部」→ 宿主跳文章列表 tab */
     onViewAllArticles: () -> Unit,
     /** 点「添加文章」入口卡 → 宿主跳导入页 */
     onAddArticle: () -> Unit,
     /** 点自定义挖空卡 → 宿主跳 `practice/<articleId>?configId=<configId>` */
     onOpenClozeConfig: (articleId: Long, configId: Long) -> Unit,
-    /** 点自定义遮挡卡 → 宿主跳阅读页（写状态由本组件完成，见 [CustomMaskCard]；第三参为触点锚点） */
+    /** 点自定义遮挡卡 → 宿主跳文章详情页（写状态由本组件完成，见 [CustomMaskCard]；第三参为触点锚点） */
     onOpenMaskConfig: (articleId: Long, configId: Long, anchor: TouchAnchor?) -> Unit,
     /** 自定义配置的外部修订号：配置被重命名/删除后宿主自增即可触发重新反查 */
     configRevision: Long = 0L,
@@ -219,6 +249,8 @@ fun HomeCardContent(
     onOpenStats: () -> Unit = {},
     /** 「句子卡片」的今日句快照（宿主抽句后传入；null = 空态） */
     sentenceUi: SentenceDailyUi? = null,
+    /** 句子卡空态的第二行说明（宿主按「没有文章 / 全部暂停」给出真实原因；null = 用默认导入提示） */
+    sentenceEmptyHint: String? = null,
     /** 点句子卡片 → 宿主打开大卡片界面（参数为触点锚点，供浮起转场定位） */
     onOpenSentenceCard: (TouchAnchor?) -> Unit = {},
 ) {
@@ -231,6 +263,10 @@ fun HomeCardContent(
         when (card.type) {
             HomeLayoutStore.CardType.DUE -> DueCard(
                 dueArticles = dueArticles,
+                newArticleIds = dueNewArticleIds,
+                overdueCount = dueOverdueCount,
+                dueTodayCount = dueTodayCount,
+                onOpenList = onOpenDueList,
                 anchorArticleId = anchorArticleId,
                 onAnchorMeasured = onAnchorMeasured,
                 onPracticeArticle = onPracticeArticle,
@@ -254,6 +290,7 @@ fun HomeCardContent(
                 onAnchorMeasured = onAnchorMeasured,
                 onPracticeArticle = onPracticeArticle,
                 onOpenArticle = onOpenArticle,
+                onOpenTag = onOpenTag,
                 onViewAllArticles = onViewAllArticles,
                 m = m,
                 modifier = cardModifier,
@@ -267,6 +304,7 @@ fun HomeCardContent(
                 onAnchorMeasured = onAnchorMeasured,
                 onPracticeArticle = onPracticeArticle,
                 onOpenArticle = onOpenArticle,
+                onOpenTag = onOpenTag,
                 m = m,
                 modifier = cardModifier,
             )
@@ -309,6 +347,7 @@ fun HomeCardContent(
 
             HomeLayoutStore.CardType.SENTENCE -> SentenceDailyCard(
                 ui = sentenceUi,
+                emptyHint = sentenceEmptyHint,
                 onOpen = onOpenSentenceCard,
                 m = m,
                 modifier = cardModifier,
@@ -324,6 +363,10 @@ fun HomeCardContent(
 @Composable
 private fun DueCard(
     dueArticles: List<Article>,
+    newArticleIds: Set<Long>,
+    overdueCount: Int,
+    dueTodayCount: Int,
+    onOpenList: () -> Unit,
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
     onPracticeArticle: (Long) -> Unit,
@@ -331,26 +374,38 @@ private fun DueCard(
     modifier: Modifier,
 ) {
     val hue = Macaron.review()
-    val headerTitle = if (dueArticles.isEmpty()) {
-        stringResource(com.ilyskyo.blancall.R.string.due_tasks)
-    } else {
-        stringResource(com.ilyskyo.blancall.R.string.due_tasks_count, dueArticles.size)
+    // 标题只回答「欠了多少」，具体哪几篇在清单页里看：
+    // 两个数字都来自同一个 Snapshot，和清单页的分组口径一致
+    val headerTitle = when {
+        dueArticles.isEmpty() -> stringResource(com.ilyskyo.blancall.R.string.due_tasks)
+        overdueCount > 0 && dueTodayCount > 0 -> stringResource(
+            com.ilyskyo.blancall.R.string.due_tasks_split, dueTodayCount, overdueCount
+        )
+        overdueCount > 0 -> stringResource(
+            com.ilyskyo.blancall.R.string.due_tasks_overdue_only, overdueCount
+        )
+        else -> stringResource(
+            com.ilyskyo.blancall.R.string.due_tasks_today_only, dueTodayCount
+        )
     }
     GlassCard(
-        modifier = modifier,
+        modifier = modifier
+            // 一镜到底的源节点：key 与「待复习」清单页头部一致
+            .heroElement(DUE_LIST_HERO_KEY, renderInOverlay = false),
         shape = HOME_CARD_SHAPE,
         containerColor = hue.fill,
+        onClick = onOpenList,
     ) {
-        // 空态 / 单条要相对**整卡**居中（与并排卡片的文字落在同一条水平线）；
-        // 若仍按「标题 + 正文」的纵向流排布，重心会被标题压到卡片下半部分。
-        // 多条仍走原来的「标题固定顶部 + 列表吃满余下空间并内滚」。
+        // 空态 / 单条都相对**标题以下的剩余区**居中，与多条时「标题顶着、内容往下排」同一套
+        // 结构：空态按整卡居中的话，「标题 + 空态」整组的重心会压在卡片上半部，看着就是内容
+        // 顶在上面（矮卡尤其明显）。多条仍走「标题固定顶部 + 列表吃满余下空间并内滚」。
         StateSwap(
             targetState = dueArticles.isEmpty(),
             label = "homeDueSwap",
             modifier = Modifier.fillMaxSize(),
         ) { empty ->
             when {
-                empty -> Box(
+                empty -> Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(m.pad),
@@ -363,27 +418,35 @@ private fun DueCard(
                         accent = hue.accent,
                         compact = m.compact,
                         short = m.short,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
                     )
                 }
 
-                dueArticles.size == 1 -> Box(
+                dueArticles.size == 1 -> Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(m.pad),
                 ) {
                     CardHeader(dotColor = hue.accent, title = headerTitle)
-                    DueRow(
-                        article = dueArticles.first(),
-                        accent = hue.accent,
-                        anchorArticleId = anchorArticleId,
-                        onAnchorMeasured = onAnchorMeasured,
-                        onPracticeArticle = onPracticeArticle,
-                        m = m,
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .align(Alignment.Center),
-                    )
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DueRow(
+                            article = dueArticles.first(),
+                            isNew = dueArticles.first().id in newArticleIds,
+                            accent = hue.accent,
+                            anchorArticleId = anchorArticleId,
+                            onAnchorMeasured = onAnchorMeasured,
+                            onPracticeArticle = onPracticeArticle,
+                            m = m,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 else -> Column(
@@ -406,6 +469,7 @@ private fun DueCard(
                         dueArticles.forEach { article ->
                             DueRow(
                                 article = article,
+                                isNew = article.id in newArticleIds,
                                 accent = hue.accent,
                                 anchorArticleId = anchorArticleId,
                                 onAnchorMeasured = onAnchorMeasured,
@@ -425,6 +489,7 @@ private fun DueCard(
 @Composable
 private fun DueRow(
     article: Article,
+    isNew: Boolean,
     accent: Color,
     anchorArticleId: Long,
     onAnchorMeasured: (Long, Rect) -> Unit,
@@ -464,7 +529,13 @@ private fun DueRow(
             }
         }
         Text(
-            stringResource(com.ilyskyo.blancall.R.string.review_action),
+            stringResource(
+                if (isNew) {
+                    com.ilyskyo.blancall.R.string.start_action
+                } else {
+                    com.ilyskyo.blancall.R.string.review_action
+                }
+            ),
             style = MaterialTheme.typography.labelSmall,
             color = accent,
             maxLines = 1,
@@ -501,15 +572,15 @@ private fun ContinueCard(
         shape = HOME_CARD_SHAPE,
         containerColor = hue.fill,
     ) {
-        // 空态 / 单条相对整卡居中（与并排的「添加文章」卡文字同一条水平线），
-        // 多条仍按「标题 + 列表」纵向排布。
+        // 空态 / 单条相对**标题以下的剩余区**居中（理由同「待复习」卡：整卡居中的话重心会被
+        // 标题压到上半部），多条仍按「标题 + 列表」纵向排布。
         StateSwap(
             targetState = rows.isEmpty(),
             label = "homeContinueSwap",
             modifier = Modifier.fillMaxSize(),
         ) { empty ->
             when {
-                empty -> Box(
+                empty -> Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(m.pad),
@@ -522,27 +593,34 @@ private fun ContinueCard(
                         accent = hue.accent,
                         compact = m.compact,
                         short = m.short,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
                     )
                 }
 
-                rows.size == 1 -> Box(
+                rows.size == 1 -> Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(m.pad),
                 ) {
                     CardHeader(dotColor = hue.accent, title = headerTitle)
                     val (item, art) = rows.first()
-                    ContinueRow(
-                        item = item,
-                        art = art,
-                        accent = hue.accent,
-                        onResumePractice = onResumePractice,
-                        m = m,
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .align(Alignment.Center),
-                    )
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ContinueRow(
+                            item = item,
+                            art = art,
+                            accent = hue.accent,
+                            onResumePractice = onResumePractice,
+                            m = m,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 else -> Column(
@@ -654,6 +732,7 @@ private fun RecentCard(
     onPracticeArticle: (Long) -> Unit,
     onOpenArticle: (Article, TouchAnchor?) -> Unit,
     onViewAllArticles: () -> Unit,
+    onOpenTag: (Long) -> Unit = {},
     m: CardMetrics,
     modifier: Modifier,
 ) {
@@ -751,9 +830,9 @@ private fun RecentCard(
                         accent = MaterialTheme.colorScheme.primary,
                         compact = m.compact,
                         short = m.short,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        // 这颗空态直接挂在 StateSwap 下，没有 Column 去消费 weight（见 StateSwap
+                        // 的 KDoc）——剩余高度已经由 StateSwap 的 modifier 定死，这里 fillMaxSize 即可
+                        modifier = Modifier.fillMaxSize(),
                     )
                 } else {
                     CardBody(
@@ -783,6 +862,7 @@ private fun RecentCard(
                                     dense = m.short,
                                     onClick = { anchor -> onOpenArticle(article, anchor) },
                                     onPractice = { onPracticeArticle(article.id) },
+                                    onTagClick = onOpenTag,
                                     practiceModifier = Modifier.practiceAnchorModifier(
                                         articleId = article.id,
                                         anchorArticleId = anchorArticleId,
@@ -807,7 +887,7 @@ private fun RecentCard(
  * 间距减半，完整信息也能塞进 1 行高的卡里（用户要求「小小的、像图 2 这样」）。
  * 两者都 false 时为标准三行（标题+字符数 / 摘要 / 日期 + 按钮）。
  *
- * [onClick] 携带点击时的触点锚点（行中心 window 坐标）：供阅读页浮起转场定位，
+ * [onClick] 携带点击时的触点锚点（行中心 window 坐标）：供文章详情页浮起转场定位，
  * 不关心锚点的调用方可直接忽略参数。
  */
 @Composable
@@ -822,6 +902,7 @@ private fun RecentArticleRow(
     onClick: (TouchAnchor?) -> Unit,
     onPractice: () -> Unit,
     practiceModifier: Modifier,
+    onTagClick: ((Long) -> Unit)? = null,
     slim: Boolean = false,
 ) {
     val anchor = rememberTouchAnchor()
@@ -831,7 +912,6 @@ private fun RecentArticleRow(
             .trackTouchAnchor(anchor)
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .pressClick { onClick(anchor.value) }
             .padding(
                 start = if (compact || slim) 10.dp else 12.dp,
                 end = if (compact || slim) 10.dp else 12.dp,
@@ -846,6 +926,7 @@ private fun RecentArticleRow(
                 tags = tags,
                 maxChips = if (compact) 1 else 2,
                 showOverflow = !compact,
+                onTagClick = onTagClick,
             )
             Spacer(Modifier.height(4.dp))
         }
@@ -860,7 +941,10 @@ private fun RecentArticleRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    // 行本身不再整块 clickable：标签 chip / 练习按钮与「打开文章」互不抢事件
+                    .pressClick { onClick(anchor.value) },
             )
             // 矮卡（dense/slim）：色点内联在标题后（零高度增量，不挤压既有排版）
             if ((dense || slim) && tags.isNotEmpty()) {
@@ -911,6 +995,9 @@ private fun RecentArticleRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pressClick { onClick(anchor.value) },
                 )
                 Spacer(Modifier.height(1.dp))
                 Row(
@@ -923,6 +1010,7 @@ private fun RecentArticleRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         maxLines = 1,
+                        modifier = Modifier.pressClick { onClick(anchor.value) },
                     )
                     // 按钮用标准尺寸（compact 30dp）—— 矮卡里也和其它卡一样大（用户反馈「练习键可以大的」）
                     PracticeButton(
@@ -940,6 +1028,9 @@ private fun RecentArticleRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pressClick { onClick(anchor.value) },
                 )
 
                 Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
@@ -954,6 +1045,7 @@ private fun RecentArticleRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         maxLines = 1,
+                        modifier = Modifier.pressClick { onClick(anchor.value) },
                     )
                     PracticeButton(compact = compact, onPractice = onPractice, modifier = practiceModifier)
                 }
@@ -1010,6 +1102,7 @@ private fun ArticleCard(
     onAnchorMeasured: (Long, Rect) -> Unit,
     onPracticeArticle: (Long) -> Unit,
     onOpenArticle: (Article, TouchAnchor?) -> Unit,
+    onOpenTag: (Long) -> Unit = {},
     m: CardMetrics,
     modifier: Modifier,
 ) {
@@ -1060,6 +1153,7 @@ private fun ArticleCard(
                     slim = m.short,
                     onClick = { anchor -> onOpenArticle(article, anchor) },
                     onPractice = { onPracticeArticle(article.id) },
+                    onTagClick = onOpenTag,
                     practiceModifier = Modifier.practiceAnchorModifier(
                         articleId = article.id,
                         anchorArticleId = anchorArticleId,
@@ -1138,9 +1232,9 @@ private fun CustomMaskCard(
     }
     val hue = Macaron.info()
     val found = resolved as? ConfigLookup.Found
-    // 触点锚点：点击时以卡片中心作为阅读页浮起转场的起点
+    // 触点锚点：点击时以卡片中心作为文章详情页浮起转场的起点
     val anchor = rememberTouchAnchor()
-    // 与 MaskConfigListScreen「使用」一致：标记选中配置 + 遮挡粒度切自定义 + 打开遮挡开关，再进阅读页
+    // 与 MaskConfigListScreen「使用」一致：标记选中配置 + 遮挡粒度切自定义 + 打开遮挡开关，再进文章详情页
     val onClick: (() -> Unit)? = if (found == null) null else {
         {
             scope.launch {
@@ -1671,6 +1765,7 @@ private fun GlobalStatRow(label: String, value: String, dense: Boolean) {
 @Composable
 private fun SentenceDailyCard(
     ui: SentenceDailyUi?,
+    emptyHint: String?,
     onOpen: (TouchAnchor?) -> Unit,
     m: CardMetrics,
     modifier: Modifier,
@@ -1693,7 +1788,7 @@ private fun SentenceDailyCard(
                 CardEmptyState(
                     icon = AppIconKind.Library,
                     title = stringResource(com.ilyskyo.blancall.R.string.no_sentence_today),
-                    subtitle = stringResource(com.ilyskyo.blancall.R.string.import_for_daily_sentence),
+                    subtitle = emptyHint ?: stringResource(com.ilyskyo.blancall.R.string.import_for_daily_sentence),
                     accent = hue.accent,
                     compact = m.compact,
                     short = m.short,
@@ -1847,8 +1942,17 @@ private fun CardHeader(dotColor: Color, title: String) {
  * 精致空态：柔和圆形图标底 + 主文案 + 一行淡色副文案。
  * 供「待复习」「继续练习」「最近文章」三种卡的零数据场景复用。
  *
- * 通过内滚 + [Arrangement.Center] 实现「空间富余时垂直居中、空间不足时卡内滚动」：
- * 图标永远完整可见（不会出现被切一半），小卡下自动缩小图标并隐藏副文案。
+ * 位置由宿主给的「舞台」决定：空态不是相对整张卡居中，而是相对**标题以下的剩余区**居中。
+ * 标题行是卡片顶部的视觉锚，若按整卡居中，「标题 + 空态」这一整组的重心会压在卡片上半部
+ * （80dp 的矮卡实测：上方只剩 10px、下方空出 55px），观感就是内容顶在上边。
+ *
+ * 在舞台里居中之后还要往下压 [emptyStateDrop]：几何居中在眼睛里永远偏高——文字块的光学
+ * 中心高于它的包围盒中心（字形贴着行高上缘，西文还有 ascender 额外压秤），所以真要让眼睛
+ * 觉得“在中间”，内容得比几何中心低一点点，底部留白略大于顶部。
+ *
+ * 滚动：`verticalScroll` 的内层 Column 高度是 wrap content 的，`Arrangement.Center` 在它
+ * 里面**永远不生效**（内容贴顶、下方空一片）。这里先 `heightIn(min = 舞台高)` 把它撑满，
+ * 居中才成立；真的放不下时它才变高并开始滚动。
  */
 @Composable
 private fun CardEmptyState(
@@ -1861,79 +1965,110 @@ private fun CardEmptyState(
     compact: Boolean,
     short: Boolean,
 ) {
-    if (short) {
-        // 矮卡（1 行高）：横排单行 —— 小图标 + 主文案；纵向堆叠会把两者顶出可视区
-        Row(
-            modifier = modifier,
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
+    BoxWithConstraints(modifier) {
+        val stageHeight = maxHeight
+        val drop = emptyStateDrop(stageHeight, short)
+        if (short) {
+            // 矮卡（1 行高）：横排单行 —— 小图标 + 主文案；纵向堆叠会把两者顶出可视区
+            Row(
                 modifier = Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center,
+                    .fillMaxSize()
+                    .offset(y = drop),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                AppIcon(kind = icon, modifier = Modifier.size(14.dp), tint = accent)
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppIcon(kind = icon, modifier = Modifier.size(14.dp), tint = accent)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                title,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            return@BoxWithConstraints
         }
-        return
-    }
-    val boxSize = if (compact) 38.dp else 52.dp
-    val iconSize = if (compact) 19.dp else 26.dp
-    Column(
-        modifier = modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+        val boxSize = if (compact) 38.dp else 52.dp
+        val iconSize = if (compact) 19.dp else 26.dp
+        // 舞台居中的宿主必须是 Box：以前把 verticalScroll 直接挂在 Column 上，
+        // 滚动容器按**内容高度**收敛，舞台再高也只包住那一小块 —— 高卡里文字就贴在标题下面，
+        // 下方留一大片空白（真机反馈「看着太靠上」正是这个）。Box 拿满舞台，居中才有作用对象。
         Box(
-            modifier = Modifier
-                .size(boxSize)
-                .clip(CircleShape)
-                .background(accent.copy(alpha = 0.14f)),
+            modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
-            AppIcon(
-                kind = icon,
-                modifier = Modifier.size(iconSize),
-                tint = accent,
-            )
-        }
-        Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
-        Text(
-            title,
-            style = if (compact) MaterialTheme.typography.bodySmall
-            else MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        // 窄卡空间紧张：只留主文案；空副文案不占位，避免空态被挤到滚动
-        if (!compact && subtitle.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(
+                // heightIn(max) 在内、scroll 在外：内容超高时视口固定在舞台高度并内滚，
+                // 内容不高时 Column 收缩到自身高度，由外层 Box 居中。
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = stageHeight)
+                    .verticalScroll(rememberScrollState())
+                    .offset(y = drop),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(boxSize)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppIcon(
+                        kind = icon,
+                        modifier = Modifier.size(iconSize),
+                        tint = accent,
+                    )
+                }
+                Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+                Text(
+                    title,
+                    style = if (compact) MaterialTheme.typography.bodySmall
+                    else MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // 窄卡空间紧张：只留主文案；空副文案不占位，避免空态被挤到滚动
+                if (!compact && subtitle.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }
+
+/**
+ * 空态在舞台内的光学下沉量：舞台高度的 [EMPTY_STATE_DROP_RATIO]，1~8dp 之间。
+ * 矮卡（单行横排、舞台本来就只剩一行高）取最小档，避免内容贴到卡片底边。
+ */
+private fun emptyStateDrop(stageHeight: Dp, short: Boolean): Dp {
+    if (!stageHeight.value.isFinite() || stageHeight <= 0.dp) return 0.dp
+    val raw = stageHeight * EMPTY_STATE_DROP_RATIO
+    return if (short) raw.coerceIn(0.5.dp, 2.dp) else raw.coerceIn(1.dp, 8.dp)
+}
+
 
 /**
  * 练习按钮位置上报修饰符：仅当该行/卡正是宿主当前 pending 的文章时挂上，

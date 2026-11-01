@@ -15,7 +15,8 @@ import com.ilyskyo.blancall.data.model.toErrorType
  * （逐空全量结果）；本对象用「同一句 + 同一个答案」的**最后一次结果**判断是否攻克。
  *
  * ## 为什么以文字为锚而不是句子索引
- * 句子索引是全文切句下标，文章一编辑整体错位，跨文练习甚至写 -1。
+ * 句子索引是全文切句下标，文章一编辑整体错位；跨文练习的旧记录甚至写 -1。
+ * 新记录逐空带来源文章与原文章内句序，索引只作为旧数据的兜底坐标。
  * 旧报告里「跳回原句会跳错」说的就是它。这里用判分当时保存的 [sentenceText]
  * 作为身份与定位依据；索引只在没有文字时退用，并标记 `exact=false`。
  *
@@ -76,7 +77,8 @@ object MistakeNotebook {
                     add(
                         Outcome(
                             recordId = r.id,
-                            articleId = r.articleId,
+                            // 跨文练习逐空带来源文章；旧记录/单篇回退整条记录的 articleId
+                            articleId = a.articleId.takeIf { it > 0L } ?: r.articleId,
                             at = r.timestamp,
                             blankIndex = a.blankIndex,
                             correctAnswer = a.correctAnswer,
@@ -86,6 +88,7 @@ object MistakeNotebook {
                             sentenceIndex = a.sentenceIndex,
                             similarity = a.similarity,
                             correct = a.correct,
+                            /** true = 来自 answeredBlanks（逐空全量历史）；false = 旧记录只有错处 */
                             exact = true,
                         )
                     )
@@ -95,7 +98,7 @@ object MistakeNotebook {
                     add(
                         Outcome(
                             recordId = r.id,
-                            articleId = r.articleId,
+                            articleId = m.articleId.takeIf { it > 0L } ?: r.articleId,
                             at = r.timestamp,
                             blankIndex = m.blankIndex,
                             correctAnswer = m.correctAnswer,

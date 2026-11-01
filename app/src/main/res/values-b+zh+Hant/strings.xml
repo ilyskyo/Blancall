@@ -29,6 +29,18 @@
     <string name="continue_import">繼續導入</string>
     <string name="view_details">查看詳情</string>
     <string name="due_tasks">要複習的任務</string>
+    <string name="today_plan_all_title">今日計劃</string>
+    <string name="today_plan_all_manage">管理計劃</string>
+    <string name="today_plan_all_ready">%1$d 項現在可做</string>
+    <string name="today_plan_all_empty">今天沒有要練的文章</string>
+    <string name="today_plan_board_summary">繼續 %1$d 項 · 待複習 %2$d 篇 · 句子 %3$d 句 · 錯題 %4$d 處</string>
+    <string name="section_overdue">已逾期</string>
+    <string name="section_today">今天</string>
+    <string name="due_tasks_today_only">%1$d 篇今日到期</string>
+    <string name="due_tasks_overdue_only">%1$d 篇已逾期</string>
+    <string name="due_tasks_split">%1$d 篇今日到期 · %2$d 篇已逾期</string>
+    <string name="due_list_title">待複習</string>
+    <string name="due_list_empty">沒有到期的文章</string>
     <string name="resume_tasks">待繼續完成</string>
     <string name="recently_used">最近使用</string>
     <string name="no_due_today">今日已沒有要複習的</string>
@@ -56,6 +68,31 @@
     <string name="added_on">添加於 %1$s</string>
     <plurals name="char_count_short">
         <item quantity="other">%1$d 字</item>
+    </plurals>
+    <string name="text_stats_title">文字統計</string>
+    <string name="text_stats_open">檢視文字統計</string>
+    <string name="text_stats_chars_with_spaces">字符數（計空格）</string>
+    <string name="text_stats_chars_no_spaces">字符數（不計空格）</string>
+    <string name="text_stats_punctuation">標點符號</string>
+    <string name="text_stats_spaces">空格</string>
+    <string name="text_stats_paragraphs">段落</string>
+    <string name="text_stats_digits">數字</string>
+    <string name="text_stats_letters">字母</string>
+    <string name="text_stats_han">漢字</string>
+    <string name="text_stats_kana">假名</string>
+    <string name="text_stats_hangul">韓文</string>
+    <string name="text_stats_words">單詞</string>
+    <plurals name="text_count_han">
+        <item quantity="other">%1$d 個漢字</item>
+    </plurals>
+    <plurals name="text_count_kana">
+        <item quantity="other">%1$d 個字</item>
+    </plurals>
+    <plurals name="text_count_word">
+        <item quantity="other">%1$d 個詞</item>
+    </plurals>
+    <plurals name="text_count_char">
+        <item quantity="other">%1$d 個字符</item>
     </plurals>
     <string name="new_tag">新增標籤</string>
     <string name="edit_tag">編輯標籤</string>
@@ -117,6 +154,8 @@
     <string name="ui_language_desc">只改本應用的語言，不影響系統語言</string>
     <string name="beige_background">米黃底色</string>
     <string name="beige_background_desc">開啟後，淺色模式下介面使用米黃底色，不影響深色模式。</string>
+    <string name="flat_background">灰色底與卡片分檔</string>
+    <string name="flat_background_desc">開啟後頁面底色比卡片深一檔，卡片更立體</string>
     <string name="nav_glass">導覽列液態玻璃</string>
     <string name="nav_glass_desc">底部導覽列的真液態玻璃折射效果，關閉後改為純色底，更省電。</string>
     <string name="haptic_strength">觸感強度</string>
@@ -124,11 +163,29 @@
     <string name="home_subtitle">首頁副標題</string>
     <string name="home_subtitle_desc">首頁品牌列下方的標語，點擊編輯</string>
     <string name="theme_color">主題色</string>
+    <string name="theme_color_custom">自訂主題色</string>
+    <string name="theme_color_custom_desc">在色環上自由取色，取代上方 6 套預設。</string>
+    <string name="material_you">跟隨系統取色</string>
+    <string name="material_you_desc">取 Android 12 以上的桌布配色，優先於上方所有主題色。</string>
+    <string name="ui_font">介面字體</string>
+    <string name="ui_font_desc">標題與正文的字族；閱讀頁有自己獨立的排版設定。</string>
+    <string name="ui_font_serif">系統襯線</string>
+    <string name="ui_font_sans">系統黑體</string>
+    <string name="ui_font_xwwk">霞鶩文楷</string>
+    <string name="ui_font_scale">介面字級</string>
+    <string name="ui_font_scale_desc">統一縮放全域字級；閱讀頁與練習頁另有獨立設定。</string>
+    <string name="glass_tint">玻璃染色</string>
+    <string name="glass_tint_desc">液態玻璃吸取目前主題色；關閉後保持中性白。</string>
     <string name="export_backup_desc">文章庫與練習進度等學習資料打包成一個備份檔案，不含介面偏好設定</string>
     <string name="keep_wrong_ink_desc">手寫作答的錯題筆跡會存檔，可在學習統計的練習歷史中回看「當時寫的」；僅存本機</string>
     <string name="import_backup_desc">從備份檔案恢復學習資料，會覆蓋目前資料，完成後需重啟應用</string>
     <string name="indent_first_line_desc">開啟後，匯入純文字/貼上文章時自動為每段首行補兩個空格；PDF、Word 等文件保持原文不動</string>
     <string name="clear_saved_ink">清空已存的錯題墨跡</string>
+    <string name="sentence_card_anim_title">點按翻頁動畫</string>
+    <string name="sentence_card_anim_desc">點按評級按鈕切換句子時的飛出動畫；上下滑動翻卡不受影響</string>
+    <string name="sentence_card_anim_speed">飛出速率</string>
+    <string name="sentence_card_anim_speed_value">約 %1$d 毫秒</string>
+    <string name="sentence_card_anim_preview_hint">點一下預覽卡，按目前速率再飛一次</string>
     <string name="keep_wrong_ink">保留錯題手寫墨跡</string>
     <string name="article_tags_desc">為文章分類、配色，卡片徽標展示</string>
     <string name="western_thoughts">西方思想寫作素材</string>
@@ -169,11 +226,28 @@
     <string name="reminder_enable">開啟提醒</string>
     <string name="notification_permission_required">提醒功能需要通知權限，請在系統設定中開啟後返回應用</string>
     <string name="reminder_time">提醒時間</string>
-    <string name="daily_goal">每日學習目標</string>
+    <string name="daily_goal">每日學習時長</string>
     <string name="custom">自訂</string>
     <string name="reminder_frequency">提醒頻率</string>
     <string name="custom_daily_goal_title">自訂每日學習時長</string>
     <string name="minutes_field_label">分鐘數</string>
+    <string name="reminder_days">提醒日</string>
+    <string name="reminder_keep_one_day">至少保留一天</string>
+    <string name="reminder_quiet_hours">免打擾時段</string>
+    <string name="reminder_time_in_quiet_hours">提醒時間在免打擾時段內，當天不會收到提醒</string>
+    <string name="reminder_quiet_same">起止時間相同，免打擾不會生效</string>
+    <string name="reminder_on_blocked">已開啟 · 通知未開啟</string>
+    <string name="reminder_on_channel_blocked">已開啟 · 部分渠道已關閉</string>
+    <string name="reminder_notifications_off">通知權限未開啟，提醒不會送達</string>
+    <string name="reminder_channels_some_off">部分提醒渠道已在系統中關閉</string>
+    <string name="reminder_open_settings">去開啟</string>
+    <string name="reminder_system_notification_settings">系統通知設定</string>
+    <string name="reminder_test_notification">傳送測試通知</string>
+    <string name="reminder_test_title">測試通知</string>
+    <string name="reminder_test_body">提醒功能正常，下次提醒：%1$s</string>
+    <string name="reminder_test_sent">測試通知已傳送</string>
+    <string name="reminder_schedule_note">提醒由系統排程，省電模式下可能延遲</string>
+    <string name="reminder_daily_goal_hint">通知裡的「今天還差幾次」按此目標計算</string>
     <string name="set_reminder_time">設定提醒時間</string>
     <string name="preset_8am">早上 8:00</string>
     <string name="preset_1230pm">中午 12:30</string>
@@ -255,6 +329,7 @@
         <item quantity="other">%1$d 天後複習</item>
     </plurals>
     <string name="mastered">已掌握</string>
+    <string name="plan_todo">待開始</string>
     <string name="urgency_not_started">未開始</string>
     <string name="practice">練習</string>
     <string name="sentence_cards">句子卡片</string>
@@ -326,8 +401,8 @@
     <string name="parsing_file">正在解析檔案…</string>
     <string name="save_failed">儲存失敗</string>
     <string name="doc_images_dropped">文件中的圖片無法匯入，已僅保留文字內容</string>
-    <string name="due_tasks_count">要複習的任務（%1$d篇）</string>
     <string name="resume_tasks_count">待繼續完成（%1$d）</string>
+    <string name="start_action">開始</string>
     <string name="review_action">複習</string>
     <string name="continue_action">繼續</string>
     <string name="cloze_mode_sentence">句子挖空</string>
@@ -650,7 +725,7 @@
     <string name="analysis_dialog_title">訓練分析 · %1$s</string>
     <string name="analysis_hints_line">%1$s · 弱提示 %2$d / 強提示 %3$d</string>
     <string name="learned_sentences_label">已記句子</string>
-    <string name="stat_total_reviews">累計複習</string>
+    <string name="stat_total_reviews">累計記憶</string>
     <plurals name="sentence_round_reviewed">
         <item quantity="other">本次共複習 %1$d 句</item>
     </plurals>
@@ -707,7 +782,6 @@
     <string name="section_selected">段落：自選 (%1$d/%2$d)</string>
     <string name="section_focus">聚焦：本句及附近</string>
     <string name="share_note">分享筆記</string>
-    <string name="mixed_smart_only">混合練習使用智慧挖空，不套用單篇自訂挖空設定</string>
     <string name="ai_cloze_failed_local">AI 挖空失敗，已改用本機演算法：%1$s</string>
     <string name="ai_cloze_no_profile">AI 挖空已開啟，但尚未在「設定 → AI 配置」中新增並啟用有效的對話設定，目前使用本機演算法。</string>
     <string name="generating_blanks">正在產生挖空…</string>
@@ -770,7 +844,7 @@
     <string name="custom_goal_title">自訂每日目標</string>
     <string name="custom_goal_label">每日練習次數</string>
     <string name="goal_times_unit">次</string>
-    <string name="due_soon_title">⏰ 即將遺忘</string>
+    <string name="due_soon_title">即將遺忘</string>
     <string name="prediction_item_desc">%1$s，記憶留存 %2$d%%，%3$s</string>
     <string name="decay_expanded">已展開衰減曲線</string>
     <string name="decay_collapsed">點擊展開衰減曲線</string>
@@ -872,8 +946,8 @@
         <item quantity="other">每句作答滿 %1$d 次才參與分檔；顏色 = 目前留存率，越紅越接近遺忘</item>
     </plurals>
     <!-- ── 通知渠道與提醒（notif_*）：鍵名統一前綴，與 NotificationChannels / NotificationHelper 對應 ── -->
-    <string name="notif_channel_due_name">到期複習</string>
-    <string name="notif_channel_due_desc">文章或句子到期、即將到期或即將遺忘時提醒</string>
+    <string name="notif_channel_due_name">到期提醒</string>
+    <string name="notif_channel_due_desc">文章或句子到期、計畫中的文章待開始，或即將遺忘時提醒</string>
     <string name="notif_channel_sentence_name">句子卡</string>
     <string name="notif_channel_sentence_desc">每日一句與到期句子卡的提醒</string>
     <string name="notif_channel_goal_name">繼續完成與今日目標</string>
@@ -894,7 +968,7 @@
     <string name="notif_mode_word">字詞填空</string>
     <string name="notif_mode_reverse">段落默寫</string>
     <string name="notif_no_study_title">📖 今日背誦提醒</string>
-    <string name="notif_no_study_body">今天還沒有完成背誦任務，花幾分鐘複習一下吧。</string>
+    <string name="notif_no_study_body">今天還沒有完成背誦任務，別讓連續 %1$d 天的紀錄斷掉。</string>
     <string name="notif_no_study_body_first">今天還沒有完成背誦任務，開始你的第一次練習吧！</string>
     <string name="notif_weak_title">🎯 薄弱內容鞏固</string>
     <plurals name="notif_weak_body">
@@ -914,6 +988,14 @@
         <item quantity="other">有 %1$d 項內容到期，及時複習記得更牢。</item>
     </plurals>
     <string name="notif_due_review_named_one">《%1$s》到了複習時間，開始複習吧。</string>
+    <string name="notif_start_article_title">📖 開始第一遍</string>
+    <string name="notif_start_article_named_one">《%1$s》已加入計畫，開始第一次練習吧。</string>
+    <plurals name="notif_start_article_named">
+        <item quantity="other">《%1$s》等 %2$d 篇還沒開始，挑一篇開始吧。</item>
+    </plurals>
+    <plurals name="notif_start_article_body">
+        <item quantity="other">有 %1$d 篇計畫中的文章還沒開始，今天練第一遍吧。</item>
+    </plurals>
     <plurals name="notif_due_review_named">
         <item quantity="other">《%1$s》等 %2$d 項內容已到複習時間，開始複習吧。</item>
     </plurals>
@@ -971,7 +1053,26 @@
     <string name="blank_warn_exceed">您輸入的 %1$d 個空無法滿足（實際產生 %2$d 個）。</string>
     <string name="blank_warn_suggestion">建議空數：%1$d（不等於最大值，為更適合練習的推薦值）</string>
     <string name="blank_use_suggested">使用建議空數（%1$d）</string>
-    <!-- ── 閱讀頁狀態與控制項（reader_*）── -->
+    <!-- ── 文章詳情頁狀態與控制項（reader_*）── -->
+    <!-- ── 文章详情页计划状态条（plan_bar_*）── -->
+    <plurals name="plan_bar_practices">
+        <item quantity="other">已練 %1$d 次</item>
+    </plurals>
+    <string name="plan_bar_accuracy">正確率 %1$d%%</string>
+    <string name="plan_bar_not_started">尚未開始</string>
+    <string name="plan_bar_overdue">已逾期</string>
+    <string name="plan_bar_due_today">今天複習</string>
+    <string name="plan_bar_start_today">今天開始</string>
+    <string name="plan_bar_start_overdue">該開始了</string>
+    <string name="plan_bar_due_tomorrow">明天複習</string>
+    <string name="plan_bar_start_tomorrow">明天開始</string>
+    <plurals name="plan_bar_due_days">
+        <item quantity="other">%1$d 天後複習</item>
+    </plurals>
+    <plurals name="plan_bar_start_days">
+        <item quantity="other">%1$d 天後開始</item>
+    </plurals>
+    <string name="plan_bar_enroll">加入計劃</string>
     <string name="reader_read_minutes">已閱讀：%1$d 分鐘</string>
     <string name="reader_read_less_minute">已閱讀：不足 1 分鐘</string>
     <string name="reader_finished">已讀完</string>
@@ -983,6 +1084,34 @@
     <string name="reader_prev_section">上一節</string>
     <string name="reader_full_text">全文</string>
     <string name="reader_next_section">下一節</string>
+    <string name="reader_select_copy">複製</string>
+    <string name="reader_select_highlight">劃線</string>
+    <string name="reader_select_unhighlight">取消劃線</string>
+    <string name="reader_select_note">批註</string>
+    <string name="reader_select_edit_note">改批註</string>
+    <string name="reader_note_title">批註</string>
+    <string name="reader_note_hint">寫下你的批註…</string>
+    <string name="reader_mark_copied">已複製</string>
+    <string name="reader_marks_title">劃線與批註</string>
+    <string name="reader_marks_empty">還沒有劃線或批註。長按正文裡的句子就能劃線。</string>
+    <string name="reader_marks_count">共 %1$d 條</string>
+    <string name="reader_marks_entry">劃線與批註</string>
+    <string name="reader_marks_entry_hint">長按正文即可劃線、寫批註</string>
+    <string name="reader_marks_entry_count">%1$d 條</string>
+    <string name="reader_speed_title">閱讀速度</string>
+    <string name="reader_speed_value">約 %1$d 字/分鐘</string>
+    <string name="reader_speed_basis_personal">依你的閱讀記錄估算（已累計 %1$d 分鐘）</string>
+    <string name="reader_speed_basis_default">還沒有你的閱讀記錄，先用預設速度</string>
+    <string name="reader_speed_reset">重新統計</string>
+    <string name="reader_remaining_hours">預計還需：%1$d 小時 %2$d 分鐘</string>
+    <string name="reader_remaining_hours_only">預計還需：%1$d 小時</string>
+    <string name="reader_idle_title">還在讀嗎？</string>
+    <string name="reader_idle_body">這一頁已經停了 %1$d 分鐘</string>
+    <string name="reader_idle_yes">還在讀</string>
+    <string name="reader_idle_no">先去忙</string>
+    <string name="reader_idle_cheer">真棒！</string>
+    <string name="reader_idle_cheer_detail">又讀了 %1$d 分鐘，接著來</string>
+    <string name="reader_idle_paused">好，去忙吧。回來接著讀</string>
     <!-- ── 學習資料備份／還原（backup_*）：錯誤型別在 data/backup/BackupManager，文案在這裡 ── -->
     <string name="backup_export_done">備份檔案已匯出，請妥善保存</string>
     <string name="backup_export_failed">匯出失敗：%1$s</string>
@@ -1022,7 +1151,8 @@
     <string name="data_archive_none">記錄不多，暫無需歸檔</string>
     <string name="flow_title">學習任務流</string>
     <string name="flow_summary_title">目前計畫</string>
-    <string name="flow_summary_due_now">篇現在可複習</string>
+    <string name="flow_summary_due_now">篇現在可練</string>
+    <string name="flow_summary_due_new">其中 %1$d 篇還沒練過</string>
     <string name="flow_summary_active">計畫中</string>
     <string name="flow_summary_overdue">逾期</string>
     <string name="flow_summary_paused">已暫停</string>
@@ -1042,6 +1172,8 @@
     <string name="flow_done_resumed_all">已恢復全部暫停任務</string>
     <string name="flow_done_paused_all">已暫停全部任務</string>
     <string name="flow_done_plan">已切換複習強度</string>
+    <string name="flow_undo">撤銷</string>
+    <string name="flow_undone">已撤銷</string>
     <string name="flow_filter_all">全部 %1$d</string>
     <string name="flow_filter_due">今天 %1$d</string>
     <string name="flow_filter_paused">已暫停 %1$d</string>
@@ -1053,13 +1185,16 @@
     <string name="flow_group_later">更晚</string>
     <string name="flow_group_paused">已暫停</string>
     <string name="plan_paused">已暫停</string>
-    <string name="flow_task_meta">複習 %1$d 次 · 留存 %2$d%%</string>
+    <string name="flow_task_meta">練習 %1$d 次 · 留存 %2$d%%</string>
+    <string name="flow_task_meta_no_retention">練習 %1$d 次</string>
+    <string name="flow_task_meta_new">還沒練過</string>
     <string name="flow_sentence_due">句子卡待複習 %1$d</string>
     <string name="flow_due_overdue">已逾期</string>
     <string name="flow_due_today">今天</string>
     <string name="flow_due_tomorrow">明天</string>
     <string name="flow_resume_on">恢復後 %1$s</string>
     <string name="flow_start_review">開始複習</string>
+    <string name="flow_start_learning">開始學習</string>
     <string name="flow_adjust_schedule">調整時間</string>
     <string name="flow_pause">暫停</string>
     <string name="flow_resume">恢復</string>
@@ -1095,12 +1230,15 @@
     <string name="flow_now">現在</string>
     <string name="flow_detail_title">任務詳情</string>
     <string name="flow_detail_retention_label">目前留存</string>
-    <string name="flow_detail_reviews_label">複習次數</string>
     <string name="flow_detail_sentences_label">已學句子</string>
     <string name="flow_detail_started_label">開始學習</string>
     <string name="flow_detail_advice_label">下一步建議</string>
     <string name="flow_advice_paused_title">計畫已暫停</string>
     <string name="flow_advice_paused_body">暫停只表示退出計劃與提醒，不禁止手動練習。準備好後隨時恢復，剩餘間隔會從恢復時接續。</string>
+    <string name="flow_advice_not_started_title">還沒開始</string>
+    <string name="flow_advice_not_started_body">這篇已加入計劃，但一次都沒練過。練一次之後，這裡會出現記憶曲線與複習節奏。</string>
+    <string name="flow_advice_legacy_body">這篇有練習記錄，但還沒有記憶狀態。完成一次練習後，這裡會出現記憶曲線與複習節奏。</string>
+    <string name="flow_advice_legacy_title">依舊練習記錄安排</string>
     <string name="flow_advice_overdue_title">已經逾期</string>
     <string name="flow_advice_overdue_body">越晚複習，留存掉得越多。今天練一次，就能把節奏拉回來。</string>
     <string name="flow_advice_low_retention_title">留存偏低</string>
@@ -1127,6 +1265,8 @@
     <string name="flow_detail_mistakes_title">錯誤類型分布</string>
     <string name="flow_detail_schedule_title">計畫調度</string>
     <string name="flow_detail_next_due">下次複習</string>
+    <string name="flow_detail_plan_start">計畫開始</string>
+    <string name="flow_detail_practices_label">練習次數</string>
     <string name="flow_detail_interval">本次間隔（天）</string>
     <string name="flow_detail_records_title">最近練習</string>
     <string name="flow_detail_view_all_stats">查看完整資料</string>
@@ -1186,7 +1326,7 @@
 
     <!-- ── 统计：目标与弱点建议 ── -->
     <string name="stats_article_line">%1$d 篇 · 練習 %2$d 次 · 正確率 %3$d%%</string>
-    <string name="daily_goal_achieved">🎯 今日目標已達成</string>
+    <string name="daily_goal_achieved">今日目標已達成</string>
     <string name="daily_goal_progress">%1$d / %2$d 次</string>
     <string name="weakness_profile_title">弱點畫像</string>
     <string name="weakness_total_mistakes">共 %1$d 處錯誤</string>
@@ -1352,7 +1492,6 @@
     <string name="retry">重試</string>
     <string name="ai_difficulty_intro">AI 將按你選定的難度與策略為「%1$s」產生挖空</string>
     <string name="ai_start_generating">開始產生</string>
-    <string name="start_action">開始</string>
 
     <!-- ── Pro AI 运行时状态 ── -->
     <string name="ai_cross_title">跨文 AI · %1$d 篇</string>
@@ -1416,10 +1555,33 @@
 
     <!-- ── 使用帮助正文 ── -->
     <string name="help_001">使用幫助</string>
+    <string name="help_flow_title">全流程一覽</string>
+    <string name="help_flow_intro">從匯入到複習的完整閉環</string>
+    <string name="help_flow_1_t">匯入文章</string>
+    <string name="help_flow_1_d">從首頁「添加文章」或「我的文章 → 匯入」錄入；支援貼上、檔案與內容包</string>
+    <string name="help_flow_2_t">今日計畫</string>
+    <string name="help_flow_2_d">首頁卡片列出今天最該做的三件事；右上「設定」調整時長與考試日期</string>
+    <string name="help_flow_3_t">學習任務流</string>
+    <string name="help_flow_3_d">資料頁下拉進入；可暫停、改期、換複習計畫，「移到明天」可復原</string>
+    <string name="help_flow_4_t">練習</string>
+    <string name="help_flow_4_d">句子挖空 / 字詞挖空 / 反向默寫 / 自訂挖空；句子卡可點按或滑動翻頁</string>
+    <string name="help_flow_5_t">記錄與複習</string>
+    <string name="help_flow_5_d">每次評分都寫入 FSRS；到期後自動排回今日計畫，進度在資料頁彙總</string>
+    <string name="help_flow_loop">到期後回到「今日計畫」，形成閉環</string>
+    <string name="help_shared_title">共通資料</string>
+    <string name="help_shared_intro">下面這些值只有一份，從任何一個入口修改都會同步到其他入口</string>
+    <string name="help_shared_1_t">每日學習時長</string>
+    <string name="help_shared_1_d">今日計畫設定 ↔ 設定 · 記憶方案；決定今日計畫的總時長</string>
+    <string name="help_shared_2_t">每日練習次數</string>
+    <string name="help_shared_2_d">今日計畫設定 ↔ 設定 · 提醒 ↔ 資料頁「今日目標」；也是「今天還差幾次」的口徑</string>
+    <string name="help_shared_3_t">考試日期</string>
+    <string name="help_shared_3_d">今日計畫設定 ↔ 設定；只影響倒排提示與節奏，不改複習安排</string>
+    <string name="help_shared_4_t">複習計畫</string>
+    <string name="help_shared_4_d">設定 · 記憶方案 ↔ 學習任務流；首頁提醒與任務流用同一套範本</string>
     <string name="help_002">開始練習</string>
     <string name="help_003">選擇文章後，點「開始練習」，選好模式即可開始背誦。</string>
     <string name="help_004">三種入口（任選其一）</string>
-    <string name="help_005">閱讀頁底部「開始練習」：先打開文章（閱讀頁），再開始</string>
+    <string name="help_005">文章詳情頁底部「開始練習」：先打開文章（文章詳情頁），再開始</string>
     <string name="help_006">首頁卡片裡的「練習」按鈕：「最近使用 / 文章卡片 / 待繼續」等卡上一步直達</string>
     <string name="help_007">首頁「繼續做」卡片：一鍵續練未完成的進度（保留原進度）</string>
     <string name="help_008">練習流程</string>
@@ -1452,7 +1614,7 @@
     <string name="help_035">段落打散默寫 — 整段還原</string>
     <string name="help_036">適合：考前檢測和模擬考試</string>
     <string name="help_037">自定義挖空</string>
-    <string name="help_038">按你預先圈定的位置挖空 —— 在閱讀頁將遮擋粒度切爲「自定義」並逐句/逐詞/逐字標註，練習時選「自定義配置」即可選套用（也可在練習前直接新建編輯）。</string>
+    <string name="help_038">按你預先圈定的位置挖空 —— 在文章詳情頁將遮擋粒度切爲「自定義」並逐句/逐詞/逐字標註，練習時選「自定義配置」即可選套用（也可在練習前直接新建編輯）。</string>
     <string name="help_039">適合：針對性極強的個性化背通</string>
     <string name="help_040">跨文混合練習</string>
     <string name="help_041">在「我的文章」長按進入多選，勾選 2 篇以上後點「開始練習」，多篇文章錯開抽空混合背誦。混合練習使用智能挖空，不套用單篇自定義挖空配置。</string>
@@ -1537,14 +1699,14 @@
     <string name="help_120">點左上角圖標 → 換 Logo（含自定義表情）</string>
     <string name="help_121">點副標題文字 → 自定義副標題</string>
     <string name="help_122">我的文章</string>
-    <string name="help_123">點文章 → 進入閱讀頁</string>
+    <string name="help_123">點文章 → 進入文章詳情頁</string>
     <string name="help_124">長按 → 多選模式：批量刪除 / 勾選 2 篇以上開始跨文混合練習 / 發給 AI</string>
-    <string name="help_125">閱讀頁</string>
+    <string name="help_125">文章詳情頁</string>
     <string name="help_126">底部按鈕：學習統計 / 閱讀模式 / 自定義 / 開始練習（Pro 版另有 AI）</string>
     <string name="help_127">「閱讀模式」：調字號、行距、字體、字重、配色、遮擋粒度（均衡 / 字詞 / 自定義）</string>
     <string name="help_128">正文雙指捏合 → 直接縮放字號</string>
     <string name="help_129">頂部右側：刪除 / 編輯文章</string>
-    <string name="help_130">遮擋自定義（閱讀頁）</string>
+    <string name="help_130">遮擋自定義（文章詳情頁）</string>
     <string name="help_131">將遮擋粒度切到「自定義」→ 進入配置列表；點按配置項直接使用，行尾「編輯」進入標註頁，長按可重命名 / 刪除</string>
     <string name="help_132">選中自定義粒度時，按鈕上顯示當前使用的配置名</string>
     <string name="help_133">標註頁：點句子 → 遮住整句；長按句子 → 拆成詞，點詞遮詞；長按詞 → 再拆成字；再次長按逐級還原</string>
@@ -1555,7 +1717,7 @@
     <string name="help_138">完成後成績卡可查看正確率與用時，並可直接分享</string>
     <string name="help_139">自定義挖空（練習時）</string>
     <string name="help_140">配置列表：點按進入編輯；長按可開始練習 / 重命名 / 刪除；選擇器模式下點按直接開練</string>
-    <string name="help_141">編輯頁：點按選中挖空、長按切換粒度（與閱讀頁標註一致）</string>
+    <string name="help_141">編輯頁：點按選中挖空、長按切換粒度（與文章詳情頁標註一致）</string>
     <string name="help_142">從導入頁「保存並挖空」直達新建 —— 導完文章馬上圈定考點</string>
     <string name="help_143">導入文章</string>
     <string name="help_144">兩種方式：粘貼文本 / 文件導入（txt、PDF、Word 等；PDF 可預覽）</string>
@@ -1564,16 +1726,16 @@
     <string name="help_147">底部兩個按鈕：「僅保存」= 存好返回；「保存並挖空」= 存好後直接進入該文章的自定義挖空編輯</string>
     <string name="help_148">全局通用</string>
     <string name="help_149">所有頁面左上角白色圓形按鈕 = 返回；也可用系統返回手勢 / 返回鍵</string>
-    <string name="help_150">閱讀頁處於標註/編輯狀態時，先退編輯再退頁面</string>
+    <string name="help_150">文章詳情頁處於標註/編輯狀態時，先退編輯再退頁面</string>
     <string name="help_151">關鍵操作有震動反饋：下拉過閾值、長按進卡片編輯、拖動 / 縮放卡片、長按菜單等</string>
-    <string name="help_152">刪除文章不可恢復：閱讀頁右上「刪除」或「我的文章」多選批量刪除</string>
+    <string name="help_152">刪除文章不可恢復：文章詳情頁右上「刪除」或「我的文章」多選批量刪除</string>
     <string name="help_153">設置頁「數據」：一鍵導出備份把文章庫與練習進度打包成一個備份文件；一鍵導入恢復到新裝應用（覆蓋當前數據，完成後退出重啓生效）</string>
     <string name="help_154">啓用 AI 後，可以把你的文章交給 AI，幫助你解釋難點、出練習題、分析易錯內容。</string>
     <string name="help_155">開啓與配置</string>
     <string name="help_156">在「設置 → AI → 啓用 AI 功能」中開啓，並填寫 API 地址、API Key 與模型名。支持 OpenAI 兼容接口（DeepSeek / 通義 / GLM / Kimi 等）。</string>
     <string name="help_157">聯網搜索：在設置中開啓「聯網搜索」後，到 tavily.com 免費註冊（郵箱即可），控制臺獲取 API Key（格式 tvly-xxx，免費 1000 次/月），粘貼到「Tavily API Key」輸入框即可使用。</string>
     <string name="help_158">入口在哪裡</string>
-    <string name="help_159">閱讀頁「AI」按鈕</string>
+    <string name="help_159">文章詳情頁「AI」按鈕</string>
     <string name="help_160">查看文章時，底部按鈕行中點擊「AI」，攜帶當前文章進入對話</string>
     <string name="help_161">文章列表「發給 AI」</string>
     <string name="help_162">長按文章進入多選後，點擊「發給 AI」，可攜帶多篇文章跨文對話</string>
@@ -1617,16 +1779,16 @@
     <string name="notebook_drill_empty">這些錯處已無法在當前正文中定位，不能只練這一批</string>
     <string name="notebook_drill_name">錯題重練</string>
     <string name="notebook_drill_partial">有 %1$d 處因正文已修改找不到，本次只練其餘部分</string>
-    <string name="review_timeline_title">真實複習軌跡</string>
+    <string name="review_timeline_title">真實練習軌跡</string>
     <string name="review_timeline_local_only">僅本機</string>
-    <string name="review_timeline_none">還沒有複習日誌，下次複習後開始記錄</string>
+    <string name="review_timeline_none">還沒有練習記錄，完成一次練習後開始記錄</string>
     <string name="review_timeline_one">只記錄了一次，暫看不出趨勢</string>
-    <string name="review_timeline_steady_start">從第一次起就一直穩</string>
-    <string name="review_timeline_steady_after">第 %1$d 次複習後穩住</string>
+    <string name="review_timeline_steady_start">從第一次練習起就一直穩</string>
+    <string name="review_timeline_steady_after">第 %1$d 次練習後穩住</string>
     <string name="review_timeline_shaky">最近一次又沒穩住</string>
-    <string name="review_timeline_interval_hint">每次複習的實際間隔</string>
+    <string name="review_timeline_interval_hint">每次練習的實際間隔</string>
     <string name="review_timeline_review_no">第 %1$d 次</string>
-    <string name="review_timeline_first">首次複習</string>
+    <string name="review_timeline_first">首次練習</string>
     <string name="review_timeline_gap">隔 %1$s 天</string>
     <string name="rating_again">忘記</string>
     <string name="rating_hard">不熟</string>
@@ -1643,8 +1805,8 @@
     <string name="reader_practice_sheet_title">練這一段</string>
     <string name="reader_practice_sheet_hint">選一種挖空方式，直接開練</string>
     <string name="reader_practice_mode_section">整篇按挖空方式練習</string>
-    <string name="reason_first">第一次複習</string>
     <string name="reason_lapsed">忘過 %1$d 次</string>
+    <string name="reason_first_practice">第一次練習</string>
     <string name="reason_long_gap">上次隔了 %1$d 天</string>
     <string name="reason_overdue">已逾期 %1$d 天</string>
     <string name="reason_stable">已經穩住 %1$d 次</string>
@@ -1654,12 +1816,20 @@
     <string name="today_plan_subtitle_exam">距考試 %1$d 天 · 清單約 %2$d 分鐘</string>
     <string name="today_plan_subtitle_exam_due">距考試 %1$d 天 · 共 %2$d 篇到期 · 清單約 %3$d 分鐘</string>
     <string name="today_plan_minutes">今天約 %1$d 分鐘</string>
-    <string name="today_plan_budget">只有 %1$d 分鐘</string>
     <string name="today_plan_exam_behind">按目前速度，到考試日可能排不完</string>
     <string name="today_plan_empty">現在沒有到期內容。選一個時長，或先複習一篇文章。</string>
     <string name="today_plan_paused_hint">已暫停 %1$d 篇 · 去任務流恢復</string>
     <string name="today_plan_empty_paused">已暫停 %1$d 篇文章，去任務流恢復</string>
     <string name="today_plan_item_minutes">%1$d 分鐘</string>
+    <string name="plan_settings_title">今日計劃設定</string>
+    <string name="plan_settings_subtitle">只影響今日計劃，不會改動複習安排</string>
+    <string name="plan_settings_exam_hint">只用於提示備考節奏，不會改變複習安排</string>
+    <string name="plan_settings_duration_label">每日學習時長</string>
+    <string name="plan_settings_duration_hint">決定今日計劃的總時長</string>
+    <string name="plan_settings_estimate">今天預估需要 %1$d 分鐘</string>
+    <string name="plan_settings_show_on_card">在今日計劃卡上顯示目標進度</string>
+    <string name="plan_settings_show_on_card_hint">關掉後卡片不再顯示目標進度</string>
+    <string name="today_plan_goal_progress">今日目標 %1$d 次 · 已練 %2$d 次</string>
     <string name="today_plan_exam_set">考試日期：%1$s</string>
     <string name="today_plan_set_exam">設定考試日期</string>
     <string name="today_plan_clear_exam">清除</string>
@@ -1668,18 +1838,13 @@
     <string name="today_plan_sentence_cards">句子卡</string>
     <string name="today_plan_daily_goal">今日目標</string>
     <string name="today_plan_resume_detail">已答 %1$d / %2$d 空</string>
+    <string name="today_plan_start_article">開始學習《%1$s》</string>
+    <string name="today_plan_start_detail">還沒練過 · 今天開始第一遍</string>
     <string name="today_plan_review_detail">到期複習</string>
     <string name="today_plan_weak_detail">薄弱篇 · 錯 %1$d 處</string>
     <string name="today_plan_mistake_detail">%1$d 處未攻克</string>
     <string name="today_plan_sentence_detail">%1$d 句到期</string>
     <string name="today_plan_goal_detail">還差 %1$d 次</string>
-    <string name="today_plan_budget_title">你有多少時間？</string>
-    <string name="today_plan_budget_hint">選一個時長，只安排這個時間內能練完的內容。</string>
-    <string name="today_plan_minutes_unit">%1$d 分鐘</string>
-    <string name="today_plan_budget_empty">這個時長內沒有能安排的內容</string>
-    <string name="today_plan_budget_result_articles">%1$d 篇 · 約 %2$d 分鐘</string>
-    <string name="today_plan_budget_result_cards">%1$d 句 · 約 %2$d 分鐘</string>
-    <string name="today_plan_budget_start">開始</string>
     <string name="budget_remaining">剩餘 %1$d 分鐘</string>
     <string name="budget_end_title">時間到了</string>
     <string name="budget_end_body">按預算該收尾了。已經答的可以先提交，還想練也可以繼續。</string>
@@ -1701,6 +1866,10 @@
     <string name="exam_paper_start">組卷（%1$d 篇）</string>
     <string name="exam_paper_title">組卷 · %1$d 篇</string>
     <string name="notif_action_start">開始複習</string>
+    <string name="notif_action_start_learning">開始學習</string>
+    <string name="notif_action_resume">繼續練習</string>
+    <string name="notif_action_view_task">查看任務</string>
+    <string name="notif_action_sentence">去練句子</string>
     <string name="open">開啟</string>
     <string name="content_pack_title">內容包</string>
     <string name="content_pack_settings_desc">匯入他人整理好的 txt / md 合集</string>
@@ -1757,9 +1926,24 @@
     <string name="widget_sentence_due">%1$d 句到期</string>
     <string name="ov_notebook_count">%1$d 處未攻克</string>
     <string name="ov_next_step_due_article_title">複習《%1$s》</string>
+    <string name="ov_next_step_start_article_title">開始學習《%1$s》</string>
     <string name="ov_next_step_scope_article">文章練習 · 句子挖空</string>
     <string name="ov_next_step_action_start">開始複習</string>
+    <string name="ov_next_step_action_start_learning">開始學習</string>
     <string name="ov_next_step_go_mistakes">去錯題本</string>
     <string name="ov_next_step_go_articles">去我的文章</string>
     <string name="content_pack_disclaimer">內容包由你自行提供，請確認擁有使用與分享這些文本的權利。</string>
+    <string name="view_tag">查看標籤</string>
+    <string name="tag_detail_articles">文章</string>
+    <string name="sentence_scope_this_article">只看本篇</string>
+    <string name="sentence_scope_this_tag">只看「%1$s」</string>
+    <string name="sentence_scope_empty">目前範圍裡沒有可複習的句子</string>
+    <string name="practice_history_sources">來源文章</string>
+    <string name="practice_history_no_sources">舊記錄沒有來源文章</string>
+    <string name="practice_history_empty_day">這一天沒有練習記錄</string>
+    <string name="practice_history_view_all">查看全部練習記錄</string>
+    <string name="import_tags_label">標籤（可選）</string>
+    <string name="search_sentences">句子命中</string>
+    <string name="search_practice_sentence">練這一句</string>
+    <string name="view_article">閱讀原文</string>
 </resources>

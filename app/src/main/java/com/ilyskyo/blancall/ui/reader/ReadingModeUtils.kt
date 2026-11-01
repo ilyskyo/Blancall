@@ -17,38 +17,62 @@ import com.ilyskyo.blancall.ui.common.pinchZoomByTouch
  */
 
 /**
+ * 一「节」：翻页模式下的一页。
+ *
+ * [firstPara] / [paraCount] 是这一节覆盖的**全局段落区间**（[ReaderOcclusion.splitParagraphs] 口径）。
+ * 划线/批注按全局段落索引存储，而每页渲染的是"节的文本"，没有这两个字段就无法把
+ * 页内段落映射回全文段落 —— 翻页模式下的划线会画错段，或者干脆画不出来。
+ */
+internal data class ReadingSection(
+    val text: String,
+    val firstPara: Int,
+    val paraCount: Int
+)
+
+/**
  * 将正文按段落聚合为若干「节」：
- * - 先按空行拆段；超长段落再按单行拆小
+ * - 先按空行拆段（口径与遮挡/划线一致：`splitParagraphs`）
+ * - 超长段落再按单行拆小（拆出的行仍记在原段落名下）
  * - 小块按目标长度聚合，形成适合翻页的章节
  */
-internal fun buildReadingSections(content: String): List<String> {
+internal fun buildReadingSections(content: String): List<ReadingSection> {
     val normalized = content.trim().replace("\r\n", "\n")
     if (normalized.isEmpty()) return emptyList()
-    val paras = normalized.split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotEmpty() }
-    if (paras.isEmpty()) return listOf(content.trim())
+    val paras = ReaderOcclusion.splitParagraphs(normalized)
+    if (paras.isEmpty()) return listOf(ReadingSection(content.trim(), 0, 0))
 
-    val blocks = mutableListOf<String>()
-    for (p in paras) {
-        if (p.length > 500) {
-            blocks += p.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+    // 每个 block 记住自己来自哪一段：超长段落被按行拆开时，拆出来的每一行都指回原段落
+    val blocks = mutableListOf<Pair<String, Int>>()
+    paras.forEachIndexed { idx, p ->
+        if (p.text.length > 500) {
+            p.text.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+                .forEach { line -> blocks += line to idx }
         } else {
-            blocks += p
+            blocks += p.text to idx
         }
     }
-    if (blocks.isEmpty()) return listOf(content.trim())
+    if (blocks.isEmpty()) return listOf(ReadingSection(content.trim(), 0, 0))
 
-    val sections = mutableListOf<String>()
+    val sections = mutableListOf<ReadingSection>()
     val current = StringBuilder()
-    for (b in blocks) {
+    var firstPara = -1
+    var lastPara = -1
+    for ((b, paraIdx) in blocks) {
         if (current.isNotEmpty() && current.length + b.length > ReadingSectionTarget) {
-            sections += current.toString().trim()
+            sections += ReadingSection(current.toString().trim(), firstPara, lastPara - firstPara + 1)
             current.setLength(0)
+            firstPara = -1
+            lastPara = -1
         }
         if (current.isNotEmpty()) current.append("\n\n")
         current.append(b)
+        if (firstPara < 0) firstPara = paraIdx
+        lastPara = paraIdx
     }
-    if (current.isNotBlank()) sections += current.toString().trim()
-    return sections.ifEmpty { listOf(content.trim()) }
+    if (current.isNotBlank()) {
+        sections += ReadingSection(current.toString().trim(), firstPara, lastPara - firstPara + 1)
+    }
+    return sections.ifEmpty { listOf(ReadingSection(content.trim(), 0, 0)) }
 }
 
 

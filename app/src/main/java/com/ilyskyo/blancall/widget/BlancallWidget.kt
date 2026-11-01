@@ -20,6 +20,7 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
 import androidx.glance.background
+import androidx.glance.unit.ColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -33,13 +34,21 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.ilyskyo.blancall.MainActivity
 import com.ilyskyo.blancall.R
+import com.ilyskyo.blancall.algorithm.EbbinghausScheduler
 import com.ilyskyo.blancall.algorithm.FsrsEngine
+import com.ilyskyo.blancall.algorithm.ReviewTemplate
 import com.ilyskyo.blancall.algorithm.SentenceSelector
 import com.ilyskyo.blancall.data.repository.ArticleRepository
 import com.ilyskyo.blancall.data.repository.DailySentenceCoordinator
 import com.ilyskyo.blancall.data.repository.FsrsStateStore
+import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
 import com.ilyskyo.blancall.notification.NotificationHelper
+import com.ilyskyo.blancall.ui.theme.AppPrefs
+import com.ilyskyo.blancall.ui.theme.AppearanceStore
+import com.ilyskyo.blancall.ui.theme.ThemeMode
+import androidx.compose.ui.graphics.toArgb
+import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -62,12 +71,43 @@ class BlancallWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val snapshot = withContext(Dispatchers.IO) { load(context) }
+        // 小组件以前用裸 GlanceTheme 的默认色板（M3 基线紫灰），既不看强调色也不看
+        // App 内手动选的明暗 —— 桌面和 App 里像两个产品。这里把外观快照算成一组显式
+        // 颜色，逐处 ColorProvider 传下去（GlanceTheme(colors=) 的构造在不同 glance 版本
+        // 上有差异，显式传色更稳）。
+        val colors = widgetColors(context)
         provideContent {
             GlanceTheme {
-                WidgetContent(context, snapshot)
+                WidgetContent(context, snapshot, colors)
             }
         }
     }
+
+    /** 小组件配色：跟随 App 内主题（含手动深色）与强调色，不看 Glance 默认色板。 */
+    private fun widgetColors(context: Context): WidgetColors {
+        val appearance = AppearanceStore.state.value
+        val systemDark = (context.resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val dark = when (appearance.themeMode) {
+            ThemeMode.SYSTEM -> systemDark
+            ThemeMode.DARK -> true
+            ThemeMode.LIGHT -> false
+        }
+        val accent = appearance.accentPreset()
+        return WidgetColors(
+            background = if (dark) 0xFF1C1C1E.toInt() else 0xFFFFFFFF.toInt(),
+            onSurface = if (dark) 0xFFF4F5F8.toInt() else 0xFF1E1B18.toInt(),
+            onSurfaceVariant = if (dark) 0xFFCBD0DA.toInt() else 0xFF4F4C47.toInt(),
+            primary = (if (dark) accent.primaryDark else accent.primaryLight).toArgb(),
+        )
+    }
+
+    private data class WidgetColors(
+        val background: Int,
+        val onSurface: Int,
+        val onSurfaceVariant: Int,
+        val primary: Int,
+    )
 
     private data class Snapshot(
         val dueArticles: Int = 0,
@@ -81,19 +121,38 @@ class BlancallWidget : GlanceAppWidget() {
         val filesDir = context.filesDir
         val articleRepo = ArticleRepository.getInstance(filesDir.resolve("articles.json").absolutePath)
         val fsrs = FsrsStateStore.getInstance(filesDir.resolve("fsrs_state.json").absolutePath)
+        val recordRepo = RecordRepository.getInstance(filesDir.resolve("records.json").absolutePath)
         return runCatching {
             articleRepo.awaitLoaded()
             fsrs.awaitLoaded()
+            recordRepo.awaitLoaded()
             // awaitLoaded 已保证首载完成，取一次当前快照即可
             val articles = articleRepo.allArticles.first()
+            val allRecords = recordRepo.records.first()
+            val recordsByArticle = allRecords.filter { it.articleId > 0L }.groupBy { it.articleId }
+            val template = ReviewTemplate.fromId(AppPrefs.reviewTemplateId)
             val now = System.currentTimeMillis()
             val paused = fsrs.pausedArticleIds()
             val states = fsrs.allStates()
-            val dueArticles = states.filterKeys { it !in paused }.values
-                .count { it.reviewCount > 0 && FsrsEngine.isDue(it, now) }
-            val firstDue = states.entries
-                .filter { it.key !in paused && it.value.reviewCount > 0 && FsrsEngine.isDue(it.value, now) }
-                .minByOrNull { it.value.due }?.key ?: -1L
+            // 只计「该复习」：FSRS 到期，或只有旧记录时按模板算出的到期。
+            // 加入计划但一次没练的文章不算复习（小组件标题是「今日复习」）。
+            val dueCandidates = articles.asSequence()
+                .filter { it.id !in paused }
+                .mapNotNull { article ->
+                    val state = states[article.id]
+                    if (state != null && state.reviewCount > 0) {
+                        if (FsrsEngine.isDue(state, now)) article.id to state.due else null
+                    } else {
+                        val articleRecords = recordsByArticle[article.id].orEmpty()
+                        if (articleRecords.isEmpty()) return@mapNotNull null
+                        val due = EbbinghausScheduler.nextReviewAt(template, articleRecords)
+                            ?: return@mapNotNull null
+                        if (due <= now) article.id to due else null
+                    }
+                }
+                .toList()
+            val dueArticles = dueCandidates.size
+            val firstDue = dueCandidates.minByOrNull { it.second }?.first ?: -1L
             val sentenceStates = fsrs.allSentenceStates()
             val dueSentences = sentenceStates.count { (key, state) ->
                 key.startsWith(SentenceSelector.SENTENCE_KEY_PREFIX) &&
@@ -118,7 +177,7 @@ class BlancallWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun WidgetContent(context: Context, snapshot: Snapshot) {
+    private fun WidgetContent(context: Context, snapshot: Snapshot, colors: WidgetColors) {
         val size = LocalSize.current
         val wide = size.width >= WIDE_WIDTH
         val openIntent = Intent(context, MainActivity::class.java).apply {
@@ -138,7 +197,7 @@ class BlancallWidget : GlanceAppWidget() {
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .background(GlanceTheme.colors.widgetBackground)
+                .background(ColorProvider(colors.background))
                 .padding(14.dp)
                 .clickable(actionStartActivity(openIntent)),
             verticalAlignment = Alignment.Top,
@@ -146,7 +205,7 @@ class BlancallWidget : GlanceAppWidget() {
             Text(
                 text = context.getString(R.string.widget_title),
                 style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
+                    color = ColorProvider(colors.onSurface),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                 ),
@@ -156,7 +215,7 @@ class BlancallWidget : GlanceAppWidget() {
                 Text(
                     text = snapshot.dueArticles.toString(),
                     style = TextStyle(
-                        color = GlanceTheme.colors.primary,
+                        color = ColorProvider(colors.primary),
                         fontSize = if (wide) 30.sp else 26.sp,
                         fontWeight = FontWeight.Bold,
                     ),
@@ -165,7 +224,7 @@ class BlancallWidget : GlanceAppWidget() {
                 Text(
                     text = context.getString(R.string.widget_due_label),
                     style = TextStyle(
-                        color = GlanceTheme.colors.onSurfaceVariant,
+                        color = ColorProvider(colors.onSurfaceVariant),
                         fontSize = 12.sp,
                     ),
                 )
@@ -174,7 +233,7 @@ class BlancallWidget : GlanceAppWidget() {
                     Text(
                         text = context.getString(R.string.widget_sentence_due, snapshot.dueSentences),
                         style = TextStyle(
-                            color = GlanceTheme.colors.onSurfaceVariant,
+                            color = ColorProvider(colors.onSurfaceVariant),
                             fontSize = 11.sp,
                         ),
                     )
@@ -186,7 +245,7 @@ class BlancallWidget : GlanceAppWidget() {
                     text = snapshot.sentence,
                     maxLines = 2,
                     style = TextStyle(
-                        color = GlanceTheme.colors.onSurface,
+                        color = ColorProvider(colors.onSurface),
                         fontSize = 12.sp,
                     ),
                 )
@@ -195,7 +254,7 @@ class BlancallWidget : GlanceAppWidget() {
                         text = snapshot.sentenceTitle,
                         maxLines = 1,
                         style = TextStyle(
-                            color = GlanceTheme.colors.onSurfaceVariant,
+                            color = ColorProvider(colors.onSurfaceVariant),
                             fontSize = 10.sp,
                         ),
                     )

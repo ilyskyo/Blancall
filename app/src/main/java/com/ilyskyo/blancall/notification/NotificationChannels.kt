@@ -12,7 +12,7 @@ import com.ilyskyo.blancall.R
  * 通知渠道拆分。
  *
  * 旧实现只有一个 `study_reminder` 渠道，用户要么全收、要么全关 —— 一个只想关掉「句子卡」
- * 但保留「到期复习」的人无处可去，最后往往是把整个提醒关掉。拆成三个语义清晰的渠道后，
+ * 但保留「到期复习」的人无处可去，最后往往是把整个提醒关掉。按语义拆成多个渠道后，
  * 每种打扰都能被单独关掉，这也是 Android 8+ 渠道机制存在的本意。
  *
  * 渠道一旦用某个 ID 建过，后续只能改名字/描述，**不能改重要性**（系统会忽略），
@@ -22,7 +22,7 @@ import com.ilyskyo.blancall.R
  */
 object NotificationChannels {
 
-    /** 到期复习（文章 / 句子到期） */
+    /** 到期与待开始（文章 / 句子到期复习，或计划中的文章该开始第一遍） */
     const val CHANNEL_DUE_REVIEW = "due_review"
 
     /** 句子卡（每日一句 / 到期句） */
@@ -53,11 +53,38 @@ object NotificationChannels {
      */
     const val CHANNEL_ID_LEGACY = "study_reminder"
 
+    /**
+     * 「学习提醒」设置页管辖的渠道（不含进行中 / 旧渠道 / AI 回复）。
+     * 顺序即设置页展示与测试通知的候选顺序：到期 / 待开始排第一。
+     */
+    val REMINDER_CHANNEL_IDS: List<String> = listOf(
+        CHANNEL_DUE_REVIEW,
+        CHANNEL_SENTENCE_CARD,
+        CHANNEL_GOAL,
+        CHANNEL_PRACTICE,
+    )
+
+    /**
+     * 第一个还能发通知的提醒渠道；全部被用户关掉时返回 null。
+     *
+     * 渠道尚未创建（null）视为可用：与 [ReminderWorker] 的 allowedReasons 同一口径，
+     * 避免「渠道还没建出来」被误判成「用户关了」。
+     */
+    fun firstEnabledReminderChannel(context: Context): String? {
+        val manager = context.getSystemService(NotificationManager::class.java)
+            ?: return REMINDER_CHANNEL_IDS.firstOrNull()
+        return REMINDER_CHANNEL_IDS.firstOrNull { id ->
+            val channel = manager.getNotificationChannel(id)
+            channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
+        }
+    }
+
     /** 该 reason 应落在哪个渠道。同一条 reason 永远映射到同一渠道，避免用户关了一个渠道又被另一个顶上来。 */
     fun channelIdFor(reason: ReminderReason): String = when (reason) {
-        // 「任务即将到期 / 即将遗忘」与真正到期共用一条渠道：
-        // 对用户来说都是「该复习了」，拆开只会让要关的人多关一处。
+        // 「任务即将到期 / 即将遗忘 / 新文章该开始」与真正到期共用一条渠道：
+        // 对用户来说都是「该练了」，拆开只会让要关的人多关一处。
         ReminderReason.DueReview,
+        ReminderReason.StartArticle,
         ReminderReason.TaskDueSoon,
         ReminderReason.ForgettingSoon -> CHANNEL_DUE_REVIEW
 

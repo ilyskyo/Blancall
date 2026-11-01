@@ -66,7 +66,6 @@ import com.ilyskyo.blancall.ui.common.StatItem
 import com.ilyskyo.blancall.ui.common.pressClick
 import com.ilyskyo.blancall.ui.handwriting.InkThumbnail
 import com.ilyskyo.blancall.ui.theme.AppPrefs
-import com.ilyskyo.blancall.ui.theme.ReminderPrefs
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.Dispatchers
@@ -78,12 +77,22 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
     val recordRepo = remember { RecordRepository.getInstance(context.filesDir.resolve("records.json").absolutePath) }
     val allRecords by recordRepo.records.collectAsState()
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
-    val streakDays by ReminderPrefs.studyStreakDaysFlow.collectAsState()
-    val longestStreak by ReminderPrefs.longestStreakDaysFlow.collectAsState()
+    var articleTitle by remember(articleId) { mutableStateOf<String?>(null) }
 
     // ── 过滤+排序：仅在 allRecords 或 articleId 变化时重算 ──
     val records = remember(allRecords, articleId) {
         allRecords.filter { it.articleId == articleId }.sortedByDescending { it.timestamp }
+    }
+    // 单篇统计页的连续天数也必须来自本篇记录：这里原先读 ReminderPrefs 的全局计数器，
+    // 与总览页「从记录反推」的口径不同，且把全局数混进了单篇指标。
+    val studiedDays = remember(records) {
+        records.mapTo(mutableSetOf()) { com.ilyskyo.blancall.algorithm.DayBucket.localDate(it.timestamp) }
+    }
+    val streakDays = remember(studiedDays) {
+        com.ilyskyo.blancall.algorithm.DayBucket.consecutiveDays(studiedDays, java.time.LocalDate.now())
+    }
+    val longestStreak = remember(studiedDays) {
+        com.ilyskyo.blancall.algorithm.DayBucket.longestRun(studiedDays)
     }
 
     // ── 基础统计：单遍聚合（B1-1，口径与单测都在 StatsRepository）──
@@ -107,6 +116,7 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
     LaunchedEffect(articleId, records) {
         // 读文件走 IO、全文切分+聚合走 Default，避免阻塞主线程
         val article = withContext(Dispatchers.IO) { articleRepo.getArticleById(articleId) }
+        articleTitle = article?.title?.takeIf { it.isNotBlank() }
         // 句级 FSRS 状态快照（留存分档用）：等 store 加载完成再取（取到的是深拷贝）
         val sentenceStates = withContext(Dispatchers.IO) {
             fsrsStore.awaitLoaded()
@@ -151,8 +161,8 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
         weakSnapshot = current.entries.joinToString(";") { "${it.key}=${it.value}" }
     }
 
-    // ── 真实复习轨迹（消费 fsrs_reviews.jsonl）──
-    // 日志只写不读是旧审计里唯一的「纯收益」缺口：这里按文章级 key（a:<id>）取事件，
+    // ── 真实练习轨迹（消费 fsrs_reviews.jsonl）──
+    // 日志在每次练习提交时写入（含第一次），这里按文章级 key（a:<id>）取事件，
     // 给出实际间隔与「第几次才稳住」。日志不进备份，卡片上必须标明「仅本机」。
     var reviewSeries by remember(articleId) { mutableStateOf<ReviewTimeline.Series?>(null) }
     LaunchedEffect(articleId, records) {
@@ -204,17 +214,40 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })
                 Spacer(Modifier.width(12.dp))
-                Text(
-                    stringResource(com.ilyskyo.blancall.R.string.statistics_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = articleTitle ?: stringResource(com.ilyskyo.blancall.R.string.statistics_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (articleTitle != null) {
+                        Text(
+                            stringResource(com.ilyskyo.blancall.R.string.statistics_title),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (articleTitle != null) {
+                    GlassButton(
+                        onClick = { navController.navigate("reader/$articleId") },
+                        modifier = Modifier.height(40.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.view_article),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
                 GlassButton(
                     onClick = { navController.navigate("mistakes?articleId=$articleId") },
                     modifier = Modifier.height(40.dp)
@@ -261,8 +294,6 @@ fun StatisticsScreen(navController: NavController, articleId: Long) {
                             Spacer(Modifier.width(16.dp))
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("🔥", style = MaterialTheme.typography.titleMedium)
-                                    Spacer(Modifier.width(4.dp))
                                     Text(stringResource(com.ilyskyo.blancall.R.string.streak_days, streakDays),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
@@ -612,7 +643,7 @@ private fun HistoryMonthHeader(monthStartMs: Long, monthFormat: java.text.DateFo
 }
 
 /**
- * 真实复习轨迹：显示的是**事实**（这次隔了几天、复习后稳定度怎么变），
+ * 真实练习轨迹：显示的是**事实**（这次隔了几天、练习后稳定度怎么变），
  * 与热力图上的预测曲线是两回事。卡片上常驻「仅本机」：日志不进备份，换机归零。
  */
 @Composable

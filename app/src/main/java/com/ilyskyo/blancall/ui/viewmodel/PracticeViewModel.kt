@@ -1744,15 +1744,38 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             val total = checkResult.sentences.size.coerceAtLeast(1)
             val correctCount = (checkResult.overallScore * total).toInt()
             val rating = resolveRating(similarity, if (total > 0) correctCount.toFloat() / total else 0f)
+            // 反向默写的错处也要带来源文章：跨文默写时 clause 不等于 SentenceSplitter 的句子
+            // （还会按逗号/顿号细分），必须先把分句映射回混合句，再映射到来源文章。
+            val dictationMistakes = DictationMistakes.assemble(originalSentences, checkResult)
+            val crossSources = if (articleId > 0L) emptyList() else _crossSourceInfo.value
+            val crossSentences = if (articleId > 0L) emptyList()
+            else SentenceSplitter.split(_article.value?.content.orEmpty())
+            val clauseSentenceIndices = if (articleId > 0L) emptyList()
+            else CrossTextReview.clauseSentenceIndices(originalSentences, crossSentences)
+            val mistakes = if (articleId > 0L) {
+                dictationMistakes
+            } else {
+                dictationMistakes.map { mistake ->
+                    val sentenceIdx = clauseSentenceIndices.getOrNull(mistake.blankIndex) ?: -1
+                    val source = crossSources.getOrNull(sentenceIdx)
+                    mistake.copy(
+                        sentenceIndex = source?.sentenceIndex ?: mistake.sentenceIndex,
+                        sentenceText = crossSentences.getOrNull(sentenceIdx).orEmpty(),
+                        articleId = source?.articleId ?: -1L,
+                    )
+                }
+            }
             try {
                 // 接住返回值：错题墨迹旁路存档要用记录 id（见 saveWrongInk）
                 val saved = recordRepo.insert(
                     PracticeRecord(
                         articleId = articleId,
+                        sourceArticleIds = if (articleId > 0L) emptyList()
+                        else _crossSourceInfo.value.map { it.articleId }.distinct(),
                         mode = _mode.value.name,
                         totalBlanks = total,
                         correctCount = correctCount,
-                        mistakes = DictationMistakes.assemble(originalSentences, checkResult),
+                        mistakes = mistakes,
                         duration = if (practiceStartTime > 0) System.currentTimeMillis() - practiceStartTime else 0L,
                         similarity = similarity,
                         rating = rating.value,
@@ -1771,6 +1794,35 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             AppPrefs.noteDonationCompletion()
             // 更新 FSRS 记忆状态（自适应调度）
             updateFsrsState(articleId, rating)
+            // 跨文反向默写没有文章级归属，但逐句有来源：把每一句写回自己的句子状态，
+            // 否则跨文默写同样会脱离句子卡/记忆热力图。
+            if (articleId <= 0L) {
+                val matched = checkResult.sentences.associateBy { it.matchIndex }
+                // 同一句里的多个分句合并成一次状态更新，取最差评级
+                val ratingsBySentence = LinkedHashMap<Int, FsrsEngine.Rating>()
+                originalSentences.forEachIndexed { index, text ->
+                    if (text.isBlank()) return@forEachIndexed
+                    val sentenceIdx = clauseSentenceIndices.getOrNull(index) ?: return@forEachIndexed
+                    if (sentenceIdx !in crossSentences.indices) return@forEachIndexed
+                    val check = matched[index]
+                    val clauseRating = if (check == null) {
+                        FsrsEngine.Rating.AGAIN
+                    } else {
+                        resolveRating(
+                            check.similarity,
+                            if (check.result == AnswerChecker.Result.CORRECT) 1f else 0f,
+                        )
+                    }
+                    val prev = ratingsBySentence[sentenceIdx]
+                    ratingsBySentence[sentenceIdx] = if (prev == null) clauseRating else minOf(prev, clauseRating)
+                }
+                val perSentence = ratingsBySentence.mapNotNull { (sentenceIdx, clauseRating) ->
+                    val source = crossSources.getOrNull(sentenceIdx) ?: return@mapNotNull null
+                    val text = crossSentences.getOrNull(sentenceIdx) ?: return@mapNotNull null
+                    SentenceSelector.sentenceKey(source.articleId, text) to clauseRating
+                }.toMap()
+                updateSentenceStates(perSentence)
+            }
             // 反向默写完整提交后清除进度文件
             clearPracticeState(articleId)
         }.also { it.invokeOnCompletion { _isSubmitting.value = false } }
@@ -1875,7 +1927,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     else -> null
                 }.orEmpty()
             }
-            val answeredSentenceStarts = if (!anchorsUsable) emptyList()
+            val answeredSentenceStarts = if (!anchorsUsable || articleId <= 0L) emptyList()
             else results.keys.mapNotNull { blankIdx -> blankSentenceIndex(blankIdx)?.let { anchors.getOrNull(it) } }.distinct()
             // 空位 → 【全文切句】句子索引：取锚点（全文坐标）在全文切句起点表中的下标。
             // 只算一次，逐错落点与句级去重集合都从这张表出 —— 两处各换算一遍就会漂成两个口径。
@@ -1891,15 +1943,34 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         if (idx < 0) null else blankIdx to idx
                     }.toMap()
                 }
+            // 跨文练习：每个空都可能来自不同文章。逐空记下来源文章与原句在**那篇文章内**的索引，
+            // 错题本才能按文章分组、重练时才能回到正确正文；混合坐标只对当次 mix 有效，不能外泄。
+            val crossSources = _crossSourceInfo.value
+            val crossSourceOfBlank: (Int) -> CrossTextReview.SourceInfo? = { blankIdx ->
+                if (articleId > 0L) {
+                    null
+                } else {
+                    blankSentenceIndex(blankIdx)?.let { mixedIdx -> crossSources.getOrNull(mixedIdx) }
+                }
+            }
+            val blankOwnerArticleId: (Int) -> Long = { blankIdx ->
+                crossSourceOfBlank(blankIdx)?.articleId ?: articleId
+            }
+            val blankSourceSentenceIndex: (Int) -> Int = { blankIdx ->
+                crossSourceOfBlank(blankIdx)?.sentenceIndex
+                    ?: blankToFullSentenceIndex[blankIdx]
+                    ?: -1
+            }
             val mistakes = results.entries
                 .filter { it.value.result != AnswerChecker.Result.CORRECT }
                 .map {
                     MistakeDetail(
                         it.key, it.value.correctAnswer, it.value.userAnswer, it.value.result.name,
-                        blankToFullSentenceIndex[it.key] ?: -1,
+                        blankSourceSentenceIndex(it.key),
                         // 逐空相似度一并留存：会话级均值继续给统计页用，这一份用来分「一笔之差」和「全错」
                         it.value.similarity,
-                        blankSentenceText(it.key)
+                        blankSentenceText(it.key),
+                        articleId = blankOwnerArticleId(it.key)
                     )
                 }
             // 逐空全量结果（含答对）：错题本靠它区分「还在错」与「后来写对了」。
@@ -1912,18 +1983,26 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                         correctAnswer = it.value.correctAnswer,
                         userAnswer = it.value.userAnswer,
                         errorType = if (it.value.result == AnswerChecker.Result.CORRECT) "" else it.value.result.name,
-                        sentenceIndex = blankToFullSentenceIndex[it.key] ?: -1,
+                        sentenceIndex = blankSourceSentenceIndex(it.key),
                         sentenceText = blankSentenceText(it.key),
-                        similarity = it.value.similarity
+                        similarity = it.value.similarity,
+                        articleId = blankOwnerArticleId(it.key)
                     )
                 }
             // 本次答错的句子（去重集合）：由上面的逐错落点直接汇出，不再另走一遍锚点换算
-            val mistakeSentenceIndices = mistakes.map { it.sentenceIndex }.filter { it >= 0 }.distinct()
+            // 跨文练习的 sentenceIndex 是「来源文章内索引」，跨文章混合成一条集合没有意义，故不落。
+            val mistakeSentenceIndices = if (articleId > 0L) {
+                mistakes.map { it.sentenceIndex }.filter { it >= 0 }.distinct()
+            } else {
+                emptyList()
+            }
             try {
                 // 接住返回值：错题墨迹旁路存档要用记录 id（见 saveWrongInk）
                 val saved = if (graded) recordRepo.insert(
                     PracticeRecord(
                         articleId = articleId,
+                        sourceArticleIds = if (articleId > 0L) emptyList()
+                        else crossSources.map { it.articleId }.distinct(),
                         mode = mode.name,
                         totalBlanks = results.size,
                         correctCount = correctCount,
@@ -1949,8 +2028,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             // 逐句也进 FSRS 闭环：整场练习塌成一个文章级评级时，调度器永远不知道**哪句**生疏
             // （文章级 state 照旧写，这一遍是往同一个 store 的句子命名空间里加来源）。
             // 键 = s:<articleId>:<hash16>，与每日一句同一套口径，存储层与备份格式零改动。
-            // 跨文会话（articleId<=0）不写：那些句子分属多篇文章，与文章级态不写同一个理由。
-            if (graded && articleId > 0L) {
+            // 跨文会话没有文章级归属，但每一句都有来源文章：按来源写句子级状态，
+            // 否则标签/多选发起的跨文复习会完全脱离记忆调度，成为一场只会计数的练习。
+            if (graded) {
                 val sentenceTexts = when (mode) {
                     BlancallMode.SENTENCE -> sentenceCloze?.sentences
                     BlancallMode.WORD -> wordCloze?.sentences?.map { it.text }
@@ -1962,9 +2042,13 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     )
                     updateSentenceStates(
                         perSentence.mapNotNull { (sentenceIdx, rating) ->
-                            sentenceTexts.getOrNull(sentenceIdx)?.let {
-                                SentenceSelector.sentenceKey(articleId, it) to rating
+                            val text = sentenceTexts.getOrNull(sentenceIdx) ?: return@mapNotNull null
+                            val ownerId = if (articleId > 0L) {
+                                articleId
+                            } else {
+                                crossSources.getOrNull(sentenceIdx)?.articleId ?: return@mapNotNull null
                             }
+                            SentenceSelector.sentenceKey(ownerId, text) to rating
                         }.toMap()
                     )
                 }

@@ -8,7 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 统计页「下一步」只是今日计划第一条的映射：六种 Kind 必须一一对应。
+ * 统计页「下一步」只是今日计划第一条的映射：七种 Kind 必须一一对应。
  * 以前这里自己排优先级，改坏后界面不会崩、只是两页推荐不同的事 —— 所以逐种钉住。
  */
 class NextStepDeciderTest {
@@ -43,6 +43,35 @@ class NextStepDeciderTest {
             )
         )
         assertEquals(NextStep.DueArticle(1L), NextStepDecider.fromPlan(plan))
+    }
+
+    @Test
+    fun `加入计划但没练过映射到StartArticle`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(
+                now = now,
+                dueArticles = listOf(
+                    StudyCoach.DueArticle(2, "未开始", now - 1_000, reviewCount = 0, estimatedBlanks = 10)
+                ),
+            )
+        )
+        assertEquals(NextStep.StartArticle(2L), NextStepDecider.fromPlan(plan))
+    }
+
+    @Test
+    fun `有旧练习记录但没有FSRS状态映射到DueArticle`() {
+        val plan = StudyCoach.buildPlan(
+            StudyCoach.Input(
+                now = now,
+                dueArticles = listOf(
+                    StudyCoach.DueArticle(
+                        3, "旧记录", now - 1_000,
+                        reviewCount = 0, estimatedBlanks = 10, hasPractice = true,
+                    )
+                ),
+            )
+        )
+        assertEquals(NextStep.DueArticle(3L), NextStepDecider.fromPlan(plan))
     }
 
     @Test

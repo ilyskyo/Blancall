@@ -3,6 +3,7 @@
 
 package com.ilyskyo.blancall.data.repository
 
+import com.ilyskyo.blancall.data.model.AnsweredBlank
 import com.ilyskyo.blancall.data.model.MistakeDetail
 import com.ilyskyo.blancall.data.model.PracticeRecord
 import kotlinx.coroutines.runBlocking
@@ -141,6 +142,34 @@ class RecordRepositoryJsonlTest {
             assertEquals(1, repo2.records.value.size)
             assertEquals(2L, repo2.records.value.first().articleId)
         }
+    }
+
+    @Test
+    fun `跨文来源与逐空来源文章可往返`() = runBlocking {
+        val path = tempPath()
+        val repo = RecordRepository(path.absolutePath)
+        repo.awaitLoaded()
+        repo.insert(
+            record(articleId = -1).copy(
+                sourceArticleIds = listOf(3, 4),
+                mistakes = listOf(
+                    MistakeDetail(
+                        0, "甲", "乙", "TYPO", -1, 0.4f, "甲句。", articleId = 4,
+                    )
+                ),
+                answeredBlanks = listOf(
+                    AnsweredBlank(
+                        0, "甲", "乙", "TYPO", 2, "甲句。", 0.4f, articleId = 3,
+                    )
+                ),
+            )
+        )
+        val reloaded = RecordRepository(path.absolutePath)
+        reloaded.awaitLoaded()
+        val saved = reloaded.records.value.single()
+        assertEquals(listOf(3L, 4L), saved.sourceArticleIds)
+        assertEquals(4L, saved.mistakes.single().articleId)
+        assertEquals(3L, saved.answeredBlanks.single().articleId)
     }
 
     @Test

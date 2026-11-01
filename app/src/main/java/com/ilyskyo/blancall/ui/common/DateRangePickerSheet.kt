@@ -219,6 +219,73 @@ fun DateRangePickerSheet(
     }
 }
 
+/**
+ * 单日期月历（不带面板外壳）。
+ *
+ * 考试日期这类「选一天」的配置直接嵌在现有计划设置面板里：
+ * 不用系统 DatePickerDialog（样式割裂、部分 ROM 还带右下角窗口动画），
+ * 也不再叠第二层 ModalBottomSheet。视觉与 [DateRangePickerSheet] 同一套月历。
+ */
+@Composable
+fun SingleDateCalendar(
+    selected: LocalDate,
+    today: LocalDate,
+    futureEnabled: Boolean,
+    onSelect: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val locale = LocalConfiguration.current.locales.get(0)
+    val firstDay = remember(locale) { java.time.temporal.WeekFields.of(locale).firstDayOfWeek }
+    val weekdayLabels = remember(locale, firstDay) {
+        (0 until 7).map { dayOfWeekAtRow(it, firstDay).getDisplayName(TextStyle.NARROW, locale) }
+    }
+    val monthFmt = remember(locale) { DateTimeFormatter.ofPattern("LLLL yyyy", locale) }
+    var anchor by remember { mutableStateOf(YearMonth.from(selected)) }
+    val haptic = rememberHaptic(HapticTier.Toggle)
+
+    Column(modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MonthArrow(
+                kind = AppIconKind.ChevronRight,
+                rotateDeg = 180f,
+                a11y = stringResource(R.string.calendar_prev_month)
+            ) { anchor = anchor.minusMonths(1) }
+            Text(
+                anchor.format(monthFmt),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            MonthArrow(
+                kind = AppIconKind.ChevronRight,
+                rotateDeg = 0f,
+                a11y = stringResource(R.string.calendar_next_month),
+            ) { anchor = anchor.plusMonths(1) }
+        }
+        Spacer(Modifier.height(8.dp))
+        MonthGrid(
+            yearMonth = anchor,
+            firstDayOfWeek = firstDay,
+            weekdayLabels = weekdayLabels,
+            today = today,
+            start = null,
+            end = null,
+            onDayClick = { day ->
+                haptic()
+                onSelect(day)
+                anchor = YearMonth.from(day)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            selected = selected,
+            futureEnabled = futureEnabled,
+        )
+    }
+}
+
 /** 单端回显：小标题 + 日期（未选时为破折号） */
 @Composable
 private fun RangeEndpoint(label: String, value: String?, modifier: Modifier = Modifier) {
@@ -284,7 +351,9 @@ private fun MonthGrid(
     start: LocalDate?,
     end: LocalDate?,
     onDayClick: (LocalDate) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selected: LocalDate? = null,
+    futureEnabled: Boolean = false,
 ) {
     Column(modifier = modifier) {
         Row(Modifier.fillMaxWidth()) {
@@ -310,6 +379,8 @@ private fun MonthGrid(
                                 today = today,
                                 start = start,
                                 end = end,
+                                selected = selected,
+                                futureEnabled = futureEnabled,
                                 onClick = onDayClick
                             )
                         }
@@ -327,10 +398,13 @@ private fun DayCell(
     today: LocalDate,
     start: LocalDate?,
     end: LocalDate?,
-    onClick: (LocalDate) -> Unit
+    onClick: (LocalDate) -> Unit,
+    selected: LocalDate? = null,
+    futureEnabled: Boolean = false,
 ) {
-    val enabled = !date.isAfter(today)
-    val isEdge = date == start || date == end
+    // 区间选择默认不允许未来（没有数据）；单日期（考试日期）反过来要允许未来
+    val enabled = futureEnabled || !date.isAfter(today)
+    val isEdge = date == start || date == end || date == selected
     val inBand = start != null && end != null && date in start..end && !isEdge
     val bg = when {
         isEdge -> MaterialTheme.colorScheme.primary

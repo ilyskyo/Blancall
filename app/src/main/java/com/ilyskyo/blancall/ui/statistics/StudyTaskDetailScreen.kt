@@ -89,11 +89,16 @@ import java.util.Date
 import java.util.Locale
 
 private enum class DetailAdviceKind {
-    PAUSED, OVERDUE, LOW_RETENTION, LOW_ACCURACY, SENTENCE_DUE, STEADY
+    PAUSED, NOT_STARTED, LEGACY, OVERDUE, LOW_RETENTION, LOW_ACCURACY, SENTENCE_DUE, STEADY
 }
 
 private fun adviceKind(task: FlowTask, totalPractices: Int, latestRate: Float): DetailAdviceKind = when {
     task.phase == StudyFlow.Phase.PAUSED -> DetailAdviceKind.PAUSED
+    // 加入计划但一次没练：留存率恒为 0，若走 LOW_RETENTION 会告诉用户「记忆在衰减」——
+    // 那是完全相反的结论。这条必须排在留存判定之前。
+    !task.hasPractice -> DetailAdviceKind.NOT_STARTED
+    // 有历史记录但没有 FSRS 状态：也不能说「还没开始」，更不能拿 0 留存当衰减
+    task.state.reviewCount <= 0 -> DetailAdviceKind.LEGACY
     task.phase == StudyFlow.Phase.OVERDUE -> DetailAdviceKind.OVERDUE
     task.retention < 0.7f -> DetailAdviceKind.LOW_RETENTION
     totalPractices > 0 && latestRate >= 0f && latestRate < 0.7f -> DetailAdviceKind.LOW_ACCURACY
@@ -127,12 +132,14 @@ fun StudyTaskDetailScreen(navController: NavController, articleId: Long) {
     var states by remember { mutableStateOf(fsrsStore.allStates()) }
     var pauses by remember { mutableStateOf(fsrsStore.pausedArticles()) }
     var sentenceStates by remember { mutableStateOf(fsrsStore.allSentenceStates()) }
+    var enrolled by remember { mutableStateOf(fsrsStore.enrolledArticles()) }
     val fsrsRevision by fsrsStore.revision.collectAsState()
     LaunchedEffect(fsrsRevision) {
         fsrsStore.awaitLoaded()
         states = fsrsStore.allStates()
         pauses = fsrsStore.pausedArticles()
         sentenceStates = fsrsStore.allSentenceStates()
+        enrolled = fsrsStore.enrolledArticles()
     }
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -147,24 +154,29 @@ fun StudyTaskDetailScreen(navController: NavController, articleId: Long) {
         allRecords.filter { it.articleId == articleId }.sortedByDescending { it.timestamp }
     }
     val stats = remember(records) { StatsRepository.aggregateArticle(records) }
-    val task = remember(article, states, pauses, sentenceStates, nowTick) {
+    val task = remember(article, states, pauses, sentenceStates, enrolled, records, nowTick) {
         article?.let {
-            buildTasks(listOf(it), states, pauses, sentenceStates, nowTick).firstOrNull()
+            buildTasks(
+                listOf(it), states, pauses, sentenceStates, enrolled, nowTick,
+                records = records,
+            ).firstOrNull()
         }
     }
-    val startedAt = remember(records, article) {
-        records.minOfOrNull { it.timestamp } ?: article?.createdAt ?: 0L
+    val startedAt = remember(records) {
+        // 未练过 = 还没开始学习；文章导入时间不能冒充「开始学习」时间
+        TaskDisplayLogic.startedAt(records)
     }
     val readingSeconds = remember(articleId) { AppPrefs.getReadingSeconds(articleId) }
     val curve = remember(task, nowTick) {
         val state = task?.state ?: return@remember emptyList<Float>()
+        // 一次没练过：没有留存曲线可画（画出来是一条贴着 0 的直线，比空态更误导）
+        if (state.reviewCount <= 0) return@remember emptyList<Float>()
         List(31) { dayOffset ->
             FsrsEngine.retentionRate(state, nowTick + dayOffset * StudyFlow.MILLIS_PER_DAY).toFloat()
         }
     }
     val intervalDays = remember(task) {
-        val state = task?.state ?: return@remember 0
-        ((state.due - state.lastReview).coerceAtLeast(0L) / StudyFlow.MILLIS_PER_DAY).toInt()
+        task?.state?.let(TaskDisplayLogic::intervalDays)
     }
 
     var sheetOpen by remember { mutableStateOf(false) }
@@ -225,7 +237,7 @@ fun StudyTaskDetailScreen(navController: NavController, articleId: Long) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BackButton(onClick = { navController.popBackStack() })
@@ -268,7 +280,7 @@ fun StudyTaskDetailScreen(navController: NavController, articleId: Long) {
                                         "practice/${task.articleId}?mode=SENTENCE&sectionMode=WEAKNESS"
                                     )
                                 },
-                                onSentenceCards = { navController.navigate("sentence_cards") },
+                                onSentenceCards = { navController.navigate("sentence_cards?articleId=${task.articleId}") },
                                 onResume = { togglePause() },
                                 onAdjust = { sheetOpen = true },
                             )
@@ -399,7 +411,7 @@ private fun DetailSection(index: Int, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DetailHeroCard(task: FlowTask, startedAt: Long, now: Long) {
+private fun DetailHeroCard(task: FlowTask, startedAt: Long?, now: Long) {
     val accent = phaseAccent(task.phase)
     val paused = task.phase == StudyFlow.Phase.PAUSED
     GlassCard(
@@ -429,7 +441,8 @@ private fun DetailHeroCard(task: FlowTask, startedAt: Long, now: Long) {
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    "${(task.retention * 100).toInt()}%",
+                    // 未开始的任务没有留存率可言：画个 0% 会被读成「记忆已经掉光了」
+                    if (task.state.reviewCount <= 0) "—" else "${(task.retention * 100).toInt()}%",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.SemiBold,
                     color = accent
@@ -457,7 +470,7 @@ private fun DetailHeroCard(task: FlowTask, startedAt: Long, now: Long) {
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        schedulingReasonText(StudyCoach.reasonOf(task.state, now)),
+                        schedulingReasonText(StudyCoach.reasonOf(task.state, now, task.hasPractice)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -467,8 +480,11 @@ private fun DetailHeroCard(task: FlowTask, startedAt: Long, now: Long) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                FlowDetailStat(stringResource(R.string.flow_detail_started_label), formatFullDate(startedAt))
-                FlowDetailStat(stringResource(R.string.flow_detail_reviews_label), "${task.state.reviewCount}")
+                FlowDetailStat(
+                    stringResource(R.string.flow_detail_started_label),
+                    if (startedAt != null) formatFullDate(startedAt) else "—"
+                )
+                FlowDetailStat(stringResource(R.string.flow_detail_practices_label), "${task.practiceCount}")
                 FlowDetailStat(stringResource(R.string.flow_detail_sentences_label), "${task.sentenceLearned}")
             }
         }
@@ -488,6 +504,8 @@ private fun DetailAdviceCard(
 ) {
     val hue = when (kind) {
         DetailAdviceKind.PAUSED -> Macaron.neutral()
+        DetailAdviceKind.NOT_STARTED -> Macaron.info()
+        DetailAdviceKind.LEGACY -> Macaron.info()
         DetailAdviceKind.OVERDUE -> Macaron.review()
         DetailAdviceKind.LOW_RETENTION, DetailAdviceKind.LOW_ACCURACY -> Macaron.warn()
         DetailAdviceKind.SENTENCE_DUE -> Macaron.info()
@@ -525,6 +543,8 @@ private fun DetailAdviceCard(
             Spacer(Modifier.height(12.dp))
             val actionLabel = when (kind) {
                 DetailAdviceKind.PAUSED -> stringResource(R.string.flow_resume)
+                DetailAdviceKind.NOT_STARTED -> stringResource(R.string.flow_start_learning)
+                DetailAdviceKind.LEGACY -> stringResource(R.string.flow_start_review)
                 DetailAdviceKind.OVERDUE -> stringResource(R.string.flow_start_review)
                 DetailAdviceKind.LOW_RETENTION, DetailAdviceKind.LOW_ACCURACY ->
                     stringResource(R.string.flow_detail_weakness_action)
@@ -534,6 +554,8 @@ private fun DetailAdviceCard(
             }
             val action = when (kind) {
                 DetailAdviceKind.PAUSED -> onResume
+                DetailAdviceKind.NOT_STARTED -> onStart
+                DetailAdviceKind.LEGACY -> onStart
                 DetailAdviceKind.OVERDUE -> onStart
                 DetailAdviceKind.LOW_RETENTION, DetailAdviceKind.LOW_ACCURACY -> onWeakness
                 DetailAdviceKind.SENTENCE_DUE -> onSentenceCards
@@ -546,12 +568,19 @@ private fun DetailAdviceCard(
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            // 暂停只表示退出计划与提醒，不锁住内容：仍允许从这里直接开始一次练习
+            // 暂停只表示退出计划与提醒，不锁住内容：仍允许从这里直接开始一次练习。
+            // 未开始的成员按钮必须是「开始学习」，不能叫复习。
             if (kind == DetailAdviceKind.PAUSED) {
                 Spacer(Modifier.height(6.dp))
                 TextButton(onClick = onStart) {
                     Text(
-                        stringResource(R.string.flow_start_review),
+                        stringResource(
+                            if (!task.hasPractice) {
+                                R.string.flow_start_learning
+                            } else {
+                                R.string.flow_start_review
+                            }
+                        ),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -565,6 +594,8 @@ private fun DetailAdviceCard(
 private fun detailAdviceTitle(kind: DetailAdviceKind): String = stringResource(
     when (kind) {
         DetailAdviceKind.PAUSED -> R.string.flow_advice_paused_title
+        DetailAdviceKind.NOT_STARTED -> R.string.flow_advice_not_started_title
+        DetailAdviceKind.LEGACY -> R.string.flow_advice_legacy_title
         DetailAdviceKind.OVERDUE -> R.string.flow_advice_overdue_title
         DetailAdviceKind.LOW_RETENTION -> R.string.flow_advice_low_retention_title
         DetailAdviceKind.LOW_ACCURACY -> R.string.flow_advice_low_accuracy_title
@@ -576,6 +607,8 @@ private fun detailAdviceTitle(kind: DetailAdviceKind): String = stringResource(
 @Composable
 private fun detailAdviceBody(kind: DetailAdviceKind, sentenceDue: Int): String = when (kind) {
     DetailAdviceKind.PAUSED -> stringResource(R.string.flow_advice_paused_body)
+    DetailAdviceKind.NOT_STARTED -> stringResource(R.string.flow_advice_not_started_body)
+    DetailAdviceKind.LEGACY -> stringResource(R.string.flow_advice_legacy_body)
     DetailAdviceKind.OVERDUE -> stringResource(R.string.flow_advice_overdue_body)
     DetailAdviceKind.LOW_RETENTION -> stringResource(R.string.flow_advice_low_retention_body)
     DetailAdviceKind.LOW_ACCURACY -> stringResource(R.string.flow_advice_low_accuracy_body)
@@ -587,9 +620,11 @@ private fun detailAdviceBody(kind: DetailAdviceKind, sentenceDue: Int): String =
 private fun DetailOverallCard(
     task: FlowTask,
     stats: ArticleStats,
-    intervalDays: Int,
+    intervalDays: Int?,
     readingSeconds: Long,
 ) {
+    // 没有 FSRS 状态（未开始或只有旧记录）：留存/稳定度/难度/间隔都没有事实依据，统一显示「—」
+    val hasMemoryState = task.state.reviewCount > 0
     GlassCard(backdrop = false) {
         Column(Modifier.padding(16.dp)) {
             Text(
@@ -600,35 +635,66 @@ private fun DetailOverallCard(
             )
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                GaugeProgress(
-                    progress = task.retention,
-                    label = stringResource(R.string.flow_detail_retention_label),
-                    modifier = Modifier.size(104.dp)
-                )
+                if (hasMemoryState) {
+                    GaugeProgress(
+                        progress = task.retention,
+                        label = stringResource(R.string.flow_detail_retention_label),
+                        modifier = Modifier.size(104.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier.size(104.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            "—",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.flow_detail_retention_label),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         StatItem(stringResource(R.string.practice_count), "${stats.totalPractices}")
                         StatItem(
                             stringResource(R.string.overall_accuracy),
-                            "${(stats.overallRate * 100).toInt()}%"
+                            if (stats.totalPractices > 0) {
+                                "${(stats.overallRate * 100).toInt()}%"
+                            } else {
+                                "—"
+                            }
                         )
                         StatItem(
                             stringResource(R.string.flow_detail_best),
-                            "${(stats.bestRate.coerceAtLeast(0f) * 100).toInt()}%"
+                            if (stats.totalPractices > 0) {
+                                "${(stats.bestRate.coerceAtLeast(0f) * 100).toInt()}%"
+                            } else {
+                                "—"
+                            }
                         )
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         FlowDetailStat(
                             stringResource(R.string.flow_detail_stability),
-                            String.format(Locale.getDefault(), "%.1f", task.state.stability)
+                            if (hasMemoryState) String.format(Locale.getDefault(), "%.1f", task.state.stability) else "—"
                         )
                         FlowDetailStat(
                             stringResource(R.string.flow_detail_difficulty),
-                            String.format(Locale.getDefault(), "%.1f", task.state.difficulty)
+                            if (hasMemoryState) String.format(Locale.getDefault(), "%.1f", task.state.difficulty) else "—"
                         )
-                        FlowDetailStat(stringResource(R.string.flow_detail_interval), "$intervalDays")
+                        FlowDetailStat(
+                            stringResource(R.string.flow_detail_interval),
+                            intervalDays?.toString() ?: "—"
+                        )
                     }
                 }
             }
@@ -763,12 +829,14 @@ private fun DetailMistakesCard(stats: ArticleStats) {
 @Composable
 private fun DetailScheduleCard(
     task: FlowTask,
-    intervalDays: Int,
+    intervalDays: Int?,
     onStart: () -> Unit,
     onAdjust: () -> Unit,
     onTogglePause: () -> Unit,
 ) {
     val paused = task.phase == StudyFlow.Phase.PAUSED
+    val isNew = !task.hasPractice
+    val hasMemoryState = task.state.reviewCount > 0
     GlassCard(backdrop = false) {
         Column(Modifier.padding(16.dp)) {
             Text(
@@ -779,9 +847,18 @@ private fun DetailScheduleCard(
             )
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                FlowDetailStat(stringResource(R.string.flow_detail_next_due), dueDateLabel(task))
-                FlowDetailStat(stringResource(R.string.flow_detail_interval), "$intervalDays")
-                FlowDetailStat(stringResource(R.string.flow_detail_lapses), "${task.state.lapses}")
+                FlowDetailStat(
+                    stringResource(if (isNew) R.string.flow_detail_plan_start else R.string.flow_detail_next_due),
+                    dueDateLabel(task)
+                )
+                FlowDetailStat(
+                    stringResource(R.string.flow_detail_interval),
+                    intervalDays?.toString() ?: "—"
+                )
+                FlowDetailStat(
+                    stringResource(R.string.flow_detail_lapses),
+                    if (hasMemoryState) "${task.state.lapses}" else "—"
+                )
             }
             Spacer(Modifier.height(12.dp))
             FlowRow(
@@ -790,7 +867,9 @@ private fun DetailScheduleCard(
             ) {
                 GlassButton(onClick = onStart) {
                     Text(
-                        stringResource(R.string.flow_start_review),
+                        stringResource(
+                            if (isNew) R.string.flow_start_learning else R.string.flow_start_review
+                        ),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )

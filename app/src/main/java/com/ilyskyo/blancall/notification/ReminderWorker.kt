@@ -11,6 +11,7 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.ilyskyo.blancall.algorithm.DayBucket
@@ -25,15 +26,14 @@ import com.ilyskyo.blancall.data.repository.InProgressPracticeStore
 import com.ilyskyo.blancall.data.repository.RecordRepository
 import com.ilyskyo.blancall.data.repository.SentenceCardStore
 import com.ilyskyo.blancall.ui.theme.AppPrefs
-import com.ilyskyo.blancall.ui.theme.ReminderFrequency
 import com.ilyskyo.blancall.ui.theme.ReminderPrefs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
@@ -44,7 +44,7 @@ import kotlin.math.roundToInt
  * 1. 检查提醒开关、提醒日与免打扰时段
  * 2. 采集用户状态（今日练习次数、到期文章/句子、未完成练习、薄弱内容、句子卡）
  * 3. 交给纯函数 [ReminderPlan.decide] 决定该发哪几条，再用 [ReminderStateStore] 做当日去重后发送
- * 4. 调度下一次提醒（按频率跳到下一个提醒日）
+ * 4. 调度下一次提醒（按提醒日跳到下一次）
  *
  * 判定为什么搬去 [ReminderPlan]：以前这里既取数又拍板，`analyzeUserState` 直接 new 出一个
  * `ReminderReason` —— 想加一条规则就得连 Android 上下文一起搬进测试，于是**根本没有测试**。
@@ -132,6 +132,8 @@ class ReminderWorker(
         // 用户主动暂停的文章不再催：到期判定与启停状态同源（fsrs_state.json 的 paused 表）
         val pausedArticleIds = fsrs?.pausedArticleIds().orEmpty()
         val pauses = fsrs?.pausedArticles().orEmpty()
+        // 加入计划但还没练的文章也要算进「今天该做什么」，否则用户加了计划却收不到提醒
+        val enrolled = fsrs?.enrolledArticles().orEmpty()
 
         // 未来 72 小时内到期、但此刻还没到期：提前说「哪一篇快到期了」
         val upcomingTasks = articleStates
@@ -192,11 +194,18 @@ class ReminderWorker(
                     SentenceCardStore.getInstance(context.filesDir).today()
                         ?.takeIf { it.date == today.toString() }?.key
                 }.getOrNull(),
+                enrolled = enrolled,
             ),
             now = now,
         )
-        val firstDue = snapshot.input.dueArticles.minByOrNull { it.due }
+        // 到期文章必须按「有没有练过」拆开：复习与第一次练习是两种通知语义。
+        // 旧版/CSV 回灌只有 records 的文章也算练过（hasPractice 由 StudyCoach 统一给出）。
+        val dueReviewArticles = snapshot.input.dueArticles.filter { it.hasPractice }
+        val dueNewArticles = snapshot.input.dueArticles.filter { !it.hasPractice }
+        val firstDue = dueReviewArticles.minByOrNull { it.due }
         val firstDueArticleId = firstDue?.articleId ?: -1L
+        val firstNew = dueNewArticles.minByOrNull { it.due }
+        val firstNewArticleId = firstNew?.articleId ?: -1L
         val incomplete = snapshot.resumables.firstOrNull()
         val todayCount = records.count { DayBucket.localDate(it.timestamp) == today }
         val weakCount = countWeakContent(records, pausedArticleIds)
@@ -217,9 +226,11 @@ class ReminderWorker(
             hasStudiedToday = ReminderPrefs.hasStudiedToday(),
             todayCount = todayCount,
             dailyGoal = ReminderPrefs.dailyPracticeGoal,
-            dueArticleCount = snapshot.dueArticleCount,
+            dueArticleCount = dueReviewArticles.size,
+            dueNewArticleCount = dueNewArticles.size,
             dueSentenceCount = snapshot.sentenceTotalDue,
             firstDueArticleId = firstDueArticleId,
+            firstNewArticleId = firstNewArticleId,
             sentenceCardPracticedToday = sentenceCardPracticedToday,
             hasIncompletePractice = incomplete != null,
             incompleteArticleId = incomplete?.articleId ?: -1L,
@@ -228,6 +239,8 @@ class ReminderWorker(
             streakDays = ReminderPrefs.studyStreakDays,
             dueArticleTitle = firstDue?.title
                 ?: if (firstDueArticleId > 0) articleTitle(firstDueArticleId) else "",
+            firstNewArticleTitle = firstNew?.title
+                ?: if (firstNewArticleId > 0) articleTitle(firstNewArticleId) else "",
             incompleteArticleTitle = incomplete?.let { articleTitle(it.articleId) }.orEmpty(),
             upcomingTasks = upcomingTasks,
             forgettingRisks = forgettingRisks,
@@ -296,13 +309,13 @@ class ReminderWorker(
         return mistakeSet.size
     }
 
-    /** 当前是否在免打扰窗口内（小时取自同一份 [now]，与判定共用时钟）。 */
+    /** 当前是否在免打扰窗口内（时刻取自同一份 [now]，与判定共用时钟）。 */
     private fun isInQuietHours(now: Long): Boolean {
-        val hour = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).hour
-        return ReminderPlan.isQuietHour(
-            hour = hour,
-            startHour = ReminderPrefs.quietStartHour,
-            endHour = ReminderPrefs.quietEndHour,
+        val local = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault())
+        return ReminderPlan.isQuietMinute(
+            minuteOfDay = local.hour * 60 + local.minute,
+            startMinute = ReminderPrefs.quietStartMinutes,
+            endMinute = ReminderPrefs.quietEndMinutes,
         )
     }
 
@@ -321,24 +334,9 @@ class ReminderWorker(
         }.toSet()
     }
 
-    /**
-     * 检查指定日期是否在提醒日范围内（默认今天）。
-     */
-    private fun isReminderDay(date: LocalDate = LocalDate.now()): Boolean {
-        val freq = ReminderPrefs.frequency
-        return when (freq) {
-            ReminderFrequency.DAILY -> true
-            ReminderFrequency.WEEKLY_FIVE -> {
-                val day = date.dayOfWeek
-                day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY
-            }
-            ReminderFrequency.WEEKLY_THREE -> {
-                val day = date.dayOfWeek
-                day == DayOfWeek.MONDAY || day == DayOfWeek.WEDNESDAY || day == DayOfWeek.FRIDAY
-            }
-            ReminderFrequency.OFF -> false
-        }
-    }
+    /** 检查指定日期是否在提醒日范围内（默认今天）。 */
+    private fun isReminderDay(date: LocalDate = LocalDate.now()): Boolean =
+        ReminderSchedule.isReminderDay(date, ReminderPrefs.reminderDays)
 
     companion object {
         private const val TAG = "ReminderWorker"
@@ -360,9 +358,17 @@ class ReminderWorker(
         private const val MAX_FORGETTING_RETENTION = 0.98
 
         /**
-         * 调度下一次提醒。计算从当前时间到下一个提醒日目标时间的延迟。
-         * - hour/minute 做 coerceIn 校验，避免 SharedPreferences 损坏导致异常
-         * - 非提醒日会向前跳到下一个提醒日（不再简单 plusDays(1) 空跑）
+         * 重新调度下一次提醒（REPLACE 语义，设置变更与 Worker 自调度都走这里）。
+         *
+         * 为什么不接精确闹钟：学习提醒不属于「闹钟 / 日历 / 通话」这类 Google Play
+         * 认可的精确闹钟正当用途，声明 `SCHEDULE_EXACT_ALARM` 属高风险类别；
+         * 而不声明权限时 `AlarmManager.setExactAndAllowWhileIdle` 在 API 31+ 会抛
+         * `SecurityException`，还得接 `canScheduleExactAlarms()` 降级与权限变更广播。
+         * 收益（准几分钟）远小于改动面与审核风险，因此维持纯 WorkManager 自调度，
+         * 并在设置页明确告知「省电模式下可能延迟」。
+         *
+         * - 时间与提醒日由 [ReminderSchedule] 统一计算，界面显示与实际调度同源
+         * - [ReminderPrefs.enabled] 关闭时直接取消，不留下空转任务
          */
         fun scheduleNext(context: Context) {
             if (!ReminderPrefs.enabled) {
@@ -370,26 +376,13 @@ class ReminderWorker(
                 return
             }
 
-            // 校验时间字段，防止 prefs 损坏抛出异常
-            val hour = ReminderPrefs.hour.coerceIn(0, 23)
-            val minute = ReminderPrefs.minute.coerceIn(0, 59)
-            val targetTime = LocalTime.of(hour, minute)
-
             val now = LocalDateTime.now()
-            var nextReminder = LocalDateTime.of(now.toLocalDate(), targetTime)
-
-            // 如果今天的提醒时间已过，从明天开始寻找
-            if (nextReminder <= now) {
-                nextReminder = nextReminder.plusDays(1)
-            }
-
-            // 向前找到下一个提醒日（最多遍历 7 天，保证终止）
-            var guard = 0
-            while (!isReminderDayStatic(nextReminder.toLocalDate()) && guard < 7) {
-                nextReminder = nextReminder.plusDays(1)
-                guard++
-            }
-
+            val nextReminder = ReminderSchedule.nextAt(
+                now = now,
+                hour = ReminderPrefs.hour,
+                minute = ReminderPrefs.minute,
+                days = ReminderPrefs.reminderDays,
+            )
             val delayMillis = ChronoUnit.MILLIS.between(now, nextReminder)
 
             val workRequest = OneTimeWorkRequestBuilder<ReminderWorker>()
@@ -412,28 +405,37 @@ class ReminderWorker(
         }
 
         /**
-         * 取消所有提醒
+         * 只在没有待发任务时补一条（打开 App / 回到前台 / 权限恢复时调用）。
+         *
+         * 不能在这里用 [scheduleNext] 的 REPLACE：若 20:00 的任务被省电策略推迟、
+         * 用户在 20:30 打开 App，REPLACE 会把「今天 20:00」改成「明天 20:00」
+         * 并取消原任务，当天这次提醒就被静默吞掉。查询 WorkManager 只为判断
+         * 「还有没有人在等」——有待发（含已过期但尚未执行）就什么都不做。
+         *
+         * 查询会阻塞，必须在 IO 线程调用；本函数已用 [withContext] 兜住。
          */
+        suspend fun scheduleIfMissing(context: Context) {
+            if (!ReminderPrefs.enabled) {
+                cancel(context)
+                return
+            }
+            val pending = withContext(Dispatchers.IO) {
+                WorkManager.getInstance(context)
+                    .getWorkInfosForUniqueWork(WORK_NAME)
+                    .get()
+                    .any {
+                        it.state == WorkInfo.State.ENQUEUED ||
+                            it.state == WorkInfo.State.RUNNING ||
+                            it.state == WorkInfo.State.BLOCKED
+                    }
+            }
+            if (!pending) scheduleNext(context)
+        }
+
+        /** 取消所有提醒 */
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
             Log.d(TAG, "提醒已取消")
-        }
-
-        // companion 中不能直接访问实例方法，这里复用一份静态判定
-        private fun isReminderDayStatic(date: LocalDate): Boolean {
-            val freq = ReminderPrefs.frequency
-            return when (freq) {
-                ReminderFrequency.DAILY -> true
-                ReminderFrequency.WEEKLY_FIVE -> {
-                    val day = date.dayOfWeek
-                    day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY
-                }
-                ReminderFrequency.WEEKLY_THREE -> {
-                    val day = date.dayOfWeek
-                    day == DayOfWeek.MONDAY || day == DayOfWeek.WEDNESDAY || day == DayOfWeek.FRIDAY
-                }
-                ReminderFrequency.OFF -> false
-            }
         }
     }
 }

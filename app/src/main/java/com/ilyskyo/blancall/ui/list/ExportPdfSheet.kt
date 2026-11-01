@@ -119,17 +119,15 @@ fun ExportPdfSheet(
         if (it == 0) stringResource(R.string.exam_paper_blank_default) else it.toString()
     }
 
-    // 面板用「分组表底色 + 更亮的行卡片」造出 iOS 设置页的两档层次；
-    // 深色下底色沿用 #1C1C1E，卡片抬到 #2C2C2E，否则两组会糊成一片。
-    val sheetColor = if (isDark) Color(0xFF1C1C1E) else MaterialTheme.colorScheme.surfaceVariant
-    val cardColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+    // 面板底色是导出页自己定稿的实心白（深色 #1C1C1E），不再用 surfaceVariant 的暖米黄；
+    // 不跟其余面板的 0.93 半透明白走，是因为这里要摆浅灰分组卡，透出底下的文章卡会脏。
+    val sheetColor = if (isDark) Color(0xFF1C1C1E) else Color.White
+    // 分组卡片反过来用中性浅灰 / 深色下的 #2C2C2E 造出两档层次 —— 白底上再叠白卡就完全糊在一起了。
+    val cardColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant else CardGrayLight
 
     GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = sheetColor,
-        // iOS sheet 的圆角明显小于 M3 默认的 28dp；沿用大圆角会被一眼认出是 Android。
-        shape = SheetShape,
-        dragHandle = { SheetGrabber() },
         // 头部与底部按钮钉住，只有文章列表自己滚（见下方 LazyColumn）。
         contentScrollable = false,
     ) {
@@ -284,8 +282,8 @@ fun ExportPdfSheet(
 /** 文章行高：标题 + 字数两行；同时用于给列表算固定高度。 */
 private val ArticleRowHeight = 58.dp
 
-/** iOS sheet 圆角：明显小于 M3 默认的 28dp，才不会一眼看出是 Android 面板。 */
-private val SheetShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+/** 分组卡片底：中性浅灰（不带暖调），在纯白面板上刚好分得出两档层次。 */
+private val CardGrayLight = Color(0xFFF2F2F7)
 
 /** iOS 填充按钮的圆角（system borderedProminent ≈ 14pt，不是胶囊）。 */
 private val IosButtonShape = RoundedCornerShape(14.dp)
@@ -322,24 +320,6 @@ private val TextStyleIosSection = androidx.compose.ui.text.TextStyle(
 private val TextStyleIosSectionAction = TextStyleIosSection.copy(
     fontWeight = FontWeight.Medium,
 )
-
-/** iOS 顶部抓手：36×5 的短横条，不承担任何读屏语义（关闭仍走返回手势 / 取消）。 */
-@Composable
-private fun SheetGrabber() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 11.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(width = 36.dp, height = 5.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
-        )
-    }
-}
 
 /** 导航条：取消在左、标题绝对居中（两侧宽度不对称时标题也不偏）。 */
 @Composable
